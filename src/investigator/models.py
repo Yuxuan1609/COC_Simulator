@@ -74,6 +74,8 @@ class Weapon:
 class Investigator:
     """COC 7th 调查员 —— 完全替代旧 Player 类"""
 
+    _ALLOWED_STATS = {"STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "LUCK"}
+
     def __init__(
         self,
         name: str = "Unknown",
@@ -134,8 +136,9 @@ class Investigator:
 
     def modify_stat(self, name: str, delta: int):
         attr = name.upper()
-        if hasattr(self.stats, attr):
-            setattr(self.stats, attr, getattr(self.stats, attr) + delta)
+        if attr in self._ALLOWED_STATS:
+            new_val = getattr(self.stats, attr) + delta
+            setattr(self.stats, attr, max(0, min(99, new_val)))
             self._recalc_derived()
 
     def modify_skill(self, name: str, delta: int):
