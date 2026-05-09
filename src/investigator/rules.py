@@ -186,15 +186,17 @@ def calc_occupation_points(formula: str, stats: Stats) -> int:
 #  年龄修正
 # ═══════════════════════════════════════════════════════════════
 
-def apply_age_modifiers(stats: Stats, skills: List[Skill], age: int):
+def apply_age_modifiers(stats: Stats, age: int):
     """
     COC 7th 年龄修正（原位修改）。
-    - 15-19: STR/SIZ-5, EDU-5 (已由骰子调整)
-    - 40-49: APP-5, MOV-1, EDU+5
-    - 50-59: APP-10, MOV-1, STR/CON/DEX-5, EDU+10
-    - 60-69: APP-15, MOV-2, STR/CON/DEX-10, EDU+15
-    - 70-79: APP-20, MOV-3, STR/CON/DEX-20, EDU+20
-    - 80+: APP-25, MOV-4, STR/CON/DEX-40, EDU+25
+
+    | 年龄段 (tier) | APP    | STR/CON/DEX   | EDU  |
+    |---------------|--------|---------------|------|
+    | 40-49 (0)     | -5     | 0             | +5   |
+    | 50-59 (1)     | -10    | -5            | +10  |
+    | 60-69 (2)     | -15    | -10           | +15  |
+    | 70-79 (3)     | -20    | -20           | +20  |
+    | 80+ (4)       | -25    | -40           | +25  |
     """
     if age < 40:
         return
@@ -203,16 +205,17 @@ def apply_age_modifiers(stats: Stats, skills: List[Skill], age: int):
     if tier > 4:
         tier = 4
 
-    app_penalty = -5 * (tier + 1)
-    phys_penalty = -5 * (tier + 1) if tier >= 1 else 0
-    edu_bonus = 5 * (tier + 1)
+    # Lookup tables by tier
+    app_penalties = [-5, -10, -15, -20, -25]
+    phys_penalties = [0, -5, -10, -20, -40]
+    edu_bonuses = [5, 10, 15, 20, 25]
 
-    stats.APP = max(0, stats.APP + app_penalty)
-    if phys_penalty:
-        stats.STR = max(0, stats.STR + phys_penalty)
-        stats.CON = max(0, stats.CON + phys_penalty)
-        stats.DEX = max(0, stats.DEX + phys_penalty)
-    stats.EDU = min(99, stats.EDU + edu_bonus)
+    stats.APP = max(0, stats.APP + app_penalties[tier])
+    if phys_penalties[tier]:
+        stats.STR = max(0, stats.STR + phys_penalties[tier])
+        stats.CON = max(0, stats.CON + phys_penalties[tier])
+        stats.DEX = max(0, stats.DEX + phys_penalties[tier])
+    stats.EDU = min(99, stats.EDU + edu_bonuses[tier])
 
 
 # ═══════════════════════════════════════════════════════════════
