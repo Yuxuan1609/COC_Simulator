@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COC 7th 调查员创建 — 车卡模拟器</title>
+<link rel="stylesheet" href="character.css">
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <h1>《克苏鲁的呼唤》7版 调查员创建</h1>
+  </header>
+
+  <!-- 进度指示器 -->
+  <div id="progress">
+    <span class="step active" data-step="1">1. 基本信息</span>
+    <span class="step" data-step="2">2. 属性生成</span>
+    <span class="step" data-step="3">3. 职业与技能</span>
+    <span class="step" data-step="4">4. 战斗与装备</span>
+    <span class="step" data-step="5">5. 导出</span>
+  </div>
+
+  <!-- 步骤面板 -->
+  <div id="step-1" class="panel active">
+    <h2>基本信息</h2>
+    <div class="form-group">
+      <label>调查员姓名</label>
+      <input type="text" id="char-name" placeholder="例如：亚楠" value="">
+    </div>
+    <div class="form-group">
+      <label>年龄</label>
+      <input type="number" id="char-age" min="15" max="99" value="25">
+    </div>
+    <div class="form-group">
+      <label>性别</label>
+      <select id="char-gender">
+        <option value="">选择...</option>
+        <option value="男">男</option>
+        <option value="女">女</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>外貌描述</label>
+      <textarea id="char-appearance" rows="2" placeholder="简要描述外貌特征..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>个人描述</label>
+      <textarea id="char-description" rows="2" placeholder="一句话概括角色..."></textarea>
+    </div>
+    <div class="buttons">
+      <button onclick="nextStep()">下一步 →</button>
+    </div>
+  </div>
+
+  <div id="step-2" class="panel">
+    <h2>属性生成</h2>
+    <div class="buttons-top">
+      <button onclick="rollAllStats()" class="primary">&#x1F3B2; 掷骰生成</button>
+      <button onclick="toggleManualInput()">手动输入模式</button>
+    </div>
+    <div id="stats-display">
+      <!-- JS 动态填充 -->
+    </div>
+    <div id="derived-display">
+      <!-- JS 动态填充 -->
+    </div>
+    <div class="buttons">
+      <button onclick="prevStep()">← 上一步</button>
+      <button onclick="nextStep()">下一步 →</button>
+    </div>
+  </div>
+
+  <div id="step-3" class="panel">
+    <h2>职业与技能</h2>
+    <div class="form-group">
+      <label>职业选择</label>
+      <select id="occ-select">
+        <option value="">选择职业...</option>
+        <!-- JS 动态填充 -->
+      </select>
+    </div>
+    <div id="occ-detail">
+      <p id="occ-desc"></p>
+      <p>技能点公式：<span id="occ-formula"></span></p>
+      <p>职业技能点：<span id="occ-points">0</span> | 兴趣技能点：<span id="int-points">0</span></p>
+    </div>
+    <div id="skills-display">
+      <!-- JS 动态填充 -->
+    </div>
+    <div class="buttons">
+      <button onclick="prevStep()">← 上一步</button>
+      <button onclick="nextStep()">下一步 →</button>
+    </div>
+  </div>
+
+  <div id="step-4" class="panel">
+    <h2>战斗与装备</h2>
+    <h3>武器</h3>
+    <div id="weapons-list">
+      <!-- JS 动态填充 -->
+    </div>
+    <button onclick="addWeapon()" class="secondary">+ 添加武器</button>
+
+    <h3>随身物品</h3>
+    <div class="form-group">
+      <input type="text" id="equip-input" placeholder="输入物品名称后按回车添加">
+    </div>
+    <div id="equipment-list">
+      <!-- JS 动态填充 -->
+    </div>
+
+    <div class="buttons">
+      <button onclick="prevStep()">← 上一步</button>
+      <button onclick="nextStep()">下一步 →</button>
+    </div>
+  </div>
+
+  <div id="step-5" class="panel">
+    <h2>角色卡预览 & 导出</h2>
+    <div class="form-group">
+      <label>背景故事</label>
+      <textarea id="char-backstory" rows="4" placeholder="输入调查员背景故事..."></textarea>
+    </div>
+    <h3>角色卡摘要</h3>
+    <pre id="summary-display">请填写前 4 步信息后查看摘要。</pre>
+    <div class="buttons">
+      <button onclick="prevStep()">← 上一步</button>
+      <button onclick="exportJSON()" class="primary">导出 JSON</button>
+    </div>
+  </div>
+</div>
+
+<script src="character.js"></script>
+</body>
+</html>
