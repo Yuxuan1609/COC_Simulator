@@ -124,6 +124,10 @@ def estimate_and_truncate_context(
 
 def roll_dice(num: int, sides: int) -> int:
     """投 num 个 sides 面骰子求和"""
+    if sides < 2:
+        raise ValueError(f"sides must be >= 2, got {sides}")
+    if num < 0:
+        raise ValueError(f"num must be >= 0, got {num}")
     import random
     return sum(random.randint(1, sides) for _ in range(num))
 
