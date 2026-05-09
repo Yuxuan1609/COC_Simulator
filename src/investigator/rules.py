@@ -266,3 +266,25 @@ def create_default_dodge_skill(stats: Stats) -> Skill:
         value=dodge_base,
         category="战斗",
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+#  职业加载
+# ═══════════════════════════════════════════════════════════════
+
+def load_occupations(path: str) -> List[Occupation]:
+    """从 JSON 文件加载职业列表"""
+    import json
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return [
+        Occupation(
+            name=d["name"],
+            description=d.get("description", ""),
+            occupation_skills=d.get("occupation_skills", []),
+            credit_rating_min=d.get("credit_rating_min", 0),
+            credit_rating_max=d.get("credit_rating_max", 99),
+            skill_points_formula=d.get("skill_points_formula", "EDU*4"),
+        )
+        for d in data
+    ]
