@@ -135,3 +135,12 @@ def roll_dice(num: int, sides: int) -> int:
 def roll_d6(num: int) -> int:
     """投 num 个 6 面骰子求和"""
     return roll_dice(num, 6)
+
+
+# ── 技能检定定义加载 ──
+
+def load_skill_checks(path: str = "data/skill_checks.json") -> list:
+    """加载技能检定定义表，返回列表 [{name, linked_attribute, base_value, category}, ...]"""
+    import json
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
