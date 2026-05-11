@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 
@@ -111,7 +112,7 @@ class Investigator:
 
     @property
     def skills_dict(self) -> Dict[str, int]:
-        """返回 {技能名: 当前值} 映射，兼容 game_loop / SkillSystem"""
+        """返回 {技能名: 当前值} 映射"""
         return {s.name: s.value for s in self.skills}
 
     # ── 查询 ──
@@ -125,6 +126,52 @@ class Investigator:
     def get_skill_value(self, name: str) -> int:
         sk = self.get_skill(name)
         return sk.value if sk else 0
+
+    # ── 技能检定（COC 7th D100 规则）──
+
+    def check_skill(self, skill_name: str, difficulty: str = "regular") -> tuple[bool, str]:
+        """
+        COC 7th 技能检定：投掷 D100，结果 ≤ 技能值则为成功。
+
+        difficulty（预留，当前仅实现 regular）:
+          - "regular": 阈值 = 技能值
+          - "hard":    阈值 = floor(技能值 / 2)
+          - "extreme": 阈值 = floor(技能值 / 5)
+
+        若调查员未拥有该技能，默认判定成功（避免缺少冷门技能卡关）。
+        返回 (是否成功, 结果描述文本)。
+        """
+        skill = self.get_skill(skill_name)
+        if skill is None:
+            return True, f"{skill_name}（未掌握，默认判定成功）"
+
+        roll = random.randint(1, 100)
+
+        # 难度修正（模板代码，hard/extreme 待后续实装）
+        threshold = skill.value
+        if difficulty == "hard":
+            threshold = skill.value // 2
+        elif difficulty == "extreme":
+            threshold = skill.value // 5
+
+        success = roll <= threshold
+        op = "≤" if success else ">"
+        detail = f"{skill_name}检定：D100={roll}/{threshold} {op} {'成功' if success else '失败'}"
+        return success, detail
+
+    def check_skills(self, skill_names: list[str]) -> tuple[bool, str]:
+        """
+        批量技能检定（AND 逻辑）。全部通过返回 (True, 合并结果文本)；
+        任一失败返回 (False, 合并结果文本)。
+        """
+        results = []
+        all_pass = True
+        for name in skill_names:
+            ok, msg = self.check_skill(name)
+            results.append(msg)
+            if not ok:
+                all_pass = False
+        return all_pass, "；".join(results)
 
     # ── 修改（供未来游戏循环使用）──
 
@@ -159,6 +206,16 @@ class Investigator:
 
     def remove_weapon(self, name: str):
         self.weapons = [w for w in self.weapons if w.name != name]
+
+    # ── 战斗技能鉴定（预留，当前未实装）──
+
+    def combat_check(self, weapon_name: str, target: "Investigator") -> tuple[bool, str]:
+        """战斗技能鉴定（预留）。实装时需实现：武器技能检定 + DB 加值 + 闪避对抗。"""
+        raise NotImplementedError("战斗系统尚未实现")
+
+    def damage_roll(self, weapon_name: str) -> tuple[int, str]:
+        """伤害掷骰（预留）。实装时需实现：伤害公式解析（如 1D3+DB）+ DB 应用。"""
+        raise NotImplementedError("战斗系统尚未实现")
 
     def __repr__(self):
         occ = self.occupation.name if self.occupation else "无职业"
