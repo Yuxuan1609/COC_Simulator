@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from src.scenario_core import DirectedGraph, ScenarioWorld, Player; g = DirectedGraph\\(\\); w = ScenarioWorld\\(g, start_node='test', background_story='init'\\); w.set_player\\(Player\\('p'\\)\\); w.memory.add_record\\('hi','look',None,'ok',location='test'\\); print\\(w.memory.get_context\\(\\)\\); w.apply_world_update\\('updated bg', 'updated desc'\\); print\\(w.background_story\\); n = w._current_node\\(\\); print\\(n.description if n else 'no node'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"from src.llm import call_deepseek, call_deepseek_json, call_deepseek_write, call_deepseek_summarize; print\\('all imports OK'\\)\")",
+      "Bash(python *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git *)",
+      "Bash(python3 *)"
+    ]
+  }
+}
