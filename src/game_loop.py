@@ -76,7 +76,9 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
             json_mode=True
         )
     except Exception as e:
-        return f"[系统错误] 动作解析失败：{e}"
+        return {"brief": f"[系统错误] 动作解析失败：{e}",
+                "narrative": f"（系统错误：{e}）",
+                "full": f"[系统错误] 动作解析失败：{e}"}
 
     try:
         event_data = call_deepseek(
@@ -96,32 +98,30 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
     move_actions = [a for a in actions if a.get("action") == "move"]
 
     action_results = []
-    overall_success = True
+    any_scene_executed = False  # 是否有动作通过闸门并执行（用于世界更新判定）
 
     for act in scene_actions:
+        # ── 统一闸门：条件检查 + 技能检定 ──
         condition = act.get("condition", "")
         if condition:
-            result = f"（无法执行：{condition}）"
-            success = False
-        else:
-            # ═══ 技能闸门（COC 7th D100 检定）═══
-            skill_checks = act.get("skill_checks", [])
-            if skill_checks and world.player:
-                all_pass, skill_result = world.player.check_skills(skill_checks)
-                log_skill_result(skill_result)
-                if not all_pass:
-                    action_results.append(skill_result)
-                    overall_success = False
-                    continue
-            result, success = _execute_single_action(act, world, location)
-        action_results.append(result)
-        if not success:
-            overall_success = False
+            action_results.append(f"（无法执行：{condition}）")
+            continue
 
-    # ═══ 阶段1.5a：动作世界更新（在移动之前）═══
-    # had_interact = any(a.get("action") == "interact" for a in scene_actions)
-    had_interact = True # 暂时设置为常触发，之后修改
-    if had_interact:
+        skill_checks = act.get("skill_checks", [])
+        if skill_checks and world.player:
+            all_pass, skill_result = world.player.check_skills(skill_checks)
+            log_skill_result(skill_result)
+            if not all_pass:
+                action_results.append(skill_result)
+                continue
+
+        # 闸门通过，执行动作
+        result, _ = _execute_single_action(act, world, location)
+        action_results.append(result)
+        any_scene_executed = True
+
+    # ═══ 阶段1.5a：动作世界更新（仅在闸门通过的动作实际执行后）═══
+    if any_scene_executed:
         scene_action_result = "\n".join(action_results)
         try:
             update = call_deepseek(
@@ -134,27 +134,29 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
 
     # ═══ 阶段1b：执行 move 动作 ═══
     for act in move_actions:
-        result, success = _execute_single_action(act, world, location)
+        result, _ = _execute_single_action(act, world, location)
         action_results.append(result)
-        if not success:
-            overall_success = False
 
     action_result = "\n".join(action_results)
 
     # ═══ 阶段2：执行事件 ═══
     events_result = ""
+    any_event_triggered = False
     for eid in event_data.get("triggered_events", []):
         ok, msg = world.trigger_event(eid)
         if ok:
             events_result += msg + "\n"
+            any_event_triggered = True
+        else:
+            events_result += f"（事件「{eid}」触发失败：{msg}）\n"
     for eid, condition_text in event_data.get("condition_events", {}).items():
         events_result += f"（无法触发事件「{eid}」：{condition_text}）\n"
     for flag_key, flag_val in event_data.get("new_flags", {}).items():
         world.set_flag(flag_key, flag_val)
         events_result += f"[标记更新] {flag_key} = {flag_val}\n"
 
-    # ═══ 阶段1.5b：事件世界更新 ═══
-    if event_data.get("triggered_events"):
+    # ═══ 阶段1.5b：事件世界更新（仅在事件实际触发后）═══
+    if any_event_triggered:
         try:
             update = call_deepseek(
                 build_event_world_update(world, events_result),
@@ -186,8 +188,9 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
 
     # ═══ 记录 ═══（只记录简要结果）
     first_target = actions[0].get("target")
+    any_success = any_scene_executed or bool(move_actions)
     world.memory.add_record(user_input, first_action, first_target,
-                            brief, location=location, success=overall_success)
+                            brief, location=location, success=any_success)
 
     if world.memory.should_compress():
         world.memory.compress(lambda p: call_deepseek(p, json_mode=False))
