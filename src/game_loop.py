@@ -17,6 +17,7 @@ from prompts import (
     build_event_world_update,
     build_narrative_prompt,
     build_improvise_prompt,
+    log_skill_result,
 )
 
 
@@ -104,6 +105,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> str:
             skill_checks = act.get("skill_checks", [])
             if skill_checks and world.player:
                 all_pass, skill_result = world.player.check_skills(skill_checks)
+                log_skill_result(skill_result)
                 if not all_pass:
                     action_results.append(skill_result)
                     overall_success = False

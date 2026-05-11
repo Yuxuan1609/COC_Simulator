@@ -34,6 +34,16 @@ def _show_prompt(label: str, content: str):
         f.write("\n")
 
 
+def log_skill_result(text: str):
+    """将技能检定结果写入日志文件（如已配置）"""
+    if not _log_file:
+        return
+    with open(_log_file, 'a', encoding='utf-8') as f:
+        f.write(f"--- 技能检定 ---\n")
+        f.write(text)
+        f.write("\n\n")
+
+
 # ── 触发状态分离（确定性，不依赖 LLM）──
 
 _SHOW_NON_TRIGGERABLE = True  # 设为 False 则不展示不可触发项
@@ -282,9 +292,6 @@ def build_action_prompt(world: ScenarioWorld, user_input: str,
 【世界状态】
 {state}
 
-【玩家技能】
-{skills}
-
 {scene_ctx}
 
 【玩家输入】
@@ -313,8 +320,8 @@ action字段份分类规则：
 - search：玩家想探索、调查当前场景
 - other：其他动作类型（不产生实际影响）
 其他规则：
-- skill_checks：根据动作的触发条件，列出需要鉴定的技能名称（如 侦查、灵感、急救 等），
-  技能必须是玩家拥有的。无需鉴定时返回空数组 []，仅对 move 和 interact 生效
+- skill_checks：根据动作的触发条件，列出需要鉴定的技能名称（如 侦查、灵感、急救 等。
+- 无需鉴定时返回空数组 []，仅对 move 和 interact 生效
 - 如果玩家输入只有单一意图，actions 数组仍包含 1 个元素
 - actions 按玩家输入中的先后顺序排列
 其他规则：
