@@ -411,14 +411,14 @@ def build_action_world_update(world: ScenarioWorld, action_result: str, user_inp
 {action_result}
 
 要求：
-- description：如果当前场景发生了可见变化（物品移动、痕迹留下、环境改变等），更新描述使其反映新的场景状态；如果场景未发生可见变化，description 原样返回
+- description：如果当前场景发生了可见变化（物品移动、痕迹留下、环境改变等），更新描述使其反映新的场景状态；如果场景未发生可见变化，description 原样返回【当前场景描述】
 - 不得添加未实际发生的实质性信息，避免误导
 - 保持原有世界观和恐怖氛围
 - 直接输出 JSON
-
+- 【当前场景描述】是需要修改的描述，【当前背景设定】仅供参考，判断核心来自【本轮行动结果】和【玩家输入】
 返回 JSON：
 {{
-  "description": "更新后的当前场景描述"
+  "description": "更新后的【当前场景描述】描述"
 }}"""
     _show_prompt("World Update — Action", prompt)
     return prompt
@@ -438,14 +438,14 @@ def build_event_world_update(world: ScenarioWorld, events_result: str) -> str:
 {events_result}
 
 要求：
-- abstract：将本轮触发的事件及其不可逆影响以文学性语言融入背景设定中，采用累积追加的方式
+- abstract：将本轮触发的事件及其不可逆影响以文学性语言融入【当前背景设定】中，采用累积追加的方式
 - 不得添加未实际发生的实质性信息，避免误导
 - 保持原有世界观和恐怖氛围
 - 直接输出 JSON
-
+- 【当前背景设定】是需要修改的描述，【当前场景描述】仅供参考，判断核心来自【本轮触发事件】
 返回 JSON：
 {{
-  "abstract": "更新后的背景设定",
+  "abstract": "更新后的【当前背景设定】",
 }}"""
     _show_prompt("World Update — Event", prompt)
     return prompt
@@ -480,9 +480,11 @@ def build_narrative_prompt(world: ScenarioWorld, user_input: str,
 【本轮触发事件】{events_text}
 
 
-请以TRPG主持人（KP）的身份，基于【行动结果】对【玩家输入】给出合理的回应，请遵循这些具体要求
+请以TRPG主持人（KP）的身份，基于【行动结果】对【玩家输入】和【本轮触发事件】给出合理的回应，
+输出格式请遵守 结果：“简要描述” \n\n\n 沉浸式叙事：“基于结果用沉浸式中文生成不超过100字”
+请遵循这些具体要求：
 - 重要！不要给出前文没有提及的实质性信息
-- 用沉浸式中文生成20-100字
+- 重要！严格遵守输出格式，给出一个结果一个沉浸式叙事
 - 根据行动结果调整叙事：成功则描述顺利进行，失败则描述没有结果或难以进行，没有提及则忽略这条
 - 语气贴合场景氛围，参考背景设定中的世界观和氛围基调
 - 直接输出叙事文本，不要额外说明
@@ -516,12 +518,52 @@ def build_improvise_prompt(world: ScenarioWorld, user_input: str,
 
 【玩家输入】{user_input}
 
-请以TRPG主持人（KP）的身份，【玩家输入】给出合理的回应，请遵循这些具体要求
+请以TRPG主持人（KP）的身份，【玩家输入】给出合理的回应，
+输出格式请遵守 结果：“简要描述” \n\n\n 沉浸式叙事：“基于结果用沉浸式中文生成不超过100字”
+请遵循这些具体要求：
 - 重要！不要给出前文没有提及的实质性信息
 - 重要！当前玩家行动没有产生实际影响，请以符合场景的语言委婉提示玩家这一点
+- 重要！严格遵守输出格式，给出一个结果一个沉浸式叙事
 - 用沉浸式中文生成20-100字
 - 【模组背景设定】和【玩家历史行动】主要用于理解背景，尽量少重复叙述其中的内容
-- 为了方便debug 把 OXXXFFFF加到输出末尾
 """
     _show_prompt("Step 3b — 即兴叙事", prompt)
     return prompt
+
+
+# ── 叙事输出解析 ──
+
+def parse_narrative_output(text: str) -> tuple[str, str]:
+    """
+    解析 LLM 叙事输出，按 \n\n\n 分割为 (简要结果, 沉浸式叙事)。
+    解析失败时 fallback 到原文。
+    """
+    parts = text.split("\n\n\n", 1)
+    if len(parts) != 2:
+        # 尝试其他分隔
+        parts = text.split("\n\n", 1)
+
+    if len(parts) == 2:
+        first, second = parts
+        brief = first
+        narrative = second
+
+        # 提取 "结果：" 或 "结果:" 后的内容
+        for sep in ["结果：", "结果:"]:
+            if sep in first:
+                brief = first.split(sep, 1)[1].strip()
+                brief = brief.strip('"').strip("'").strip("“").strip("”")
+                break
+
+        # 提取 "沉浸式叙事：" 后的内容
+        for sep in ["沉浸式叙事：", "沉浸式叙事:"]:
+            if sep in second:
+                narrative = second.split(sep, 1)[1].strip()
+                narrative = narrative.strip('"').strip("'").strip("“").strip("”")
+                break
+
+        return brief, narrative
+
+    # Fallback: 整个文本作为叙事
+    fallback_brief = text[:60] + "..." if len(text) > 60 else text
+    return fallback_brief, text

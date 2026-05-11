@@ -18,6 +18,7 @@ from prompts import (
     build_narrative_prompt,
     build_improvise_prompt,
     log_skill_result,
+    parse_narrative_output,
 )
 
 
@@ -54,7 +55,7 @@ def _execute_single_action(act: dict, world: ScenarioWorld, location: str) -> tu
         return "（什么也没做）", True
 
 
-def handle_user_input(user_input: str, world: ScenarioWorld) -> str:
+def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
     """
     处理流程：
     1. 阶段1 & 阶段2 并行 —— 动作解析 + 事件判定
@@ -63,7 +64,9 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> str:
     4. 阶段1b：执行 move 动作（在已更新的场景中移动）
     5. 阶段2：执行事件
     6. 阶段1.5b：事件世界更新
-    7. 阶段3：叙事生成
+    7. 阶段3：叙事生成 + 输出解析
+
+    返回 {"brief": 简要结果, "narrative": 沉浸式叙事, "full": 完整输出}
     """
 
     # ═══ 阶段1 & 阶段2：并行 LLM 调用 ═══
@@ -166,24 +169,27 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> str:
     all_other = all(a.get("action") == "other" for a in actions)
     try:
         if all_other and not event_data.get("triggered_events"):
-            narrative = call_deepseek(
+            full_text = call_deepseek(
                 build_improvise_prompt(world, user_input, action_result),
                 json_mode=False
             )
         else:
-            narrative = call_deepseek(
+            full_text = call_deepseek(
                 build_narrative_prompt(world, user_input, action_result, events_result),
                 json_mode=False
             )
+        brief, narrative = parse_narrative_output(full_text)
     except Exception as e:
-        narrative = f"{action_result}\n\n（叙事生成失败：{e}）"
+        brief = action_result
+        narrative = f"（叙事生成失败：{e}）"
+        full_text = f"{brief}\n\n\n沉浸式叙事：{narrative}"
 
-    # ═══ 记录 ═══
+    # ═══ 记录 ═══（只记录简要结果）
     first_target = actions[0].get("target")
     world.memory.add_record(user_input, first_action, first_target,
-                            narrative, location=location, success=overall_success)
+                            brief, location=location, success=overall_success)
 
     if world.memory.should_compress():
         world.memory.compress(lambda p: call_deepseek(p, json_mode=False))
 
-    return narrative
+    return {"brief": brief, "narrative": narrative, "full": full_text}

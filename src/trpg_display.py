@@ -108,6 +108,17 @@ def display_narrative(text: str):
     display(HTML(_html(_esc(text), "trpg-narrative")))
 
 
+def display_split_result(brief: str, narrative: str):
+    """拆分显示：简要结果 + 沉浸式叙事"""
+    # 简要结果 —— 紧凑系统消息
+    display(HTML(_html(
+        f'<span style="color:#8aa0b0;">{_esc(brief)}</span>',
+        "trpg-system"
+    )))
+    # 沉浸式叙事 —— 深色暖调卡片
+    display(HTML(_html(_esc(narrative), "trpg-narrative")))
+
+
 def display_scene(text: str):
     """场景摘要 —— 冷调蓝色面板（从文本自动解析）"""
     lines = text.split("\n")
