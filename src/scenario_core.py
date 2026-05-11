@@ -206,25 +206,6 @@ class DirectedGraph:
             result += f"  {nid}: {node.description[:40]}... → [{exits}] ({interactions} actions)\n"
         return result
 
-
-# ═══════════════════════════════════════════════════════════════
-#  技能鉴定系统
-# ═══════════════════════════════════════════════════════════════
-
-class SkillSystem:
-    """技能鉴定系统 —— 当前为占位实现，始终返回成功"""
-
-    @staticmethod
-    def check(player: Player, skill_name: str) -> Tuple[bool, str]:
-        """执行单项技能鉴定。占位：始终成功。"""
-        return True, f"{skill_name}鉴定成功"
-
-    @staticmethod
-    def check_multiple(player: Player, skill_names: List[str]) -> Dict[str, Tuple[bool, str]]:
-        """批量执行技能鉴定"""
-        return {name: SkillSystem.check(player, name) for name in skill_names}
-
-
 # ═══════════════════════════════════════════════════════════════
 #  前置条件解析器
 # ═══════════════════════════════════════════════════════════════
