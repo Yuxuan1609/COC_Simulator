@@ -7,6 +7,14 @@ import json
 import re
 from openai import OpenAI
 
+# 从项目根目录 .env 文件加载环境变量（如 python-dotenv 已安装）
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    load_dotenv(os.path.normpath(_env_path))
+except ImportError:
+    pass
+
 client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY", ""),
     base_url="https://api.deepseek.com"
