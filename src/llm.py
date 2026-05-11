@@ -8,7 +8,7 @@ import re
 from openai import OpenAI
 
 client = OpenAI(
-    api_key=os.getenv("DEEPSEEK_API_KEY", "sk-b8b8c2645e3b44c0be5f18913460daa3"),
+    api_key=os.getenv("DEEPSEEK_API_KEY", ""),
     base_url="https://api.deepseek.com"
 )
 
@@ -75,6 +75,9 @@ def call_deepseek(
     统一 DeepSeek 调用入口。
     json_mode=True  → 返回解析后的 dict（用于结构化判定）
     json_mode=False → 返回原始文本（用于叙事生成/压缩）
+    model: 模型名称，None 时默认 "deepseek-v4-pro"
+    thinking: 是否启用思考模式，None 时默认 True
+    reasoning_effort: 推理强度 ("low"/"medium"/"high")，None 时默认 "high"
     """
     _model = model if model is not None else "deepseek-v4-pro"
     _reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
@@ -104,9 +107,13 @@ def call_deepseek(
             return result
         except json.JSONDecodeError:
             content_text = _extract_json(raw)
-            result = json.loads(content_text)
-            _log_response(json.dumps(result, ensure_ascii=False, indent=2))
-            return result
+            try:
+                result = json.loads(content_text)
+                _log_response(json.dumps(result, ensure_ascii=False, indent=2))
+                return result
+            except json.JSONDecodeError:
+                print(f"[JSON解析失败] 原始返回内容:\n{raw[:2000]}")
+                raise
     else:
         default_system = "你是一个专业的TRPG主持人（KP）。"
         response = client.chat.completions.create(
