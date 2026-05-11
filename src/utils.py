@@ -139,8 +139,12 @@ def roll_d6(num: int) -> int:
 
 # ── 技能检定定义加载 ──
 
-def load_skill_checks(path: str = "data/skill_checks.json") -> list:
+def load_skill_checks(path: str | None = None) -> list:
     """加载技能检定定义表，返回列表 [{name, linked_attribute, base_value, category}, ...]"""
     import json
+    if path is None:
+        import os
+        path = os.path.join(os.path.dirname(__file__), "..", "data", "skill_checks.json")
+        path = os.path.normpath(path)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
