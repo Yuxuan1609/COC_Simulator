@@ -80,6 +80,31 @@ for act in scene_actions:
 | `game_loop.py:29-31` | `_execute_single_action` 内 skill_checks 调用 |
 | `investigator/models.py:114` | `skills_dict` docstring 中 `SkillSystem` 引用 |
 
+### 战斗技能鉴定（预留位置）
+
+当前版本暂不实现战斗检定，但在以下位置预留给未来扩展：
+
+**`Investigator` 预留方法**（仅 stubs，不实现逻辑）:
+```python
+def combat_check(self, weapon_name: str, target: "Investigator") -> tuple[bool, str]:
+    """战斗技能鉴定（预留，当前未实装）"""
+    raise NotImplementedError("战斗系统尚未实现")
+
+def damage_roll(self, weapon_name: str) -> tuple[int, str]:
+    """伤害掷骰（预留，当前未实装）"""
+    raise NotImplementedError("战斗系统尚未实现")
+```
+
+**`skill_checks.json` 中战斗相关技能**已标注 `category: "战斗"`（格斗、枪械、投掷），供未来战斗系统读取。
+
+| 战斗技能 | linked_attribute | 用途 |
+|----------|-----------------|------|
+| 格斗 | DEX | 近战攻击、闪避对抗 |
+| 枪械 | DEX | 射击检定 |
+| 投掷 | DEX | 投掷武器检定 |
+
+战斗实现时需补充：伤害公式解析（如 `1D3+DB`）、DB 加值应用、护甲减伤、部位命中、闪避对抗。
+
 ### 保留
 
 - `prompts.py:_build_skill_results()` — 纯函数，未来用于将检定结果注入叙事 prompt
@@ -91,6 +116,6 @@ for act in scene_actions:
 |---|------|------|
 | 1 | `data/skill_checks.json` | 新建 |
 | 2 | `src/utils.py` | 新增 `load_skill_checks()` |
-| 3 | `src/investigator/models.py` | 新增 `check_skill()` / `check_skills()`；更新 `skills_dict` docstring |
+| 3 | `src/investigator/models.py` | 新增 `check_skill()` / `check_skills()` / `combat_check()` / `damage_roll()`（后两个为 stub）；更新 `skills_dict` docstring |
 | 4 | `src/game_loop.py` | skill gate 前置；移除 `SkillSystem` 导入；精简 `_execute_single_action` |
 | 5 | `src/scenario_core.py` | 删除 `SkillSystem` 类及其注释块 |
