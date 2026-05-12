@@ -710,16 +710,17 @@ class ScenarioWorld:
         """全量快照存档（图 + 世界 + 记忆 + 调查员快照）"""
         from investigator.serialization import to_dict as inv_to_dict
         from datetime import datetime
+        import os
 
         data = {
             "version": 1,
-            "scenario": "常暗之厢",
             "timestamp": datetime.now().isoformat(),
             "graph": self.graph.to_dict(),
             "world": self.to_dict(),
             "memory": self.memory.to_dict(),
-            "player_snapshot": inv_to_dict(self.player) if self.player else {},
+            "player_snapshot": inv_to_dict(self.player) if self.player else None,
         }
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -728,13 +729,15 @@ class ScenarioWorld:
         """从存档恢复（自包含，不需要外部传 graph）"""
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+        if data.get("version") != 1:
+            raise ValueError(f"不支持的存档版本: {data.get('version')}")
         graph = DirectedGraph.from_dict(data["graph"])
         world_data = data["world"]
         world_data["memory"] = data.get("memory", {})
         world = cls.from_dict(world_data, graph)
         # 恢复调查员
         ps = data.get("player_snapshot")
-        if ps:
+        if ps is not None:
             from investigator.serialization import from_dict as inv_from_dict
             world.player = inv_from_dict(ps)
         return world
