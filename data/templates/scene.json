@@ -17,6 +17,11 @@
           {"ref_type": "event", "ref_id": "E1", "ref_name": "事件名称"},
           {"ref_type": "interaction", "ref_scene": "场景名", "ref_name": "互动名称"}
         ],
+        "side_effects": [
+          {"type": "flag_set", "key": "示例标记", "value": true},
+          {"type": "item_gain", "item_name": "示例物品"},
+          {"type": "stat_change", "stat_name": "SAN", "delta": -1}
+        ],
         "trigger": "触发条件（技能鉴定名/玩家行为等）",
         "result": "成功/失败的后果描述",
         "clue": "该互动可能揭示的线索"
