@@ -3,3 +3,4 @@ logs/
 *.bak
 .ipynb_checkpoints/
 .env
+data/saves/*.json
