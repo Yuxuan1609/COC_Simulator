@@ -161,8 +161,11 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
 
     # ═══ 阶段1b：执行 move 动作 ═══
     for act in move_actions:
-        result, _ = _execute_single_action(act, world, location)
+        result, executed = _execute_single_action(act, world, location)
         action_results.append(result.message)
+        if executed:
+            side_msgs = _apply_side_effects(world, result.side_effects)
+            action_results.extend(side_msgs)
 
     action_result = "\n".join(action_results)
 
