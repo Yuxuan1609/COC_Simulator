@@ -188,6 +188,7 @@ class DirectedGraph:
                         )
                         for req in inter.get("requirement", [])
                     ],
+                    side_effects=_parse_side_effects(inter.get("side_effects", [])),
                 )
                 for inter in node_info.get("interactions", [])
             ]
