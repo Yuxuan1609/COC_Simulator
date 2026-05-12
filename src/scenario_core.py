@@ -490,60 +490,64 @@ class ScenarioWorld:
 
     # ── 移动 ──
 
-    def move(self, target: str) -> Tuple[bool, str]:
+    def move(self, target: str) -> ActionResult:
         if self.player is None:
-            return False, "尚未设置角色"
+            return ActionResult(False, "尚未设置角色")
         possible = {e.target: e for e in self.get_possible_exits()}
         if target not in possible:
             available = ', '.join(e.target for e in self.get_possible_exits())
-            return False, f"无法从{self.current_location}前往{target}。可前往：{available or '无'}"
+            return ActionResult(False, f"无法从{self.current_location}前往{target}。可前往：{available or '无'}")
         self.current_location = target
-        return True, f"你来到了{target}。{self.get_current_description()}"
+        return ActionResult(True, f"你来到了{target}。{self.get_current_description()}")
 
     # ── 交互 ──
 
-    def execute_interaction(self, name: str) -> Tuple[bool, str]:
+    def execute_interaction(self, name: str) -> ActionResult:
         """
         执行当前场景的指定动作。检查前置条件，标记完成并返回结果文本。
         不检查事件 —— 事件触发由外部 LLM 调用链独立处理。
         """
         node = self._current_node()
         if not node:
-            return False, "当前场景不存在。"
+            return ActionResult(False, "当前场景不存在。")
         interaction = node.get_interaction(name)
         if not interaction:
             available = ', '.join(i.name for i in node.interactions)
-            return False, f"当前场景没有动作「{name}」。可用动作：{available or '无'}"
+            return ActionResult(False, f"当前场景没有动作「{name}」。可用动作：{available or '无'}")
 
         # 检查前置条件
         if interaction.requirements:
             ok, msg = self.requirement_resolver.check(interaction.requirements)
             if not ok:
-                return False, msg
+                return ActionResult(False, msg)
 
         loc = self.current_location
         if loc not in self.completed_interactions:
             self.completed_interactions[loc] = set()
         self.completed_interactions[loc].add(name)
-        return True, f"【{interaction.type}】{interaction.name}：{interaction.result}"
+        return ActionResult(
+            True,
+            f"【{interaction.type}】{interaction.name}：{interaction.result}",
+            side_effects=list(interaction.side_effects),
+        )
 
     # ── 事件（纯泛用）──
 
-    def trigger_event(self, event_id: str) -> Tuple[bool, str]:
+    def trigger_event(self, event_id: str) -> ActionResult:
         event = self.graph.get_event(event_id)
         if not event:
-            return False, f"未知事件：{event_id}"
+            return ActionResult(False, f"未知事件：{event_id}")
         if self.triggered_events.get(event_id, False):
-            return False, f"事件「{event.name}」已经触发过。"
+            return ActionResult(False, f"事件「{event.name}」已经触发过。")
 
         # 检查前置条件
         if event.requirements:
             ok, msg = self.requirement_resolver.check(event.requirements)
             if not ok:
-                return False, msg
+                return ActionResult(False, msg)
 
         self.triggered_events[event_id] = True
-        return True, f"【事件触发】{event.name}\n{event.impact}"
+        return ActionResult(True, f"【事件触发】{event.name}\n{event.impact}")
 
     def is_event_triggered(self, event_id: str) -> bool:
         return self.triggered_events.get(event_id, False)
