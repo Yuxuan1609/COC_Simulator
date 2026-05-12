@@ -274,6 +274,96 @@ class DirectedGraph:
             result += f"  {nid}: {node.description[:40]}... → [{exits}] ({interactions} actions)\n"
         return result
 
+    def to_dict(self) -> dict:
+        """序列化为 dict（含 nodes 和 events）"""
+        nodes_dict = {}
+        for nid, node in self.nodes.items():
+            nodes_dict[nid] = {
+                "node_id": node.node_id,
+                "description": node.description,
+                "edges": [{"target": e.target, "method": e.method} for e in node.edges],
+                "to_here": [{"target": e.target, "method": e.method} for e in node.to_here],
+                "interactions": [
+                    {
+                        "type": i.type,
+                        "name": i.name,
+                        "trigger": i.trigger,
+                        "result": i.result,
+                        "clue": i.clue,
+                        "requirements": [
+                            {"ref_type": r.ref_type, "ref_scene": r.ref_scene, "ref_name": r.ref_name}
+                            for r in i.requirements
+                        ],
+                        "side_effects": [_side_effect_to_dict(se) for se in i.side_effects],
+                    }
+                    for i in node.interactions
+                ],
+            }
+        events_list = [
+            {
+                "event_id": e.event_id,
+                "name": e.name,
+                "trigger": e.trigger,
+                "impact": e.impact,
+                "requirements": [
+                    {"ref_type": r.ref_type, "ref_scene": r.ref_scene, "ref_name": r.ref_name}
+                    for r in e.requirements
+                ],
+            }
+            for e in self.events.values()
+        ]
+        return {"nodes": nodes_dict, "events": events_list}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "DirectedGraph":
+        """从 dict 重建 DirectedGraph（含 nodes 和 events）"""
+        graph = cls()
+        nodes_data = data.get("nodes", {})
+        for nid, node_data in nodes_data.items():
+            interactions = [
+                Interaction(
+                    type=inter["type"],
+                    name=inter["name"],
+                    trigger=inter.get("trigger", ""),
+                    result=inter.get("result", ""),
+                    clue=inter.get("clue"),
+                    requirements=[
+                        Requirement(
+                            ref_type=req.get("ref_type", ""),
+                            ref_scene=req.get("ref_scene", ""),
+                            ref_name=req.get("ref_name", ""),
+                        )
+                        for req in inter.get("requirements", [])
+                    ],
+                    side_effects=_parse_side_effects(inter.get("side_effects", [])),
+                )
+                for inter in node_data.get("interactions", [])
+            ]
+            graph.nodes[nid] = Node(
+                node_id=node_data["node_id"],
+                description=node_data.get("description", ""),
+                edges=[Edge(target=e["target"], method=e["method"]) for e in node_data.get("edges", [])],
+                to_here=[Edge(target=e["target"], method=e["method"]) for e in node_data.get("to_here", [])],
+                interactions=interactions,
+            )
+        events_data = data.get("events", [])
+        for ev_data in events_data:
+            graph.events[ev_data["event_id"]] = GameEvent(
+                event_id=ev_data["event_id"],
+                name=ev_data["name"],
+                trigger=ev_data.get("trigger", ""),
+                impact=ev_data.get("impact", ""),
+                requirements=[
+                    Requirement(
+                        ref_type=req.get("ref_type", ""),
+                        ref_scene=req.get("ref_scene", ""),
+                        ref_name=req.get("ref_name", ""),
+                    )
+                    for req in ev_data.get("requirements", [])
+                ],
+            )
+        return graph
+
 # ═══════════════════════════════════════════════════════════════
 #  前置条件解析器
 # ═══════════════════════════════════════════════════════════════
@@ -582,6 +672,73 @@ class ScenarioWorld:
         if node:
             node.description = description
 
+    def to_dict(self) -> dict:
+        """序列化运行时世界状态（含被修改的 node descriptions）"""
+        modified_descriptions = {}
+        for nid, node in self.graph.nodes.items():
+            modified_descriptions[nid] = node.description
+
+        return {
+            "current_location": self.current_location,
+            "triggered_events": dict(self.triggered_events),
+            "completed_interactions": {
+                k: list(v) for k, v in self.completed_interactions.items()
+            },
+            "flags": dict(self.flags),
+            "background_story": self.background_story,
+            "modified_descriptions": modified_descriptions,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, graph: "DirectedGraph") -> "ScenarioWorld":
+        """从 dict + graph 恢复运行时世界状态"""
+        world = cls(graph, data["current_location"])
+        world.triggered_events = data.get("triggered_events", {})
+        world.completed_interactions = {
+            k: set(v) for k, v in data.get("completed_interactions", {}).items()
+        }
+        world.flags = data.get("flags", {})
+        world.background_story = data.get("background_story", "")
+        # 恢复被修改的 node descriptions
+        for nid, desc in data.get("modified_descriptions", {}).items():
+            if nid in graph.nodes:
+                graph.nodes[nid].description = desc
+        world.memory = MemoryManager.from_dict(data.get("memory", {}))
+        return world
+
+    def save_state(self, path: str):
+        """全量快照存档（图 + 世界 + 记忆 + 调查员快照）"""
+        from investigator.serialization import to_dict as inv_to_dict
+        from datetime import datetime
+
+        data = {
+            "version": 1,
+            "scenario": "常暗之厢",
+            "timestamp": datetime.now().isoformat(),
+            "graph": self.graph.to_dict(),
+            "world": self.to_dict(),
+            "memory": self.memory.to_dict(),
+            "player_snapshot": inv_to_dict(self.player) if self.player else {},
+        }
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def load_state(cls, path: str) -> "ScenarioWorld":
+        """从存档恢复（自包含，不需要外部传 graph）"""
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        graph = DirectedGraph.from_dict(data["graph"])
+        world_data = data["world"]
+        world_data["memory"] = data.get("memory", {})
+        world = cls.from_dict(world_data, graph)
+        # 恢复调查员
+        ps = data.get("player_snapshot")
+        if ps:
+            from investigator.serialization import from_dict as inv_from_dict
+            world.player = inv_from_dict(ps)
+        return world
+
     def __repr__(self):
         events_on = sum(1 for v in self.triggered_events.values() if v)
         interactions_done = sum(len(s) for s in self.completed_interactions.values())
@@ -694,3 +851,22 @@ class MemoryManager:
             parts.append(f"【近期行动】\n{recent}")
 
         return "\n\n".join(parts) if parts else ""
+
+    def to_dict(self) -> dict:
+        return {
+            "raw_history": self.raw_history,
+            "summary": self.summary,
+            "visited": self.visited,
+            "key_items": self.key_items,
+            "turn": self.turn,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MemoryManager":
+        mm = cls(max_raw=data.get("max_raw", 5))
+        mm.raw_history = data.get("raw_history", [])
+        mm.summary = data.get("summary", "")
+        mm.visited = data.get("visited", [])
+        mm.key_items = data.get("key_items", [])
+        mm.turn = data.get("turn", 0)
+        return mm

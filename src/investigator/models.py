@@ -217,6 +217,17 @@ class Investigator:
         """伤害掷骰（预留）。实装时需实现：伤害公式解析（如 1D3+DB）+ DB 应用。"""
         raise NotImplementedError("战斗系统尚未实现")
 
+    def save(self, path: str):
+        """长期存储：导出为 JSON 文件"""
+        from investigator.serialization import to_json
+        to_json(self, path)
+
+    @classmethod
+    def load(cls, path: str) -> "Investigator":
+        """长期存储：从 JSON 文件加载"""
+        from investigator.serialization import from_json
+        return from_json(path)
+
     def __repr__(self):
         occ = self.occupation.name if self.occupation else "无职业"
         return f"Investigator({self.name}, {occ}, age={self.age})"
