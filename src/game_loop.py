@@ -20,25 +20,48 @@ from prompts import (
     log_skill_result,
     parse_narrative_output,
 )
+from scenario_core import FlagSet, ItemGain, StatChange, ActionResult
+
+
+def _apply_side_effects(world: ScenarioWorld, side_effects: list) -> list:
+    """
+    消费 side effects。当前实现：
+    - FlagSet → world.set_flag
+    - ItemGain → world.memory.note_item
+    - StatChange → 仅记录不修改状态（COC SAN 规则待后续细化）
+
+    返回人类可读的副作用摘要列表。
+    """
+    msgs = []
+    for effect in side_effects:
+        if isinstance(effect, FlagSet):
+            world.set_flag(effect.key, effect.value)
+            msgs.append(f"[标记] {effect.key} = {effect.value}")
+        elif isinstance(effect, ItemGain):
+            world.memory.note_item(effect.item_name)
+            msgs.append(f"[获得物品] {effect.item_name}")
+        elif isinstance(effect, StatChange):
+            msgs.append(f"[属性变化] {effect.stat_name} {'+' if effect.delta > 0 else ''}{effect.delta}（未自动应用）")
+    return msgs
 
 
 def _execute_single_action(act: dict, world: ScenarioWorld, location: str) -> tuple:
-    """执行单个动作，返回 (result_text, success)"""
+    """执行单个动作，返回 (ActionResult, any_executed: bool)"""
     action = act.get("action", "other")
 
     if action == "move":
         target = act.get("target", "")
         if not target:
-            return "（试图移动但未指定目标）", False
-        ok, msg = world.move(target)
-        return msg, ok
+            return ActionResult(False, "（试图移动但未指定目标）"), False
+        result = world.move(target)
+        return result, result.success
 
     elif action == "interact":
         name = act.get("interaction", "")
         if not name:
-            return "（试图执行动作但未指定名称）", False
-        ok, msg = world.execute_interaction(name)
-        return msg, ok
+            return ActionResult(False, "（试图执行动作但未指定名称）"), False
+        result = world.execute_interaction(name)
+        return result, result.success
 
     elif action == "search":
         interactions = world.get_available_interactions()
@@ -48,11 +71,11 @@ def _execute_single_action(act: dict, world: ScenarioWorld, location: str) -> tu
             lines = ["（环顾四周，注意到可以做的事：）"]
             for inter in available:
                 lines.append(f"  [{inter.type}] {inter.name} —— {inter.trigger}")
-            return "\n".join(lines), True
+            return ActionResult(True, "\n".join(lines)), True
         else:
-            return "（仔细查看四周，没有特别的发现）", True
+            return ActionResult(True, "（仔细查看四周，没有特别的发现）"), True
     else:
-        return "（什么也没做）", True
+        return ActionResult(True, "（什么也没做）"), True
 
 
 def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
@@ -116,9 +139,13 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
                 continue
 
         # 闸门通过，执行动作
-        result, _ = _execute_single_action(act, world, location)
-        action_results.append(result)
-        any_scene_executed = True
+        result, executed = _execute_single_action(act, world, location)
+        action_results.append(result.message)
+        if executed:
+            any_scene_executed = True
+            # 消费声明式副作用
+            side_msgs = _apply_side_effects(world, result.side_effects)
+            action_results.extend(side_msgs)
 
     # ═══ 阶段1.5a：动作世界更新（仅在闸门通过的动作实际执行后）═══
     if any_scene_executed:
@@ -135,7 +162,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
     # ═══ 阶段1b：执行 move 动作 ═══
     for act in move_actions:
         result, _ = _execute_single_action(act, world, location)
-        action_results.append(result)
+        action_results.append(result.message)
 
     action_result = "\n".join(action_results)
 
@@ -143,12 +170,21 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
     events_result = ""
     any_event_triggered = False
     for eid in event_data.get("triggered_events", []):
-        ok, msg = world.trigger_event(eid)
-        if ok:
-            events_result += msg + "\n"
+        # 引擎二次确认：条件是否真的满足
+        event = world.graph.get_event(eid)
+        if event and event.requirements:
+            met, reason = world.requirement_resolver.check(event.requirements)
+            if not met:
+                events_result += f"（事件「{eid}」条件不满足：{reason}）\n"
+                continue
+        result = world.trigger_event(eid)
+        if result.success:
+            events_result += result.message + "\n"
             any_event_triggered = True
+            side_msgs = _apply_side_effects(world, result.side_effects)
+            events_result += "\n".join(side_msgs) + "\n"
         else:
-            events_result += f"（事件「{eid}」触发失败：{msg}）\n"
+            events_result += f"（事件「{eid}」触发失败：{result.message}）\n"
     for eid, condition_text in event_data.get("condition_events", {}).items():
         events_result += f"（无法触发事件「{eid}」：{condition_text}）\n"
     for flag_key, flag_val in event_data.get("new_flags", {}).items():
