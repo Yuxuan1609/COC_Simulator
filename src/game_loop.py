@@ -160,10 +160,12 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
             pass
 
     # ═══ 阶段1b：执行 move 动作 ═══
+    any_move_executed = False
     for act in move_actions:
         result, executed = _execute_single_action(act, world, location)
         action_results.append(result.message)
         if executed:
+            any_move_executed = True
             side_msgs = _apply_side_effects(world, result.side_effects)
             action_results.extend(side_msgs)
 
@@ -227,7 +229,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
 
     # ═══ 记录 ═══（只记录简要结果）
     first_target = actions[0].get("target")
-    any_success = any_scene_executed or bool(move_actions)
+    any_success = any_scene_executed or any_move_executed
     world.memory.add_record(user_input, first_action, first_target,
                             brief, location=location, success=any_success)
 
