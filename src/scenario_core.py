@@ -52,9 +52,76 @@ class Interaction:
     result: str          # 执行结果
     clue: Optional[str] = None         # 对玩家的提示
     requirements: List[Requirement] = field(default_factory=list)   # 前置条件
+    side_effects: list = field(default_factory=list)   # FlagSet | ItemGain | StatChange
 
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
+
+
+@dataclass
+class FlagSet:
+    """设置世界标记"""
+    key: str
+    value: bool = True
+
+
+@dataclass
+class ItemGain:
+    """获得关键物品"""
+    item_name: str
+
+
+@dataclass
+class StatChange:
+    """
+    属性变化（预留）
+    - COC 规则下的 SAN/HP 变化涉及检定与鉴定大成功/失败规则
+    - 当前仅做结构化记录，不自动修改 Investigator 状态
+    """
+    stat_name: str
+    delta: int       # 正=回复，负=损失
+
+
+@dataclass
+class ActionResult:
+    """交互/事件执行的统一返回类型"""
+    success: bool
+    message: str
+    side_effects: list = field(default_factory=list)     # JSON 声明的确定性副作用
+    suggested_flags: list = field(default_factory=list)   # LLM 建议（预留，本轮不实现）
+
+
+def _parse_side_effect(data: dict):
+    """从 dict 解析单个 side effect"""
+    type_ = data.get("type", "")
+    if type_ == "flag_set":
+        return FlagSet(key=data["key"], value=data.get("value", True))
+    elif type_ == "item_gain":
+        return ItemGain(item_name=data["item_name"])
+    elif type_ == "stat_change":
+        return StatChange(stat_name=data["stat_name"], delta=data.get("delta", 0))
+    return None
+
+
+def _parse_side_effects(data: list) -> list:
+    """从 list[dict] 解析 side effects"""
+    result = []
+    for d in data:
+        parsed = _parse_side_effect(d)
+        if parsed is not None:
+            result.append(parsed)
+    return result
+
+
+def _side_effect_to_dict(effect) -> dict:
+    """将 side effect 实例序列化为 dict"""
+    if isinstance(effect, FlagSet):
+        return {"type": "flag_set", "key": effect.key, "value": effect.value}
+    elif isinstance(effect, ItemGain):
+        return {"type": "item_gain", "item_name": effect.item_name}
+    elif isinstance(effect, StatChange):
+        return {"type": "stat_change", "stat_name": effect.stat_name, "delta": effect.delta}
+    return {}
 
 
 @dataclass
