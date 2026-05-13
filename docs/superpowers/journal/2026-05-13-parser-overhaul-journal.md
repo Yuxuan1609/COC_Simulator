@@ -50,6 +50,9 @@ Comprehensive parser upgrade design: three-layer information model (L1 player / 
 | Task 8: Game Loop Adaptation | **completed** | 2026-05-13 |
 | Task 9: Deprecate Old Parser/Pipeline | **completed** | 2026-05-13 |
 | Task 10: Notebooks Adaptation | **completed** | 2026-05-13 |
+| **Task 11: layered_schema.py** | **completed** | 2026-05-13 |
+| **Task 12: layered_parser.py** | **completed** | 2026-05-13 |
+| **Task 13: layered_pipeline.py** | **completed** | 2026-05-13 |
 
 ## Execution Commits
 
@@ -67,6 +70,6 @@ Comprehensive parser upgrade design: three-layer information model (L1 player / 
 
 ## Test Results
 
-- **Final test count**: 22 passed (17 library + 5 module_designer)
-- **Integration checks**: All cross-package imports verified
-- **System integrity**: Library → scenario_core → module_designer → prompts → game_loop → notebook all wired correctly
+- **Final test count**: 34 passed (17 library + 17 module_designer)
+- **Integration checks**: All cross-package imports verified; full pipeline (schema → inject → cross-ref) runs end-to-end without LLM
+- **System integrity**: Library → scenario_core → module_designer (data models + schema + parser + pipeline) → prompts → game_loop → notebook all wired correctly
