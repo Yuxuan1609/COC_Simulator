@@ -83,6 +83,38 @@ class StatChange:
 
 
 @dataclass
+class SpawnEnemy:
+    """生成敌人遭遇 —— 从 library 中实例化敌人"""
+    enemy_ref: str       # 引用 library/enemies 中的敌人名
+    scene: str           # 目标场景
+    trigger_condition: str = ""
+    quantity: int = 1
+
+
+@dataclass
+class GrantItem:
+    """授予物品 —— 从 library 中实例化武器/物品"""
+    item_ref: str        # 引用 library/weapons 中的武器名（常规物品为自由文本）
+    scene: str = ""      # 目标场景（空=当前场景）
+
+
+@dataclass
+class EncounterAnchor:
+    """遭遇锚点 —— 标记场景中存在可能触发遭遇的区域"""
+    scene: str
+    enemy_ref: str
+    trigger_condition: str = ""
+    is_active: bool = True
+
+
+@dataclass
+class NPCStateChange:
+    """NPC 状态变化 —— 更新 ScenarioWorld.npc_states"""
+    npc_name: str
+    new_state: str       # 如 "清醒"、"死亡"、"已对话"、"已离开"
+
+
+@dataclass
 class ActionResult:
     """交互/事件执行的统一返回类型"""
     success: bool
@@ -100,6 +132,17 @@ def _parse_side_effect(data: dict):
         return ItemGain(item_name=data["item_name"])
     elif type_ == "stat_change":
         return StatChange(stat_name=data["stat_name"], delta=data.get("delta", 0))
+    elif type_ == "spawn_enemy":
+        return SpawnEnemy(
+            enemy_ref=data["enemy_ref"],
+            scene=data.get("scene", ""),
+            trigger_condition=data.get("trigger_condition", ""),
+            quantity=data.get("quantity", 1),
+        )
+    elif type_ == "grant_item":
+        return GrantItem(item_ref=data["item_ref"], scene=data.get("scene", ""))
+    elif type_ == "npc_state_change":
+        return NPCStateChange(npc_name=data["npc_name"], new_state=data["new_state"])
     return None
 
 
@@ -121,6 +164,18 @@ def _side_effect_to_dict(effect) -> dict:
         return {"type": "item_gain", "item_name": effect.item_name}
     elif isinstance(effect, StatChange):
         return {"type": "stat_change", "stat_name": effect.stat_name, "delta": effect.delta}
+    elif isinstance(effect, SpawnEnemy):
+        return {
+            "type": "spawn_enemy",
+            "enemy_ref": effect.enemy_ref,
+            "scene": effect.scene,
+            "trigger_condition": effect.trigger_condition,
+            "quantity": effect.quantity,
+        }
+    elif isinstance(effect, GrantItem):
+        return {"type": "grant_item", "item_ref": effect.item_ref, "scene": effect.scene}
+    elif isinstance(effect, NPCStateChange):
+        return {"type": "npc_state_change", "npc_name": effect.npc_name, "new_state": effect.new_state}
     return {}
 
 
@@ -455,6 +510,9 @@ class ScenarioWorld:
         # 记忆管理器
         self.memory = MemoryManager()
 
+        # NPC 运行时状态
+        self.npc_states: Dict[str, str] = {}
+
     # ── 背景故事 ──
 
     def set_background(self, text: str):
@@ -663,6 +721,16 @@ class ScenarioWorld:
     def toggle_flag(self, key: str):
         self.flags[key] = not self.flags.get(key, False)
 
+    # ── NPC 运行时状态 ──
+
+    def set_npc_state(self, npc_name: str, state: str):
+        """更新 NPC 运行时状态"""
+        self.npc_states[npc_name] = state
+
+    def get_npc_state(self, npc_name: str) -> str:
+        """查询 NPC 运行时状态"""
+        return self.npc_states.get(npc_name, "未知")
+
     def apply_world_update(self, abstract: str):
         """应用世界更新结果"""
         self.set_background(abstract)
@@ -687,6 +755,7 @@ class ScenarioWorld:
             "flags": dict(self.flags),
             "background_story": self.background_story,
             "modified_descriptions": modified_descriptions,
+            "npc_states": dict(self.npc_states),
         }
 
     @classmethod
@@ -699,6 +768,7 @@ class ScenarioWorld:
         }
         world.flags = data.get("flags", {})
         world.background_story = data.get("background_story", "")
+        world.npc_states = data.get("npc_states", {})
         # 恢复被修改的 node descriptions
         for nid, desc in data.get("modified_descriptions", {}).items():
             if nid in graph.nodes:
