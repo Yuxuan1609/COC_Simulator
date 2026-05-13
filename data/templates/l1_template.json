@@ -1,0 +1,23 @@
+{
+  "6号车厢": {
+    "entry_narrative": "调查员进入时的开场叙事文本...",
+    "atmosphere": "场景氛围一句话描述",
+    "mood": "uneasy",
+    "perceptible": [
+      {
+        "type": "object",
+        "name": "可感知物品名",
+        "brief": "一句话描述",
+        "linked_interaction": "关联的L2互动名（可选）"
+      }
+    ],
+    "ambient_hints": ["微妙的环境线索"],
+    "npc_appearances": [
+      {
+        "name": "NPC名称",
+        "brief": "外貌描述",
+        "demeanor": "神态举止"
+      }
+    ]
+  }
+}

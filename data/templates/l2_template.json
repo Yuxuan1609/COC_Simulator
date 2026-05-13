@@ -1,0 +1,71 @@
+{
+  "scenes": {
+    "6号车厢": {
+      "description": "场景功能性描述（KP用）",
+      "from_here": [{"target": "目标场景", "method": "通行方式"}],
+      "to_here": [{"source": "来源场景", "method": "通行方式"}],
+      "interactions": [
+        {
+          "type": "调查",
+          "name": "互动名称",
+          "requirement": [],
+          "trigger": "触发条件",
+          "result": "结果描述",
+          "clue": "线索（可选）",
+          "side_effects": [],
+          "skill_name": "关联技能（可选）",
+          "difficulty": "regular"
+        }
+      ],
+      "encounters": [
+        {
+          "enemy_ref": "library中敌人名",
+          "trigger_condition": "触发条件",
+          "initial_behavior": "初始行为",
+          "quantity": 1,
+          "notes": "备注（可选）",
+          "extra": {}
+        }
+      ],
+      "scene_weapons": [
+        {
+          "weapon_ref": "library中武器名",
+          "location": "位置描述",
+          "discovery_method": "发现方式",
+          "extra": {}
+        }
+      ],
+      "hidden_info": [
+        {
+          "info": "隐藏信息内容",
+          "trigger_condition": "skill:侦查>=50",
+          "linked_skill": "侦查",
+          "reveal_narrative": "揭示时的叙事文本"
+        }
+      ],
+      "extra": {}
+    }
+  },
+  "events": [
+    {
+      "id": "E1",
+      "name": "事件名称",
+      "trigger": "触发描述",
+      "irreversible_impact": "不可逆影响",
+      "requirement": [],
+      "extra": {}
+    }
+  ],
+  "npc_profiles": {
+    "NPC名称": {
+      "name": "NPC名称",
+      "role": "在故事中的角色",
+      "motivation": "核心动机",
+      "knowledge": ["NPC知道的信息"],
+      "personality": "性格描述",
+      "voice_notes": "说话风格（可选）",
+      "notes": "KP备注（可选）",
+      "extra": {}
+    }
+  }
+}

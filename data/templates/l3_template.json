@@ -1,0 +1,61 @@
+{
+  "module_meta": {
+    "title": "",
+    "author": "",
+    "era": "1920s",
+    "theme": "",
+    "expected_duration": "",
+    "player_count": ""
+  },
+  "world_rules": [
+    {
+      "id": "WR1",
+      "name": "规则名称",
+      "rule": "规则描述（自然语言）",
+      "scope": ["movement", "combat"],
+      "is_absolute": true
+    }
+  ],
+  "logic_chains": [
+    {
+      "id": "LC1",
+      "name": "逻辑链名称",
+      "description": "一句话描述",
+      "nodes": ["节点1", "节点2"],
+      "branches": [
+        {
+          "condition": "flag:has_key",
+          "effect": "效果描述",
+          "next_node": "节点3"
+        }
+      ],
+      "is_critical": true
+    }
+  ],
+  "scene_intents": {
+    "6号车厢": {
+      "purpose": "此场景的设计用途",
+      "emotion": "目标情绪",
+      "danger_level": "safe",
+      "key_info": ["必须传达的关键信息"],
+      "key_threat": "核心威胁（可选）",
+      "exit_leads_to": ["可能的出口场景"],
+      "notes": "设计备注（可选）"
+    }
+  },
+  "ending_conditions": [
+    {
+      "id": "END1",
+      "type": "escape",
+      "condition": "触发条件表达式",
+      "narrative_theme": "结局叙事主题"
+    }
+  ],
+  "tone_constraints": {
+    "genre": "克苏鲁恐怖",
+    "forbidden": ["禁止出现的元素"],
+    "required": ["必须包含的元素"],
+    "narrative_style": "叙事风格描述"
+  },
+  "driving_force": "一切事件的底层驱动力（为什么这一切在发生）"
+}
