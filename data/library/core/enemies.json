@@ -1,0 +1,81 @@
+{
+  "items": [
+    {
+      "name": "Clicker",
+      "type": "神话生物",
+      "attributes": {"STR": 80, "CON": 70, "SIZ": 65, "DEX": 50, "POW": 60},
+      "armor": "2点厚皮",
+      "attacks": [
+        {"name": "噬咬", "damage": "1D8+DB", "notes": ""},
+        {"name": "利爪", "damage": "1D6+DB", "notes": ""}
+      ],
+      "special_abilities": [
+        {"name": "盲感", "desc": "无眼，通过声音定位。对其潜行检定为硬性难度。任何大声响会立即吸引其注意。"},
+        {"name": "恐惧灵气", "desc": "首次目睹Clicker需进行SAN检定(0/1D4)。"}
+      ],
+      "san_loss": "0/1D4 (目睹), 1/1D6 (被攻击)",
+      "combat_behavior": "优先攻击发出最大声音的目标。若无人出声则随机攻击。被击伤后会狂暴，每轮攻击两次。"
+    },
+    {
+      "name": "大嘴吞噬者",
+      "type": "神话生物",
+      "attributes": {"STR": 120, "CON": 100, "SIZ": 150, "DEX": 30, "POW": 80},
+      "armor": "5点异界物质",
+      "attacks": [
+        {"name": "吞噬", "damage": "即死/3D10+DB", "notes": "每轮吞噬一个车厢区域"}
+      ],
+      "special_abilities": [
+        {"name": "不可阻挡", "desc": "无法被常规武器伤害，只能通过加速电车逃离。"},
+        {"name": "渐进吞噬", "desc": "每经过一定时间，后方一个车厢被完全吞噬。被吞噬的车厢无法返回。"}
+      ],
+      "san_loss": "1D6/2D10 (目睹吞噬过程)",
+      "combat_behavior": "不参与常规战斗。它是环境威胁而非可战斗敌人。以固定节奏从后方逼近。"
+    },
+    {
+      "name": "深潜者",
+      "type": "神话生物",
+      "attributes": {"STR": 70, "CON": 65, "SIZ": 70, "DEX": 50, "POW": 50},
+      "armor": "1点鳞片",
+      "attacks": [
+        {"name": "利爪", "damage": "1D6+DB", "notes": ""},
+        {"name": "抓取", "damage": "特殊", "notes": "擒抱后每轮自动造成1D3+DB伤害"}
+      ],
+      "special_abilities": [
+        {"name": "两栖", "desc": "可在水下无限呼吸，游泳速度等于MOV。"}
+      ],
+      "san_loss": "0/1D6",
+      "combat_behavior": "偏好伏击，从水中或暗处突袭。受伤后会撤退到水中。"
+    },
+    {
+      "name": "食尸鬼",
+      "type": "神话生物",
+      "attributes": {"STR": 70, "CON": 60, "SIZ": 55, "DEX": 65, "POW": 45},
+      "armor": "无",
+      "attacks": [
+        {"name": "噬咬", "damage": "1D6+DB", "notes": ""},
+        {"name": "利爪", "damage": "1D4+DB", "notes": "两次攻击/轮"}
+      ],
+      "special_abilities": [
+        {"name": "食尸", "desc": "偏好捕食人类尸体。在墓地/停尸房附近出现概率极高。"},
+        {"name": "夜视", "desc": "在完全黑暗中也能正常视物。"}
+      ],
+      "san_loss": "0/1D6",
+      "combat_behavior": "群体狩猎，数量通常为2-5只。优先攻击落单或最弱的猎物。"
+    },
+    {
+      "name": "疯狂信徒",
+      "type": "人类",
+      "attributes": {"STR": 50, "CON": 55, "SIZ": 60, "DEX": 60, "POW": 40},
+      "armor": "无",
+      "attacks": [
+        {"name": "匕首", "damage": "1D4+DB", "notes": ""},
+        {"name": "拳头", "damage": "1D3+DB", "notes": ""}
+      ],
+      "special_abilities": [
+        {"name": "狂热", "desc": "不受SAN损失影响。不会逃跑，战至死亡。"}
+      ],
+      "san_loss": "0/1D3 (目睹仪式行为时)",
+      "combat_behavior": "狂热的邪教徒，以数量优势压倒对手。有时携带简陋武器。"
+    }
+  ]
+}

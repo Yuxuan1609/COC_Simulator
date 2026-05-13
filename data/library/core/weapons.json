@@ -1,0 +1,114 @@
+{
+  "items": [
+    {
+      "name": "拳头/脚踢",
+      "skill_name": "格斗",
+      "damage": "1D3+DB",
+      "range": "接触",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "all",
+      "rarity": "common",
+      "special_rules": ""
+    },
+    {
+      "name": "小刀",
+      "skill_name": "格斗",
+      "damage": "1D4+DB",
+      "range": "接触",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "all",
+      "rarity": "common",
+      "special_rules": "可投掷，投掷时使用投掷技能"
+    },
+    {
+      "name": ".45自动手枪",
+      "skill_name": "手枪",
+      "damage": "1D10+2",
+      "range": "15码",
+      "shots": 7,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "common",
+      "special_rules": "可连射，每追加一发-5惩罚"
+    },
+    {
+      "name": ".38左轮手枪",
+      "skill_name": "手枪",
+      "damage": "1D10",
+      "range": "15码",
+      "shots": 6,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "common",
+      "special_rules": ""
+    },
+    {
+      "name": "霰弹枪(12号)",
+      "skill_name": "霰弹枪",
+      "damage": "4D6/2D6/1D6",
+      "range": "10/20/50码",
+      "shots": 2,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "uncommon",
+      "special_rules": "散射武器，伤害随距离递减"
+    },
+    {
+      "name": "手电筒",
+      "skill_name": "格斗",
+      "damage": "1D3+DB",
+      "range": "接触",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "all",
+      "rarity": "common",
+      "special_rules": "作为武器使用时视为临时武器；主要功能为提供光源"
+    },
+    {
+      "name": "消防斧",
+      "skill_name": "格斗",
+      "damage": "1D8+DB",
+      "range": "接触",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "all",
+      "rarity": "uncommon",
+      "special_rules": "双手武器"
+    },
+    {
+      "name": "撬棍",
+      "skill_name": "格斗",
+      "damage": "1D6+DB",
+      "range": "接触",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "all",
+      "rarity": "common",
+      "special_rules": "也可用于撬开门/箱子"
+    },
+    {
+      "name": "警棍",
+      "skill_name": "格斗",
+      "damage": "1D6+DB",
+      "range": "接触",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "common",
+      "special_rules": ""
+    },
+    {
+      "name": "步枪(.30-06)",
+      "skill_name": "步枪",
+      "damage": "2D6+4",
+      "range": "110码",
+      "shots": 5,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "uncommon",
+      "special_rules": "每轮一发"
+    }
+  ]
+}
