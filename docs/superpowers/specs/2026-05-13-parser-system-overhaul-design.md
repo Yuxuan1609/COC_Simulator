@@ -94,6 +94,7 @@ data/
 
 在线（游戏进行中）：
   L3 (🔒不可变) → LLM 基于 L3 生成动态 L2 → LLM 基于 L2 生成动态 L1
+备注：只在特定场景下调用动态生成流程
 ```
 
 ### L1 — 玩家可见层
@@ -252,7 +253,7 @@ class LibraryEnemy:
 - 识别需要敌人/物品的场景（danger_level 高 → 需要敌人声明）
 - 从 library 中匹配（场景情绪/危险等级 → 合适的敌人类型/武器类型）
 - 写入 L2 JSON 的 encounters/items 字段
-- 可开关：`offline_injection` 配置项
+- 可开关：`offline_injection` 配置项 默认开启
 
 ### 在线注入（游戏进行中）
 
@@ -261,6 +262,7 @@ class LibraryEnemy:
 - 查询 L3 约束 + library 库
 - 动态 spawn enemy 或 grant item 到当前场景
 - 可开关：`runtime_injection` 配置项
+- 在运行时可通过特点代码调出方便调试
 
 ### 注入锚点类型
 
@@ -341,13 +343,14 @@ class LibraryEnemy:
 ## 十一、实施顺序
 
 1. **library 包** — 武器/敌人数据类 + core JSON + 加载器（无依赖，可独立开发测试）
-2. **module_designer 包** — L1/L2/L3 数据类 + schema + 约束接口（依赖 scenario_core）
-3. **layered_parser + layered_pipeline** — 一键解析 + 离线注入（依赖 library + module_designer）
-4. **scenario_core 扩展** — SpawnEnemy / GrantItem / EncounterAnchor（对接 library）
-5. **prompts 扩展** — L1/L3 感知 + improvise 增强
-6. **game_loop 适配** — Phase 3.5 + Phase 5 增强 + /spawn 命令
-7. **parsers.py / pipeline.py 废弃** — 直接由 layered_parser 输出三层JSON，旧文件删除或归档
-8. **notebooks 适配** — 新导入流程
+2. **scenario_core 扩展** — SpawnEnemy / GrantItem / EncounterAnchor，对接 library（可独立开发测试）
+3. **module_designer 包** — L1/L2/L3 数据类 + schema + 约束接口（依赖 scenario_core）
+4. **layered_parser + layered_pipeline** — 一键解析 + 离线注入（依赖 library + module_designer）
+5. **验证里程碑** — 完整跑通现阶段流程，确保三层数据可被现有系统消费
+6. **prompts 扩展** — L1/L3 感知 + improvise 增强
+7. **game_loop 适配** — Phase 3.5 + Phase 5 增强 + /spawn 命令
+8. **parsers.py / pipeline.py 废弃** — 直接由 layered_parser 输出三层JSON，旧文件删除或归档
+9. **notebooks 适配** — 新导入流程
 
 ---
 
