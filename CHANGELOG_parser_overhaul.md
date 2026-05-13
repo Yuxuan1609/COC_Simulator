@@ -6,7 +6,7 @@
 
 ## Overview
 
-Comprehensive parser upgrade: three-layer information model (L1 player / L2 KP / L3 designer), independent weapon/enemy library with two-tier judgment, content injection engine, and game loop adaptation. 10 tasks, 22 new tests, 9 commits.
+Comprehensive parser upgrade: three-layer information model (L1 player / L2 KP / L3 designer), independent weapon/enemy library with two-tier judgment, content injection engine, game loop adaptation, and LLM-driven one-shot module parser with post-processing pipeline. 13 tasks, 34 tests, 12 commits.
 
 ---
 
@@ -32,6 +32,9 @@ Independent package with zero external dependencies.
 | `l1_player.py` | `SceneL1`, `Perceptible`, `NPCAppearance` — player-visible perception layer |
 | `l2_keeper.py` | `SceneL2`, `Encounter`, `SceneWeapon`, `HiddenInfo`, `NPCProfile` — KP keeper layer |
 | `l3_designer.py` | `L3Designer`, `ModuleMeta`, `WorldRule`, `LogicChain`, `Branch`, `SceneIntent`, `EndingCondition`, `ToneConstraints` — immutable designer intent layer |
+| `layered_schema.py` | JSON Schema definitions for all three layers + `validate_l1/l2/l3/all()` with `SchemaReport` (errors vs warnings) |
+| `layered_parser.py` | LLM one-shot parser: `parse_module()` converts source.txt → L1+L2+L3 JSON via structured prompts with template-driven format references |
+| `layered_pipeline.py` | Post-processing pipeline: `run_pipeline()` chains schema validation → offline injection → cross-layer reference validation; `cross_validate_layers()` checks L1→L2, L2→library, L3→L1/L2 consistency |
 
 All models have `to_dict()`/`from_dict()` roundtrip serialization and `load_*`/`save_*` JSON I/O functions. All substructures have optional `extra: dict` for future extensibility.
 
@@ -103,16 +106,14 @@ To be replaced by `module_designer/layered_parser.py` + `module_designer/layered
 
 ```
 tests/test_library.py ............. 17 passed
-tests/test_module_designer.py .....  5 passed
-Total: 22 passed
+tests/test_module_designer.py ..... 17 passed
+Total: 34 passed
 ```
 
 ---
 
 ## Deferred to Future Rounds
 
-- `layered_parser.py` / `layered_pipeline.py` (LLM one-shot parser)
-- `layered_schema.py` (JSON Schema validation)
 - Deviation score actual implementation (currently stub at 0.0)
 - Combat round pipeline
 - SAN/HP auto-application
