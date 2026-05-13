@@ -156,6 +156,21 @@ def _parse_side_effects(data: list) -> list:
     return result
 
 
+def _normalize_requirement(req):
+    """兼容字符串格式的 requirement（LLM 可能生成 'flag:xxx' 或纯字符串）."""
+    if isinstance(req, str):
+        if req.startswith("flag:"):
+            return Requirement(ref_type="flag", ref_scene="", ref_name=req[5:])
+        return Requirement(ref_type="flag", ref_scene="", ref_name=req)
+    if isinstance(req, dict):
+        return Requirement(
+            ref_type=req.get("ref_type", ""),
+            ref_scene=req.get("ref_scene", ""),
+            ref_name=req.get("ref_name", ""),
+        )
+    return Requirement(ref_type="", ref_scene="", ref_name="")
+
+
 def _side_effect_to_dict(effect) -> dict:
     """将 side effect 实例序列化为 dict"""
     if isinstance(effect, FlagSet):
@@ -236,11 +251,7 @@ class DirectedGraph:
                     result=inter.get("result", ""),
                     clue=inter.get("clue"),
                     requirements=[
-                        Requirement(
-                            ref_type=req.get("ref_type", ""),
-                            ref_scene=req.get("ref_scene", ""),
-                            ref_name=req.get("ref_name", ""),
-                        )
+                        _normalize_requirement(req)
                         for req in inter.get("requirement", [])
                     ],
                     side_effects=_parse_side_effects(inter.get("side_effects", [])),
@@ -275,11 +286,7 @@ class DirectedGraph:
                 trigger=item.get("trigger", ""),
                 impact=item.get("irreversible_impact", item.get("impact", "")),
                 requirements=[
-                    Requirement(
-                        ref_type=req.get("ref_type", ""),
-                        ref_scene=req.get("ref_scene", ""),
-                        ref_name=req.get("ref_name", ""),
-                    )
+                    _normalize_requirement(req)
                     for req in item.get("requirement", [])
                 ],
             )
@@ -383,11 +390,7 @@ class DirectedGraph:
                     result=inter.get("result", ""),
                     clue=inter.get("clue"),
                     requirements=[
-                        Requirement(
-                            ref_type=req.get("ref_type", ""),
-                            ref_scene=req.get("ref_scene", ""),
-                            ref_name=req.get("ref_name", ""),
-                        )
+                        _normalize_requirement(req)
                         for req in inter.get("requirements", [])
                     ],
                     side_effects=_parse_side_effects(inter.get("side_effects", [])),
@@ -409,11 +412,7 @@ class DirectedGraph:
                 trigger=ev_data.get("trigger", ""),
                 impact=ev_data.get("impact", ""),
                 requirements=[
-                    Requirement(
-                        ref_type=req.get("ref_type", ""),
-                        ref_scene=req.get("ref_scene", ""),
-                        ref_name=req.get("ref_name", ""),
-                    )
+                    _normalize_requirement(req)
                     for req in ev_data.get("requirements", [])
                 ],
             )
