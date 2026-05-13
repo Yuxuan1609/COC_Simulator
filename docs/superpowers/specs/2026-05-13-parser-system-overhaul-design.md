@@ -120,7 +120,7 @@ data/
 - `interactions[].skill_name` — 新增，关联技能名
 - `interactions[].difficulty` — 新增，检定难度
 - `encounters` — 新增，场景级敌人遭遇声明
-- `scene_items` — 新增，场景中可获取的物品
+- `scene_weapons` — 新增，场景中可获取的武器（常规物品由LLM自由处理）
 
 **生成方式**：
 - 离线：layered_parser 从 source.txt 解析（同现有 parsers.py 逻辑但对齐新字段）
@@ -346,11 +346,12 @@ class LibraryEnemy:
 2. **scenario_core 扩展** — SpawnEnemy / GrantItem / EncounterAnchor，对接 library（可独立开发测试）
 3. **module_designer 包** — L1/L2/L3 数据类 + schema + 约束接口（依赖 scenario_core）
 4. **layered_parser + layered_pipeline** — 一键解析 + 离线注入（依赖 library + module_designer）
-5. **验证里程碑** — 完整跑通现阶段流程，确保三层数据可被现有系统消费
+5. **验证里程碑** — 完整跑通现阶段流程，确保l2层数据可被现有系统消费
 6. **prompts 扩展** — L1/L3 感知 + improvise 增强
 7. **game_loop 适配** — Phase 3.5 + Phase 5 增强 + /spawn 命令
-8. **parsers.py / pipeline.py 废弃** — 直接由 layered_parser 输出三层JSON，旧文件删除或归档
-9. **notebooks 适配** — 新导入流程
+8. **验证里程碑** — 完整跑通现阶段流程，确保所有数据可被现有系统消费
+9. **parsers.py / pipeline.py 废弃** — 直接由 layered_parser 输出三层JSON，旧文件删除或归档
+10. **notebooks 适配** — 新导入流程
 
 ---
 
