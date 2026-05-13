@@ -115,3 +115,61 @@ def test_tier1_san_check():
     s, f, formula = engine.tier1_san_check("1/1D6")
     assert s == 1
     assert 1 <= f <= 6
+
+
+from library.injector import ContentInjector
+
+
+def test_injector_init():
+    wlib = WeaponLibrary()
+    elib = EnemyLibrary()
+    injector = ContentInjector(wlib, elib)
+    assert injector.offline_enabled is True
+    assert injector.runtime_enabled is True
+
+
+def test_injector_offline_inject_scene_no_danger():
+    wlib = WeaponLibrary()
+    elib = EnemyLibrary()
+    injector = ContentInjector(wlib, elib)
+    scene = {"description": "test scene"}
+    result = injector.offline_inject_scene(scene, {"danger_level": "safe"})
+    assert result == scene  # unchanged
+
+
+def test_injector_offline_inject_scene_high_danger():
+    wlib = WeaponLibrary()
+    elib = EnemyLibrary()
+    injector = ContentInjector(wlib, elib)
+    scene = {"description": "danger zone"}
+    result = injector.offline_inject_scene(scene, {"danger_level": "extreme"})
+    assert "encounters" in result
+    assert "scene_weapons" in result
+
+
+def test_injector_runtime_spawn_enemy_not_loaded():
+    wlib = WeaponLibrary()
+    elib = EnemyLibrary()
+    injector = ContentInjector(wlib, elib)
+    result = injector.runtime_spawn_enemy("Clicker", "2号车厢")
+    assert result is None  # library not loaded
+
+
+def test_injector_runtime_spawn_enemy_loaded():
+    wlib = WeaponLibrary()
+    elib = EnemyLibrary()
+    elib.load_core()
+    injector = ContentInjector(wlib, elib)
+    result = injector.runtime_spawn_enemy("Clicker", "2号车厢")
+    assert result is not None
+    assert result["enemy_ref"] == "Clicker"
+    assert result["quantity"] == 1
+
+
+def test_injector_status():
+    wlib = WeaponLibrary()
+    elib = EnemyLibrary()
+    injector = ContentInjector(wlib, elib)
+    s = injector.status
+    assert "offline_enabled" in s
+    assert "weapons_loaded" in s
