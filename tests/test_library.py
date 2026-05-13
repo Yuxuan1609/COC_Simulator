@@ -79,3 +79,39 @@ def test_enemy_search():
     lib.load_core()
     mythos = lib.search(enemy_type="神话生物")
     assert all(e.type == "神话生物" for e in mythos)
+
+
+from library.judgment import JudgmentEngine, Tier1Result
+
+
+def test_tier1_skill_check():
+    engine = JudgmentEngine()
+    result = engine.tier1_skill_check(50, "regular")
+    assert result.target == 50
+    assert 1 <= result.roll <= 100
+
+
+def test_tier1_hard_difficulty():
+    engine = JudgmentEngine()
+    result = engine.tier1_skill_check(60, "hard")
+    assert result.target == 30
+
+
+def test_tier1_extreme_difficulty():
+    engine = JudgmentEngine()
+    result = engine.tier1_skill_check(50, "extreme")
+    assert result.target == 10
+
+
+def test_tier1_damage_roll():
+    engine = JudgmentEngine()
+    total, detail = engine.tier1_damage_roll("1D6+DB", db=4)
+    assert 5 <= total <= 10
+    assert "=" in detail
+
+
+def test_tier1_san_check():
+    engine = JudgmentEngine()
+    s, f, formula = engine.tier1_san_check("1/1D6")
+    assert s == 1
+    assert 1 <= f <= 6
