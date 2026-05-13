@@ -797,3 +797,186 @@ run_pipeline() 返回的 PipelineResult:
   prompts.py            L1/L3 上下文未接通 (notebook 未加载 L1/L3 JSON)
   notebooks/            L1/L3 JSON 加载和传递给 handle_user_input
 ```
+
+---
+
+## 十三、Parser 流程精修改建议（2026-05-13，待后续实施）
+
+以下 7 条修改建议已记录但**尚未实施**。实施前需逐条确认细节。
+
+### 建议 1: L3 层精简（已由用户手动修改模板）
+
+**现状问题**: L3 字段过多（6 个顶层 section + 20+ 子字段），LLM 一次性生成全部内容质量不稳定。`ending_conditions` 原有 `narrative_theme` 字段时间向模糊，`tone_constraints` 中 `required` 语义过强。
+
+**已做的修改**（以 `l3_template.json` 新版本为准）:
+- `ending_conditions[].narrative_theme` → `narrative`（叙事包含结局主题和叙事性的结果）
+- `tone_constraints.required` → `recommended`（从"必须包含"降级为"建议包含"）
+- `scene_intents` 简化为 core 字段：`purpose`、`key_threat`、`notes`
+- 大幅减少模板中的注释和占位符，让 LLM 有更大的推断空间
+
+**文档同步**: 本文档第八～十二章中 L3 相关的 prompt、输出示例、字段表需以新模板为准更新。
+
+### 建议 2: L2 层渐进式生成
+
+**现状问题**: `parse_l2()` 一次性要求 LLM 生成 scenes + interactions + events + npc_profiles + encounters + hidden_info，prompt 极长（模板 + 字段说明约 2000+ tokens），LLM 容易遗漏字段或生成不一致的内容。
+
+**建议流程**（替代现有的 `parse_l2() → run_pipeline()` 一次生成模式）:
+
+```
+第 1 步: 先生成场景名称列表
+  prompt: "列出本文档中出现的所有场景名称，仅输出 JSON 数组"
+  输出: ["6号车厢", "7号车厢", ...]
+  → 统一场景名，后续所有层引用同一套名称
+
+第 2 步: 按场景逐一生成场景下的 events/triggers
+  for each scene:
+    prompt: "在 {scene_name} 中，发生了哪些不可逆事件？"
+  输出: events 列表（含 trigger, impact）
+  → 场景级事件先确定，逻辑链才能引用
+
+第 3 步: 基于全部事件，生成逻辑链
+  prompt: "基于以下场景和事件列表，设计主线逻辑链和支线分支"
+  输出: logic_chains（含 nodes, branches）
+  → 逻辑链引用已确定的事件 ID
+
+第 4 步: 按场景生成 interactions（含 side_effects）
+  for each scene:
+    prompt: "在 {scene_name} 中，基于已有事件 {events_in_scene}，玩家可以执行哪些互动？"
+  输出: interactions 列表
+  → 互动可引用已知的事件、逻辑链节点
+
+第 5 步: 按场景生成 encounters / scene_weapons（LLM 辅助，对接 library）
+  for each scene:
+    prompt: "基于场景 {scene_name} 的危险等级和主题，从以下可用库中选择合适的敌人和武器：..."
+  输出: encounters + scene_weapons（引用 library 中的真实名称）
+  → 防止名称不匹配
+
+第 6 步: 生成 NPC profiles
+```
+
+**渐进式 vs 一次生成对比**:
+
+| | 一次生成 (当前) | 渐进式 (建议) |
+|---|---|---|
+| LLM 调用次数 | 1 次 | 2 + N_scenes × 3 次 |
+| 单次 prompt 大小 | ~4000 tokens | ~800-1500 tokens |
+| 场景名一致性 | 不可控（LLM 可能自创名称） | 第 1 步固化 |
+| 事件引用正确性 | 依赖 LLM 记忆全文 | 后续步可引用前步输出 |
+| 失败影响面 | 整个 L2 需重来 | 单场景失败只重来该场景 |
+
+### 建议 3: LLM 辅助 library 匹配
+
+**现状问题**: `parse_l2()` 的 prompt 中提到"encounters 引用 library 中的敌人名如 Clicker、深潜者等"，但 prompt 中未列出 library 的完整内容。LLM 只能靠猜测引用，导致生成"虚无者"等不在库中的名称（交叉引用检查捕获为 error）。
+
+**建议**:
+- 在 L2 parser 的第 5 步（生成 encounters/scene_weapons）时，将 library 的**简要列表**（名称 + 一句话描述）注入 prompt
+- 格式：`可用敌人: Clicker (盲感怪物), 深潜者 (两栖), 食尸鬼 (食腐), ...`
+- LLM 必须从给定列表中选择，不允许自创名称
+- Pipeline 的交叉引用检查保留为**防御性兜底**
+
+### 建议 4: 场景名称统一生成
+
+**现状问题**: L1、L2、L3 三个 parser **独立调用**，各自从原文推断场景名。LLM 可能在不同层为同一场景使用不同名称（如 L1 用"6号车厢"，L2 用"六号车厢"）。
+
+**建议**: 在 `parse_module()` 的最开始增加一步：
+```
+第 0 步: 场景名称提取
+  prompt: "列出本文档中出现的所有场景/地点名称，仅输出 JSON 字符串数组"
+  输出: ["6号车厢", "7号车厢", "5号车厢", ...]
+```
+然后将此名称列表作为**约束**注入后续 L1/L2/L3 的所有 prompt 中：
+```
+"场景名称必须严格使用以下列表中的名称，不要自创或修改：['6号车厢', '7号车厢', ...]"
+```
+
+### 建议 5: Schema 同步更新
+
+L3 模板修改后，`layered_schema.py` 中对应的验证规则需同步：
+- `L3_ENDING_CONDITION_SCHEMA`: `narrative_theme` → `narrative`
+- `L3_TONE_CONSTRAINTS_SCHEMA`: `required` → `recommended`
+- `L3_SCENE_INTENT_SCHEMA`: 移除不在新模板中的字段
+
+L2 渐进式生成引入后，schema 可能需要新增中间验证步骤（每步输出验证而非仅最终验证）。
+
+### 建议 6: Side effect 新增 `other` 类型
+
+**现状**: side_effects 有 6 种确定性类型（`flag_set`, `item_gain`, `stat_change`, `spawn_enemy`, `grant_item`, `npc_state_change`）。所有 side effect 都由引擎确定性地执行。
+
+**建议**: 新增第 7 种类型：
+```json
+{
+  "type": "other",
+  "desc": "自由文本描述（如'车厢内的灯光突然全部熄灭'）",
+  "notes": "可选备注"
+}
+```
+
+**处理方式**:
+- `_parse_side_effect()` 将 `type: "other"` 解析为新的 `OtherEffect` 数据类
+- `_apply_side_effects()` 中，`OtherEffect` **不执行引擎操作**，而是将 `desc` 文本传递给叙事阶段的 LLM
+- LLM 在生成叙事时参考这些自由文本描述，进行情景化发挥
+- 这为 LLM 提供了一个"无法被确定性规则覆盖但需要叙事处理"的出口
+
+### 建议 7: HiddenInfo 改为自动触发事件
+
+**现状**: `hidden_info` 是场景下的被动检测信息（暗骰式），字段为 `{info, trigger_condition, reveal_narrative, linked_skill}`。触发逻辑需要在游戏循环中独立实现（当前**未实现**）。
+
+**建议**: 将 `hidden_info` 的概念合并到事件系统中：
+
+```
+旧: hidden_info = {
+  "info": "地板上有血迹",
+  "trigger_condition": "skill:侦查>=50",
+  "reveal_narrative": "你注意到地板缝隙中有暗红色的痕迹"
+}
+
+新: 作为一种特殊的自动触发事件:
+{
+  "id": "E_AUTO_1",
+  "type": "auto_trigger",        ← 新增事件类型
+  "name": "发现血迹",
+  "trigger_condition": "skill:侦查>=50 OR background:医生",
+  "effect": "reveal_info",       ← 效果类型
+  "info": "地板上有血迹",
+  "reveal_narrative": "你注意到地板缝隙中有暗红色的痕迹"
+}
+```
+
+**好处**:
+- 复用现有的事件系统（`GameEvent`），不需要新的 `HiddenInfo` 数据类
+- `trigger_condition` 语法统一（支持 `skill:`, `background:`, `flag:`, `item:` 等）
+- 刷怪/物品授予也可以用同样机制：
+
+```json
+{
+  "id": "E_AUTO_2",
+  "type": "auto_trigger",
+  "trigger_condition": "flag:entered_7 AND !flag:clicker_defeated",
+  "effect": "spawn_enemy",
+  "enemy_ref": "Clicker",
+  "quantity": 1,
+  "reveal_narrative": "黑暗中传来咔嗒咔嗒的声音...一个无眼的人形生物从角落爬出"
+}
+```
+
+**影响**:
+- `l2_keeper.py` 的 `SceneL2.hidden_info` 字段移除
+- `l2_template.json` 的 `hidden_info` 移除
+- `events` 新增 `type` 字段（`manual` / `auto_trigger`）
+- `events` 新增 `effect` 字段（`reveal_info` / `spawn_enemy` / `grant_weapon` / `npc_state_change` 等）
+- `scenario_core.py` 的 `GameEvent` 数据类需扩展相应字段
+- `game_loop.py` 需新增自动触发事件的**被动检测逻辑**（每回合检查所有 `auto_trigger` 事件的 condition 是否满足）
+
+---
+
+## 十四、修改影响范围汇总
+
+| 建议 | 影响文件 | 破坏性 |
+|------|---------|--------|
+| 1. L3 精简 | `l3_template.json` (done), `l3_designer.py`, `layered_schema.py`, `layered_parser.py` L3 prompt | 低 — 模板已改，数据模型和 prompt 跟进 |
+| 2. L2 渐进式 | `layered_parser.py` (核心重写), `layered_pipeline.py` (步骤调整) | **高** — 解析流程完全改变 |
+| 3. LLM library 匹配 | `layered_parser.py` L2 prompt, `injector.py` | 低 — prompt 增强 + injector 可能简化 |
+| 4. 场景名统一 | `layered_parser.py` parse_module() | 中 — 新增第 0 步，所有后续 prompt 需修改 |
+| 5. Schema 同步 | `layered_schema.py` | 低 — 字段名替换 |
+| 6. Side effect other | `scenario_core.py` (+OtherEffect), `game_loop.py` (_apply_side_effects) | 低 — 新增类型，不影响现有 |
+| 7. HiddenInfo → 自动事件 | `l2_keeper.py`, `l2_template.json`, `scenario_core.py` (GameEvent), `game_loop.py` | **高** — 数据结构改变 + 新检测逻辑 |
