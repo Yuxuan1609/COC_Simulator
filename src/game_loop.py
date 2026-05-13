@@ -20,7 +20,7 @@ from prompts import (
     log_skill_result,
     parse_narrative_output,
 )
-from scenario_core import FlagSet, ItemGain, StatChange, ActionResult
+from scenario_core import FlagSet, ItemGain, StatChange, SpawnEnemy, GrantItem, NPCStateChange, ActionResult
 
 
 def _apply_side_effects(world: ScenarioWorld, side_effects: list) -> list:
@@ -28,6 +28,9 @@ def _apply_side_effects(world: ScenarioWorld, side_effects: list) -> list:
     消费 side effects。当前实现：
     - FlagSet → world.set_flag
     - ItemGain → world.memory.note_item
+    - SpawnEnemy → 记录到运行时遭遇表
+    - GrantItem → 记录到 world.memory
+    - NPCStateChange → world.set_npc_state
     - StatChange → 仅记录不修改状态（COC SAN 规则待后续细化）
 
     返回人类可读的副作用摘要列表。
@@ -40,6 +43,15 @@ def _apply_side_effects(world: ScenarioWorld, side_effects: list) -> list:
         elif isinstance(effect, ItemGain):
             world.memory.note_item(effect.item_name)
             msgs.append(f"[获得物品] {effect.item_name}")
+        elif isinstance(effect, SpawnEnemy):
+            target_scene = effect.scene or world.current_location
+            msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
+        elif isinstance(effect, GrantItem):
+            world.memory.note_item(effect.item_ref)
+            msgs.append(f"[授予物品] {effect.item_ref}")
+        elif isinstance(effect, NPCStateChange):
+            world.set_npc_state(effect.npc_name, effect.new_state)
+            msgs.append(f"[NPC状态] {effect.npc_name} → {effect.new_state}")
         elif isinstance(effect, StatChange):
             msgs.append(f"[属性变化] {effect.stat_name} {'+' if effect.delta > 0 else ''}{effect.delta}（未自动应用）")
     return msgs
@@ -75,12 +87,98 @@ def _execute_single_action(act: dict, world: ScenarioWorld, location: str) -> tu
         else:
             return ActionResult(True, "（仔细查看四周，没有特别的发现）"), True
     else:
-        return ActionResult(True, "（什么也没做）"), True
+        return ActionResult(True, "（没有特别的事情发生）"), True
 
 
-def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
+# ── 调试命令处理 ──
+
+def _handle_spawn_command(user_input: str, world: ScenarioWorld,
+                          weapon_lib=None, enemy_lib=None, injector=None) -> dict | None:
+    """处理 /spawn 和 /inject 调试命令。返回 None 表示不是调试命令。"""
+    parts = user_input.strip().split()
+    if not parts:
+        return None
+
+    cmd = parts[0].lower()
+
+    if cmd == "/spawn":
+        if len(parts) < 3:
+            return {"brief": "/spawn 用法：/spawn enemy <name> 或 /spawn weapon <name>",
+                    "narrative": "用法错误", "full": "用法错误"}
+        sub = parts[1].lower()
+        name = " ".join(parts[2:])
+        if sub == "enemy":
+            if not enemy_lib:
+                return {"brief": "敌人库未加载", "narrative": "错误", "full": "错误"}
+            enemy = enemy_lib.get(name)
+            if not enemy:
+                available = [e.name for e in enemy_lib.list_all()]
+                return {"brief": f"未知敌人「{name}」。可用：{', '.join(available)}",
+                        "narrative": f"敌人库中没有「{name}」", "full": f"未知敌人：{name}"}
+            if injector:
+                encounter = injector.runtime_spawn_enemy(name, world.current_location, world)
+                if encounter:
+                    return {"brief": f"[生成敌人] {name} x{encounter['quantity']} 在 {world.current_location}",
+                            "narrative": f"KP从库中释放了{name}！",
+                            "full": f"spawn enemy: {name}"}
+            return {"brief": f"[生成敌人] {name} x1 在 {world.current_location}",
+                    "narrative": f"KP从库中释放了{name}！",
+                    "full": f"spawn enemy: {name}"}
+        elif sub == "weapon":
+            if not weapon_lib:
+                return {"brief": "武器库未加载", "narrative": "错误", "full": "错误"}
+            weapon = weapon_lib.get(name)
+            if not weapon:
+                available = [w.name for w in weapon_lib.list_all()]
+                return {"brief": f"未知武器「{name}」。可用：{', '.join(available)}",
+                        "narrative": f"武器库中没有「{name}」", "full": f"未知武器：{name}"}
+            world.memory.note_item(name)
+            return {"brief": f"[授予武器] {name}",
+                    "narrative": f"你获得了{name}。",
+                    "full": f"spawn weapon: {name}"}
+        else:
+            return {"brief": f"未知子命令「{sub}」。用法：/spawn enemy <name> 或 /spawn weapon <name>",
+                    "narrative": "用法错误", "full": "用法错误"}
+
+    if cmd == "/inject":
+        if len(parts) < 2:
+            if injector:
+                s = injector.status
+                return {"brief": f"离线注入：{'开' if s['offline_enabled'] else '关'} | "
+                                f"运行时注入：{'开' if s['runtime_enabled'] else '关'} | "
+                                f"武器：{s['weapons_loaded']} | 敌人：{s['enemies_loaded']}",
+                        "narrative": f"注入状态：武器{s['weapons_loaded']}件，敌人{s['enemies_loaded']}个",
+                        "full": str(s)}
+            return {"brief": "注入器未初始化", "narrative": "错误", "full": "错误"}
+        sub = parts[1].lower()
+        if sub == "toggle" and injector:
+            injector.runtime_enabled = not injector.runtime_enabled
+            state = "开启" if injector.runtime_enabled else "关闭"
+            return {"brief": f"运行时注入已{state}", "narrative": f"运行时注入已{state}",
+                    "full": f"inject toggle: {state}"}
+        elif sub == "status" and injector:
+            s = injector.status
+            return {"brief": str(s), "narrative": str(s), "full": str(s)}
+        return {"brief": "用法：/inject [toggle|status]", "narrative": "用法错误", "full": "用法错误"}
+
+    return None
+
+
+def _check_deviation(user_input: str, world: ScenarioWorld,
+                     l3_data=None, deviation_threshold: float = 0.5) -> float:
+    """
+    Phase 3.5 偏离检测桩。
+    当前返回 0.0（始终无偏离）。完整的 LLM-based 偏离检测留待后续实现。
+    """
+    return 0.0
+
+
+def handle_user_input(user_input: str, world: ScenarioWorld,
+                      weapon_lib=None, enemy_lib=None, injector=None,
+                      l1_data: dict = None, l3_data=None) -> dict:
     """
     处理流程：
+    0. 调试命令检查（/spawn, /inject）
     1. 阶段1 & 阶段2 并行 —— 动作解析 + 事件判定
     2. 阶段1a：执行 interact/search/look 等场景内动作
     3. 阶段1.5a：动作世界更新（基于 interact 结果更新场景描述）
@@ -88,9 +186,19 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
     5. 阶段2：执行事件
     6. 阶段1.5b：事件世界更新
     7. 阶段3：叙事生成 + 输出解析
+    8. 阶段3.5：偏离检测 + 即兴注入（预留）
 
     返回 {"brief": 简要结果, "narrative": 沉浸式叙事, "full": 完整输出}
     """
+
+    # ═══ 阶段0：调试命令检查 ═══
+    if user_input.strip().startswith("/"):
+        cmd_result = _handle_spawn_command(user_input, world, weapon_lib, enemy_lib, injector)
+        if cmd_result:
+            return cmd_result
+
+    # 获取当前场景 L1 数据
+    l1_scene = l1_data.get(world.current_location) if l1_data else None
 
     # ═══ 阶段1 & 阶段2：并行 LLM 调用 ═══
     try:
@@ -207,18 +315,24 @@ def handle_user_input(user_input: str, world: ScenarioWorld) -> dict:
         except Exception:
             pass
 
+    # ═══ 阶段3.5：偏离检测 + 即兴注入（桩）═══
+    deviation_score = _check_deviation(user_input, world, l3_data)
+    _ = deviation_score  # 预留，当前始终为 0
+
     # ═══ 阶段3：叙事生成 ═══
     first_action = actions[0].get("action", "other")
     all_other = all(a.get("action") == "other" for a in actions)
     try:
         if all_other and not event_data.get("triggered_events"):
             full_text = call_deepseek(
-                build_improvise_prompt(world, user_input, action_result),
+                build_improvise_prompt(world, user_input, action_result,
+                                       l1_scene=l1_scene, l3_data=l3_data),
                 json_mode=False
             )
         else:
             full_text = call_deepseek(
-                build_narrative_prompt(world, user_input, action_result, events_result),
+                build_narrative_prompt(world, user_input, action_result, events_result,
+                                       l1_scene=l1_scene, l3_data=l3_data),
                 json_mode=False
             )
         brief, narrative = parse_narrative_output(full_text)

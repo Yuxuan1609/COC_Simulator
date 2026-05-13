@@ -6,10 +6,12 @@ Prompt 构建器 —— 为 LLM 调用链构建结构化 prompt。
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld
+    from module_designer.l1_player import SceneL1
+    from module_designer.l3_designer import L3Designer
 
 # ── 日志配置 ──
 
@@ -306,7 +308,7 @@ def build_action_prompt(world: ScenarioWorld, user_input: str,
       "interaction": "动作名称（仅 interact 时填写，务必从上述「名称（请原样复制）」中精确复制）",
       "skill_checks": ["技能名"],
       "reasoning": "简要推理",
-      "condition":"缺少前置“
+      "condition":"缺少前置"
     }}
   ]
 }}
@@ -454,7 +456,9 @@ def build_event_world_update(world: ScenarioWorld, events_result: str) -> str:
 # ── 第三阶段：叙事生成 ──
 
 def build_narrative_prompt(world: ScenarioWorld, user_input: str,
-                           action_result: str, events_result: str) -> str:
+                           action_result: str, events_result: str,
+                           l1_scene: "SceneL1 | None" = None,
+                           l3_data: "L3Designer | None" = None) -> str:
     """基于所有结果 + 已更新世界 + 可触发事件列表，生成沉浸式叙事"""
     context = world.memory.get_context()
     scene_desc = world.get_current_description()
@@ -467,7 +471,11 @@ def build_narrative_prompt(world: ScenarioWorld, user_input: str,
 
 """
 
-    prompt = f"""{bg_section}【玩家历史行动】
+    l1l3_ctx = _build_l1l3_context(l1_scene=l1_scene, l3_data=l3_data, scene_name=world.current_location)
+
+    prompt = f"""{bg_section}{l1l3_ctx}
+
+【玩家历史行动】
 {context or '（无）'}
 
 【当前场景】{world.current_location}
@@ -481,12 +489,14 @@ def build_narrative_prompt(world: ScenarioWorld, user_input: str,
 
 
 请以TRPG主持人（KP）的身份，基于【行动结果】对【玩家输入】和【本轮触发事件】给出合理的回应，
-输出格式请遵守 结果：“简要描述” \n\n\n 沉浸式叙事：“基于结果用沉浸式中文生成不超过100字”
+输出格式请遵守 结果："简要描述" \n\n\n 沉浸式叙事："基于结果用沉浸式中文生成不超过100字"
 请遵循这些具体要求：
 - 重要！不要给出前文没有提及的实质性信息
 - 重要！严格遵守输出格式，给出一个结果一个沉浸式叙事
 - 根据行动结果调整叙事：成功则描述顺利进行，失败则描述没有结果或难以进行，没有提及则忽略这条
-- 语气贴合场景氛围，参考背景设定中的世界观和氛围基调
+- 语气贴合场景氛围，参考【基调约束】中的世界观和氛围基调
+- 遵守【基调约束】中的禁止项和必须包含项
+- 叙事要体现【场景感知信息】中的氛围和情绪基调
 - 直接输出叙事文本，不要额外说明
 - 【模组背景设定】和【玩家历史行动】主要用于理解背景，尽量少重复叙述其中的内容
 - 在满足以上要求的情况下进行合理自由发挥
@@ -498,7 +508,9 @@ def build_narrative_prompt(world: ScenarioWorld, user_input: str,
 # ── 第三阶段（备用）：即兴叙事 ──
 
 def build_improvise_prompt(world: ScenarioWorld, user_input: str,
-                           action_result: str) -> str:
+                           action_result: str,
+                           l1_scene: "SceneL1 | None" = None,
+                           l3_data: "L3Designer | None" = None) -> str:
     """当动作解析结果为 other 且无事件触发时调用，生成即兴叙事"""
     context = world.memory.get_context()
     scene_desc = world.get_current_description()
@@ -510,7 +522,11 @@ def build_improvise_prompt(world: ScenarioWorld, user_input: str,
 
 """
 
-    prompt = f"""{bg_section}【玩家历史行动】
+    l1l3_ctx = _build_l1l3_context(l1_scene=l1_scene, l3_data=l3_data, scene_name=world.current_location)
+
+    prompt = f"""{bg_section}{l1l3_ctx}
+
+【玩家历史行动】
 {context or '（无）'}
 
 【当前场景】{world.current_location}
@@ -519,12 +535,14 @@ def build_improvise_prompt(world: ScenarioWorld, user_input: str,
 【玩家输入】{user_input}
 
 请以TRPG主持人（KP）的身份，【玩家输入】给出合理的回应，
-输出格式请遵守 结果：“简要描述” \n\n\n 沉浸式叙事：“基于结果用沉浸式中文生成不超过100字”
+输出格式请遵守 结果："简要描述" \n\n\n 沉浸式叙事："基于结果用沉浸式中文生成不超过100字"
 请遵循这些具体要求：
 - 重要！不要给出前文没有提及的实质性信息
 - 重要！当前玩家行动没有产生实际影响，请以符合场景的语言委婉提示玩家这一点
 - 重要！严格遵守输出格式，给出一个结果一个沉浸式叙事
 - 用沉浸式中文生成20-100字
+- 语气贴合场景氛围，参考【基调约束】和【场景感知信息】
+- 遵守【基调约束】中的禁止项
 - 【模组背景设定】和【玩家历史行动】主要用于理解背景，尽量少重复叙述其中的内容
 """
     _show_prompt("Step 3b — 即兴叙事", prompt)
@@ -532,6 +550,43 @@ def build_improvise_prompt(world: ScenarioWorld, user_input: str,
 
 
 # ── 叙事输出解析 ──
+
+def _build_l1l3_context(
+    l1_scene: "SceneL1 | None" = None,
+    l3_data: "L3Designer | None" = None,
+    scene_name: str = "",
+) -> str:
+    """构建 L1 + L3 增强上下文，供叙事/即兴 prompt 使用."""
+    parts = []
+    if l3_data:
+        parts.append("【基调约束】")
+        tc = l3_data.tone_constraints
+        if tc.genre:
+            parts.append(f"  类型：{tc.genre}")
+        if tc.narrative_style:
+            parts.append(f"  叙事风格：{tc.narrative_style}")
+        if tc.forbidden:
+            parts.append(f"  禁止：{', '.join(tc.forbidden)}")
+        if tc.required:
+            parts.append(f"  必须包含：{', '.join(tc.required)}")
+        if l3_data.driving_force:
+            parts.append(f"  核心驱动力：{l3_data.driving_force}")
+        intent = l3_data.scene_intents.get(scene_name) if scene_name else None
+        if intent:
+            if intent.purpose:
+                parts.append(f"  本场景设计意图：{intent.purpose}")
+            if intent.emotion:
+                parts.append(f"  目标情绪：{intent.emotion}")
+    if l1_scene:
+        parts.append("【场景感知信息】")
+        if l1_scene.atmosphere:
+            parts.append(f"  氛围：{l1_scene.atmosphere}")
+        if l1_scene.mood:
+            parts.append(f"  情绪基调：{l1_scene.mood}")
+        if l1_scene.ambient_hints:
+            parts.append(f"  环境暗示：{', '.join(l1_scene.ambient_hints)}")
+    return "\n".join(parts) if parts else ""
+
 
 def parse_narrative_output(text: str) -> tuple[str, str]:
     """
@@ -552,14 +607,14 @@ def parse_narrative_output(text: str) -> tuple[str, str]:
         for sep in ["结果：", "结果:"]:
             if sep in first:
                 brief = first.split(sep, 1)[1].strip()
-                brief = brief.strip('"').strip("'").strip("“").strip("”")
+                brief = brief.strip('"').strip("'").strip(""").strip(""")
                 break
 
         # 提取 "沉浸式叙事：" 后的内容
         for sep in ["沉浸式叙事：", "沉浸式叙事:"]:
             if sep in second:
                 narrative = second.split(sep, 1)[1].strip()
-                narrative = narrative.strip('"').strip("'").strip("“").strip("”")
+                narrative = narrative.strip('"').strip("'").strip(""").strip(""")
                 break
 
         return brief, narrative
