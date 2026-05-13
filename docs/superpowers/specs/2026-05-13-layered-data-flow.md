@@ -345,3 +345,455 @@ P0 = 功能断点, 不修则某条路径完全不通
 P1 = 高价值改进
 P2 = 效率/功能增强
 P3 = 架构卫生
+
+---
+
+## 八、L1 解析器详细内容
+
+### 8.1 System Prompt
+
+```
+你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
+你的任务是：从模组文档中提取每个场景的**初始感知信息**——玩家进入场景时，
+无需任何检定即可直接感知的一切。
+
+重要原则：
+- 只描述**无条件可见**的内容（外观、声音、气味、氛围）
+- 需要检定才能发现的信息 → 不要放在这里（那是 L2 的事）
+- NPC 只描述外貌和神态，不写隐藏动机（那是 L2 的事）
+- 用沉浸式中文，但保持简洁
+- mood 从以下选择：confused / uneasy / tense / terrified / hopeful / desperate
+- perceptible type 从以下选择：object / sound / smell / sight / touch / intuition
+```
+
+### 8.2 User Prompt 结构
+
+```
+根据以下模组文档，提取每个场景的「玩家初始感知信息」（L1 层）。
+
+输出格式参考：
+{l1_template.json 的内容}
+
+要求：
+1. 每个场景作为一个顶层 key，key 名为场景名称（如"6号车厢"）
+2. entry_narrative：玩家进入该场景时的开场叙事（KP 可直接朗读，80-200字）
+3. atmosphere：场景氛围一句话总结（如"昏暗封闭、空气中弥漫霉味"）
+4. mood：该场景的目标情绪基调
+5. perceptible：玩家无需检定即可感知的元素列表：
+   - type：感知类型（object/sound/smell/sight/touch/intuition）
+   - name：元素名称
+   - brief：一句话描述
+   - linked_interaction：可选，关联的 L2 互动名称（暂可留空，后续 pipeline 会补充）
+6. ambient_hints：微妙的环境线索列表（玩家可感知的"直觉"类信息）
+7. npc_appearances：当前场景 NPC 的外貌描述（只写外观，不写隐藏信息）
+
+重要：
+- 仅输出 JSON，不要任何解释性文字
+- 只写**无条件可见**的感知信息
+- 需要检定才能发现的内容留给 L2 层
+- 原文未描述的内容可以基于上下文合理推测
+
+模组文档：
+"""
+{content}
+"""
+```
+
+### 8.3 实际输出示例（常暗之厢·6号车厢）
+
+```json
+{
+  "6号车厢": {
+    "entry_narrative": "你在昏暗的列车车厢中缓缓醒来。头顶的灯光不定时地闪烁...",
+    "atmosphere": "昏暗封闭，灯光闪烁，空气中弥漫着若有若无的铁锈味",
+    "mood": "uneasy",
+    "perceptible": [
+      {
+        "type": "object",
+        "name": "门扉上的便签",
+        "brief": "一张泛黄的纸条贴在车厢门上，正面写着「只管前进吧 已经没有退路了」",
+        "linked_interaction": "查看便签正面"
+      },
+      {
+        "type": "object",
+        "name": "电车示意地图",
+        "brief": "车厢内贴着一张电车线路示意图，标注了各车厢的位置",
+        "linked_interaction": "查看电车示意图"
+      }
+    ],
+    "ambient_hints": [
+      "窗外一片漆黑，如同在无边的隧道中穿行",
+      "后方偶尔传来低沉的震动和金属扭曲声"
+    ],
+    "npc_appearances": []
+  }
+}
+```
+
+### 8.4 L1 解析的定位边界
+
+| 放入 L1 | 放入 L2 |
+|---------|---------|
+| 便签正面写着什么 | 便签背面藏着什么（需要翻面或侦查检定） |
+| NPC 的外貌和神态 | NPC 的动机、知识和隐藏身份 |
+| 车厢内的气味和光线 | 气味来源是什么（需要调查检定） |
+| 窗外一片漆黑 | 黑暗中有东西在移动（需要灵感检定） |
+
+---
+
+## 九、L2 解析器详细内容
+
+### 9.1 System Prompt
+
+```
+你是一个 TRPG 模组解析助手，专门提取「KP 守秘人层」信息。
+你的任务是：从模组文档中提取完整的游戏机制信息——场景功能描述、可执行互动、
+敌人遭遇、隐藏信息、NPC 档案。
+
+重要原则：
+- 这是 KP 参考层，包含所有游戏机制真相
+- interactions 必须包含 side_effects 数组
+- encounters 引用 library 中的敌人名（如 Clicker、深潜者 等）
+- scene_weapons 只列出**武器**（常规物品如手电筒由 LLM 叙事处理）
+- hidden_info 是**被动触发**的信息（暗骰式），与 interaction（玩家主动选择）区分开
+- NPC profiles 包含完整 KP 信息（动机、知识、性格）
+```
+
+### 9.2 User Prompt 结构（关键字段要求）
+
+```
+根据以下模组文档，提取完整的「KP 守秘人层」信息（L2 层）。
+
+输出格式参考：
+{l2_template.json 的内容}
+
+要求：
+1. scenes：每个场景包含：
+   - description：场景功能性描述（KP 用，区别于 L1 的叙事性 entry_narrative）
+   - from_here / to_here：移动边
+   - interactions：可执行动作列表，每个包含：
+     * type：互动类型（调查/鉴定/搜索/对话/决策/使用物品/战斗等）
+     * name：互动名称
+     * trigger：触发条件描述
+     * result：结果描述
+     * clue：线索（可选）
+     * side_effects：副作用数组，每个元素有 type 字段：
+       - flag_set: {"type":"flag_set","key":"标记名","value":true}
+       - item_gain: {"type":"item_gain","item_name":"物品名"}
+       - spawn_enemy: {"type":"spawn_enemy","enemy_ref":"敌人名","scene":"场景名"}
+       - grant_item: {"type":"grant_item","item_ref":"武器名"}
+       - npc_state_change: {"type":"npc_state_change","npc_name":"NPC名","new_state":"状态"}
+       - stat_change: {"type":"stat_change","stat_name":"SAN","delta":-1}
+     * requirement：前置条件数组（结构化: [{"ref_type":"flag","ref_name":"..."}] 或纯字符串）
+     * skill_name：关联技能名（可选）
+     * difficulty：检定难度（regular/hard/extreme）
+   - encounters：预设敌人遭遇（引用 library 敌人名）
+   - scene_weapons：场景中可获取的武器（只列武器！）
+   - hidden_info：被动触发信息（暗骰式）
+
+2. events：全局不可逆事件列表
+   - 每个包含 id（E1,E2...）/ name / trigger / irreversible_impact / requirement
+
+3. npc_profiles：NPC 完整档案
+   - 每个包含 name / role / motivation / knowledge / personality / voice_notes
+
+重要：
+- 仅输出 JSON，不要任何解释性文字
+- 根据原文合理推测补充游戏机制细节
+- 隐藏信息与主动互动的区别：hidden_info 是系统被动检测条件后自动揭示的
+
+模组文档：
+"""
+{content}
+"""
+```
+
+### 9.3 实际输出示例（常暗之厢·6号车厢，一个带 side_effects 的 interaction）
+
+```json
+{
+  "type": "调查",
+  "name": "查看便签背面",
+  "requirement": [],
+  "trigger": "撕下便签或主动查看背面",
+  "result": "发现背面写着「第三个箱子里有藏着钥匙」。",
+  "clue": "钥匙藏在3号车厢",
+  "side_effects": [
+    {"type": "flag_set", "key": "known_back_of_note", "value": true}
+  ],
+  "skill_name": "侦查",
+  "difficulty": "regular"
+}
+```
+
+### 9.4 L2 解析的已知问题
+
+| 问题 | 原因 | 实际表现 |
+|------|------|---------|
+| requirement 可能是字符串而非 dict | prompt 中列出了结构化格式但 LLM 仍可能用简写 | `"found_newspaper"` 而非 `{"ref_type":"flag","ref_name":"found_newspaper"}` |
+| 敌人引用不在 library 中 | LLM 不知道 library 内容 | 生成了"虚无者"、"黑影"等自定义名称 |
+| linked_interaction 名称不匹配 | L1 和 L2 独立生成，无共享上下文 | L1 引用"检查尸体"但 L2 中叫"医学检查尸体" |
+| side_effects 可能格式错误 | LLM 对 side_effect type 枚举理解偏差 | 偶现不存在的 type 值 |
+
+---
+
+## 十、L3 解析器详细内容
+
+### 10.1 System Prompt
+
+```
+你是一个 TRPG 模组设计分析师，专门提取「设计者层」信息。
+你的任务是：从模组文档中提取模组的设计意图、世界规则、剧情逻辑链、
+场景设计目的和基调约束。
+
+重要原则：
+- 这是设计者层，描述**为什么**这个模组这样设计，而非**有什么**内容
+- world_rules 是世界运行的物理/超自然法则（玩家和 KP 都必须遵守）
+- logic_chains 是剧情骨架，不是线性流程——包含分支节点和条件
+- scene_intents 描述每个场景的**设计目的**（为什么存在这个场景），而非场景内容
+- driving_force 是一切事件的根本驱动力（为什么这一切在发生）
+- tone_constraints 是跨场景的叙事护栏
+```
+
+### 10.2 User Prompt 结构
+
+```
+根据以下模组文档，提取「设计者层」信息（L3 层）。
+
+输出格式参考：
+{l3_template.json 的内容}
+
+要求：
+1. module_meta：模组元信息（标题、作者、年代、主题、预计时长、玩家人数）
+
+2. world_rules：世界运行规则列表，每个包含：
+   - id：规则编号（WR1, WR2...）
+   - name：规则名称
+   - rule：规则描述（自然语言，LLM 和 KP 都能理解）
+   - scope：影响范围（movement/combat/stealth/investigation/dialogue 等）
+   - is_absolute：是否为绝对规则（true=不可违反，false=极端情况可打破）
+
+3. logic_chains：剧情逻辑链列表，每个包含：
+   - id / name / description / nodes（按顺序的里程碑）
+   - branches：分支条件列表，每个包含 condition / effect / next_node
+   - is_critical：是否为主线
+
+4. scene_intents：每个场景的设计意图，key 为场景名：
+   - purpose：此场景在模组中的作用
+   - emotion：目标情绪
+   - danger_level：危险等级（safe/low/medium/high/extreme）
+   - key_info：此场景必须传达的关键信息
+   - key_threat：核心威胁（可选）
+   - exit_leads_to：离开后可能前往的场景
+
+5. ending_conditions：结局条件列表
+   - 每个包含 id / type（escape/trapped/madness/sacrifice/revelation）/ condition / narrative_theme
+
+6. tone_constraints：全局叙事护栏
+   - genre / forbidden / required / narrative_style
+
+7. driving_force：一切事件的底层驱动力——"为什么这一切在发生？"
+
+重要：
+- 仅输出 JSON，不要任何解释性文字
+- 从原文中推断设计意图，即使原文没有明确声明
+- logic_chains 的 nodes 按推进顺序排列
+- driving_force 应该是概念层面的，不是具体事件描述
+
+模组文档：
+"""
+{content}
+"""
+```
+
+### 10.3 实际输出示例（常暗之厢）
+
+```json
+{
+  "module_meta": {
+    "title": "常暗之厢",
+    "era": "1920s",
+    "theme": "无路可退的恐怖箱庭——在封闭的电车中逃避不可名状的吞噬"
+  },
+  "world_rules": [
+    {
+      "id": "WR1",
+      "name": "无路可退",
+      "rule": "后方车厢正被大嘴吞噬者逐渐吞噬。一旦车厢被吞噬，无法返回。玩家只能向前方车厢移动。",
+      "scope": ["movement"],
+      "is_absolute": true
+    },
+    {
+      "id": "WR2",
+      "name": "Clicker 盲感",
+      "rule": "Clicker 无眼，通过声音定位。玩家若保持安静则不触发战斗；任何大声响会立即吸引其注意。",
+      "scope": ["stealth", "combat"],
+      "is_absolute": false
+    }
+  ],
+  "logic_chains": [
+    {
+      "id": "LC1",
+      "name": "主线：逃离电车",
+      "description": "调查员从6号车厢苏醒，最终到达先头车厢选择加速或减速",
+      "nodes": ["苏醒", "发现线索", "获取钥匙", "到达驾驶室", "做出选择"],
+      "branches": [
+        {"condition": "flag:has_key", "effect": "可以打开驾驶室门", "next_node": "到达驾驶室"}
+      ],
+      "is_critical": true
+    }
+  ],
+  "scene_intents": {
+    "6号车厢": {
+      "purpose": "苏醒点——建立初始紧张感和核心规则认知（只能前进）",
+      "emotion": "困惑与不安",
+      "danger_level": "safe",
+      "key_info": ["只能前进不能后退", "钥匙在3号车厢的第三个箱子里"],
+      "exit_leads_to": ["5号车厢", "7号车厢"]
+    }
+  },
+  "ending_conditions": [
+    {
+      "id": "END1",
+      "type": "escape",
+      "condition": "flag:accelerate AND flag:reached_cockpit",
+      "narrative_theme": "加速逃离——电车冲出黑暗，调查员重见光明"
+    }
+  ],
+  "tone_constraints": {
+    "genre": "克苏鲁恐怖箱庭",
+    "forbidden": ["喜剧元素", "第四面墙打破"],
+    "required": ["压迫感", "时间紧迫", "孤立无援"],
+    "narrative_style": "第二人称、现在时、感官描写丰富、SAN值侵蚀的渐进描写"
+  },
+  "driving_force": "电车正被奈亚拉托提普的化身「大嘴吞噬者」从后方吞噬，调查员必须在被吞噬前找到逃离的方法"
+}
+```
+
+---
+
+## 十一、Pipeline 详细步骤
+
+### 11.1 步骤 1: Schema 验证
+
+**入口**: `validate_all(l1_data, l2_data, l3_data)` → `{L1: SchemaReport, L2: SchemaReport, L3: SchemaReport}`
+
+**验证内容**（以 L2 为例）：
+
+| 检查项 | 规则 | 严重度 |
+|--------|------|--------|
+| `scenes` 是 dict | isinstance | error |
+| `scenes[].interactions` 是 list | isinstance | error |
+| `interactions[].type` 必填 | required=True | warning |
+| `interactions[].difficulty` 枚举 | values={regular,hard,extreme} | warning |
+| `events` 是 list | isinstance | error |
+| `events[].id` 必填 | required=True | warning |
+| `encounters[].enemy_ref` 必填 | required=True | warning |
+| `npc_profiles` 是 dict | isinstance | error |
+
+**关键特点**: 几乎所有字段 marked `required: False` — 验证极为宽松。即使数据大量缺失也不会报 error，只会报 warning。`is_valid` 仅检查是否有 error 级别的违规（主要是类型错误，如本该是 dict 却是 string）。
+
+### 11.2 步骤 2: 离线注入
+
+**入口**: `injector.offline_inject_module(l2_data, l3_data)` → 修改后的 l2_data
+
+**当前逻辑**（确定性规则，不调用 LLM）：
+
+```
+for each scene in l2_data.scenes:
+    intent = l3_data.scene_intents.get(scene_name)
+    if intent and intent.danger_level in ("high", "extreme"):
+        scene_data.setdefault("encounters", [])       ← 预留空槽位
+        scene_data.setdefault("scene_weapons", [])    ← 预留空槽位
+```
+
+**不做的事情**（设计上留待后续）：
+- 不根据场景主题匹配敌人类型（如"水中场景 → 深潜者"）
+- 不根据场景危险等级推荐具体武器
+- 不根据 L3 key_threat 字段查找对应的 library 敌人
+- 已有 encounter/weapon 声明不做修改
+
+### 11.3 步骤 3: 交叉引用验证
+
+**入口**: `cross_validate_layers(l1, l2, l3, weapon_lib, enemy_lib)` → CrossRefReport
+
+**四项检查**：
+
+| # | 检查 | 方向 | 严重度 |
+|---|------|------|--------|
+| 1 | L1 perceptible.linked_interaction 是否在任一 L2 scene 的 interactions[].name 中存在 | L1→L2 | warning |
+| 2 | L2 encounters[].enemy_ref 是否在 enemy_lib 中存在 | L2→Library | **error** |
+| 3 | L2 scene_weapons[].weapon_ref 是否在 weapon_lib 中存在 | L2→Library | **error** |
+| 4 | L3 scene_intents 的 key 集合是否与 L1/L2 的场景名集合一致 | L3→L1/L2 | warning |
+
+**error vs warning 的设计逻辑**：
+- Library 引用不匹配是 **error**：游戏运行时 spawn 一个不存在的敌人会崩溃
+- L1→L2 引用不匹配是 **warning**：LLM 在两层生成了不同名称的同一互动，pipeline 后续可自动修正
+- 场景名不一致是 **warning**：可能是 LLM 漏生成了某个场景的 L3 intent
+
+### 11.4 Pipeline 对数据的修改
+
+```
+输入: l1_data (不变), l2_data (可能被 injector 修改), l3_data (不变)
+
+run_pipeline() 返回的 PipelineResult:
+  ├── l1_data     ← 原样返回
+  ├── l2_data     ← 如果 run_injection=True 且 injector 非 None:
+  │                   对 danger_level=high/extreme 的场景添加了空的 encounters/scene_weapons 数组
+  ├── l3_data     ← 原样返回
+  ├── schema_reports   ← {L1: SchemaReport, L2: SchemaReport, L3: SchemaReport}
+  └── cross_ref_report ← CrossRefReport (如有 run_cross_validate)
+```
+
+**重要**: pipeline **不会**自动修正任何 LLM 生成的错误。它只报告问题。引用不匹配、格式错误、枚举违规都需要人工审核后手动修改 JSON。
+
+### 11.5 实际运行记录（常暗之厢，2026-05-13）
+
+```
+第一次运行:
+  L1: 7 场景, Schema PASS (0 errors, 0 warnings)
+  L2: 7 场景, 4 事件, Schema PASS
+  L3: 8 世界规则, 3 逻辑链, Schema PASS (3 warnings: danger_level 带额外文字)
+  交叉引用: 1 error — enemy_ref "虚无者" 不在库中
+  注入: 2 encounters 槽位
+
+第二次运行（LLM 随机性导致不同输出）:
+  L2: 7 场景, 6 事件
+  L3: 6 世界规则, 2 逻辑链
+  交叉引用: 4 warnings — 4 个 L1 linked_interaction 名称与 L2 不匹配
+  注入: 1 encounter 槽位
+```
+
+**观察**：两次 LLM 调用产生不同的输出（事件数、规则数、引用质量不同）。这是 LLM 解析的固有特征——同一 prompt 和 content，不同调用产生不同结果。
+
+---
+
+## 十二、当前各文件实际状态快照
+
+```
+已完成 ✓:
+  src/library/          weapons.py, enemies.py, judgment.py, injector.py, __init__.py
+  src/module_designer/  l1_player.py, l2_keeper.py, l3_designer.py
+                        layered_schema.py, layered_parser.py, layered_pipeline.py, __init__.py
+  data/library/core/    weapons.json (10), enemies.json (5)
+  data/templates/       l1_template.json, l2_template.json, l3_template.json
+  data/modules/常暗之厢/ l1_player.json, l2_keeper.json, l3_designer.json (LLM 生成)
+  data/output/archive/  旧 pipeline 输出 + 旧 parser.ipynb 快照
+  tests/                test_library.py (17), test_module_designer.py (17) — 34 passing
+  notebooks/            notebook_simplified.ipynb (已切到 l2_keeper.json)
+                        parser_layered.ipynb (新三层解析工作流)
+
+已废弃 (移至 src/archive/):
+  src/archive/          parsers.py, pipeline.py
+
+临时文件 (待清理):
+  tools/                create_layered_notebook.py, run_layered_parser.py
+  notebooks.7z
+
+未实现 (spec 中提及但未做):
+  module_designer/      约束接口方法 (get_applicable_rules, validate_spawn 等)
+  game_loop.py          deviation_score 实际实现 (当前为桩)
+  scenario_core.py      EncounterAnchor 未接入任何运行时逻辑
+  prompts.py            L1/L3 上下文未接通 (notebook 未加载 L1/L3 JSON)
+  notebooks/            L1/L3 JSON 加载和传递给 handle_user_input
+```
