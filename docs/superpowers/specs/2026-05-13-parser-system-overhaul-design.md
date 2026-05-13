@@ -52,8 +52,8 @@ src/
 | 文件 | 改动性质 |
 |------|----------|
 | `src/scenario_core.py` | 新增 `SpawnEnemy` / `GrantItem` / `EncounterAnchor` 数据类，扩展现有 `Interaction.side_effects` |
-| `src/parsers.py` | 重构为仅输出L2，或废弃（由 `layered_parser.py` 取代） |
-| `src/pipeline.py` | 重构对齐L2管线，或废弃（由 `layered_pipeline.py` 取代） |
+| `src/parsers.py` | **废弃** — 由 `layered_parser.py` 直接输出三层JSON |
+| `src/pipeline.py` | **废弃** — 由 `layered_parser.py` 直接输出三层JSON |
 | `src/prompts.py` | 扩展：L1/L3感知的prompt构建，增强 `build_improvise_prompt` |
 | `src/game_loop.py` | 适配：三层数据消费、偏离检测、双层判定调用、即兴注入 |
 
@@ -112,7 +112,7 @@ data/
 
 ### L2 — KP层
 
-现有 `Interaction` / `GameEvent` / `Node` 结构对齐。包含所有游戏机制信息。
+现有 `Interaction` / `GameEvent` / `Node` 结构对齐（**字段/schema对齐即可，内容不需匹配现有JSON数据文件**，后续跑通逻辑再调整内容）。包含所有游戏机制信息。
 
 **扩展字段**（在现有基础上）：
 - `interactions[].side_effects` — 已有，扩展 `SpawnEnemy` / `GrantItem` 类型
@@ -346,7 +346,7 @@ class LibraryEnemy:
 4. **scenario_core 扩展** — SpawnEnemy / GrantItem / EncounterAnchor（对接 library）
 5. **prompts 扩展** — L1/L3 感知 + improvise 增强
 6. **game_loop 适配** — Phase 3.5 + Phase 5 增强 + /spawn 命令
-7. **parsers.py / pipeline.py 废弃或重构** — 对齐L2，由 layered_parser 替代
+7. **parsers.py / pipeline.py 废弃** — 直接由 layered_parser 输出三层JSON，旧文件删除或归档
 8. **notebooks 适配** — 新导入流程
 
 ---
