@@ -10,24 +10,46 @@
 │   ├── abstract.txt                         # 模组背景设定（供叙事参考）
 │   ├── occupations.json                     # COC 7th 标准职业数据
 │   ├── skill_checks.json                    # COC 7th 45 项技能定义（名称、关联属性、基础值、分类）
+│   ├── library/
+│   │   ├── core/
+│   │   │   ├── weapons.json                 # 核心武器库（10 件）
+│   │   │   └── enemies.json                 # 核心敌人库（5 种神话生物/人类）
+│   │   └── extensions/                      # 用户自定义武器/敌人扩展包
 │   ├── templates/
-│   │   ├── scene.json                       # 场景 JSON 模板
-│   │   └── event.json                       # 事件 JSON 模板
+│   │   ├── scene.json                       # 场景 JSON 模板（已有）
+│   │   ├── event.json                       # 事件 JSON 模板（已有）
+│   │   ├── l1_template.json                 # L1 玩家可见层模板（新增）
+│   │   ├── l2_template.json                 # L2 KP 守秘人层模板（新增）
+│   │   └── l3_template.json                 # L3 设计者层模板（新增）
+│   ├── modules/
+│   │   └── 常暗之厢/
+│   │       ├── l1_player.json               # L1 玩家可见层（LLM 生成）
+│   │       ├── l2_keeper.json               # L2 KP 守秘人层（LLM 生成，游戏循环直接消费）
+│   │       └── l3_designer.json             # L3 设计者层（LLM 生成）
 │   └── output/
-│       ├── scene_output.json                # 原始场景解析
-│       ├── res_event.json                   # 原始事件解析
-│       ├── scene_output_resolved.json       # 需求匹配后的场景
-│       ├── scene_output_resolved_revised.json # 交叉验证修订后的场景
-│       └── res_event_resolved_revised.json  # 交叉验证修订后的事件
+│       └── archive/                         # 旧 pipeline 输出存档
 ├── src/
 │   ├── scenario_core.py                     # 数据类、有向图、世界状态、记忆管理
 │   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
-│   ├── parsers.py                           # 从模组文档解析场景和事件
-│   ├── pipeline.py                          # 后处理管线（需求匹配、交叉验证、文学性扩充）
 │   ├── trpg_display.py                      # Notebook UI 显示组件
 │   ├── utils.py                             # 文件解析、Token 估算、掷骰、技能定义加载
-│   ├── prompts.py                           # LLM Prompt 构建器 + 叙事输出解析
-│   ├── game_loop.py                         # 主循环：动作执行 + LLM 调用链编排 + 技能闸门
+│   ├── prompts.py                           # LLM Prompt 构建器 + 叙事输出解析（L1/L3 感知）
+│   ├── game_loop.py                         # 主循环：动作执行 + LLM 调用链编排 + /spawn 命令
+│   ├── library/                             # 武器/敌人资源库（新增）
+│   │   ├── weapons.py                       #   LibraryWeapon + WeaponLibrary
+│   │   ├── enemies.py                       #   LibraryEnemy + EnemyLibrary
+│   │   ├── judgment.py                      #   双层判定引擎（T1 确定性 + T2 LLM 增强）
+│   │   └── injector.py                      #   内容注入（离线预填充 + 运行时动态注入）
+│   ├── module_designer/                     # 三层信息引擎（新增）
+│   │   ├── l1_player.py                     #   L1 玩家可见层数据模型
+│   │   ├── l2_keeper.py                     #   L2 KP 守秘人层数据模型
+│   │   ├── l3_designer.py                   #   L3 设计者层数据模型
+│   │   ├── layered_schema.py                #   JSON Schema 定义 + 三层验证
+│   │   ├── layered_parser.py                #   LLM 一键解析 source.txt → L1/L2/L3
+│   │   └── layered_pipeline.py              #   后处理管线（验证 + 注入 + 交叉引用）
+│   ├── archive/                             # 已废弃模块
+│   │   ├── parsers.py                       #   旧场景/事件解析器
+│   │   └── pipeline.py                      #   旧后处理管线
 │   └── investigator/                        # COC 7th 调查员车卡系统
 │       ├── __init__.py                      # 公开 API
 │       ├── models.py                        # 数据类 + 技能检定 + 战斗预留
@@ -53,34 +75,54 @@
 
 纯 Python 数据模块，不依赖 LLM 或 UI。
 
-- **数据类**：`Node`（场景节点）、`Edge`（连接边）、`Interaction`（可执行动作）、`GameEvent`（不可逆事件）、`Requirement`（前置条件）
+- **数据类**：`Node`（场景节点）、`Edge`（连接边）、`Interaction`（可执行动作）、`GameEvent`（不可逆事件）、`Requirement`（前置条件）、`ActionResult`（统一返回类型）
+- **Side Effects**：`FlagSet`（设置世界标记）、`ItemGain`（获得关键物品）、`StatChange`（属性变化）、`SpawnEnemy`（生成敌人遭遇）、`GrantItem`（授予武器/物品）、`NPCStateChange`（NPC 状态变化）
 - **DirectedGraph**：管理所有场景节点、连接关系和全局事件
-- **ScenarioWorld**：运行时状态管理器 —— 当前位置、已触发事件、已完成交互、世界标记、记忆管理
+- **ScenarioWorld**：运行时状态管理器 —— 当前位置、已触发事件、已完成交互、世界标记、NPC 运行时状态、记忆管理
 - **MemoryManager**：分层记忆 —— 近期原始记录 + 远期压缩摘要 + 关键发现追踪（仅记录简要结果，不记录完整叙事）
 - **RequirementResolver**：前置条件检查
 
+### `src/library/` — 武器/敌人资源库
+
+独立包，零外部依赖。提供结构化武器和敌人数据、双层判定引擎和内容注入。
+
+- **WeaponLibrary / EnemyLibrary**：加载核心库 + 用户扩展 JSON，支持按年代/稀有度/类型/关键词搜索
+- **JudgmentEngine**：T1 确定性检定（D100 技能检定、伤害公式掷骰、SAN 损失计算）+ T2 LLM 增强上下文构建（可开关）
+- **ContentInjector**：离线注入（模组构建时根据 L3 危险等级自动填充 encounter/weapon 槽位）+ 运行时动态注入（LLM 偏离触发时 spawn enemy / grant weapon）
+
+### `src/module_designer/` — 三层信息引擎
+
+- **L1 玩家可见层**（`SceneL1`）：入场叙事、氛围、情绪基调、无条件可感知元素、NPC 外貌
+- **L2 KP 守秘人层**（`SceneL2`）：场景描述、可执行交互、敌人遭遇声明、场景武器、被动隐藏信息、NPC 完整档案
+- **L3 设计者层**（`L3Designer`）：模组元信息、世界规则、逻辑链/分支、场景设计意图、结局条件、基调约束、核心驱动力
+
+所有数据类支持 JSON 往返序列化（`to_dict` / `from_dict` + `load_*` / `save_*`）。层间通过 ID 引用关联（L1 → L2 interaction name, L2 → library weapon/enemy name, L3 → flags/events）。
+
 ### `prompts.py`
 
-Prompt 构建器 + 叙事输出解析。所有 `build_*` 函数只构造 prompt 字符串。`parse_narrative_output()` 按 `结果 / 沉浸式叙事` 两部分拆解 LLM 输出。`log_skill_result()` 将技能检定写入日志。
+Prompt 构建器 + 叙事输出解析。所有 `build_*` 函数只构造 prompt 字符串。`parse_narrative_output()` 按 `结果 / 沉浸式叙事` 两部分拆解 LLM 输出。`log_skill_result()` 将技能检定写入日志。`_build_l1l3_context()` 从 L1/L3 数据构建基调约束和场景感知上下文，供叙事/即兴 prompt 使用。
 
 ### `game_loop.py` — 主游戏循环
 
-三阶段 LLM 调用链 + 技能闸门：
+三阶段 LLM 调用链 + 技能闸门 + 调试命令：
 
 1. **动作解析** — 基于场景 JSON 和玩家输入，LLM 判断意图（move/interact/search），支持多动作识别
 2. **事件判定** — 独立判断哪些不可逆事件的触发条件被满足
-3. **叙事生成** — 输出拆解为简要结果（记录到 memory）+ 沉浸式叙事（显示用）
+3. **叙事生成** — 输出拆解为简要结果（记录到 memory）+ 沉浸式叙事（显示用），融入 L1/L3 语境
+3.5. **偏离检测**（预留）— 检测玩家行为是否偏离 L3 预期路径，触发运行时内容注入
 
 阶段 1 和 2 并行调用。每个动作执行前经过统一闸门（condition 检查 + COC 7th D100 技能检定），闸门失败则跳过该动作并继续执行后续动作。动作世界更新和事件世界更新仅在实际执行/触发后发生。
 
 ### Pipeline（离线处理）
 
-`parsers.py` → `pipeline.py` 的数据处理链：
+已废弃 `parsers.py` / `pipeline.py`，移至 `src/archive/`。
 
-1. 从 Word/PDF 模组文档解析场景和事件
-2. 结构化需求匹配（requirement 字段精确匹配）
-3. 交叉验证与修订（合理性优先）
-4. 文学性扩充（功能性描述 → 沉浸式恐怖叙事）
+**新流程**（`module_designer/layered_parser.py` + `layered_pipeline.py`）：
+1. `parse_module()` — LLM 一键解析 source.txt → L1/L2/L3 JSON
+2. `run_pipeline()` — Schema 验证 → 离线注入 → 交叉引用验证
+3. `save_module()` — 保存至 `data/modules/<模组名>/`
+
+旧 archive 模块仍可用作 fallback：文档 → 解析场景/事件 → 需求匹配 → 交叉验证 → 文学性扩充。
 
 ### `src/investigator/` — COC 7th 调查员车卡系统
 
@@ -142,19 +184,56 @@ DEEPSEEK_API_KEY=your-key
 | `/char` | 查看当前调查员角色卡 |
 | `/do <动作名>` | 直接执行交互（跳过 LLM） |
 | `/trigger <E1>` | 手动触发事件 |
+| `/save <槽位>` | 临时存档 |
+| `/load <槽位>` | 读档 |
+| `/charsave` | 保存调查员长期存档 |
+| `/charload` | 加载调查员长期存档 |
+| `/spawn enemy <名称>` | 从敌人库生成敌人 |
+| `/spawn weapon <名称>` | 从武器库分发武器 |
+| `/inject [toggle\|status]` | 查看/切换运行时注入状态 |
 | `/help` | 帮助 |
 | `exit` / `quit` | 退出游戏 |
 
 ## 数据流向
 
 ```
-模组文档 (.docx/.pdf)
-    ↓ parsers.py
-scene_output.json + res_event.json
-    ↓ pipeline.py (resolve → validate → expand)
-scene_output_resolved_revised.json + res_event_resolved_revised.json
-    ↓ notebook
-DirectedGraph → ScenarioWorld → LLM 调用链 + COC 7th 技能闸门 → 拆分叙事输出
+┌─────────────────────────────────────────────────────┐
+│  离线：模组导入（当前可用）                            │
+│                                                      │
+│  模组文档 (.docx/.pdf)                                │
+│      ↓ archive/parsers.py (已废弃，仍可用)             │
+│  scene_output.json + res_event.json                  │
+│      ↓ archive/pipeline.py (已废弃，仍可用)            │
+│  scene_output_resolved_revised.json                  │
+│      ↓ notebook                                      │
+│  DirectedGraph → ScenarioWorld                       │
+│      ↓ LLM 调用链 + COC 7th 技能闸门                  │
+│  拆分叙事输出                                         │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│  离线：三层解析（当前可用）                             │
+│                                                      │
+│  source.txt / .docx                                  │
+│      ↓ layered_parser.parse_module() (LLM 一键解析)   │
+│  l1_player.json + l2_keeper.json + l3_designer.json  │
+│      ↓ layered_pipeline.run_pipeline()               │
+│  Schema 验证 → 离线注入 → 交叉引用验证                  │
+│      ↓ notebook                                      │
+│  l2_keeper.json → DirectedGraph → ScenarioWorld      │
+│      ↓ LLM 调用链 + L1/L3 感知叙事                    │
+│  沉浸式叙事输出                                       │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│  运行时：动态注入                                      │
+│                                                      │
+│  deviation_score > threshold                         │
+│      ↓ ContentInjector.runtime_spawn_enemy()         │
+│  或 /spawn enemy <name> (手动)                       │
+│      ↓ LLM 即兴叙事 + L3 护栏                         │
+│  动态内容融入游戏                                      │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## 核心 LLM 调用
