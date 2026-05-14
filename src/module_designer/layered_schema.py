@@ -67,11 +67,14 @@ L2_SCENE_WEAPON_SCHEMA = {
     "extra": {"required": False},
 }
 
-L2_HIDDEN_INFO_SCHEMA = {
-    "info": {"required": True},
-    "trigger_condition": {"required": True},
+L2_AUTO_TRIGGER_SCHEMA = {
+    "id": {"required": True},
+    "name": {"required": True},
+    "scene": {"required": False},
+    "trigger_condition": {"required": False},
+    "effect_type": {"required": False},
+    "effect_ref": {"required": False},
     "reveal_narrative": {"required": False},
-    "linked_skill": {"required": False},
     "extra": {"required": False},
 }
 
@@ -102,7 +105,7 @@ L2_SCENE_SCHEMA = {
     "interactions": {"required": False, "list_of": L2_INTERACTION_SCHEMA},
     "encounters": {"required": False, "list_of": L2_ENCOUNTER_SCHEMA},
     "scene_weapons": {"required": False, "list_of": L2_SCENE_WEAPON_SCHEMA},
-    "hidden_info": {"required": False, "list_of": L2_HIDDEN_INFO_SCHEMA},
+    "auto_triggers": {"required": False, "list_of": L2_AUTO_TRIGGER_SCHEMA},
     "extra": {"required": False},
 }
 

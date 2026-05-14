@@ -163,6 +163,14 @@ def test_validate_l2_valid():
                 "encounters": [
                     {"enemy_ref": "Clicker", "quantity": 1}
                 ],
+                "auto_triggers": [
+                    {
+                        "id": "AT1",
+                        "name": "发现血迹",
+                        "trigger_condition": "玩家搜索地板时触发",
+                        "effect_type": "reveal_info",
+                    }
+                ],
             }
         },
         "events": [

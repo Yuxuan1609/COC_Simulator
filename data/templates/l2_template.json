@@ -6,20 +6,23 @@
       "to_here": [{"source": "来源场景", "method": "通行方式"}],
       "interactions": [
         {
+          "id": "I1",
           "type": "调查",
           "name": "互动名称",
-          "requirement": [],
+          "requirement": "前置条件声明（自然语言）",
           "trigger": "触发条件",
           "result": "结果描述",
           "clue": "线索（可选）",
           "side_effects": [],
+          "enemy_ref": null,
+          "weapon_ref": null,
           "skill_name": "关联技能（可选）",
           "difficulty": "regular"
         }
       ],
       "encounters": [
         {
-          "enemy_ref": "library中敌人名",
+          "enemy_ref": null,
           "trigger_condition": "触发条件",
           "initial_behavior": "初始行为",
           "quantity": 1,
@@ -29,17 +32,20 @@
       ],
       "scene_weapons": [
         {
-          "weapon_ref": "library中武器名",
+          "weapon_ref": null,
           "location": "位置描述",
           "discovery_method": "发现方式",
           "extra": {}
         }
       ],
-      "hidden_info": [
+      "auto_triggers": [
         {
-          "info": "隐藏信息内容",
-          "trigger_condition": "skill:侦查>=50",
-          "linked_skill": "侦查",
+          "id": "AT1",
+          "name": "自动触发名称",
+          "scene": "S1",
+          "trigger_condition": "触发条件（自然语言）",
+          "effect_type": "reveal_info",
+          "effect_ref": null,
           "reveal_narrative": "揭示时的叙事文本"
         }
       ],
@@ -52,7 +58,7 @@
       "name": "事件名称",
       "trigger": "触发描述",
       "irreversible_impact": "不可逆影响",
-      "requirement": [],
+      "requirement": "前置条件声明（自然语言）",
       "extra": {}
     }
   ],
