@@ -97,9 +97,7 @@ def _with_fallback(
 
     if verbose:
         print(f"  [{step_name}] 重调用尽，使用保底输出")
-    fallback_data["_fallback"] = True
-    fallback_data["_fallback_reason"] = last_error
-    return fallback_data
+    return {**fallback_data, "_fallback": True, "_fallback_reason": last_error}
 
 
 # ═══════════════════════════════════════════════════════════════
