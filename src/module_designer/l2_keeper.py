@@ -64,29 +64,37 @@ class SceneWeapon:
 
 
 @dataclass
-class HiddenInfo:
-    """被动触发信息（"暗骰"式）."""
-    info: str
-    trigger_condition: str     # 条件表达式
-    reveal_narrative: str = ""
-    linked_skill: Optional[str] = None
+class AutoTrigger:
+    """自动触发事件（替代 HiddenInfo）."""
+    id: str                      # AT1, AT2...
+    name: str
+    scene: str = ""              # 生效场景 ID (S1, S2...)
+    trigger_condition: str = ""  # 自然语言触发条件
+    effect_type: str = ""        # reveal_info / spawn_enemy / grant_weapon / npc_state_change
+    effect_ref: str = ""         # 引用目标（enemy名/weapon名/NPC名，Step 4 填）
+    reveal_narrative: str = ""   # 揭示叙事（仅 reveal_info 类型）
     extra: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        d = {"info": self.info, "trigger_condition": self.trigger_condition, "reveal_narrative": self.reveal_narrative}
-        if self.linked_skill:
-            d["linked_skill"] = self.linked_skill
+        d = {
+            "id": self.id, "name": self.name, "scene": self.scene,
+            "trigger_condition": self.trigger_condition,
+            "effect_type": self.effect_type, "effect_ref": self.effect_ref,
+            "reveal_narrative": self.reveal_narrative,
+        }
         if self.extra:
             d["extra"] = self.extra
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> "HiddenInfo":
+    def from_dict(cls, data: dict) -> "AutoTrigger":
         return cls(
-            info=data["info"],
-            trigger_condition=data["trigger_condition"],
+            id=data["id"], name=data["name"],
+            scene=data.get("scene", ""),
+            trigger_condition=data.get("trigger_condition", ""),
+            effect_type=data.get("effect_type", ""),
+            effect_ref=data.get("effect_ref", ""),
             reveal_narrative=data.get("reveal_narrative", ""),
-            linked_skill=data.get("linked_skill"),
             extra=data.get("extra"),
         )
 
@@ -140,7 +148,7 @@ class SceneL2:
     interactions: list = field(default_factory=list)   # list[Interaction]
     encounters: List[Encounter] = field(default_factory=list)
     scene_weapons: List[SceneWeapon] = field(default_factory=list)
-    hidden_info: List[HiddenInfo] = field(default_factory=list)
+    auto_triggers: List[AutoTrigger] = field(default_factory=list)
     extra: Optional[dict] = None
 
     def to_dict(self) -> dict:
@@ -151,7 +159,7 @@ class SceneL2:
             "interactions": self.interactions,
             "encounters": [e.to_dict() for e in self.encounters],
             "scene_weapons": [sw.to_dict() for sw in self.scene_weapons],
-            "hidden_info": [h.to_dict() for h in self.hidden_info],
+            "auto_triggers": [at.to_dict() for at in self.auto_triggers],
         }
         if self.extra:
             d["extra"] = self.extra
@@ -167,7 +175,7 @@ class SceneL2:
             interactions=data.get("interactions", []),
             encounters=[Encounter.from_dict(e) for e in data.get("encounters", [])],
             scene_weapons=[SceneWeapon.from_dict(sw) for sw in data.get("scene_weapons", [])],
-            hidden_info=[HiddenInfo.from_dict(h) for h in data.get("hidden_info", [])],
+            auto_triggers=[AutoTrigger.from_dict(at) for at in data.get("auto_triggers", [])],
             extra=data.get("extra"),
         )
 
