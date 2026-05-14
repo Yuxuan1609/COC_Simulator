@@ -512,3 +512,223 @@ def build_step2c_l3_prompt(condensed_text: str, scenes: list[dict]) -> str:
 def parse_step2c_l3(condensed_text: str, scenes: list[dict], llm_call) -> dict:
     prompt = build_step2c_l3_prompt(condensed_text, scenes)
     return llm_call(prompt, system=STEP2C_L3_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 3a: L2 依赖解析
+# ═══════════════════════════════════════════════════════════════
+
+STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息的依赖解析和统一。
+你的任务是：检查所有 interaction/event/auto_trigger，统一 flag 名称，补全 requirement 引用。
+
+重要原则：
+- 语义相同的 flag 合并为一个名称（如 flag:has_key 和 flag:found_key → 统一为一个）
+- requirement 从自然语言声明补全为具体引用（指向 interaction ID / event ID / flag 名）
+- 不删改任何内容的实质信息，只修正名称和引用
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step3a_prompt(
+    condensed_text: str,
+    interactions: list[dict],
+    events: list[dict],
+    auto_triggers: list[dict],
+) -> str:
+    return f"""对以下模组中的所有 L2 内容做依赖解析和 flag 统一。
+
+## 精修模组（参考上下文）
+\"\"\"
+{condensed_text}
+\"\"\"
+
+## Interactions
+{json.dumps(interactions, ensure_ascii=False, indent=2)}
+
+## Events
+{json.dumps(events, ensure_ascii=False, indent=2)}
+
+## Auto-triggers
+{json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
+
+任务:
+1. **Flag 统一**: 语义相同的 flag 合并为一个。例如 flag:has_key 和 flag:found_key 指同一件事 → 统一为 flag:found_key，所有引用处同步更新。
+2. **Interaction requirement 补全**: 将自然语言声明转为引用已知实体（如 "需要先找到钥匙" → "flag:found_key AND interaction:I3"）。
+3. **Event requirement 补全**: 同上。
+4. **Auto-trigger condition 补全**: 同上。
+5. **Interaction ↔ Event 依赖**: 互动需要事件已/未触发。
+6. **Interaction ↔ Interaction 依赖**: 同一场景内互动执行顺序关系。
+7. **Event ↔ Event 依赖**: 事件链顺序。
+8. **Interaction ↔ Auto-trigger 依赖**: 被动触发对互动的引用。
+
+输出格式:
+{{
+  "interactions": [{{ ...原字段..., "requirement": "补全后的引用" }}],
+  "events": [{{ ...原字段..., "requirement": "补全后的引用" }}],
+  "auto_triggers": [{{ ...原字段..., "trigger_condition": "补全后的引用" }}],
+  "flag_mapping": {{"has_key": "found_key"}}
+}}
+
+仅输出 JSON。"""
+
+
+def parse_step3a(
+    condensed_text: str,
+    interactions: list[dict],
+    events: list[dict],
+    auto_triggers: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step3a_prompt(condensed_text, interactions, events, auto_triggers)
+    return llm_call(prompt, system=STEP3A_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 3b: L1 ↔ L2 交叉核对
+# ═══════════════════════════════════════════════════════════════
+
+STEP3B_SYSTEM = """你是一个 TRPG 一致性校对助手。
+你的任务是：检查 L1 玩家可见层与 L2 的交叉引用是否正确，修正不一致。
+
+重要原则：
+- linked_interaction 必须指向 L2 中真实存在的 interaction name
+- 场景名必须在所有层中一致
+- 仅修正名称和引用，不改变实质内容
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step3b_prompt(
+    condensed_text: str,
+    l1_data: dict,
+    l2_completed: dict,
+    l3_data: dict,
+    step1_scenes: list[dict],
+) -> str:
+    scene_names = ", ".join(s['name'] for s in step1_scenes)
+    return f"""核对 L1 与 L2 的交叉引用。
+
+## 精修模组（参考上下文）
+\"\"\"
+{condensed_text}
+\"\"\"
+
+## 统一场景名（Step 1 确定）
+{scene_names}
+
+## L1 数据
+{json.dumps(l1_data, ensure_ascii=False, indent=2)}
+
+## L2 完整数据（已通过 Step 3a 补全依赖）
+{json.dumps(l2_completed, ensure_ascii=False, indent=2)}
+
+## L3 数据
+{json.dumps(l3_data, ensure_ascii=False, indent=2)}
+
+任务:
+1. L1 场景名是否与统一场景名一致 → 不一致则修正
+2. L1 linked_interaction 是否指向 L2 中存在的 interaction name → 不存在则修正为正确的名称或清空
+3. 检查是否有 L1 感知元素应该关联 L2 互动但未关联 → 补充 linked_interaction
+4. L3 scene_intents 的 key 是否覆盖所有场景 → 缺失则补充
+5. 所有层的场景名统一
+
+输出格式:
+{{
+  "l1_data": {{ ...修正后的 L1... }},
+  "l3_data": {{ ...修正后的 L3... }}
+}}
+
+仅输出 JSON。"""
+
+
+def parse_step3b(
+    condensed_text: str,
+    l1_data: dict,
+    l2_completed: dict,
+    l3_data: dict,
+    step1_scenes: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step3b_prompt(condensed_text, l1_data, l2_completed, l3_data, step1_scenes)
+    return llm_call(prompt, system=STEP3B_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 4: Library 匹配
+# ═══════════════════════════════════════════════════════════════
+
+STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
+你的任务是：根据模组内容和场景需求，从给定的武器/敌人库中选择合适的资源填入占位符。
+
+重要原则：
+- 必须从提供的库列表中选择，不允许自创名称
+- 若无合适的库条目，填 "none" 并说明原因
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step4_prompt(
+    interactions: list[dict],
+    auto_triggers: list[dict],
+    l2_descriptions: dict[str, str],
+    scene_intents: dict,
+    condensed_text: str,
+    weapon_library_names: list[str],
+    enemy_library_names: list[str],
+) -> str:
+    weapons_list = "\n".join(f"- {w}" for w in weapon_library_names)
+    enemies_list = "\n".join(f"- {e}" for e in enemy_library_names)
+    desc_list = "\n".join(f"- {sid}: {desc}" for sid, desc in l2_descriptions.items())
+    return f"""为以下内容的 enemy_ref 和 weapon_ref 占位符填值。
+
+## 可用武器库
+{weapons_list}
+
+## 可用敌人库
+{enemies_list}
+
+## 场景描述
+{desc_list}
+
+## L3 Scene Intents
+{json.dumps(scene_intents, ensure_ascii=False, indent=2)}
+
+## 精修模组（参考上下文）
+\"\"\"
+{condensed_text}
+\"\"\"
+
+## Interactions (含空占位符)
+{json.dumps(interactions, ensure_ascii=False, indent=2)}
+
+## Auto-triggers (含空占位符)
+{json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
+
+任务:
+1. 为每个 enemy_ref 占位符从可用敌人库中选择匹配项。无匹配填 "none"。
+2. 为每个 weapon_ref 占位符从可用武器库中选择匹配项。无匹配填 "none"。
+3. 为 auto_trigger 的 effect_ref 从库中选择匹配项。
+4. 不允许自创名称。
+
+输出格式:
+{{
+  "interactions": [{{ ...原字段..., "enemy_ref": "库中名称或none", "weapon_ref": "库中名称或none" }}],
+  "auto_triggers": [{{ ...原字段..., "effect_ref": "库中名称或none" }}]
+}}
+
+仅输出 JSON。"""
+
+
+def parse_step4(
+    interactions: list[dict],
+    auto_triggers: list[dict],
+    l2_descriptions: dict[str, str],
+    scene_intents: dict,
+    condensed_text: str,
+    weapon_library_names: list[str],
+    enemy_library_names: list[str],
+    llm_call,
+) -> dict:
+    prompt = build_step4_prompt(
+        interactions, auto_triggers, l2_descriptions,
+        scene_intents, condensed_text,
+        weapon_library_names, enemy_library_names,
+    )
+    return llm_call(prompt, system=STEP4_SYSTEM)

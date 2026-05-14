@@ -228,6 +228,7 @@ from module_designer.layered_parser import (
     build_step1a_prompt, build_step1b_prompt,
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
+    build_step3a_prompt, build_step3b_prompt, build_step4_prompt,
 )
 
 
@@ -360,3 +361,45 @@ def test_build_step2c_l3_prompt_structure():
     assert "world_rules" in prompt
     assert "driving_force" in prompt
     assert "scene_intents" in prompt
+
+
+def test_build_step3a_prompt_structure():
+    interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先找到线索"}]
+    events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后"}]
+    auto_triggers = [{"id": "AT1", "name": "触发", "scene": "S1", "trigger_condition": "玩家进入场景"}]
+    prompt = build_step3a_prompt("精修模组", interactions, events, auto_triggers)
+    assert "I1" in prompt
+    assert "E1" in prompt
+    assert "AT1" in prompt
+    assert "flag" in prompt.lower()
+    assert "requirement" in prompt
+
+
+def test_build_step3b_prompt_structure():
+    l1 = {"6号车厢": {"entry_narrative": "测试"}}
+    l2 = {"interactions": [{"id": "I1", "name": "搜查"}], "events": [], "auto_triggers": []}
+    l3 = {"scene_intents": {"6号车厢": {"purpose": "测试"}}}
+    scenes = [{"id": "S1", "name": "6号车厢"}]
+    prompt = build_step3b_prompt("精修模组", l1, l2, l3, scenes)
+    assert "linked_interaction" in prompt
+    assert "6号车厢" in prompt
+    assert "scene_intents" in prompt
+
+
+def test_build_step4_prompt_structure():
+    interactions = [{"id": "I1", "name": "战斗", "enemy_ref": None, "weapon_ref": None}]
+    auto_triggers = [{"id": "AT1", "name": "触发", "effect_ref": None}]
+    prompt = build_step4_prompt(
+        interactions, auto_triggers,
+        {"S1": "测试场景"},
+        {"6号车厢": {"purpose": "测试"}},
+        "精修模组参考",
+        ["手电筒", ".45自动手枪"],
+        ["Clicker", "深潜者"],
+    )
+    assert "Clicker" in prompt
+    assert "手电筒" in prompt
+    assert ".45自动手枪" in prompt
+    assert "enemy_ref" in prompt
+    assert "weapon_ref" in prompt
+    assert "effect_ref" in prompt
