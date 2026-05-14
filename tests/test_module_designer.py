@@ -417,3 +417,25 @@ def test_build_step4_prompt_structure():
     assert "enemy_ref" in prompt
     assert "weapon_ref" in prompt
     assert "effect_ref" in prompt
+
+
+def test_fallback_utility():
+    """验证 _with_fallback 在 LLM 持续失败时返回保底数据."""
+    from module_designer.layered_parser import _with_fallback
+    call_count = [0]
+
+    def failing_llm():
+        call_count[0] += 1
+        raise ValueError("LLM error")
+
+    result = _with_fallback(
+        failing_llm,
+        required_keys=["scenes"],
+        fallback_data={"scenes": []},
+        max_retries=2,
+        verbose=False,
+        step_name="test",
+    )
+    assert call_count[0] == 2
+    assert result["_fallback"] is True
+    assert result["scenes"] == []
