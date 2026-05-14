@@ -41,34 +41,31 @@ L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩家可�
 你的任务是：从模组文档中提取每个场景的**初始感知信息**——玩家进入场景时，无需任何检定即可直接感知的一切。
 
 重要原则：
+- 严格按照输出格式参考输出json文件
 - 只描述**无条件可见**的内容（外观、声音、气味、氛围）
-- 需要检定才能发现的信息 → 不要放在这里（那是 L2 的事）
-- NPC 只描述外貌和神态，不写隐藏动机（那是 L2 的事）
-- 用沉浸式中文，但保持简洁
-- mood 从以下选择：confused / uneasy / tense / terrified / hopeful / desperate
-- perceptible type 从以下选择：object / sound / smell / sight / touch / intuition"""
-
+- 需要检定才能发现的信息 
+- NPC 只描述外貌和神态，不写隐藏动机
+"""
 
 def build_l1_prompt(content: str) -> str:
     """构建 L1 解析 prompt."""
     template = _load_template("l1_template.json")
-    return f"""根据以下模组文档，提取每个场景的「玩家初始感知信息」（L1 层）。
+    return f"""根据以下模组文档，提取每个场景的「玩家初始感知信息」。
 
 输出格式参考：
 {template}
 
 要求：
 1. 每个场景作为一个顶层 key，key 名为场景名称（如"6号车厢"）
-2. entry_narrative：玩家进入该场景时的开场叙事（KP 可直接朗读，80-200字）
-3. atmosphere：场景氛围一句话总结（如"昏暗封闭、空气中弥漫霉味"）
-4. mood：该场景的目标情绪基调（confused/uneasy/tense/terrified/hopeful/desperate）
-5. perceptible：玩家无需检定即可感知的元素列表：
+2. description：描述场景基本信息的叙事文本，注意只包含最基本的描述性信息
+3. atmosphere：场景氛围一句话总结（如"昏暗封闭、给人一种令人不舒服的压迫感"）
+4. perceptible：玩家无需检定即可感知的元素列表：
    - type：感知类型（object/sound/smell/sight/touch/intuition）
    - name：元素名称
    - brief：一句话描述
    - linked_interaction：可选，关联的 L2 互动名称（暂可留空，后续 pipeline 会补充）
-6. ambient_hints：微妙的环境线索列表（玩家可感知的"直觉"类信息）
-7. npc_appearances：当前场景 NPC 的外貌描述（只写外观，不写隐藏信息）
+5. ambient_hints：微妙的环境线索列表（玩家可感知的"直觉"类信息）
+6. npc_appearances：当前场景 NPC 的外貌描述（只写外观，不写隐藏信息）
 
 重要：
 - 仅输出 JSON，不要任何解释性文字
@@ -96,11 +93,11 @@ def parse_l1(content: str, llm_call) -> dict:
 #  L2 解析
 # ═══════════════════════════════════════════════════════════════
 
-L2_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「KP 守秘人层」信息。
-你的任务是：从模组文档中提取完整的游戏机制信息——场景功能描述、可执行互动、敌人遭遇、隐藏信息、NPC 档案。
+L2_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「KP 守秘人层」的信息。
+你的任务是：从模组文档中提取完整的模组机制信息——场景功能描述、可执行互动、敌人遭遇、隐藏信息、NPC 档案、事件逻辑链路。
 
 重要原则：
-- 这是 KP 参考层，包含所有游戏机制真相
+- 这是 KP 参考层，包含所有模组运行时的必要信息
 - interactions 必须包含 side_effects 数组（如 flag_set/item_gain/spawn_enemy 等）
 - encounters 引用 library 中的敌人名（如 Clicker、深潜者 等）
 - scene_weapons 只列出**武器**（常规物品如手电筒由 LLM 叙事处理，不需要结构化数据）
@@ -116,11 +113,16 @@ def build_l2_prompt(content: str) -> str:
 输出格式参考：
 {template}
 
+模组文档：
+\"\"\"
+{content}
+\"\"\"
 要求：
 1. scenes：每个场景包含：
-   - description：场景功能性描述（KP 用，区别于 L1 的叙事性 entry_narrative）
-   - from_here / to_here：移动边（目标场景 + 通行方式）
-   - interactions：可执行动作列表，每个包含：
+   “场景名称”
+   - description：场景功能性描述（KP 用，描述场景应该发挥的作用和所有的潜在信息，不超过200字）
+   - from_here / to_here：可移动地点（目标场景 + 通行方式）
+   - interactions：可执行动作/场景互动列表，每个包含：
      * type：互动类型（调查/鉴定/搜索/对话/决策/使用物品/战斗等）
      * name：互动名称
      * trigger：触发条件描述
@@ -149,10 +151,7 @@ def build_l2_prompt(content: str) -> str:
 - 根据原文合理推测补充游戏机制细节
 - 隐藏信息与主动互动的区别：hidden_info 是系统被动检测条件后自动揭示的
 
-模组文档：
-\"\"\"
-{content}
-\"\"\""""
+"""
 
 
 def parse_l2(content: str, llm_call) -> dict:
@@ -175,7 +174,6 @@ L3_SYSTEM = """你是一个 TRPG 模组设计分析师，专门提取「设计�
 重要原则：
 - 这是设计者层，描述**为什么**这个模组这样设计，而非**有什么**内容
 - world_rules 是世界运行的物理/超自然法则（玩家和 KP 都必须遵守）
-- logic_chains 是剧情骨架，不是线性流程——包含分支节点和条件
 - scene_intents 描述每个场景的**设计目的**（为什么存在这个场景），而非场景内容
 - driving_force 是一切事件的根本驱动力（为什么这一切在发生）
 - tone_constraints 是跨场景的叙事护栏"""
@@ -189,6 +187,10 @@ def build_l3_prompt(content: str) -> str:
 输出格式参考：
 {template}
 
+模组文档：
+\"\"\"
+{content}
+\"\"\"
 要求：
 1. module_meta：模组元信息（标题、作者、年代、主题、预计时长、玩家人数）
 
@@ -199,28 +201,19 @@ def build_l3_prompt(content: str) -> str:
    - scope：影响范围（movement/combat/stealth/investigation/dialogue 等）
    - is_absolute：是否为绝对规则（true=不可违反，false=极端情况可打破）
 
-3. logic_chains：剧情逻辑链列表，每个包含：
-   - id：逻辑链编号（LC1, LC2...）
-   - name：名称
-   - description：一句话描述
-   - nodes：逻辑节点（按顺序的里程碑）
-   - branches：分支条件列表，每个包含 condition / effect / next_node
-   - is_critical：是否为主线
-
-4. scene_intents：每个场景的设计意图，key 为场景名，value 包含：
+3. scene_intents：每个场景的设计意图，key 为场景名，value 包含：
    - purpose：此场景在模组中的作用（如"苏醒点，建立初始紧张感"）
-   - emotion：目标情绪
-   - danger_level：危险等级（safe/low/medium/high/extreme）
-   - key_info：此场景必须传达的关键信息
    - key_threat：核心威胁（可选）
-   - exit_leads_to：离开后可能前往的场景
+   - notes: 设计备注（可选）
 
-5. ending_conditions：结局条件列表，每个包含 id / type（escape/trapped/madness/sacrifice/revelation）/ condition / narrative_theme
-
+5. ending_conditions：结局条件列表，每个包含 id / condition / narrative
+    - condition：宏观层面的触发条件基于driving_force和导致当前情况的原因进行理解（如彻底解决当前威胁触发结局A，失败触发结局B）
+    - narrative：结局叙事包含结局的主题和叙事性的结果
+    
 6. tone_constraints：全局叙事护栏：
    - genre：类型标签
    - forbidden：禁止出现的元素/主题
-   - required：必须包含的元素/主题
+   - recommended：必须包含的元素/主题
    - narrative_style：叙事风格指引
 
 7. driving_force：一切事件的底层驱动力——"为什么这一切在发生？"
@@ -228,13 +221,9 @@ def build_l3_prompt(content: str) -> str:
 重要：
 - 仅输出 JSON，不要任何解释性文字
 - 从原文中推断设计意图，即使原文没有明确声明
-- logic_chains 的 nodes 按推进顺序排列
 - driving_force 应该是概念层面的，不是具体事件描述
 
-模组文档：
-\"\"\"
-{content}
-\"\"\""""
+"""
 
 
 def parse_l3(content: str, llm_call) -> dict:
@@ -297,8 +286,8 @@ def parse_module(
         results["L3"] = parse_l3(content, llm_call)
         if verbose:
             rules = results["L3"].get("world_rules", [])
-            chains = results["L3"].get("logic_chains", [])
-            print(f"  L3 完成：{len(rules)} 条世界规则, {len(chains)} 条逻辑链")
+            intents = results["L3"].get("scene_intents", {})
+            print(f"  L3 完成：{len(rules)} 条世界规则, {len(intents)} 个场景意图")
 
     return results
 

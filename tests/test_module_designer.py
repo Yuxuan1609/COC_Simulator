@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from module_designer.l1_player import SceneL1, Perceptible, NPCAppearance
 from module_designer.l2_keeper import SceneL2, Encounter, SceneWeapon, AutoTrigger, NPCProfile
 from module_designer.l3_designer import (
-    L3Designer, ModuleMeta, WorldRule, LogicChain, SceneIntent, ToneConstraints
+    L3Designer, ModuleMeta, WorldRule, SceneIntent, ToneConstraints, EndingCondition,
 )
 
 
@@ -84,8 +84,9 @@ def test_l3_designer_roundtrip():
     l3 = L3Designer(
         module_meta=ModuleMeta(title="常暗之厢", era="1920s"),
         world_rules=[WorldRule(id="WR1", name="无路可退", rule="后方车厢被吞噬，只能前进")],
-        logic_chains=[],
-        scene_intents={"6号车厢": SceneIntent(purpose="苏醒点", danger_level="safe")},
+        scene_intents={"6号车厢": SceneIntent(purpose="苏醒点")},
+        tone_constraints=ToneConstraints(genre="克苏鲁恐怖", recommended=["压迫感"]),
+        ending_conditions=[EndingCondition(id="END1", condition="加速逃脱", narrative="重见光明")],
         driving_force="电车正被奈亚拉托提普的化身吞噬",
     )
     d = l3.to_dict()
@@ -93,6 +94,8 @@ def test_l3_designer_roundtrip():
     assert restored.driving_force == "电车正被奈亚拉托提普的化身吞噬"
     assert len(restored.world_rules) == 1
     assert restored.world_rules[0].id == "WR1"
+    assert restored.tone_constraints.recommended == ["压迫感"]
+    assert restored.ending_conditions[0].narrative == "重见光明"
 
 
 def test_l1_save_load():
@@ -179,9 +182,8 @@ def test_validate_l3_valid():
         "world_rules": [
             {"id": "WR1", "name": "测试规则", "rule": "一条规则"}
         ],
-        "logic_chains": [],
         "scene_intents": {
-            "6号车厢": {"purpose": "苏醒点", "danger_level": "safe"}
+            "6号车厢": {"purpose": "苏醒点"}
         },
         "ending_conditions": [],
         "tone_constraints": {"genre": "克苏鲁恐怖"},
@@ -191,14 +193,14 @@ def test_validate_l3_valid():
     assert report.is_valid
 
 
-def test_validate_l3_invalid_danger():
+def test_validate_l3_invalid_ending_missing_id():
     data = {
-        "scene_intents": {
-            "test": {"danger_level": "impossible"}  # 不在枚举中
-        }
+        "ending_conditions": [
+            {"condition": "trigger condition"}  # 缺少必填 id
+        ]
     }
     report = validate_l3(data)
-    assert any("impossible" in w.message for w in report.warnings)
+    assert any("必填字段" in w.message for w in report.warnings)
 
 
 def test_validate_all():
@@ -240,7 +242,7 @@ def test_build_l3_prompt_structure():
     prompt = build_l3_prompt("测试模组内容")
     assert "测试模组内容" in prompt
     assert "world_rules" in prompt
-    assert "logic_chains" in prompt
+    assert "scene_intents" in prompt
     assert "driving_force" in prompt
 
 

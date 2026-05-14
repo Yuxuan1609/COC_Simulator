@@ -4,7 +4,7 @@ from module_designer.l2_keeper import (
     SceneL2, Encounter, SceneWeapon, AutoTrigger, NPCProfile, load_l2, save_l2,
 )
 from module_designer.l3_designer import (
-    L3Designer, ModuleMeta, WorldRule, LogicChain, Branch,
+    L3Designer, ModuleMeta, WorldRule,
     SceneIntent, EndingCondition, ToneConstraints, load_l3, save_l3,
 )
 from module_designer.layered_schema import (

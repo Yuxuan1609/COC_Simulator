@@ -111,9 +111,6 @@ L2_SCENE_SCHEMA = {
 #  L3 设计者层 Schema
 # ═══════════════════════════════════════════════════════════════
 
-L3_DANGER_LEVELS = {"safe", "low", "medium", "high", "extreme"}
-L3_ENDING_TYPES = {"escape", "trapped", "madness", "sacrifice", "revelation"}
-
 L3_MODULE_META_SCHEMA = {
     "title": {"required": False},
     "author": {"required": False},
@@ -131,49 +128,28 @@ L3_WORLD_RULE_SCHEMA = {
     "is_absolute": {"required": False},
 }
 
-L3_BRANCH_SCHEMA = {
-    "condition": {"required": True},
-    "effect": {"required": False},
-    "next_node": {"required": False},
-}
-
-L3_LOGIC_CHAIN_SCHEMA = {
-    "id": {"required": True},
-    "name": {"required": True},
-    "description": {"required": False},
-    "nodes": {"required": False},
-    "branches": {"required": False, "list_of": L3_BRANCH_SCHEMA},
-    "is_critical": {"required": False},
-}
-
 L3_SCENE_INTENT_SCHEMA = {
     "purpose": {"required": False},
-    "emotion": {"required": False},
-    "danger_level": {"required": False, "values": L3_DANGER_LEVELS},
-    "key_info": {"required": False},
     "key_threat": {"required": False},
-    "exit_leads_to": {"required": False},
     "notes": {"required": False},
 }
 
 L3_ENDING_CONDITION_SCHEMA = {
     "id": {"required": True},
-    "type": {"required": False, "values": L3_ENDING_TYPES},
     "condition": {"required": False},
-    "narrative_theme": {"required": False},
+    "narrative": {"required": False},
 }
 
 L3_TONE_CONSTRAINTS_SCHEMA = {
     "genre": {"required": False},
     "forbidden": {"required": False},
-    "required": {"required": False},
+    "recommended": {"required": False},
     "narrative_style": {"required": False},
 }
 
 L3_TOP_SCHEMA = {
     "module_meta": {"required": False, "nested": L3_MODULE_META_SCHEMA},
     "world_rules": {"required": False, "list_of": L3_WORLD_RULE_SCHEMA},
-    "logic_chains": {"required": False, "list_of": L3_LOGIC_CHAIN_SCHEMA},
     "scene_intents": {"required": False},
     "ending_conditions": {"required": False, "list_of": L3_ENDING_CONDITION_SCHEMA},
     "tone_constraints": {"required": False, "nested": L3_TONE_CONSTRAINTS_SCHEMA},
