@@ -449,8 +449,25 @@ def run_pipeline(
         print("═" * 50)
         print("[Final] Schema 验证 + 交叉引用检查...")
 
+    # 按 scene ID 分组构建 L2 for validation
+    scenes_by_sid: dict[str, dict] = {}
+    for inter in interactions:
+        sid = inter.get("scene", "unknown")
+        scenes_by_sid.setdefault(sid, {
+            "interactions": [], "encounters": [],
+            "scene_weapons": [], "auto_triggers": [],
+        })
+        scenes_by_sid[sid]["interactions"].append(inter)
+    for at in auto_triggers:
+        sid = at.get("scene", "unknown")
+        scenes_by_sid.setdefault(sid, {
+            "interactions": [], "encounters": [],
+            "scene_weapons": [], "auto_triggers": [],
+        })
+        scenes_by_sid[sid]["auto_triggers"].append(at)
+
     l2_for_validation = {
-        "scenes": {},
+        "scenes": scenes_by_sid,
         "events": events,
         "npc_profiles": {},
     }
