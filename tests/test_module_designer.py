@@ -225,33 +225,26 @@ def test_validate_all():
 # ═══════════════════════════════════════════════════════════════
 
 from module_designer.layered_parser import (
-    build_l1_prompt, build_l2_prompt, build_l3_prompt,
+    build_step1a_prompt, build_step1b_prompt,
 )
 
 
-def test_build_l1_prompt_structure():
-    prompt = build_l1_prompt("测试模组内容")
-    assert "L1" in prompt or "玩家初始感知" in prompt or "6号车厢" in prompt
+def test_build_step1a_prompt_structure():
+    prompt = build_step1a_prompt("测试模组内容\n包含6号车厢和7号车厢")
     assert "测试模组内容" in prompt
-    assert "entry_narrative" in prompt
-    assert "perceptible" in prompt
+    assert "scenes" in prompt
+    assert "characters" in prompt
+    assert "module_meta" in prompt
 
 
-def test_build_l2_prompt_structure():
-    prompt = build_l2_prompt("测试模组内容")
+def test_build_step1b_prompt_structure():
+    prompt = build_step1b_prompt("测试模组内容")
     assert "测试模组内容" in prompt
-    assert "interactions" in prompt
-    assert "side_effects" in prompt
-    assert "encounters" in prompt
-    assert "hidden_info" in prompt
-
-
-def test_build_l3_prompt_structure():
-    prompt = build_l3_prompt("测试模组内容")
-    assert "测试模组内容" in prompt
-    assert "world_rules" in prompt
-    assert "scene_intents" in prompt
-    assert "driving_force" in prompt
+    assert "## module_overview" in prompt
+    assert "## scenes" in prompt
+    assert "## npcs" in prompt
+    assert "## clues_and_items" in prompt
+    assert "## events_summary" in prompt
 
 
 # ═══════════════════════════════════════════════════════════════

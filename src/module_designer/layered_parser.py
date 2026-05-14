@@ -1,16 +1,27 @@
 """
-三层解析器：从模组源文档一键生成 L1 + L2 + L3 JSON。
+四步渐进式解析器：从模组源文档逐步生成 L1 + L2 + L3 JSON。
 
-流程：
-  source.txt → parse_l1() + parse_l2() + parse_l3() → 三层 JSON
-  或
-  source.txt → parse_module() → (l1_data, l2_data, l3_data)
+流程:
+  Step 1a: 结构化提取 (meta + scenes + characters)
+  Step 1b: 精修模组 (condensed_text)
+  Step 2a: interactions (先跑)
+  Step 2b: events + auto_triggers (并行，注入 interaction IDs)
+  Step 2c: L1 + L3 (并行)
+  Step 3a: L2 依赖解析
+  Step 3b: L1 ↔ L2 交叉核对
+  Step 4:  Library 匹配 enemies/weapons
+
+保底策略: 每步格式/内容失败 → 重调 (最多 N 次) → 仍失败则基于可解析内容写 JSON。
 """
 from __future__ import annotations
 import json
 import os
-from typing import Tuple
+from typing import Callable
 
+
+# ═══════════════════════════════════════════════════════════════
+#  Utility
+# ═══════════════════════════════════════════════════════════════
 
 def _load_template(name: str) -> str:
     """加载模板文件并格式化为示例 JSON 字符串."""
@@ -33,45 +44,98 @@ def _clean_json(raw: str) -> str:
     return raw.strip()
 
 
+def _safe_parse_json(raw: str) -> dict:
+    """安全解析 JSON，失败返回空 dict."""
+    try:
+        return json.loads(_clean_json(raw))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _is_valid_json_output(data: dict, required_keys: list[str]) -> bool:
+    """检查 JSON 输出是否格式合法且含必需的非空字段."""
+    if not isinstance(data, dict):
+        return False
+    for key in required_keys:
+        val = data.get(key)
+        if val is None or (isinstance(val, (str, list, dict)) and len(val) == 0):
+            return False
+    return True
+
+
 # ═══════════════════════════════════════════════════════════════
-#  L1 解析
+#  Fallback wrapper
 # ═══════════════════════════════════════════════════════════════
 
-L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
-你的任务是：从模组文档中提取每个场景的**初始感知信息**——玩家进入场景时，无需任何检定即可直接感知的一切。
+def _with_fallback(
+    parse_fn: Callable[[], dict],
+    required_keys: list[str],
+    fallback_data: dict,
+    max_retries: int = 3,
+    verbose: bool = True,
+    step_name: str = "",
+) -> dict:
+    """
+    包装一次 LLM 调用，含重试 + 保底策略。
+
+    1. 调用 parse_fn()
+    2. 检查 _is_valid_json_output → 通过返回
+    3. 失败则重试 parse_fn() 最多 max_retries 次
+    4. 全部失败 → 用 fallback_data + 标记 _fallback: True
+    """
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = parse_fn()
+            if _is_valid_json_output(result, required_keys):
+                return result
+            last_error = f"内容校验失败（缺失必需字段 {required_keys}）"
+        except Exception as e:
+            last_error = str(e)
+        if verbose:
+            print(f"  [{step_name}] 第 {attempt}/{max_retries} 次尝试失败: {last_error}")
+
+    if verbose:
+        print(f"  [{step_name}] 重调用尽，使用保底输出")
+    fallback_data["_fallback"] = True
+    fallback_data["_fallback_reason"] = last_error
+    return fallback_data
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 1a: 结构化提取
+# ═══════════════════════════════════════════════════════════════
+
+STEP1A_SYSTEM = """你是一个 TRPG 模组结构化解析助手。
+你的任务是：从模组文档中提取模组的元信息、场景列表和人物列表，使用固定的 ID 体系。
 
 重要原则：
-- 严格按照输出格式参考输出json文件
-- 只描述**无条件可见**的内容（外观、声音、气味、氛围）
-- 需要检定才能发现的信息 
-- NPC 只描述外貌和神态，不写隐藏动机
-"""
+- 场景 ID 使用 S1, S2, S3... 格式
+- 人物 ID 使用 NPC_1, NPC_2... 格式
+- 场景名和人物名使用原文中的中文名称
+- 仅输出 JSON，不要任何解释性文字"""
 
-def build_l1_prompt(content: str) -> str:
-    """构建 L1 解析 prompt."""
-    template = _load_template("l1_template.json")
-    return f"""根据以下模组文档，提取每个场景的「玩家初始感知信息」。
 
-输出格式参考：
-{template}
+def build_step1a_prompt(content: str) -> str:
+    return f"""从以下模组文档中提取结构化信息。
+
+输出格式:
+{{
+  "module_meta": {{"title": "模组标题", "era": "年代（如1920s）", "theme": "核心主题"}},
+  "scenes": [
+    {{"name": "场景中文名", "id": "S1"}},
+    {{"name": "场景中文名", "id": "S2"}}
+  ],
+  "characters": [
+    {{"name": "角色中文名", "id": "NPC_1"}},
+    {{"name": "角色中文名", "id": "NPC_2"}}
+  ]
+}}
 
 要求：
-1. 每个场景作为一个顶层 key，key 名为场景名称（如"6号车厢"）
-2. description：描述场景基本信息的叙事文本，注意只包含最基本的描述性信息
-3. atmosphere：场景氛围一句话总结（如"昏暗封闭、给人一种令人不舒服的压迫感"）
-4. perceptible：玩家无需检定即可感知的元素列表：
-   - type：感知类型（object/sound/smell/sight/touch/intuition）
-   - name：元素名称
-   - brief：一句话描述
-   - linked_interaction：可选，关联的 L2 互动名称（暂可留空，后续 pipeline 会补充）
-5. ambient_hints：微妙的环境线索列表（玩家可感知的"直觉"类信息）
-6. npc_appearances：当前场景 NPC 的外貌描述（只写外观，不写隐藏信息）
-
-重要：
-- 仅输出 JSON，不要任何解释性文字
-- 只写**无条件可见**的感知信息
-- 需要检定才能发现的内容留给 L2 层
-- 原文未描述的内容可以基于上下文合理推测
+1. scenes 按玩家可能到达的顺序排列
+2. characters 列出所有有名字或有重要作用的角色
+3. 仅输出 JSON
 
 模组文档：
 \"\"\"
@@ -79,243 +143,69 @@ def build_l1_prompt(content: str) -> str:
 \"\"\""""
 
 
-def parse_l1(content: str, llm_call) -> dict:
-    """
-    从模组文档解析 L1 玩家可见层。
-    llm_call: 接受 (prompt, system) 返回 dict 的函数（如 call_deepseek_json）
-    """
-    prompt = build_l1_prompt(content)
-    raw = llm_call(prompt, system=L1_SYSTEM)
-    return raw
+def parse_step1a(content: str, llm_call) -> dict:
+    """从模组文档提取结构化元信息."""
+    prompt = build_step1a_prompt(content)
+    return llm_call(prompt, system=STEP1A_SYSTEM)
 
 
 # ═══════════════════════════════════════════════════════════════
-#  L2 解析
+#  Step 1b: 精修模组
 # ═══════════════════════════════════════════════════════════════
 
-L2_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「KP 守秘人层」的信息。
-你的任务是：从模组文档中提取完整的模组机制信息——场景功能描述、可执行互动、敌人遭遇、隐藏信息、NPC 档案、事件逻辑链路。
+STEP1B_SYSTEM = """你是一个 TRPG 模组编辑助手。
+你的任务是：将模组文档整理为完整、流畅的半结构化叙事文本。
 
 重要原则：
-- 这是 KP 参考层，包含所有模组运行时的必要信息
-- interactions 必须包含 side_effects 数组（如 flag_set/item_gain/spawn_enemy 等）
-- encounters 引用 library 中的敌人名（如 Clicker、深潜者 等）
-- scene_weapons 只列出**武器**（常规物品如手电筒由 LLM 叙事处理，不需要结构化数据）
-- hidden_info 是**被动触发**的信息（暗骰式），与 interaction（玩家主动选择）区分开
-- NPC profiles 包含完整 KP 信息（动机、知识、性格）"""
+- 输出是一篇可直接阅读的完整模组文本，不是摘要或碎片列表
+- 保留所有关键叙事细节，不压缩信息量
+- 去除原作者备注、创作说明等非模组本体内容
+- 原文模糊、不连贯或不合理处 → 基于上下文扩写和衔接
+- 使用固定的 markdown 章节标题组织内容"""
 
 
-def build_l2_prompt(content: str) -> str:
-    """构建 L2 解析 prompt."""
-    template = _load_template("l2_template.json")
-    return f"""根据以下模组文档，提取完整的「KP 守秘人层」信息（L2 层）。
+def build_step1b_prompt(content: str) -> str:
+    return f"""将以下模组文档整理为完整流畅的半结构化叙事文本。
 
-输出格式参考：
-{template}
+输出格式（固定章节标题，每节内为完整叙事文本）:
+
+## module_overview
+[模组全局概述：核心设定、时代背景、整体叙事走向]
+
+## scenes
+[每个场景的完整叙事信息，以场景名开头]
+例如: 6号车厢 — [场景的完整叙事描述，包含氛围、关键物品位置、可感知细节]
+
+## npcs
+[每个 NPC 的完整信息]
+例如: 京山人吉 — [角色的完整描述，包含外貌、身份、行为模式]
+
+## clues_and_items
+[所有关键线索和物品的完整描述，包含位置、获取方式、关联信息]
+
+## events_summary
+[所有重要事件的时间线和触发条件描述]
+
+要求：
+1. 以完整叙事行文呈现，确保阅读流畅
+2. 不压缩信息量，不简化关键细节
+3. 去除原作者备注等非模组内容，但原文信息不能丢失
+4. 原文模糊处可基于上下文合理扩写
+5. 整个 condensed_text 应该可以作为后续 LLM 提取信息的唯一来源
+6. 仅输出以上 markdown 格式文本，不要 JSON 包裹
 
 模组文档：
 \"\"\"
 {content}
-\"\"\"
-要求：
-1. scenes：每个场景包含：
-   “场景名称”
-   - description：场景功能性描述（KP 用，描述场景应该发挥的作用和所有的潜在信息，不超过200字）
-   - from_here / to_here：可移动地点（目标场景 + 通行方式）
-   - interactions：可执行动作/场景互动列表，每个包含：
-     * type：互动类型（调查/鉴定/搜索/对话/决策/使用物品/战斗等）
-     * name：互动名称
-     * trigger：触发条件描述
-     * result：结果描述
-     * clue：线索（可选）
-     * side_effects：副作用数组，每个元素有 type 字段
-       - flag_set：{{"type":"flag_set","key":"标记名","value":true}}
-       - item_gain：{{"type":"item_gain","item_name":"物品名"}}
-       - spawn_enemy：{{"type":"spawn_enemy","enemy_ref":"敌人名","scene":"场景名"}}
-       - grant_item：{{"type":"grant_item","item_ref":"武器名"}}
-       - npc_state_change：{{"type":"npc_state_change","npc_name":"NPC名","new_state":"状态"}}
-       - stat_change：{{"type":"stat_change","stat_name":"SAN","delta":-1}}
-     * requirement：前置条件数组
-     * skill_name：关联技能名（可选）
-     * difficulty：检定难度（regular/hard/extreme）
-   - encounters：预设敌人遭遇（引用 library 敌人名）
-   - scene_weapons：场景中可获取的武器（只列武器！）
-   - hidden_info：被动触发信息（暗骰式），每个包含 info / trigger_condition / reveal_narrative
-
-2. events：全局不可逆事件列表，每个包含 id（E1,E2...）/ name / trigger / irreversible_impact / requirement
-
-3. npc_profiles：NPC 完整档案，每个包含 name / role / motivation / knowledge / personality / voice_notes
-
-重要：
-- 仅输出 JSON，不要任何解释性文字
-- 根据原文合理推测补充游戏机制细节
-- 隐藏信息与主动互动的区别：hidden_info 是系统被动检测条件后自动揭示的
-
-"""
+\"\"\""""
 
 
-def parse_l2(content: str, llm_call) -> dict:
-    """
-    从模组文档解析 L2 KP 守秘人层。
-    llm_call: 接受 (prompt, system) 返回 dict 的函数
-    """
-    prompt = build_l2_prompt(content)
-    raw = llm_call(prompt, system=L2_SYSTEM)
-    return raw
-
-
-# ═══════════════════════════════════════════════════════════════
-#  L3 解析
-# ═══════════════════════════════════════════════════════════════
-
-L3_SYSTEM = """你是一个 TRPG 模组设计分析师，专门提取「设计者层」信息。
-你的任务是：从模组文档中提取模组的设计意图、世界规则、剧情逻辑链、场景设计目的和基调约束。
-
-重要原则：
-- 这是设计者层，描述**为什么**这个模组这样设计，而非**有什么**内容
-- world_rules 是世界运行的物理/超自然法则（玩家和 KP 都必须遵守）
-- scene_intents 描述每个场景的**设计目的**（为什么存在这个场景），而非场景内容
-- driving_force 是一切事件的根本驱动力（为什么这一切在发生）
-- tone_constraints 是跨场景的叙事护栏"""
-
-
-def build_l3_prompt(content: str) -> str:
-    """构建 L3 解析 prompt."""
-    template = _load_template("l3_template.json")
-    return f"""根据以下模组文档，提取「设计者层」信息（L3 层）。
-
-输出格式参考：
-{template}
-
-模组文档：
-\"\"\"
-{content}
-\"\"\"
-要求：
-1. module_meta：模组元信息（标题、作者、年代、主题、预计时长、玩家人数）
-
-2. world_rules：世界运行规则列表，每个包含：
-   - id：规则编号（WR1, WR2...）
-   - name：规则名称
-   - rule：规则描述（自然语言，LLM 和 KP 都能理解）
-   - scope：影响范围（movement/combat/stealth/investigation/dialogue 等）
-   - is_absolute：是否为绝对规则（true=不可违反，false=极端情况可打破）
-
-3. scene_intents：每个场景的设计意图，key 为场景名，value 包含：
-   - purpose：此场景在模组中的作用（如"苏醒点，建立初始紧张感"）
-   - key_threat：核心威胁（可选）
-   - notes: 设计备注（可选）
-
-5. ending_conditions：结局条件列表，每个包含 id / condition / narrative
-    - condition：宏观层面的触发条件基于driving_force和导致当前情况的原因进行理解（如彻底解决当前威胁触发结局A，失败触发结局B）
-    - narrative：结局叙事包含结局的主题和叙事性的结果
-    
-6. tone_constraints：全局叙事护栏：
-   - genre：类型标签
-   - forbidden：禁止出现的元素/主题
-   - recommended：必须包含的元素/主题
-   - narrative_style：叙事风格指引
-
-7. driving_force：一切事件的底层驱动力——"为什么这一切在发生？"
-
-重要：
-- 仅输出 JSON，不要任何解释性文字
-- 从原文中推断设计意图，即使原文没有明确声明
-- driving_force 应该是概念层面的，不是具体事件描述
-
-"""
-
-
-def parse_l3(content: str, llm_call) -> dict:
-    """
-    从模组文档解析 L3 设计者层。
-    llm_call: 接受 (prompt, system) 返回 dict 的函数
-    """
-    prompt = build_l3_prompt(content)
-    raw = llm_call(prompt, system=L3_SYSTEM)
-    return raw
-
-
-# ═══════════════════════════════════════════════════════════════
-#  顶层：一键解析
-# ═══════════════════════════════════════════════════════════════
-
-def parse_module(
-    content: str,
-    llm_call,
-    *,
-    layers: Tuple[str, ...] = ("L1", "L2", "L3"),
-    verbose: bool = True,
-) -> dict:
-    """
-    一键解析模组文档 → 三层 JSON。
-
-    参数：
-        content: 模组文档原文
-        llm_call: LLM 调用函数 (prompt, system) → dict
-        layers: 要解析的层，默认全部
-        verbose: 是否打印进度
-
-    返回：
-        {"L1": dict, "L2": dict, "L3": dict}
-    """
-    results = {}
-
-    if "L1" in layers:
-        if verbose:
-            print("═" * 50)
-            print("[L1] 解析玩家可见层...")
-        results["L1"] = parse_l1(content, llm_call)
-        if verbose:
-            print(f"  L1 完成：{len(results['L1'])} 个场景")
-
-    if "L2" in layers:
-        if verbose:
-            print("═" * 50)
-            print("[L2] 解析 KP 守秘人层...")
-        results["L2"] = parse_l2(content, llm_call)
-        if verbose:
-            scenes = results["L2"].get("scenes", {})
-            events = results["L2"].get("events", [])
-            print(f"  L2 完成：{len(scenes)} 个场景, {len(events)} 个事件")
-
-    if "L3" in layers:
-        if verbose:
-            print("═" * 50)
-            print("[L3] 解析设计者层...")
-        results["L3"] = parse_l3(content, llm_call)
-        if verbose:
-            rules = results["L3"].get("world_rules", [])
-            intents = results["L3"].get("scene_intents", {})
-            print(f"  L3 完成：{len(rules)} 条世界规则, {len(intents)} 个场景意图")
-
-    return results
-
-
-def save_module(results: dict, module_dir: str) -> None:
-    """
-    将解析结果保存到模块目录。
-
-    参数：
-        results: parse_module() 的返回值 {"L1": ..., "L2": ..., "L3": ...}
-        module_dir: 目标目录（如 data/modules/常暗之厢/）
-    """
-    os.makedirs(module_dir, exist_ok=True)
-
-    if "L1" in results:
-        path = os.path.join(module_dir, "l1_player.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(results["L1"], f, ensure_ascii=False, indent=2)
-        print(f"  L1 → {path}")
-
-    if "L2" in results:
-        path = os.path.join(module_dir, "l2_keeper.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(results["L2"], f, ensure_ascii=False, indent=2)
-        print(f"  L2 → {path}")
-
-    if "L3" in results:
-        path = os.path.join(module_dir, "l3_designer.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(results["L3"], f, ensure_ascii=False, indent=2)
-        print(f"  L3 → {path}")
+def parse_step1b(content: str, llm_call) -> dict:
+    """从模组文档生成精修模组文本."""
+    prompt = build_step1b_prompt(content)
+    raw = llm_call(prompt, system=STEP1B_SYSTEM)
+    if isinstance(raw, str):
+        return {"condensed_text": raw}
+    if isinstance(raw, dict):
+        return raw
+    return {"condensed_text": str(raw)}

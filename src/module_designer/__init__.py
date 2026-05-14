@@ -12,8 +12,8 @@ from module_designer.layered_schema import (
     SchemaReport, SchemaViolation,
 )
 from module_designer.layered_parser import (
-    parse_l1, parse_l2, parse_l3, parse_module, save_module,
-    build_l1_prompt, build_l2_prompt, build_l3_prompt,
+    parse_step1a, parse_step1b,
+    build_step1a_prompt, build_step1b_prompt,
 )
 from module_designer.layered_pipeline import (
     run_pipeline, cross_validate_layers, PipelineResult,
