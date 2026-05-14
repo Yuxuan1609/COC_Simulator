@@ -193,122 +193,331 @@ def cross_validate_layers(
 class PipelineResult:
     """管线执行结果."""
     def __init__(self):
+        self.step1_data: dict = {}
         self.l1_data: dict = {}
         self.l2_data: dict = {}
         self.l3_data: dict = {}
-        self.schema_reports: dict[str, SchemaReport] = {}
-        self.cross_ref_report: Optional[CrossRefReport] = None
-        self.injection_applied: bool = False
+        self.schema_reports: dict = {}
+        self.cross_ref_report = None
+        self.fallbacks: list[str] = []
 
     @property
     def all_valid(self) -> bool:
-        schema_ok = all(r.is_valid for r in self.schema_reports.values())
+        schema_ok = all(r.is_valid for r in self.schema_reports.values()) if self.schema_reports else False
         cross_ok = self.cross_ref_report.is_valid if self.cross_ref_report else True
         return schema_ok and cross_ok
 
     def summary(self) -> str:
         lines = ["═══ 管线结果 ═══"]
+        if self.fallbacks:
+            lines.append(f"保底触发: {len(self.fallbacks)} 处")
+            for fb in self.fallbacks:
+                lines.append(f"  ⚠ {fb}")
         for layer, report in self.schema_reports.items():
-            status = "✓" if report.is_valid else "✗"
+            status = "PASS" if report.is_valid else "FAIL"
             lines.append(f"  Schema {layer}: {status} ({len(report.errors)} errors, {len(report.warnings)} warnings)")
         if self.cross_ref_report:
-            status = "✓" if self.cross_ref_report.is_valid else "✗"
+            status = "PASS" if self.cross_ref_report.is_valid else "FAIL"
             lines.append(f"  交叉引用: {status} ({len(self.cross_ref_report.issues)} issues)")
-        lines.append(f"  离线注入: {'已应用' if self.injection_applied else '未应用'}")
         return "\n".join(lines)
 
 
 def run_pipeline(
-    l1_data: dict,
-    l2_data: dict,
-    l3_data: dict,
+    content: str,
+    llm_json,
+    llm_text=None,
     *,
-    injector: "ContentInjector | None" = None,
     weapon_lib=None,
     enemy_lib=None,
-    run_injection: bool = True,
-    run_cross_validate: bool = True,
+    max_retries: int = 3,
     verbose: bool = True,
 ) -> PipelineResult:
-    """
-    执行完整的后处理管线。
+    """执行完整的四步渐进式解析管线."""
+    from module_designer.layered_parser import (
+        _is_valid_json_output, _with_fallback,
+        parse_step1a, parse_step1b,
+        parse_step2a, parse_step2b_events, parse_step2b_at,
+        parse_step2c_l1, parse_step2c_l3,
+        parse_step3a, parse_step3b, parse_step4,
+    )
+    from concurrent.futures import ThreadPoolExecutor
 
-    1. Schema 验证
-    2. 离线注入（如启用且有 injector）
-    3. 交叉引用验证
+    if llm_text is None:
+        llm_text = llm_json
 
-    参数：
-        l1_data/l2_data/l3_data：三层数据
-        injector：ContentInjector 实例（可选）
-        weapon_lib/enemy_lib：用于交叉引用验证
-        run_injection：是否执行离线注入
-        run_cross_validate：是否执行交叉引用验证
-        verbose：是否打印进度
-
-    返回：
-        PipelineResult（含验证报告和可能修改后的数据）
-    """
     result = PipelineResult()
-    result.l1_data = l1_data
-    result.l2_data = l2_data
-    result.l3_data = l3_data
 
-    # ── 1. Schema 验证 ──
+    # ── Step 1 ──────────────────────────────────────────────
     if verbose:
         print("═" * 50)
-        print("[Pipeline] Schema 验证...")
-    result.schema_reports = validate_all(l1_data, l2_data, l3_data)
+        print("[Step 1] 元信息提取 + 精修模组...")
+
+    def _do_step1a():
+        return parse_step1a(content, llm_json)
+    def _do_step1b():
+        return parse_step1b(content, llm_text)
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f1a = ex.submit(lambda: _with_fallback(
+            _do_step1a, ["scenes", "characters"],
+            {"module_meta": {}, "scenes": [], "characters": []},
+            max_retries, verbose, "Step 1a",
+        ))
+        f1b = ex.submit(lambda: _with_fallback(
+            _do_step1b, ["condensed_text"],
+            {"condensed_text": ""},
+            max_retries, verbose, "Step 1b",
+        ))
+        step1a = f1a.result()
+        step1b = f1b.result()
+
+    scenes = step1a.get("scenes", [])
+    characters = step1a.get("characters", [])
+    condensed_text = step1b.get("condensed_text", "")
+
+    result.step1_data = {
+        "module_meta": step1a.get("module_meta", {}),
+        "scenes": scenes,
+        "characters": characters,
+        "condensed_text": condensed_text,
+    }
+    if step1a.get("_fallback"):
+        result.fallbacks.append("Step 1a")
+    if step1b.get("_fallback"):
+        result.fallbacks.append("Step 1b")
+
     if verbose:
-        for layer, report in result.schema_reports.items():
-            print(f"  {report.summary()}")
+        print(f"  Step 1 完成: {len(scenes)} 场景, {len(characters)} 角色")
 
-    # ── 2. 离线注入 ──
-    if run_injection and injector is not None:
-        if verbose:
-            print("═" * 50)
-            print("[Pipeline] 离线注入...")
-        l2_data = injector.offline_inject_module(l2_data, l3_data)
-        result.l2_data = l2_data
-        result.injection_applied = True
-        if verbose:
-            enc_total = sum(
-                len(sd.get("encounters", []))
-                for sd in l2_data.get("scenes", {}).values()
-            )
-            wpn_total = sum(
-                len(sd.get("scene_weapons", []))
-                for sd in l2_data.get("scenes", {}).values()
-            )
-            print(f"  注入完成：{enc_total} 遭遇声明, {wpn_total} 武器引用")
+    # ── Step 2a ──────────────────────────────────────────────
+    if verbose:
+        print("═" * 50)
+        print("[Step 2a] Interactions 提取...")
 
-    # ── 3. 交叉引用验证 ──
-    if run_cross_validate:
-        if verbose:
-            print("═" * 50)
-            print("[Pipeline] 交叉引用验证...")
-        result.cross_ref_report = cross_validate_layers(
-            l1_data, l2_data, l3_data,
-            weapon_lib=weapon_lib, enemy_lib=enemy_lib,
+    def _do_step2a():
+        return parse_step2a(condensed_text, scenes, llm_json)
+    step2a = _with_fallback(
+        _do_step2a, ["interactions"],
+        {"interactions": []},
+        max_retries, verbose, "Step 2a",
+    )
+    interactions = step2a.get("interactions", [])
+    if step2a.get("_fallback"):
+        result.fallbacks.append("Step 2a")
+
+    if verbose:
+        print(f"  Step 2a 完成: {len(interactions)} interactions")
+
+    # ── Step 2b + 2c ─────────────────────────────────────────
+    if verbose:
+        print("[Step 2b+2c] Events, Auto-triggers, L1, L3 (并行)...")
+
+    def _do_events():
+        return parse_step2b_events(condensed_text, scenes, interactions, llm_json)
+    def _do_at():
+        return parse_step2b_at(condensed_text, scenes, interactions, llm_json)
+    def _do_l1():
+        return parse_step2c_l1(condensed_text, scenes, llm_json)
+    def _do_l3():
+        return parse_step2c_l3(condensed_text, scenes, llm_json)
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        f_ev = ex.submit(lambda: _with_fallback(
+            _do_events, ["events"], {"events": []},
+            max_retries, verbose, "Step 2b events",
+        ))
+        f_at = ex.submit(lambda: _with_fallback(
+            _do_at, ["auto_triggers"], {"auto_triggers": []},
+            max_retries, verbose, "Step 2b auto_triggers",
+        ))
+        f_l1 = ex.submit(lambda: _with_fallback(
+            _do_l1, [], {},
+            max_retries, verbose, "Step 2c L1",
+        ))
+        f_l3 = ex.submit(lambda: _with_fallback(
+            _do_l3, ["world_rules", "driving_force"],
+            {"world_rules": [], "driving_force": ""},
+            max_retries, verbose, "Step 2c L3",
+        ))
+        events_data = f_ev.result()
+        at_data = f_at.result()
+        l1_data = f_l1.result()
+        l3_data = f_l3.result()
+
+    events = events_data.get("events", [])
+    auto_triggers = at_data.get("auto_triggers", [])
+    for fb_name, fb_data in [("Step 2b events", events_data),
+                              ("Step 2b auto_triggers", at_data),
+                              ("Step 2c L1", l1_data),
+                              ("Step 2c L3", l3_data)]:
+        if fb_data.get("_fallback"):
+            result.fallbacks.append(fb_name)
+
+    if verbose:
+        print(f"  Step 2b 完成: {len(events)} events, {len(auto_triggers)} auto_triggers")
+        print(f"  Step 2c 完成: {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
+
+    # ── Step 3a ──────────────────────────────────────────────
+    if verbose:
+        print("═" * 50)
+        print("[Step 3a] L2 依赖解析...")
+
+    def _do_step3a():
+        return parse_step3a(condensed_text, interactions, events, auto_triggers, llm_json)
+    step3a = _with_fallback(
+        _do_step3a, ["interactions"],
+        {"interactions": interactions, "events": events, "auto_triggers": auto_triggers},
+        max_retries, verbose, "Step 3a",
+    )
+    interactions = step3a.get("interactions", interactions)
+    events = step3a.get("events", events)
+    auto_triggers = step3a.get("auto_triggers", auto_triggers)
+    if step3a.get("_fallback"):
+        result.fallbacks.append("Step 3a")
+
+    if verbose:
+        print(f"  Step 3a 完成: flag_mapping={step3a.get('flag_mapping', {})}")
+
+    # ── Step 3b ──────────────────────────────────────────────
+    if verbose:
+        print("[Step 3b] L1 ↔ L2 交叉核对...")
+
+    l2_completed = {
+        "interactions": interactions,
+        "events": events,
+        "auto_triggers": auto_triggers,
+    }
+
+    def _do_step3b():
+        return parse_step3b(condensed_text, l1_data, l2_completed, l3_data, scenes, llm_json)
+    step3b = _with_fallback(
+        _do_step3b, ["l1_data"],
+        {"l1_data": l1_data, "l3_data": l3_data},
+        max_retries, verbose, "Step 3b",
+    )
+    l1_data = step3b.get("l1_data", l1_data)
+    l3_data = step3b.get("l3_data", l3_data)
+    if step3b.get("_fallback"):
+        result.fallbacks.append("Step 3b")
+
+    # ── Step 4 ──────────────────────────────────────────────
+    if verbose:
+        print("═" * 50)
+        print("[Step 4] Library 匹配...")
+
+    l2_descriptions = {}
+    weapon_names = []
+    enemy_names = []
+    try:
+        if weapon_lib:
+            weapon_names = [w.name for w in weapon_lib.list_all()]
+    except Exception:
+        pass
+    try:
+        if enemy_lib:
+            enemy_names = [e.name for e in enemy_lib.list_all()]
+    except Exception:
+        pass
+
+    scene_intents_for_step4 = l3_data.get("scene_intents", {})
+
+    if weapon_names or enemy_names:
+        def _do_step4():
+            return parse_step4(
+                interactions, auto_triggers, l2_descriptions,
+                scene_intents_for_step4, condensed_text,
+                weapon_names, enemy_names, llm_json,
+            )
+        step4 = _with_fallback(
+            _do_step4, ["interactions"],
+            {"interactions": interactions, "auto_triggers": auto_triggers},
+            max_retries, verbose, "Step 4",
         )
-        if verbose:
-            print(f"  {result.cross_ref_report.summary()}")
+        interactions = step4.get("interactions", interactions)
+        auto_triggers = step4.get("auto_triggers", auto_triggers)
+        if step4.get("_fallback"):
+            result.fallbacks.append("Step 4")
 
+        if verbose:
+            print(f"  Step 4 完成: enemy/weapon refs 已填入")
+    else:
+        if verbose:
+            print("  Step 4 跳过: 无 library 可用")
+
+    # ── 最终: Schema 验证 + Cross-validate ─────────────────
     if verbose:
         print("═" * 50)
-        print(f"[Pipeline] 完成 —— {'全部通过' if result.all_valid else '存在问题（见上方报告）'}")
+        print("[Final] Schema 验证 + 交叉引用检查...")
+
+    l2_for_validation = {
+        "scenes": {},
+        "events": events,
+        "npc_profiles": {},
+    }
+    result.schema_reports = validate_all(l1_data, l2_for_validation, l3_data)
+
+    result.cross_ref_report = cross_validate_layers(
+        l1_data, l2_for_validation, l3_data,
+        weapon_lib=weapon_lib, enemy_lib=enemy_lib,
+    )
+
+    result.l1_data = l1_data
+    result.l3_data = l3_data
+    result.l2_data = {
+        "interactions": interactions,
+        "events": events,
+        "auto_triggers": auto_triggers,
+    }
+
+    if verbose:
+        print(result.summary())
 
     return result
 
 
 def save_pipeline_result(result: PipelineResult, module_dir: str) -> None:
-    """将管线处理后的结果保存到模块目录."""
+    """将管线结果保存到模块目录."""
     os.makedirs(module_dir, exist_ok=True)
 
-    for layer, data in [("L1", result.l1_data), ("L2", result.l2_data), ("L3", result.l3_data)]:
-        filename = f"{layer.lower()}_player.json" if layer == "L1" else \
-                   f"{layer.lower()}_keeper.json" if layer == "L2" else \
-                   f"{layer.lower()}_designer.json"
-        path = os.path.join(module_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"  {layer} → {path}")
+    # L1
+    path = os.path.join(module_dir, "l1_player.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(result.l1_data, f, ensure_ascii=False, indent=2)
+    print(f"  L1 → {path}")
+
+    # L2 — 按 scene ID 分组
+    interactions = result.l2_data.get("interactions", [])
+    auto_triggers = result.l2_data.get("auto_triggers", [])
+
+    scenes_by_id: dict[str, dict] = {}
+    for inter in interactions:
+        sid = inter.get("scene", "unknown")
+        scenes_by_id.setdefault(sid, {
+            "interactions": [], "encounters": [],
+            "scene_weapons": [], "auto_triggers": [],
+        })
+        scenes_by_id[sid]["interactions"].append(inter)
+    for at in auto_triggers:
+        sid = at.get("scene", "unknown")
+        scenes_by_id.setdefault(sid, {
+            "interactions": [], "encounters": [],
+            "scene_weapons": [], "auto_triggers": [],
+        })
+        scenes_by_id[sid]["auto_triggers"].append(at)
+
+    l2_out = {
+        "scenes": scenes_by_id,
+        "events": result.l2_data.get("events", []),
+        "npc_profiles": result.l2_data.get("npc_profiles", {}),
+    }
+
+    path = os.path.join(module_dir, "l2_keeper.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(l2_out, f, ensure_ascii=False, indent=2)
+    print(f"  L2 → {path}")
+
+    # L3
+    path = os.path.join(module_dir, "l3_designer.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(result.l3_data, f, ensure_ascii=False, indent=2)
+    print(f"  L3 → {path}")

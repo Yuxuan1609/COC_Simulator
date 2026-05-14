@@ -255,7 +255,7 @@ def test_build_step1b_prompt_structure():
 # ═══════════════════════════════════════════════════════════════
 
 from module_designer.layered_pipeline import (
-    cross_validate_layers, run_pipeline, PipelineResult, CrossRefReport,
+    cross_validate_layers, run_pipeline, PipelineResult, CrossRefReport, save_pipeline_result,
 )
 
 
@@ -311,6 +311,20 @@ def test_pipeline_result_summary():
     assert "L1" in summary
     assert "L2" in summary
     assert "L3" in summary
+
+
+def test_pipeline_result_summary_with_fallbacks():
+    from module_designer.layered_pipeline import PipelineResult
+    from module_designer.layered_schema import validate_all
+    result = PipelineResult()
+    result.fallbacks = ["Step 1a", "Step 3a"]
+    result.l1_data = {"test": {}}
+    result.l2_data = {"scenes": {}, "events": [], "npc_profiles": {}}
+    result.l3_data = {}
+    result.schema_reports = validate_all(result.l1_data, result.l2_data, result.l3_data)
+    summary = result.summary()
+    assert "Step 1a" in summary
+    assert "Step 3a" in summary
 
 
 def test_build_step2a_prompt_structure():

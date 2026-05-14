@@ -17,5 +17,5 @@ from module_designer.layered_parser import (
 )
 from module_designer.layered_pipeline import (
     run_pipeline, cross_validate_layers, PipelineResult,
-    CrossRefReport, CrossRefIssue,
+    CrossRefReport, CrossRefIssue, save_pipeline_result,
 )
