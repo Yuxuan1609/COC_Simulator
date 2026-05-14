@@ -28,6 +28,7 @@
 | Game Loop | `src/game_loop.py` | ✓ 已实现 (/spawn 命令, Phase 3.5 桩) |
 | 调查员系统 | `src/investigator/` | ✓ 已实现 |
 | 武器/敌人库 (运行时) | `src/library/` | ✓ judgment.py + injector.py 可用于运行时 |
+| L2 数据模型 | `src/module_designer/l2_keeper.py` | ✓ HiddenInfo → AutoTrigger (含 effect_type) |
 | 显示组件 | `src/trpg_display.py` | ✓ 已实现 |
 
 ## 已知断点 (P0)

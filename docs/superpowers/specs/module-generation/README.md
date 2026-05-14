@@ -17,18 +17,13 @@
 | 武器/敌人库 | `src/library/` (weapons, enemies, judgment, injector) | ✓ 已实现 |
 | 三层数据模型 | `src/module_designer/` (l1_player, l2_keeper, l3_designer) | ✓ 已实现 |
 | Schema 验证 | `src/module_designer/layered_schema.py` | ✓ 已实现 |
-| LLM 解析器 | `src/module_designer/layered_parser.py` | ✓ 已实现 (一次生成模式)，⚠ 待重写 (渐进式) |
-| 后处理管线 | `src/module_designer/layered_pipeline.py` | ✓ 已实现 (当前模式)，⚠ 待重写 (渐进式) |
-| 约束接口方法 | — | ✗ 未实现 |
-| 兜底策略 | — | ✗ 未设计 |
+| LLM 解析器 | `src/module_designer/layered_parser.py` | ✓ **已重写** (四步渐进式 + 保底策略) |
+| 后处理管线 | `src/module_designer/layered_pipeline.py` | ✓ **已重写** (并行编排 + retry/fallback) |
 
 ## 下一步重点
 
-**核心任务**: 实施四步渐进式解析流程（`layered-data-flow.md` §十三），替代当前的一次生成模式。
-
-1. Step 1: 元信息 + 名称固化 + 精简模组
-2. Step 2: L1 + L2基础事件 + L3 并行解析
-3. Step 3: 交叉验证 + 事件依赖解析
-4. Step 4: Library 匹配 + Auto-trigger 生成
-
-**待确认**: 精简模组格式、interactions 生成归属、condition 表达式语法。
+**生成端已完成。** 下一步聚焦消费端 P0 断点：
+1. Interaction 添加 skill_name/difficulty 字段
+2. 接通 L1/L3 加载路径
+3. 清理死代码 (_check_deviation, EncounterAnchor)
+4. 实现 auto_trigger 运行时条件解析

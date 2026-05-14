@@ -119,5 +119,109 @@ Total: 34 passed
 - SAN/HP auto-application
 - Save encryption/version migration
 - Multi-module management UI
-- Fallback strategy for LLM output violating L3 guardrails
+- Runtime auto_trigger condition evaluation
 - Testing strategy checklist
+
+---
+
+# Progressive Parser Rewrite — Changelog
+
+**Date**: 2026-05-14
+**Design Spec**: `docs/superpowers/specs/2026-05-14-progressive-parser-design.md`
+**Plan**: `docs/superpowers/plans/2026-05-14-progressive-parser-plan.md`
+
+## Overview
+
+Replaced the one-shot `parse_module()` (3 LLM calls) with a **4-step progressive pipeline** (10 LLM calls, 6 serial steps). Key improvements: name anchoring in Step 1 eliminates cross-layer scene name drift; interactions generated first to anchor flag names; LLM-driven dependency resolution replaces fragile regex-based requirement parsing; library matching with LLM selection from weapon/enemy lists (no more invented names). Every LLM call wrapped with retry+fallback (`_with_fallback`). 10 commits, 44 tests.
+
+## Data Model Changes
+
+### `l2_keeper.py` — HiddenInfo → AutoTrigger
+
+| Old | New |
+|-----|-----|
+| `HiddenInfo(info, trigger_condition, reveal_narrative, linked_skill, extra)` | `AutoTrigger(id, name, scene, trigger_condition, effect_type, effect_ref, reveal_narrative, extra)` |
+| `SceneL2.hidden_info` | `SceneL2.auto_triggers` |
+
+AutoTrigger unifies the old `hidden_info` (passive reveal) and spawn/grant mechanics into a single event type. `effect_type`: `reveal_info` / `spawn_enemy` / `grant_weapon` / `npc_state_change`. `effect_ref` is filled by Step 4 library matching.
+
+### `l3_designer.py` — Sync to new template
+
+| Field | Old → New |
+|-------|----------|
+| `EndingCondition.narrative_theme` | → `narrative` |
+| `ToneConstraints.required` | → `recommended` |
+| `SceneIntent` | Removed `emotion`, `danger_level`, `key_info`, `exit_leads_to` |
+| `LogicChain`, `Branch` | Removed entirely |
+| `L3Designer.logic_chains` | Removed |
+
+### `layered_schema.py` — Schema sync
+
+- Removed: `L2_HIDDEN_INFO_SCHEMA`, `L3_BRANCH_SCHEMA`, `L3_LOGIC_CHAIN_SCHEMA`, `L3_DANGER_LEVELS`, `L3_ENDING_TYPES`
+- Added: `L2_AUTO_TRIGGER_SCHEMA`
+- Updated: `L2_SCENE_SCHEMA` (`hidden_info` → `auto_triggers`), `L3_SCENE_INTENT_SCHEMA`, `L3_ENDING_CONDITION_SCHEMA`, `L3_TONE_CONSTRAINTS_SCHEMA`
+
+### `l2_template.json` — Updated
+
+- Removed `hidden_info` section
+- Added `auto_triggers` section with `id`, `name`, `scene`, `trigger_condition`, `effect_type`, `effect_ref`, `reveal_narrative`
+
+## Core Rewrites
+
+### `layered_parser.py` — Complete rewrite (~730 lines)
+
+Old: `parse_l1()` / `parse_l2()` / `parse_l3()` / `parse_module()` — 3 serial LLM calls, one-shot generation.
+
+New: 4-step progressive pipeline:
+
+```
+Step 1a: structured_extraction  →  meta + scenes[{name,id}] + characters[{name,id}]
+Step 1b: condensed_module       →  condensed_text (semi-structured markdown)
+         (1a+1b run in parallel)
+
+Step 2a: interactions           →  all interactions with IDs + flag names
+Step 2b: events + auto_triggers  →  global events + passive triggers (parallel, injects 2a output)
+Step 2c: L1 + L3                →  player-visible + designer layers (parallel, independent)
+
+Step 3a: dependency_resolution  →  flag unification, requirement completion, cross-reference
+Step 3b: L1-L2_cross_check      →  linked_interaction verification, scene name alignment
+
+Step 4: library_matching        →  fill enemy_ref/weapon_ref/effect_ref from weapon/enemy libraries
+```
+
+10 prompt builders + 10 parse functions. Each prompt builder takes structured context (scene lists, interaction lists) rather than just raw text. `_with_fallback` wraps every LLM call: retry up to N times, then return degraded output with `_fallback: True` marker.
+
+### `layered_pipeline.py` — Rewrite (~540 lines)
+
+Old: `run_pipeline(l1_data, l2_data, l3_data, injector=, ...)` — serial schema validation + offline injection + cross-reference.
+
+New: `run_pipeline(content, llm_json, llm_text=, ...)` — full orchestration:
+- Step 1a+1b: `ThreadPoolExecutor(max_workers=2)` parallel
+- Step 2a: serial (needed for interaction IDs)
+- Step 2b+2c: `ThreadPoolExecutor(max_workers=4)` parallel
+- Step 3a → 3b: serial (3b needs 3a's resolved names)
+- Step 4: serial, conditional on library availability
+- Final: schema validation + deterministic cross-reference on grouped L2 data
+
+Every LLM call gate through `_with_fallback`. `PipelineResult.fallbacks` tracks which steps degraded. `save_pipeline_result()` groups interactions/auto_triggers by scene ID for L2 output.
+
+`CrossRefReport` and `cross_validate_layers()` preserved unchanged.
+
+## Test Results
+
+```
+tests/test_library.py ............. 17 passed
+tests/test_module_designer.py ..... 27 passed
+Total: 44 passed (+10 from previous round)
+```
+
+New tests: `test_auto_trigger_roundtrip`, 9 prompt builder structure tests (Steps 1a-4), `test_pipeline_result_summary_with_fallbacks`, `test_fallback_utility`.
+
+## Design Decisions (this round)
+
+1. **Progressive over one-shot**: LLM calls increase (3→10) but each prompt is shorter and more focused, producing more consistent output.
+2. **Interactions first**: Interactions are the largest content block and define flag names — running them before events/auto-triggers ensures downstream steps reference consistent identifiers.
+3. **LLM-driven cross-validate**: Deterministic code does structural checks (zero token); LLM does semantic correction (flag unification, name alignment).
+4. **Natural language conditions**: Auto-trigger `trigger_condition` uses free-form natural language, not a DSL — LLM generates and runtime LLM interprets.
+5. **Retry + fallback**: Every LLM call gets up to N retries on format/content failure, then degraded output — pipeline never crashes on a single step failure.
+6. **condensed_text as canonical source**: Step 1b produces a complete, fluent narrative text (not an abstract) that all subsequent steps consume — removes original document noise while preserving all information.
