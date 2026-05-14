@@ -202,6 +202,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld,
 
     # ═══ 阶段1 & 阶段2：并行 LLM 调用 ═══
     try:
+        # call_deepseek(json_mode=True) → temperature=0.3, max_tokens=162840
         action_data = call_deepseek(
             build_action_prompt(world, user_input),
             json_mode=True
@@ -212,6 +213,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld,
                 "full": f"[系统错误] 动作解析失败：{e}"}
 
     try:
+        # call_deepseek(json_mode=True) → temperature=0.3, max_tokens=162840
         event_data = call_deepseek(
             build_event_prompt(world, user_input),
             json_mode=True
@@ -259,6 +261,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld,
     if any_scene_executed:
         scene_action_result = "\n".join(action_results)
         try:
+            # call_deepseek(json_mode=True) → temperature=0.3, max_tokens=162840
             update = call_deepseek(
                 build_action_world_update(world, scene_action_result, user_input),
                 json_mode=True
@@ -307,6 +310,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld,
     # ═══ 阶段1.5b：事件世界更新（仅在事件实际触发后）═══
     if any_event_triggered:
         try:
+            # call_deepseek(json_mode=True) → temperature=0.3, max_tokens=162840
             update = call_deepseek(
                 build_event_world_update(world, events_result),
                 json_mode=True
@@ -324,12 +328,14 @@ def handle_user_input(user_input: str, world: ScenarioWorld,
     all_other = all(a.get("action") == "other" for a in actions)
     try:
         if all_other and not event_data.get("triggered_events"):
+            # call_deepseek(json_mode=False) → temperature=0.7, max_tokens=20000
             full_text = call_deepseek(
                 build_improvise_prompt(world, user_input, action_result,
                                        l1_scene=l1_scene, l3_data=l3_data),
                 json_mode=False
             )
         else:
+            # call_deepseek(json_mode=False) → temperature=0.7, max_tokens=20000
             full_text = call_deepseek(
                 build_narrative_prompt(world, user_input, action_result, events_result,
                                        l1_scene=l1_scene, l3_data=l3_data),
@@ -348,6 +354,7 @@ def handle_user_input(user_input: str, world: ScenarioWorld,
                             brief, location=location, success=any_success)
 
     if world.memory.should_compress():
+        # call_deepseek(json_mode=False) → temperature=0.7, max_tokens=20000
         world.memory.compress(lambda p: call_deepseek(p, json_mode=False))
 
     return {"brief": brief, "narrative": narrative, "full": full_text}

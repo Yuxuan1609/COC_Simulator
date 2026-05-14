@@ -84,6 +84,8 @@ def call_deepseek(
     model: str | None = None,
     thinking: bool | None = None,
     reasoning_effort: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> dict | str:
     """
     统一 DeepSeek 调用入口。
@@ -92,12 +94,16 @@ def call_deepseek(
     model: 模型名称，None 时默认 "deepseek-v4-pro"
     thinking: 是否启用思考模式，None 时默认 True
     reasoning_effort: 推理强度 ("low"/"medium"/"high")，None 时默认 "high"
+    temperature: 温度参数，None 时 json_mode 默认 0.3，非 json_mode 默认 0.7
+    max_tokens: 最大输出 token 数，None 时 json_mode 默认 162840，非 json_mode 默认 20000
     """
     _model = model if model is not None else "deepseek-v4-pro"
     _reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
     _thinking = thinking if thinking is not None else True
 
     if json_mode:
+        _temperature = temperature if temperature is not None else 0.3
+        _max_tokens = max_tokens if max_tokens is not None else 162840
         default_system = system if model is not None else "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
         response = client.chat.completions.create(
             model=_model,
@@ -105,8 +111,8 @@ def call_deepseek(
                 {"role": "system", "content": system or default_system},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
-            max_tokens=162840,
+            temperature=_temperature,
+            max_tokens=_max_tokens,
             reasoning_effort=_reasoning_effort,
             extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
         )
@@ -129,6 +135,8 @@ def call_deepseek(
                 print(f"[JSON解析失败] 原始返回内容:\n{raw[:2000]}")
                 raise
     else:
+        _temperature = temperature if temperature is not None else 0.7
+        _max_tokens = max_tokens if max_tokens is not None else 20000
         default_system =  system if model is not None else "你是一个专业的TRPG主持人（KP）。"
         response = client.chat.completions.create(
             model=_model,
@@ -136,8 +144,8 @@ def call_deepseek(
                 {"role": "system", "content": system or default_system},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=20000,
+            temperature=_temperature,
+            max_tokens=_max_tokens,
             reasoning_effort=_reasoning_effort,
             extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
         )
