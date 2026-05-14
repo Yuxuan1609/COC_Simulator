@@ -19,8 +19,8 @@
 │   │   ├── scene.json                       # 场景 JSON 模板（已有）
 │   │   ├── event.json                       # 事件 JSON 模板（已有）
 │   │   ├── l1_template.json                 # L1 玩家可见层模板（新增）
-│   │   ├── l2_template.json                 # L2 KP 守秘人层模板（新增）
-│   │   └── l3_template.json                 # L3 设计者层模板（新增）
+│   │   ├── l2_template.json                 # L2 KP 守秘人层模板 (含 auto_triggers)
+│   │   └── l3_template.json                 # L3 设计者层模板 (已精简)
 │   ├── modules/
 │   │   └── 常暗之厢/
 │   │       ├── l1_player.json               # L1 玩家可见层（LLM 生成）
@@ -40,13 +40,13 @@
 │   │   ├── enemies.py                       #   LibraryEnemy + EnemyLibrary
 │   │   ├── judgment.py                      #   双层判定引擎（T1 确定性 + T2 LLM 增强）
 │   │   └── injector.py                      #   内容注入（离线预填充 + 运行时动态注入）
-│   ├── module_designer/                     # 三层信息引擎（新增）
+│   ├── module_designer/                     # 三层信息引擎
 │   │   ├── l1_player.py                     #   L1 玩家可见层数据模型
-│   │   ├── l2_keeper.py                     #   L2 KP 守秘人层数据模型
-│   │   ├── l3_designer.py                   #   L3 设计者层数据模型
+│   │   ├── l2_keeper.py                     #   L2 KP 守秘人层数据模型 (含 AutoTrigger)
+│   │   ├── l3_designer.py                   #   L3 设计者层数据模型 (已精简)
 │   │   ├── layered_schema.py                #   JSON Schema 定义 + 三层验证
-│   │   ├── layered_parser.py                #   LLM 一键解析 source.txt → L1/L2/L3
-│   │   └── layered_pipeline.py              #   后处理管线（验证 + 注入 + 交叉引用）
+│   │   ├── layered_parser.py                #   四步渐进式解析 (10 prompt builders + 保底)
+│   │   └── layered_pipeline.py              #   管线编排 (并行 + retry/fallback + 最终验证)
 │   ├── archive/                             # 已废弃模块
 │   │   ├── parsers.py                       #   旧场景/事件解析器
 │   │   └── pipeline.py                      #   旧后处理管线
@@ -93,10 +93,18 @@
 ### `src/module_designer/` — 三层信息引擎
 
 - **L1 玩家可见层**（`SceneL1`）：入场叙事、氛围、情绪基调、无条件可感知元素、NPC 外貌
-- **L2 KP 守秘人层**（`SceneL2`）：场景描述、可执行交互、敌人遭遇声明、场景武器、被动隐藏信息、NPC 完整档案
-- **L3 设计者层**（`L3Designer`）：模组元信息、世界规则、逻辑链/分支、场景设计意图、结局条件、基调约束、核心驱动力
+- **L2 KP 守秘人层**（`SceneL2`）：场景描述、可执行交互、敌人遭遇声明、场景武器、NPC 完整档案、auto_trigger 自动触发事件
+- **L3 设计者层**（`L3Designer`）：模组元信息、世界规则、场景设计意图、结局条件、基调约束、核心驱动力
 
 所有数据类支持 JSON 往返序列化（`to_dict` / `from_dict` + `load_*` / `save_*`）。层间通过 ID 引用关联（L1 → L2 interaction name, L2 → library weapon/enemy name, L3 → flags/events）。
+
+**四步渐进式解析流程**（`layered_parser.py` + `layered_pipeline.py`）：
+1. **Step 1** — 名称固化 + 精修模组：并行提取场景/NPC ID + 生成半结构化叙事文本
+2. **Step 2** — 内容生成：interactions 先跑以固化 flag 名称 → events + auto_triggers + L1 + L3 并行
+3. **Step 3** — 依赖解析 + 交叉核对：LLM 统一 flag 名称、补全 requirement 引用 → L1 ↔ L2 交叉校对
+4. **Step 4** — Library 匹配：从武器/敌人库中选择填入占位符
+
+每步含 `_with_fallback` 保底策略（重试 → 降级输出），总 10 次 LLM 调用 / 6 串行步。
 
 ### `prompts.py`
 
@@ -118,11 +126,10 @@ Prompt 构建器 + 叙事输出解析。所有 `build_*` 函数只构造 prompt 
 已废弃 `parsers.py` / `pipeline.py`，移至 `src/archive/`。
 
 **新流程**（`module_designer/layered_parser.py` + `layered_pipeline.py`）：
-1. `parse_module()` — LLM 一键解析 source.txt → L1/L2/L3 JSON
-2. `run_pipeline()` — Schema 验证 → 离线注入 → 交叉引用验证
-3. `save_module()` — 保存至 `data/modules/<模组名>/`
+1. `run_pipeline(content, llm_json, llm_text)` — 编排四步渐进式解析，每步含 `_with_fallback` 保底策略
+2. `save_pipeline_result(result, module_dir)` — 保存 L1/L2/L3 至 `data/modules/<模组名>/`
 
-旧 archive 模块仍可用作 fallback：文档 → 解析场景/事件 → 需求匹配 → 交叉验证 → 文学性扩充。
+旧 archive 模块仍可用作 fallback。
 
 ### `src/investigator/` — COC 7th 调查员车卡系统
 
@@ -198,41 +205,35 @@ DEEPSEEK_API_KEY=your-key
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  离线：模组导入（当前可用）                            │
-│                                                      │
-│  模组文档 (.docx/.pdf)                                │
-│      ↓ archive/parsers.py (已废弃，仍可用)             │
-│  scene_output.json + res_event.json                  │
-│      ↓ archive/pipeline.py (已废弃，仍可用)            │
-│  scene_output_resolved_revised.json                  │
-│      ↓ notebook                                      │
-│  DirectedGraph → ScenarioWorld                       │
-│      ↓ LLM 调用链 + COC 7th 技能闸门                  │
-│  拆分叙事输出                                         │
-└─────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────┐
-│  离线：三层解析（当前可用）                             │
+│  离线：四步渐进式解析（当前）                           │
 │                                                      │
 │  source.txt / .docx                                  │
-│      ↓ layered_parser.parse_module() (LLM 一键解析)   │
-│  l1_player.json + l2_keeper.json + l3_designer.json  │
+│      ↓ Step 1: 名称固化 + 精修模组 (2 calls 并行)      │
+│  condensed_text + scenes[{name,id}]                   │
+│      ↓ Step 2: 内容生成                               │
+│  interactions → events + auto_triggers + L1 + L3     │
+│      ↓ Step 3: 依赖解析 + 交叉核对 (2 calls 串行)      │
+│  依赖补全 + 场景名对齐                                 │
+│      ↓ Step 4: Library 匹配 (1 call)                  │
+│  enemy_ref / weapon_ref / effect_ref 填入             │
 │      ↓ layered_pipeline.run_pipeline()               │
-│  Schema 验证 → 离线注入 → 交叉引用验证                  │
+│  l1_player.json + l2_keeper.json + l3_designer.json  │
 │      ↓ notebook                                      │
 │  l2_keeper.json → DirectedGraph → ScenarioWorld      │
 │      ↓ LLM 调用链 + L1/L3 感知叙事                    │
-│  沉浸式叙事输出                                       │
+│  沉浸式叙事输出                                        │
 └─────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────┐
-│  运行时：动态注入                                      │
+│  离线：旧流程（已废弃，仍可用）                          │
 │                                                      │
-│  deviation_score > threshold                         │
-│      ↓ ContentInjector.runtime_spawn_enemy()         │
-│  或 /spawn enemy <name> (手动)                       │
-│      ↓ LLM 即兴叙事 + L3 护栏                         │
-│  动态内容融入游戏                                      │
+│  模组文档 (.docx/.pdf)                                │
+│      ↓ archive/parsers.py (已废弃)                    │
+│  scene_output.json + res_event.json                  │
+│      ↓ archive/pipeline.py (已废弃)                   │
+│  scene_output_resolved_revised.json                  │
+│      ↓ notebook                                      │
+│  DirectedGraph → ScenarioWorld                       │
 └─────────────────────────────────────────────────────┘
 ```
 
