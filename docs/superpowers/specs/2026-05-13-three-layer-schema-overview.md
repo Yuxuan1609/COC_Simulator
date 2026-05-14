@@ -22,7 +22,7 @@
 
 L1 是玩家在场景中的**默认初始感知**——一个正常调查员第一次进入场景时无需任何检定即可感知的一切。由 layered_parser 离线生成充分内容，LLM 在运行时可以基于 L2 信息（检定结果、事件触发、NPC状态变化）动态覆盖或增强。
 
-**L1 只描述无条件可见的内容**。条件感知（检定后可见、特定背景可见）归属 L2 的 Interaction/HiddenInfo。
+**L1 只描述无条件可见的内容**。条件感知（检定后可见、特定背景可见）归属 L2 的 Interaction/AutoTrigger。
 
 ### 顶层结构（按场景）
 
@@ -94,7 +94,7 @@ l2_keeper.json = {
 | **互动** | `interactions` | list[Interaction] | 可执行动作（扩展现有） |
 | **遭遇** | `encounters` | list[Encounter] | 场景中预设的敌人遭遇 |
 | **武器** | `scene_weapons` | list[SceneWeapon] | 场景中可获取的武器（常规物品由LLM自由处理） |
-| **隐藏信息** | `hidden_info` | list[HiddenInfo] | 需要特定检定才能发现的信息 |
+| **自动触发** | `auto_triggers` | list[AutoTrigger] | 被动触发事件（替代原 hidden_info） |
 | **扩展** | `extra` | dict? | 预留扩展字段 |
 
 ### EventL2 子结构
@@ -146,24 +146,29 @@ l2_keeper.json = {
 | `discovery_method` | string | 发现方式（如"侦查检定"、"乘务员告知"） |
 | `extra` | dict? | 预留扩展字段 |
 
-### HiddenInfo 子结构
+### AutoTrigger 子结构（替代原 HiddenInfo）
 
-**定位**：被动触发信息。与 Interaction 的核心区别：
+**定位**：被动触发事件。与 Interaction 的核心区别：
 
-| | Interaction | HiddenInfo |
+| | Interaction | AutoTrigger |
 |---|---|---|
 | 触发方式 | 玩家**主动选择**执行 | 系统**被动检测**条件 |
 | 玩家感知 | 玩家知道自己做了这个动作 | 类似"暗骰"——玩家不知道有信息被揭示 |
 | 触发条件 | 玩家输入匹配 trigger | 角色背景、属性值、flags 等自动满足 |
-| 典型场景 | "我要搜查桌面" | 拥有"神秘学"技能的角色进入场景自动感知到异常 |
+| 典型场景 | "我要搜查桌面" | 进入场景且持有钥匙时自动触发怪物遭遇 |
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `info` | string | 隐藏信息内容（揭示后追加到叙事中） |
-| `trigger_condition` | string | 自动触发条件表达式（如"skill:神秘学>=50"、"background:医生"、"flag:has_crew"） |
-| `linked_skill` | string? | 关联技能（用于条件判定） |
-| `reveal_narrative` | string | 揭示时的叙事文本（如何让玩家感知到这条信息） |
+| `id` | string | 唯一标识 (AT1, AT2...) |
+| `name` | string | 名称 |
+| `scene` | string | 生效场景 ID (S1, S2...) |
+| `trigger_condition` | string | 触发条件（自然语言，如"调查员进入7号车厢且持有钥匙"） |
+| `effect_type` | string | 效果类型：reveal_info / spawn_enemy / grant_weapon / npc_state_change |
+| `effect_ref` | string | 引用目标（enemy 名/weapon 名/NPC 名，Step 4 填入） |
+| `reveal_narrative` | string | 揭示时的叙事文本（仅 reveal_info 类型） |
 | `extra` | dict? | 预留扩展字段 |
+
+> **2026-05-14 更新**: HiddenInfo 已废弃，替换为 AutoTrigger。AutoTrigger 统一了原 hidden_info（被动揭示）和 spawn/grant 机制为单一事件类型。
 
 ### NPCProfile 子结构
 
@@ -188,7 +193,7 @@ NPC 的运行时状态（如"昏迷"、"死亡"、"已对话"）不存储在静�
 
 ### 定位
 
-描述模组的**设计意图、世界规则、逻辑链**。运行时不可变。是 LLM 动态生成 L2/L1 时的"宪法"。
+描述模组的**设计意图和世界规则**。运行时不可变。是 LLM 动态生成 L2/L1 时的"宪法"。
 
 ### 顶层结构
 
@@ -196,13 +201,14 @@ NPC 的运行时状态（如"昏迷"、"死亡"、"已对话"）不存储在静�
 l3_designer.json = {
   "module_meta": ModuleMeta,
   "world_rules": list[WorldRule],
-  "logic_chains": list[LogicChain],
   "scene_intents": { "<scene_name>": SceneIntent },
   "ending_conditions": list[EndingCondition],
   "tone_constraints": ToneConstraints,
   "driving_force": string    ← 一切事件的根本驱动力（"为什么这一切在发生"）
 }
 ```
+
+> **2026-05-14 更新**: `logic_chains` 已移除。逻辑链信息由 Step 3a 的 LLM 依赖解析从 events/interactions 中推断。
 
 ### ModuleMeta 字段
 
@@ -225,36 +231,15 @@ l3_designer.json = {
 | `scope` | list[string] | 影响范围（movement/combat/stealth/investigation/dialogue） |
 | `is_absolute` | bool | 是否为绝对规则（true=不可违反，false=可被LLM在极端情况下打破） |
 
-### LogicChain 子结构
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | string | 逻辑链ID（如"LC1"） |
-| `name` | string | 逻辑链名称 |
-| `description` | string | 一句话描述 |
-| `nodes` | list[string] | 逻辑节点（按顺序的里程碑） |
-| `branches` | list[Branch] | 分支条件 |
-| `is_critical` | bool | 是否为主线（true=必须推进，false=可选支线） |
-
-### Branch 子结构
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `condition` | string | 触发条件表达式（如"flag:has_crew"、"!flag:has_key"） |
-| `effect` | string | 条件满足时的效果描述 |
-| `next_node` | string? | 跳转到哪个节点 |
-
 ### SceneIntent 子结构
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `purpose` | string | 此场景在模组中的作用 |
-| `emotion` | string | 目标情绪 |
-| `danger_level` | enum | safe / low / medium / high / extreme |
-| `key_info` | list[string] | 此场景必须传达的关键信息 |
 | `key_threat` | string? | 核心威胁/敌人（如有） |
-| `exit_leads_to` | list[string] | 离开后可能前往的场景 |
 | `notes` | string? | 设计备注 |
+
+> **2026-05-14 更新**: 移除了 `emotion`、`danger_level`、`key_info`、`exit_leads_to`。这些信息由 LLM 从 context 中动态推断，不需要离线固化。
 
 ### EndingCondition 子结构
 
@@ -271,7 +256,7 @@ l3_designer.json = {
 |------|------|------|
 | `genre` | string | 类型标签（如"克苏鲁恐怖箱庭"） |
 | `forbidden` | list[string] | 禁止出现的元素/主题 |
-| `required` | list[string] | 必须包含的元素/主题 |
+| `recommended` | list[string] | 建议包含的元素/主题 |
 | `narrative_style` | string | 叙事风格指引（如"第二人称、现在时、感官描写丰富"） |
 
 ---
@@ -279,21 +264,22 @@ l3_designer.json = {
 ## 四、层间引用关系
 
 ```
-L1.perceptible[N].linked_interaction  ──引用──→  L2.scenes[S].interactions[N].name
+L1.perceptible[N].linked_interaction  ──引用──→  L2.interactions[N].name
 L2.encounters[N].enemy_ref            ──引用──→  library/enemies.json items[N].name
-L2.scene_items[N].item_ref            ──引用──→  library/weapons.json items[N].name
-L2.hidden_info[N].reveal_condition    ──引用──→  L3.world_rules[N].id
-L2.interactions[N].requirement[M]     ──引用──→  L2.events[N].id / L2.interactions[N].name
-L3.logic_chains[N].branches[M].condition ──引用→  world.flags / L2.events[N].id
+L2.scene_weapons[N].weapon_ref        ──引用──→  library/weapons.json items[N].name
+L2.auto_triggers[N].effect_ref        ──引用──→  library/enemies[N].name / library/weapons[N].name
+L2.interactions[N].requirement        ──引用──→  L2.events[N].id / L2.interactions[N].name / flags
 ```
+
+> **2026-05-14 更新**: 移除了 HiddenInfo 和 LogicChain 引用。AutoTrigger 的 effect_ref 由 Step 4 library 匹配填入。
 
 ---
 
-## 五、下一步
+## 五、当前状态
 
-1. 逐层确认字段：L3 ✓ → L2 → L1，每次只讨论一层
-2. 确定每个字段的"可空性"（optional vs required）
-3. 确定枚举值的完整列表
+1. **L3 字段**: ✓ 已精简（logic_chains 移除，scene_intents 精简，narrative_theme→narrative，required→recommended）
+2. **L2 字段**: ✓ HiddenInfo → AutoTrigger
+3. **解析器**: ✓ 四步渐进式流程已实施
 4. 编写 JSON Schema 验证规则
 5. 创建对应的 Python 数据类
 6. 设计兜底策略：LLM生成违反L3护栏的内容时的处理方案（拒绝重试/静默删除/警告）

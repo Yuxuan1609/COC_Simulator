@@ -1,13 +1,21 @@
 """
-三层后处理管线：schema 验证 → 离线注入 → 交叉引用验证 → 可选 LLM 修订。
+四步渐进式管线编排层。
 
-流程：
-  layered_parser 的输出 → validate → inject → cross_validate → save
+流程编排:
+  Step 1a + 1b  并行 (meta+scenes+characters | condensed_text)
+  Step 2a       先跑 (interactions)
+  Step 2b + 2c  并行 (events + auto_triggers | L1 + L3)
+  Step 3a → 3b  串行 (L2 依赖解析 → L1-L2 交叉核对)
+  Step 4        library 匹配 (enemies/weapons)
+
+每步含 retry + fallback 保底策略。
+管线完成后运行确定性 cross_validate 做最终验证。
+
+Notebook 入口: run_pipeline(content, llm_json, llm_text)
 """
 from __future__ import annotations
 import json
 import os
-import sys
 from typing import Optional, TYPE_CHECKING
 
 from module_designer.layered_schema import validate_all, SchemaReport
