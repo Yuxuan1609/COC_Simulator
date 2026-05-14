@@ -226,6 +226,8 @@ def test_validate_all():
 
 from module_designer.layered_parser import (
     build_step1a_prompt, build_step1b_prompt,
+    build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
+    build_step2c_l1_prompt, build_step2c_l3_prompt,
 )
 
 
@@ -308,3 +310,53 @@ def test_pipeline_result_summary():
     assert "L1" in summary
     assert "L2" in summary
     assert "L3" in summary
+
+
+def test_build_step2a_prompt_structure():
+    scenes = [{"id": "S1", "name": "6号车厢"}, {"id": "S2", "name": "7号车厢"}]
+    prompt = build_step2a_prompt("精修模组内容", scenes)
+    assert "精修模组内容" in prompt
+    assert "interactions" in prompt
+    assert "I1" in prompt
+    assert "S1" in prompt
+    assert "enemy_ref" in prompt
+    assert "weapon_ref" in prompt
+    assert "null" in prompt
+
+
+def test_build_step2b_events_prompt_structure():
+    scenes = [{"id": "S1", "name": "6号车厢"}]
+    interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "side_effects": []}]
+    prompt = build_step2b_events_prompt("精修模组内容", scenes, interactions)
+    assert "精修模组内容" in prompt
+    assert "events" in prompt
+    assert "E1" in prompt
+    assert "I1" in prompt
+
+
+def test_build_step2b_at_prompt_structure():
+    scenes = [{"id": "S1", "name": "6号车厢"}]
+    interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "side_effects": []}]
+    prompt = build_step2b_at_prompt("精修模组内容", scenes, interactions)
+    assert "精修模组内容" in prompt
+    assert "auto_triggers" in prompt
+    assert "AT1" in prompt
+    assert "reveal_info" in prompt
+    assert "effect_ref" in prompt
+
+
+def test_build_step2c_l1_prompt_structure():
+    scenes = [{"id": "S1", "name": "6号车厢"}]
+    prompt = build_step2c_l1_prompt("精修模组内容", scenes)
+    assert "精修模组内容" in prompt
+    assert "感知" in prompt or "perceptible" in prompt
+    assert "6号车厢" in prompt
+
+
+def test_build_step2c_l3_prompt_structure():
+    scenes = [{"id": "S1", "name": "6号车厢"}]
+    prompt = build_step2c_l3_prompt("精修模组内容", scenes)
+    assert "精修模组内容" in prompt
+    assert "world_rules" in prompt
+    assert "driving_force" in prompt
+    assert "scene_intents" in prompt

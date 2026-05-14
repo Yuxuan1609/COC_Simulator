@@ -207,3 +207,308 @@ def parse_step1b(content: str, llm_call) -> dict:
     if isinstance(raw, dict):
         return raw
     return {"condensed_text": str(raw)}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2a: Interactions
+# ═══════════════════════════════════════════════════════════════
+
+STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中的可执行互动。
+你的任务是：从精修模组文本中提取每个场景的全部互动选项。
+
+重要原则：
+- enemy_ref 和 weapon_ref 留空（填 null），等待后续步骤匹配
+- flag 的命名在此固化（如 flag:found_key），后续步骤将使用同一名称
+- requirement 使用自然语言声明（如 "需要先找到钥匙"），不引用其他 ID
+- 每个互动必须有唯一 id (I1, I2, I3...)
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step2a_prompt(condensed_text: str, scenes: list[dict]) -> str:
+    scene_list = "\n".join(
+        f"- {s['id']}: {s['name']}" for s in scenes
+    )
+    return f"""从精修模组文本中提取每个场景的全部可执行互动。
+
+已知场景列表:
+{scene_list}
+
+输出格式:
+{{
+  "interactions": [
+    {{
+      "id": "I1",
+      "scene": "S1",
+      "type": "调查",
+      "name": "互动名称",
+      "requirement": "前置条件声明（自然语言）",
+      "trigger": "触发条件描述",
+      "result": "结果描述",
+      "clue": "线索（可选）",
+      "side_effects": [
+        {{"type": "flag_set", "key": "found_note", "value": true}}
+      ],
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "skill_name": "关联技能（可选）",
+      "difficulty": "regular"
+    }}
+  ]
+}}
+
+要求：
+1. id 全局唯一 (I1, I2, I3...)
+2. scene 使用给定列表中的 ID (S1, S2...)
+3. enemy_ref 和 weapon_ref 全部填 null（等后续步骤处理）
+4. requirement 使用自然语言描述前置条件
+5. side_effects 中如果涉及 flag，key 的命名在此固化（后续步骤引用同一名称）
+6. type 从以下选择：调查/搜索/对话/鉴定/使用物品/战斗/决策/潜行
+7. difficulty 从以下选择：regular/hard/extreme
+8. 提取原文中提到的所有互动，即使描述简略也要列出
+9. 如果原文对某场景的互动描述不足，基于场景氛围合理补充
+
+精修模组：
+\"\"\"
+{condensed_text}
+\"\"\""""
+
+
+def parse_step2a(condensed_text: str, scenes: list[dict], llm_call) -> dict:
+    """从精修模组提取所有 interactions."""
+    prompt = build_step2a_prompt(condensed_text, scenes)
+    return llm_call(prompt, system=STEP2A_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2b: Events
+# ═══════════════════════════════════════════════════════════════
+
+STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全局不可逆事件。
+你的任务是：从精修模组文本和已知的互动列表中提取所有全局事件。
+
+重要原则：
+- 事件的 requirement 使用自然语言声明，可引用已存在的 interaction ID 或 flag 名称
+- 不可逆事件 = 一旦发生就永久改变世界状态的事件
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step2b_events_prompt(
+    condensed_text: str,
+    scenes: list[dict],
+    interactions: list[dict],
+) -> str:
+    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    interaction_list = "\n".join(
+        f"- {i['id']}: {i['name']} (场景 {i['scene']}, flag: {[s.get('key','') for s in i.get('side_effects',[]) if s.get('type')=='flag_set']})"
+        for i in interactions
+    )
+    return f"""从精修模组文本中提取所有全局不可逆事件。
+
+已知场景:
+{scene_list}
+
+已知互动及其 flag:
+{interaction_list}
+
+输出格式:
+{{
+  "events": [
+    {{
+      "id": "E1",
+      "name": "事件名称",
+      "trigger": "触发条件描述（自然语言）",
+      "irreversible_impact": "不可逆影响描述",
+      "requirement": "前置条件声明（自然语言，可引用已知 flag 或 interaction ID）"
+    }}
+  ]
+}}
+
+要求：
+1. id 全局唯一 (E1, E2, E3...)
+2. requirement 可引用已知的 interaction ID (如 I1) 或 flag 名称 (如 flag:found_key)
+3. 不可逆事件包括：场景被破坏、NPC 死亡、关键物品销毁、时间节点等
+4. 事件是全局的，不绑定特定场景
+
+精修模组：
+\"\"\"
+{condensed_text}
+\"\"\""""
+
+
+def parse_step2b_events(
+    condensed_text: str,
+    scenes: list[dict],
+    interactions: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step2b_events_prompt(condensed_text, scenes, interactions)
+    return llm_call(prompt, system=STEP2B_EVENTS_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2b: Auto-triggers
+# ═══════════════════════════════════════════════════════════════
+
+STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动触发事件。
+你的任务是：基于精修模组和已知互动，生成所有被动触发事件（替代传统的 hidden_info）。
+
+重要原则：
+- auto_trigger 是系统被动检测条件后自动揭示的信息或触发的事件
+- effect_ref 留空（填 null），等待 Step 4 library 匹配
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step2b_at_prompt(
+    condensed_text: str,
+    scenes: list[dict],
+    interactions: list[dict],
+) -> str:
+    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    interaction_list = "\n".join(
+        f"- {i['id']}: {i['name']} (场景 {i['scene']})"
+        for i in interactions
+    )
+    return f"""从精修模组文本中生成所有自动触发事件。
+
+已知场景:
+{scene_list}
+
+已知互动:
+{interaction_list}
+
+输出格式:
+{{
+  "auto_triggers": [
+    {{
+      "id": "AT1",
+      "name": "自动触发名称",
+      "scene": "S1",
+      "trigger_condition": "触发条件（自然语言，如：玩家进入场景且 flag:has_key 为 true）",
+      "effect_type": "reveal_info",
+      "effect_ref": null,
+      "reveal_narrative": "揭示时的叙事文本"
+    }}
+  ]
+}}
+
+要求：
+1. id 全局唯一 (AT1, AT2, AT3...)
+2. scene 使用给定列表中的 ID
+3. effect_type 从以下选择：reveal_info / spawn_enemy / grant_weapon / npc_state_change
+4. effect_ref 全部填 null（等 Step 4 匹配 library）
+5. trigger_condition 用自然语言描述，可引用 flag 名称或 event ID
+6. 每个场景至少生成 0-2 个 auto_trigger
+
+精修模组：
+\"\"\"
+{condensed_text}
+\"\"\""""
+
+
+def parse_step2b_at(
+    condensed_text: str,
+    scenes: list[dict],
+    interactions: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step2b_at_prompt(condensed_text, scenes, interactions)
+    return llm_call(prompt, system=STEP2B_AT_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2c: L1 玩家可见层
+# ═══════════════════════════════════════════════════════════════
+
+STEP2C_L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
+你的任务是：从精修模组文本中提取每个场景的初始感知信息——玩家进入场景时无需任何检定即可直接感知的一切。
+
+重要原则：
+- 严格按照输出格式参考输出 json 文件
+- 只描述无条件可见的内容（外观、声音、气味、氛围）
+- 需要检定才能发现的信息 → 不放在这里（那是 L2 的事）
+- NPC 只描述外貌和神态，不写隐藏动机"""
+
+
+def build_step2c_l1_prompt(condensed_text: str, scenes: list[dict]) -> str:
+    template = _load_template("l1_template.json")
+    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    return f"""从精修模组文本中提取每个场景的「玩家初始感知信息」。
+
+已知场景列表（必须使用这些场景名作为 JSON key）:
+{scene_list}
+
+输出格式参考：
+{template}
+
+要求：
+1. 每个场景使用其名称作为顶层 key（如"6号车厢"）
+2. description：描述场景基本信息的叙事文本（KP 可直接朗读，80-200字）
+3. atmosphere：场景氛围一句话总结
+4. perceptible：玩家无需检定即可感知的元素列表
+5. ambient_hints：微妙的环境线索列表
+6. npc_appearances：当前场景 NPC 的外貌描述
+
+重要：
+- 仅输出 JSON，不要任何解释性文字
+- 只写无条件可见的感知信息
+- 需要检定才能发现的内容留给 L2 层
+- 场景 key 名必须与给定列表中的 name 一致
+
+精修模组：
+\"\"\"
+{condensed_text}
+\"\"\""""
+
+
+def parse_step2c_l1(condensed_text: str, scenes: list[dict], llm_call) -> dict:
+    prompt = build_step2c_l1_prompt(condensed_text, scenes)
+    return llm_call(prompt, system=STEP2C_L1_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2c: L3 设计者层
+# ═══════════════════════════════════════════════════════════════
+
+STEP2C_L3_SYSTEM = """你是一个 TRPG 模组设计分析师，专门提取「设计者层」信息。
+你的任务是：从精修模组文本中提取模组的设计意图、世界规则、场景设计目的和基调约束。
+
+重要原则：
+- 这是设计者层，描述「为什么」这个模组这样设计，而非「有什么」内容
+- world_rules 是世界运行的物理/超自然法则
+- scene_intents 描述每个场景的设计目的
+- driving_force 是一切事件的根本驱动力"""
+
+
+def build_step2c_l3_prompt(condensed_text: str, scenes: list[dict]) -> str:
+    template = _load_template("l3_template.json")
+    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    return f"""从精修模组文本中提取「设计者层」信息（L3 层）。
+
+已知场景列表:
+{scene_list}
+
+输出格式参考：
+{template}
+
+要求：
+1. module_meta：模组元信息
+2. world_rules：世界运行规则列表，每个含 id (WR1, WR2...), name, rule, scope, is_absolute
+3. scene_intents：每个场景的设计意图，key 为场景名，value 含 purpose / key_threat (可选) / notes (可选)
+4. ending_conditions：结局条件列表，每个含 id / condition / narrative
+5. tone_constraints：全局叙事护栏，含 genre / forbidden / recommended / narrative_style
+6. driving_force：一切事件的底层驱动力
+
+重要：
+- 仅输出 JSON，不要任何解释性文字
+- 从原文中推断设计意图，即使原文没有明确声明
+- scene_intents 的 key 必须覆盖所有已知场景
+
+精修模组：
+\"\"\"
+{condensed_text}
+\"\"\""""
+
+
+def parse_step2c_l3(condensed_text: str, scenes: list[dict], llm_call) -> dict:
+    prompt = build_step2c_l3_prompt(condensed_text, scenes)
+    return llm_call(prompt, system=STEP2C_L3_SYSTEM)
