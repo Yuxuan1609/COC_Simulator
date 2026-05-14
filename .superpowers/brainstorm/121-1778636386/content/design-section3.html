@@ -1,0 +1,120 @@
+<h2>Section 3/4 · 武器/敌人库 + 双层判定 + 注入模块</h2>
+<p class="subtitle">独立于三层信息的资源系统，离线/在线双模式注入</p>
+
+<div class="mockup" style="margin-bottom:16px">
+  <div class="mockup-header">武器/敌人库结构</div>
+  <div class="mockup-body" style="font-size:12px;line-height:1.5">
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <span class="label" style="color:#e74c3c">Weapon JSON</span>
+<pre style="color:#ccc;margin:4px 0">
+{
+  "name": ".45 自动手枪",
+  "skill": "手枪",
+  "damage": "1D10+2",
+  "range": "15码",
+  "shots": 7,
+  "malfunction": 100,
+  "era": "1920s",
+  "rarity": "common",
+  "special_rules": "可连射，每追加一发-5惩罚"
+}
+</pre>
+      </div>
+      <div style="flex:1;min-width:200px">
+        <span class="label" style="color:#e74c3c">Enemy JSON</span>
+<pre style="color:#ccc;margin:4px 0">
+{
+  "name": "Clicker",
+  "type": "神话生物",
+  "attributes": {"STR":80,"CON":70,"SIZ":65,"DEX":50,"POW":60},
+  "armor": "2点厚皮",
+  "attacks": [
+    {"name":"噬咬","damage":"1D8+DB","notes":""}
+  ],
+  "special_abilities": [
+    {"name":"盲感","desc":"无眼，通过声音定位。潜行检定硬性难度"}
+  ],
+  "san_loss": "1/1D6",
+  "combat_behavior": "优先攻击发出最大声音的目标"
+}
+</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:16px">
+  <div class="mockup-header">双层判定系统</div>
+  <div class="mockup-body" style="font-size:13px;line-height:1.6">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:160px;background:#0d3320;padding:12px;border-radius:6px;text-align:center">
+        <strong style="color:#27ae60">Tier 1 · 确定性引擎</strong>
+        <p style="color:#aaa;font-size:11px;margin:6px 0">JSON数值 + D100掷骰</p>
+        <p style="color:#999;font-size:10px">命中判定 · 伤害公式 · 装甲减伤 · SAN损失</p>
+        <span style="background:#27ae60;color:#000;padding:2px 6px;border-radius:3px;font-size:10px">始终启用 · 零token成本</span>
+      </div>
+      <span style="font-size:18px;color:#aaa">→</span>
+      <div style="flex:1;min-width:160px;background:#1a1a3e;padding:12px;border-radius:6px;text-align:center">
+        <strong style="color:#3498db">Tier 2 · LLM增强</strong>
+        <p style="color:#aaa;font-size:11px;margin:6px 0">描述性规则 → LLM裁决</p>
+        <p style="color:#999;font-size:10px">战术动作 · 怪物特殊能力 · 环境因素 · 叙事修饰</p>
+        <span style="background:#f39c12;color:#000;padding:2px 6px;border-radius:3px;font-size:10px">可开关 · T1结果作为输入</span>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:10px;font-size:11px;color:#888">
+      T2 prompt: "T1结果为X。规则描述：[special_abilities]。玩家意图：[input]。请判定修正值并生成叙事。"
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:16px">
+  <div class="mockup-header">注入模块 · 双模式</div>
+  <div class="mockup-body" style="font-size:13px;line-height:1.6">
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px;background:#1a1a2e;border-top:3px solid #f39c12;padding:12px;border-radius:6px">
+        <strong style="color:#f39c12">离线 · 模组构建时</strong>
+        <p style="color:#aaa;font-size:11px;margin:6px 0">LLM扫描L3 + L2 → 识别需要武器/敌人的场景 → 从库中匹配 → 写入L2 JSON的 encounters/items 字段</p>
+        <p style="color:#888;font-size:10px">例：2号车厢.danger_level=extreme + key_threat=Clicker → inject enemy:Clicker</p>
+        <span style="font-size:10px;color:#f39c12">可开关</span>
+      </div>
+      <div style="flex:1;min-width:180px;background:#1a1a2e;border-top:3px solid #27ae60;padding:12px;border-radius:6px">
+        <strong style="color:#27ae60">在线 · 即兴生成时</strong>
+        <p style="color:#aaa;font-size:11px;margin:6px 0">LLM判断玩家偏离预期路径 → 查阅L3规则 → 从库中选择 → 动态注入到当前场景</p>
+        <p style="color:#888;font-size:10px">例：玩家在L3标记为safe的车厢反复搜索 → LLM判断需增加紧张感 → spawn enemy:Deep One Spawn</p>
+        <span style="font-size:10px;color:#27ae60">可开关 · 受L3护栏约束</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">注入锚点类型</div>
+  <div class="mockup-body" style="font-size:12px;line-height:1.5">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px;background:#333;padding:8px;border-radius:4px">
+        <strong style="color:#e74c3c">enemy_spawn</strong>
+        <p style="color:#aaa;font-size:10px;margin:2px 0">生成敌人遭遇</p>
+        <p style="color:#888;font-size:9px">离线：L2声明<br>在线：LLM判断</p>
+      </div>
+      <div style="flex:1;min-width:120px;background:#333;padding:8px;border-radius:4px">
+        <strong style="color:#e74c3c">item_grant</strong>
+        <p style="color:#aaa;font-size:10px;margin:2px 0">分发武器/物品</p>
+        <p style="color:#888;font-size:9px">离线：L2声明<br>在线：LLM判断</p>
+      </div>
+      <div style="flex:1;min-width:120px;background:#333;padding:8px;border-radius:4px">
+        <strong style="color:#e74c3c">encounter_zone</strong>
+        <p style="color:#aaa;font-size:10px;margin:2px 0">随机遭遇区域</p>
+        <p style="color:#888;font-size:9px">L3声明此区域可刷怪<br>LLM决定时机</p>
+      </div>
+      <div style="flex:1;min-width:120px;background:#333;padding:8px;border-radius:4px">
+        <strong style="color:#e74c3c">loot_table</strong>
+        <p style="color:#aaa;font-size:10px;margin:2px 0">掉落表</p>
+        <p style="color:#888;font-size:9px">场景/敌人关联<br>可掉落物品列表</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:20px">库 + 判定 + 注入的整体设计可以吗？</h3>
+<p class="subtitle">下一节也是最后一节：game_loop 适配 + 动态生成触发流程</p>

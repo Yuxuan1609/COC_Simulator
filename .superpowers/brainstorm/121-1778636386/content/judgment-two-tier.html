@@ -1,0 +1,73 @@
+<h2>武器/敌人库 + 双层判定机制</h2>
+<p class="subtitle">确认你的方案：精简核心库 + JSON扩展 + 判定层可控</p>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">库结构</div>
+  <div class="mockup-body">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px">
+      <div style="flex:1;min-width:180px;background:#1a1a2e;border:1px solid #e67e22;padding:12px;border-radius:6px">
+        <strong style="color:#e67e22">Core 核心库</strong>
+        <p style="color:#aaa;font-size:12px;margin:6px 0">~20 常见武器<br>~30 神话生物<br>随项目发布</p>
+      </div>
+      <div style="flex:1;min-width:180px;background:#1a1a2e;border:1px solid #3498db;padding:12px;border-radius:6px">
+        <strong style="color:#3498db">Extension 扩展包</strong>
+        <p style="color:#aaa;font-size:12px;margin:6px 0">用户自定义 JSON<br>可添加武器/敌人<br>可社区贡献</p>
+      </div>
+      <div style="flex:1;min-width:180px;background:#1a1a2e;border:1px solid #9b59b6;padding:12px;border-radius:6px">
+        <strong style="color:#9b59b6">Injection 注入模块</strong>
+        <p style="color:#aaa;font-size:12px;margin:6px 0">读取库内容<br>向模组场景添加<br>武器/敌人引用</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">双层判定机制</div>
+  <div class="mockup-body">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;justify-content:center">
+      <div style="background:#0d3320;border:1px solid #27ae60;padding:12px;border-radius:6px;text-align:center;min-width:180px">
+        <span class="label">Tier 1 · 确定性</span>
+        <p style="margin:6px 0;font-size:12px;color:#ccc">JSON数值 + 随机骰子</p>
+        <p style="font-size:11px;color:#999">D100检定<br>伤害公式计算<br>装甲值比对</p>
+        <span style="background:#27ae60;color:#000;padding:2px 8px;border-radius:3px;font-size:11px">始终启用</span>
+      </div>
+      <span style="font-size:20px">+</span>
+      <div style="background:#1a1a3e;border:1px solid #3498db;padding:12px;border-radius:6px;text-align:center;min-width:200px">
+        <span class="label">Tier 2 · LLM增强</span>
+        <p style="margin:6px 0;font-size:12px;color:#ccc">描述性规则 → LLM解释</p>
+        <p style="font-size:11px;color:#999">战术动作修饰<br>特殊怪物能力<br>环境因素影响</p>
+        <span style="background:#f39c12;color:#000;padding:2px 8px;border-radius:3px;font-size:11px">可手动开关</span>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:10px;font-size:12px;color:#aaa">
+      LLM接受：Tier1结果 + 规则描述 + 上下文 → 输出修正判定 + 叙事
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:28px">需要澄清：内容注入的时机和触发方式</h3>
+<p class="subtitle">注入模块如何从武器/敌人库向模组添加内容？</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>纯离线：模组构建时一次性注入</h3>
+      <p>Parser解析完成后，注入模块扫描场景，识别"此处应有怪物/武器"的模式，从库中匹配并写入JSON。游戏运行时数据已固定。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>纯运行时：KP/LLM按需调用</h3>
+      <p>模组JSON只保留注入点的"锚"（如标记"此处可生成敌人"）。游戏进行中，LLM根据玩家行动和L3设计信息决定从库中调取什么。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>双模式：离线预填充 + 运行时动态补充</h3>
+      <p>离线阶段LLM做初始匹配（给每个场景匹配合适的敌人/武器建议），运行时锚点保留，允许LLM在符合L3约束的前提下额外注入或替换内容。</p>
+    </div>
+  </div>
+</div>

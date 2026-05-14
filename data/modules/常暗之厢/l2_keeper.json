@@ -1,0 +1,866 @@
+{
+  "scenes": {
+    "6号车厢": {
+      "description": "起始车厢。玩家在此醒来，车厢内没有其他乘客。门扉上贴着一张便签，旁边有电车示意地图。车窗外面一片漆黑，如同在隧道中。可通往7号车厢（后方）和5号车厢（前方）。",
+      "from_here": [
+        {
+          "target": "7号车厢",
+          "method": "打开通往7号车厢的门"
+        },
+        {
+          "target": "5号车厢",
+          "method": "打开通往5号车厢的门"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "5号车厢",
+          "method": "从5号车厢返回（门可能被大嘴封锁）"
+        },
+        {
+          "source": "7号车厢",
+          "method": "从7号车厢返回"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "调查",
+          "name": "查看便签正面",
+          "requirement": [],
+          "trigger": "调查员主动阅读门上的便签",
+          "result": "便签上写着「只管前进吧 已经没有退路了」。",
+          "side_effects": [],
+          "skill_name": "无",
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "查看便签背面",
+          "requirement": [],
+          "trigger": "撕下便签或主动查看背面",
+          "result": "发现背面写着「第三个箱子里有藏着钥匙」。",
+          "clue": "钥匙藏在3号车厢",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "known_back_of_note",
+              "value": true
+            }
+          ],
+          "skill_name": "侦查",
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "侦查发现便签背面",
+          "requirement": [],
+          "trigger": "未主动撕下便签，通过技能检查",
+          "result": "你注意到便签背面隐约有字迹，上面写着「第三个箱子里有藏着钥匙」。",
+          "clue": "钥匙藏在3号车厢",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "known_back_of_note",
+              "value": true
+            }
+          ],
+          "skill_name": "侦查",
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "查看电车示意地图",
+          "requirement": [],
+          "trigger": "调查员查看门旁的地图",
+          "result": "发现7号车厢以后的部分被人蓄意涂掉了。",
+          "clue": "后方车厢存在异常",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "saw_map_7_obscured",
+              "value": true
+            }
+          ],
+          "skill_name": "灵感",
+          "difficulty": "regular"
+        },
+        {
+          "type": "决策",
+          "name": "原地等待或返回查看",
+          "requirement": [],
+          "trigger": "调查员决定停止前进或试图返回",
+          "result": "车厢后方的门突然关闭，并传来啃食声，脚下的立足点开始缓慢消失。进入行动限制阶段。",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "time_limit_active",
+              "value": true
+            },
+            {
+              "type": "spawn_enemy",
+              "enemy_ref": "大嘴",
+              "scene": "当前车厢"
+            }
+          ],
+          "skill_name": "无",
+          "difficulty": "regular"
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "hidden_info": [
+        {
+          "info": "明明早该到达终点站，却仍在行驶。",
+          "trigger_condition": "灵感≥50",
+          "linked_skill": "灵感",
+          "reveal_narrative": "你隐约感到，现在的时间早就应该到达终点站了，但电车仍在黑暗里疾驰。"
+        }
+      ],
+      "extra": {
+        "lucky_check": "全体进行幸运检定决定随身物品去留。成功保留个人物品，失败只留下衣服眼镜等。"
+      }
+    },
+    "7号车厢": {
+      "description": "紧邻6号车厢后方的车厢。空气中弥漫着血腥臭味，地上散落着被撕裂的人类肢体残骸，车厢深处似乎有一张巨大的嘴正在啃食车厢。车窗外面和内部一样漆黑。",
+      "from_here": [
+        {
+          "target": "6号车厢",
+          "method": "返回6号车厢"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "6号车厢",
+          "method": "打开通往7号车厢的门"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "调查",
+          "name": "打开门观察内部",
+          "requirement": [],
+          "trigger": "打开通往7号车厢的门",
+          "result": "眼前的景象骇人：被撕裂的人类肢体散落一地。",
+          "side_effects": [
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -1
+            },
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -1,
+              "condition": "若灵感成功"
+            }
+          ],
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "医学鉴定尸体",
+          "requirement": [
+            "玩家已进入7号车厢"
+          ],
+          "trigger": "使用医学技能检查尸体",
+          "result": "尸体距离死亡时间并不久。",
+          "side_effects": [],
+          "skill_name": "医学",
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "侦查车厢深处",
+          "requirement": [
+            "玩家已进入7号车厢"
+          ],
+          "trigger": "使用侦查技能望向深处",
+          "result": "你看到车厢深处有一张巨大类似嘴巴的东西正在啃蚀车厢，那是比电车还要巨大的可怖存在。",
+          "clue": "车尾存在巨大怪物追逐电车",
+          "side_effects": [
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -1
+            },
+            {
+              "type": "flag_set",
+              "key": "seen_great_maw",
+              "value": true
+            }
+          ],
+          "skill_name": "侦查",
+          "difficulty": "regular"
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "hidden_info": [
+        {
+          "info": "感觉到血腥臭味，似乎不应该再前进。",
+          "trigger_condition": "打开门前灵感检定成功",
+          "linked_skill": "灵感",
+          "reveal_narrative": "一股浓烈的血腥臭味扑面而来，你的本能尖叫着让你不要打开这扇门。"
+        }
+      ],
+      "extra": {
+        "door_auto_close": true,
+        "danger": "该车厢正在被吞噬，长时间停留将遭遇大嘴。"
+      }
+    },
+    "5号车厢": {
+      "description": "6号车厢前方的车厢。内部普通，但可以通过侦查发现一张报纸。车厢后方正逐渐被黑暗吞噬，前方通往4号车厢。",
+      "from_here": [
+        {
+          "target": "6号车厢",
+          "method": "返回6号车厢（可能已封锁）"
+        },
+        {
+          "target": "4号车厢",
+          "method": "打开通往4号车厢的门"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "6号车厢",
+          "method": "从6号车厢进入"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "搜索",
+          "name": "侦查发现报纸",
+          "requirement": [],
+          "trigger": "在5号车厢主动搜索",
+          "result": "找到一份报纸，头条是「昨晚末班车遭遇大规模恐怖事件，幸存者精神异常送医」。",
+          "clue": "报纸日期是明天的，暗示循环或预知",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "found_newspaper",
+              "value": true
+            }
+          ],
+          "skill_name": "侦查",
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "翻看报纸获取详情",
+          "requirement": [
+            "found_newspaper"
+          ],
+          "trigger": "仔细阅读报纸内容",
+          "result": "报纸日期是翌日，报道的事件正是现在发生的种种。这超乎常理的事实令人毛骨悚然。",
+          "side_effects": [
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -1,
+              "condition": "成功理解"
+            }
+          ],
+          "skill_name": "图书馆利用",
+          "difficulty": "regular"
+        },
+        {
+          "type": "调查",
+          "name": "灵感感知车厢消失",
+          "requirement": [
+            "seen_great_maw"
+          ],
+          "trigger": "知道大嘴存在后使用灵感",
+          "result": "你意识到6号车厢已经有将近一半的部分消失了。",
+          "clue": "时间紧迫",
+          "side_effects": [
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -1
+            },
+            {
+              "type": "flag_set",
+              "key": "aware_half_gone",
+              "value": true
+            }
+          ],
+          "skill_name": "灵感",
+          "difficulty": "regular"
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "hidden_info": [
+        {
+          "info": "感受到车厢正在缓慢消失，传来啃食声。",
+          "trigger_condition": "行动回合超过限制或DM决定",
+          "linked_skill": "无",
+          "reveal_narrative": "脚下的立足点正慢慢从后向前减少，车厢发出嘎吱嘎吱的声响，似乎有什么巨大的东西在吞噬着一切。"
+        }
+      ],
+      "extra": {
+        "time_limit_note": "若启用行动限制规则，KP可在此逐步描述车厢被吞噬的景象。"
+      }
+    },
+    "4号车厢": {
+      "description": "5号车厢前方的车厢。这里躺着一名重伤的乘务员，腿部有咬痕，意识尚存但无法行走。他知晓重要线索和钥匙位置。",
+      "from_here": [
+        {
+          "target": "5号车厢",
+          "method": "返回5号车厢"
+        },
+        {
+          "target": "3号车厢",
+          "method": "打开通往3号车厢的门"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "5号车厢",
+          "method": "从5号车厢进入"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "急救",
+          "name": "急救乘务员",
+          "requirement": [],
+          "trigger": "调查员试图救治倒地的乘务员",
+          "result": "乘务员苏醒，虽然仍很虚弱，但恢复了意识，能够提供情报。",
+          "side_effects": [
+            {
+              "type": "npc_state_change",
+              "npc_name": "京山人吉",
+              "new_state": "清醒"
+            },
+            {
+              "type": "flag_set",
+              "key": "conductor_awake",
+              "value": true
+            }
+          ],
+          "skill_name": "急救",
+          "difficulty": "regular"
+        },
+        {
+          "type": "对话",
+          "name": "询问受伤原因",
+          "requirement": [
+            "conductor_awake"
+          ],
+          "trigger": "向乘务员询问发生了什么",
+          "result": "乘务员说：「看起来像是人的怪物，突然间袭击了我们……我当时逃跑时被咬到，万幸跑了出来。」",
+          "side_effects": [
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -1
+            },
+            {
+              "type": "flag_set",
+              "key": "know_clicker_assault",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "对话",
+          "name": "追问怪物特征",
+          "requirement": [
+            "conductor_awake"
+          ],
+          "trigger": "进一步询问袭击者样貌或弱点",
+          "result": "乘务员回忆：「他们对于声音似乎很敏感，我当时疼得把手边的东西甩到墙上，吸引了他们的注意力。」",
+          "clue": "Clicker对声音敏感，可用声音吸引",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "know_clicker_sound_weakness",
+              "value": true
+            }
+          ],
+          "skill_name": "话术",
+          "difficulty": "regular"
+        },
+        {
+          "type": "对话",
+          "name": "请求同行",
+          "requirement": [
+            "conductor_awake"
+          ],
+          "trigger": "表示愿意带乘务员一起走",
+          "result": "乘务员恳求：「快点想办法把电车停下来逃跑吧，拜托你们帮帮我。」并会加入队伍。",
+          "side_effects": [
+            {
+              "type": "npc_state_change",
+              "npc_name": "京山人吉",
+              "new_state": "跟随"
+            },
+            {
+              "type": "flag_set",
+              "key": "conductor_accompanying",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "对话",
+          "name": "询问钥匙",
+          "requirement": [
+            "conductor_awake"
+          ],
+          "trigger": "问乘务员是否有驾驶室的钥匙",
+          "result": "乘务员告诉调查员自己保管着驾驶室钥匙和面板钥匙，但逃跑时掉在3号车厢前门附近的黑色包里。",
+          "clue": "钥匙在3号车厢",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "know_key_location",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "hidden_info": [
+        {
+          "info": "乘务员腿部的咬痕与怪物的关联。",
+          "trigger_condition": "调查员目视乘务员伤口",
+          "linked_skill": "无",
+          "reveal_narrative": "你看到乘务员腿上深可见骨的咬痕，显然不是人类牙齿能造成的。"
+        }
+      ],
+      "extra": {
+        "carry_difficulty": "背起乘务员行走需力量<70进行力量检定，每节车厢/5分钟需体质<70进行体质检定。乘务员DEX因受伤自动失败。"
+      }
+    },
+    "3号车厢": {
+      "description": "车厢内到处都是散落的行李，杂乱无章，行走困难。前部靠近2号车厢的门边可以找到乘务员遗落的钥匙。也可擦寻回自己丢失的随身物品。",
+      "from_here": [
+        {
+          "target": "4号车厢",
+          "method": "返回4号车厢"
+        },
+        {
+          "target": "2号车厢",
+          "method": "打开通往2号车厢的门"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "4号车厢",
+          "method": "从4号车厢进入"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "搜索",
+          "name": "寻找钥匙",
+          "requirement": [],
+          "trigger": "在3号车厢搜寻乘务员的黑色包",
+          "result": "发现了被切断背带的黑色包，里面装有驾驶室钥匙与控制面板钥匙。",
+          "clue": "获得驾驶室与面板钥匙",
+          "side_effects": [
+            {
+              "type": "item_gain",
+              "item_name": "驾驶室钥匙"
+            },
+            {
+              "type": "item_gain",
+              "item_name": "控制面板钥匙"
+            },
+            {
+              "type": "flag_set",
+              "key": "key_found",
+              "value": true
+            }
+          ],
+          "skill_name": "侦查",
+          "difficulty": "regular"
+        },
+        {
+          "type": "决策",
+          "name": "乘务员自动找到钥匙",
+          "requirement": [
+            "conductor_accompanying",
+            "know_key_location"
+          ],
+          "trigger": "带着乘务员到达3号车厢",
+          "result": "乘务员记得掉落的准确位置，很快找到黑色包并交出钥匙。",
+          "side_effects": [
+            {
+              "type": "item_gain",
+              "item_name": "驾驶室钥匙"
+            },
+            {
+              "type": "item_gain",
+              "item_name": "控制面板钥匙"
+            },
+            {
+              "type": "flag_set",
+              "key": "key_found",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "搜索",
+          "name": "寻找遗失的随身物品",
+          "requirement": [],
+          "trigger": "调查员尝试在行李堆中找回自己丢失的物品",
+          "result": "经过一番翻找，你奇迹般地找到了自己原本丢失的随身物品。",
+          "side_effects": [
+            {
+              "type": "grant_item",
+              "item_ref": "玩家自定义个人物品"
+            }
+          ],
+          "skill_name": "幸运",
+          "difficulty": "hard"
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "hidden_info": [
+        {
+          "info": "透过3号车厢的门可以看到里面没有怪物。",
+          "trigger_condition": "从4号车厢靠近3号车厢门并使用侦查或聆听",
+          "linked_skill": "侦查/聆听",
+          "reveal_narrative": "透过玻璃你观察3号车厢内部，里面似乎空无一人，只有散落的行李。"
+        }
+      ],
+      "extra": {
+        "clutter": "车厢内杂物极多，未清理出通道时奔跑或移动有几率被绊倒，发出声响。"
+      }
+    },
+    "2号车厢": {
+      "description": "车厢内一片漆黑，充满尸体的恶臭和鲜血。有数只对声音极其敏感、没有视力的怪物（Clicker）潜伏其中。需要通过潜行或制造声音诱饵通过。",
+      "from_here": [
+        {
+          "target": "3号车厢",
+          "method": "返回3号车厢（关闭的门可阻挡Clicker）"
+        },
+        {
+          "target": "先头车厢",
+          "method": "穿过车厢到达先头车厢的门"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "3号车厢",
+          "method": "打开从3号车厢通往2号车厢的门"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "调查",
+          "name": "观察2号车厢内部",
+          "requirement": [],
+          "trigger": "向2号车厢内张望",
+          "result": "一片漆黑。如果用手电筒或手机照亮，能看到破碎的尸体和地面上凝结的血液。",
+          "side_effects": [],
+          "skill_name": "侦查（有光源加值）",
+          "difficulty": "regular"
+        },
+        {
+          "type": "探索",
+          "name": "潜行通过2号车厢",
+          "requirement": [],
+          "trigger": "调查员试图在不惊动怪物的情况下穿过车厢",
+          "result": "你们小心翼翼地挪动脚步，避开了脚下黏滑的污物，成功抵达对面。",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "passed_clickers_stealth",
+              "value": true
+            }
+          ],
+          "skill_name": "潜行",
+          "difficulty": "regular"
+        },
+        {
+          "type": "使用物品",
+          "name": "投掷物品制造声响",
+          "requirement": [],
+          "trigger": "将某个物品用力扔向远处墙壁",
+          "result": "巨大的撞击声吸引了所有Clicker的注意，它们纷纷冲向声源，你们趁机迅速通过。",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "clickers_distracted",
+              "value": true
+            }
+          ],
+          "difficulty": "regular"
+        },
+        {
+          "type": "决策",
+          "name": "牺牲一人吸引Clicker",
+          "requirement": [],
+          "trigger": "一名角色主动暴露自己制造声音",
+          "result": "该角色用自己的生命为代价，让其他人安全通过。这勇敢的牺牲将触发结局B。",
+          "side_effects": [
+            {
+              "type": "spawn_enemy",
+              "enemy_ref": "Clicker",
+              "scene": "2号车厢"
+            },
+            {
+              "type": "stat_change",
+              "stat_name": "SAN",
+              "delta": -3
+            }
+          ],
+          "difficulty": "regular"
+        },
+        {
+          "type": "战斗",
+          "name": "与Clicker战斗",
+          "requirement": [],
+          "trigger": "调查员选择正面战斗",
+          "result": "在狭窄黑暗的车厢内与一群对声音敏感的怪物搏斗。但几乎不可能获胜。",
+          "side_effects": [
+            {
+              "type": "spawn_enemy",
+              "enemy_ref": "Clicker",
+              "scene": "2号车厢"
+            }
+          ],
+          "difficulty": "extreme"
+        }
+      ],
+      "encounters": [
+        {
+          "enemy_ref": "Clicker",
+          "trigger_condition": "进入2号车厢或潜行失败/制造声音吸引注意",
+          "initial_behavior": "潜伏，一听到声音就冲过去攻击声源。没有视力，依靠听觉。",
+          "quantity": "1d3",
+          "notes": "若潜行成功则不触发；若制造声响引开则遭遇延误。"
+        }
+      ],
+      "scene_weapons": [],
+      "hidden_info": [
+        {
+          "info": "在黑暗中隐约能看到移动的人影。",
+          "trigger_condition": "对2号车厢使用侦查（有光源加值）",
+          "linked_skill": "侦查",
+          "reveal_narrative": "借着手电筒的光，你看到黑暗中有什么东西在缓慢移动，轮廓模糊，但显然不止一个。"
+        },
+        {
+          "info": "闻到强烈的血腥味和看到破碎的尸体。",
+          "trigger_condition": "首次进入2号车厢且未去过7号车厢",
+          "linked_skill": "无",
+          "reveal_narrative": "恶臭扑面而来，脚下踩到柔软的东西——那是被撕裂的人体残骸。"
+        }
+      ],
+      "extra": {
+        "no_light_penalty": "没有光源时所有行动获得-15%惩罚。"
+      }
+    },
+    "先头车厢": {
+      "description": "安静的车厢，最前方是通往驾驶室的门。需要用钥匙打开驾驶室，里面有电车控制面板（两根拉杆）。这里是决定结局的地点。",
+      "from_here": [
+        {
+          "target": "2号车厢",
+          "method": "返回2号车厢"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "2号车厢",
+          "method": "从2号车厢通过门进入"
+        }
+      ],
+      "interactions": [
+        {
+          "type": "使用物品",
+          "name": "打开驾驶室门",
+          "requirement": [
+            "key_found"
+          ],
+          "trigger": "使用驾驶室钥匙开门",
+          "result": "驾驶室的门被打开，里面是操作台。",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "cockpit_open",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "调查",
+          "name": "观察控制面板",
+          "requirement": [
+            "cockpit_open"
+          ],
+          "trigger": "查看控制面板上的拉杆和标识",
+          "result": "两根拉杆：左杆控制刹车/起步，右杆控制油门。下拉加速，上拉减速。",
+          "clue": "电车可以加速或减速",
+          "side_effects": []
+        },
+        {
+          "type": "决策",
+          "name": "操纵拉杆加速",
+          "requirement": [
+            "cockpit_open"
+          ],
+          "trigger": "将控制拉杆往下拉让电车加速",
+          "result": "电车开始疯狂加速，周围被白光笼罩。触发结局A（True End）。",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "ending_A",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "决策",
+          "name": "操纵拉杆减速",
+          "requirement": [
+            "cockpit_open"
+          ],
+          "trigger": "将拉杆往上拉试图停车",
+          "result": "电车逐渐停下，黑暗吞噬一切，你们被大嘴吞噬。触发结局B（Bad End）。",
+          "side_effects": [
+            {
+              "type": "flag_set",
+              "key": "ending_B",
+              "value": true
+            }
+          ]
+        },
+        {
+          "type": "对话",
+          "name": "说服乘务员不要减速",
+          "requirement": [
+            "conductor_accompanying",
+            "conductor_wants_stop"
+          ],
+          "trigger": "乘务员试图去拉减速杆时进行劝说",
+          "result": "你成功说服了乘务员，让他暂时放弃了停车的念头。",
+          "side_effects": [
+            {
+              "type": "npc_state_change",
+              "npc_name": "京山人吉",
+              "new_state": "被说服"
+            }
+          ],
+          "skill_name": "话术/魅惑",
+          "difficulty": "regular"
+        },
+        {
+          "type": "对抗",
+          "name": "武力阻止乘务员减速",
+          "requirement": [
+            "conductor_accompanying"
+          ],
+          "trigger": "使用力量制止乘务员触碰操作杆",
+          "result": "你轻松压制了受伤的乘务员，但他仍会寻找机会试图停车。",
+          "side_effects": [],
+          "skill_name": "力量",
+          "difficulty": "regular"
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "hidden_info": [],
+      "extra": {
+        "panel_description": "两根拉杆初始状态：左杆拉下（刹车？），右杆中间位。实际效果：加速前进。"
+      }
+    }
+  },
+  "events": [
+    {
+      "id": "E1",
+      "name": "大嘴开始吞噬6号车厢",
+      "trigger": "调查员长时间停留在后方车厢（超过行动次数限制），或主动观察/返回时触发。",
+      "irreversible_impact": "6号车厢逐渐被吞噬，最终消失，无法返回。调查员会被迫向前移动。如果仍滞留在后段，将被大嘴吞噬导致结局C。",
+      "requirement": [],
+      "extra": {
+        "time_limit": "可设定每个玩家3-4次行动后开始吞噬"
+      }
+    },
+    {
+      "id": "E2",
+      "name": "乘务员被吞噬",
+      "trigger": "调查员将乘务员独自留在3号车厢或更后方的车厢，并关门离去。",
+      "irreversible_impact": "乘务员被后方的大嘴吞噬，发出绝望的哀嚎。调查员丧失一个NPC同伴和解锁某些线索的可能。",
+      "requirement": [
+        "conductor_awake"
+      ],
+      "extra": {
+        "san_loss": "0/1d3"
+      }
+    },
+    {
+      "id": "E3",
+      "name": "行动限制阶段开始",
+      "trigger": "调查员表现犹豫或反复回头，或KP决定加快节奏时。",
+      "irreversible_impact": "车厢缓慢从后向前消失，调查员必须在有限时间内做出决定，增加紧张感。",
+      "requirement": [],
+      "extra": {
+        "description": "脚下的立足点逐渐减少，车厢发出嘎吱声。"
+      }
+    },
+    {
+      "id": "E4",
+      "name": "得知大嘴存在",
+      "trigger": "调查员在7号车厢侦查成功，或在其他场景通过灵感感知到后方异动。",
+      "irreversible_impact": "调查员明确知道后方有巨型怪物追逐。这影响乘务员的意愿和结局选择。",
+      "requirement": [],
+      "extra": {}
+    },
+    {
+      "id": "E5",
+      "name": "钥匙被夺取",
+      "trigger": "调查员在2号车厢被Clicker抓住，且未通过幸运/敏捷对抗。",
+      "irreversible_impact": "掌握钥匙的角色死亡或钥匙遗落，导致无法打开驾驶室，可能走向结局C。",
+      "requirement": [
+        "key_found"
+      ],
+      "extra": {}
+    },
+    {
+      "id": "E6",
+      "name": "奈亚现身（可选）",
+      "trigger": "调查员击败所有Clicker或出现极度不符合常理的发展。",
+      "irreversible_impact": "奈亚化身出现，使调查员陷入彻底的绝望和疯狂，导向结局C。",
+      "requirement": [],
+      "extra": {
+        "kp_discretion": true
+      }
+    }
+  ],
+  "npc_profiles": {
+    "京山人吉": {
+      "name": "京山人吉",
+      "role": "电车乘务员，幸存者，关键线索来源",
+      "motivation": "想停下电车逃生，保护乘客。但如果得知后方大嘴的存在，会因恐惧而动摇。",
+      "knowledge": [
+        "自己保管驾驶室钥匙和控制面板钥匙，但遗落在3号车厢。",
+        "袭击乘客的怪物对声音敏感。",
+        "驾驶室操作方法（如何加速/减速）。",
+        "不了解5-7号车厢的真实情况（默认不知大嘴）。"
+      ],
+      "personality": "责任心强，但受伤后较为脆弱。恳求调查员帮忙，容易受说服。如果面对极度恐惧会不知所措。",
+      "voice_notes": "语气带有恳求和不安，声音虚弱但努力保持礼貌。",
+      "notes": "STR55（受伤，对抗力量时对方+20%）。敏捷对抗自动失败。腿伤无法自行行走，需要搀扶或背负。",
+      "extra": {}
+    },
+    "Clicker": {
+      "name": "Clicker",
+      "role": "敌方怪物，阻碍调查员进入先头车厢",
+      "motivation": "捕食一切发出声音的活物。",
+      "knowledge": [],
+      "personality": "无视力，依靠敏锐听力定位猎物。会优先攻击最近的声音源。会被更大的声响吸引。",
+      "voice_notes": "发出令人毛骨悚然的咔哒声和喘息声。",
+      "notes": "DEX 40, STR 100。数量1d3只。目击导致SAN 1/1d6（若不知情可能更高）。战斗中技能-80%或减半（由KP决定）。两只以上同时抓住无法逃脱。",
+      "extra": {
+        "source": "The Last of Us"
+      }
+    }
+  }
+}

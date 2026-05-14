@@ -1,11 +1,9 @@
 {
   "6号车厢": {
-    "entry_narrative": "调查员进入时的开场叙事文本...",
+    "description": "描述场景基本信息的叙事文本...",
     "atmosphere": "场景氛围一句话描述",
-    "mood": "uneasy",
     "perceptible": [
       {
-        "type": "object",
         "name": "可感知物品名",
         "brief": "一句话描述",
         "linked_interaction": "关联的L2互动名（可选）"

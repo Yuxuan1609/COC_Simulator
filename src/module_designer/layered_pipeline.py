@@ -405,7 +405,14 @@ def run_pipeline(
         print("═" * 50)
         print("[Step 4] Library 匹配...")
 
+    # Build name→id map for scene descriptions
+    name_to_id = {s["name"]: s["id"] for s in scenes if s.get("name") and s.get("id")}
     l2_descriptions = {}
+    for name, sdata in l1_data.items():
+        sid = name_to_id.get(name, name)
+        desc = sdata.get("description", "") or sdata.get("atmosphere", "") or sdata.get("entry_narrative", "")
+        if desc:
+            l2_descriptions[sid] = desc
     weapon_names = []
     enemy_names = []
     try:

@@ -10,7 +10,9 @@
       "Bash(git init *)",
       "Bash(git config *)",
       "Bash(git *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(bash *)",
+      "Bash(pip install *)"
     ]
   }
 }

@@ -1,0 +1,74 @@
+<h2>三层模型：确认数据流</h2>
+<p class="subtitle">基于你的选择——一键式LLM解析 + 设计者层不可变 + LLM运行时动态生成L1/L2</p>
+
+<div class="mockup" style="margin-bottom:24px">
+  <div class="mockup-header">整体架构</div>
+  <div class="mockup-body">
+    <div style="display:flex;flex-direction:column;gap:16px;font-size:13px;line-height:1.5">
+
+      <!-- Phase 1: Parsing -->
+      <div style="background:#16213e;border-left:3px solid #e67e22;padding:14px;border-radius:6px">
+        <span class="label">阶段1 · 模组导入（离线）</span>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+          <span style="background:#444;padding:4px 10px;border-radius:4px">模组文档</span> →
+          <span style="background:#e67e22;padding:4px 10px;border-radius:4px">LLM Parser</span> →
+          <span style="background:#444;padding:4px 10px;border-radius:4px">L3 设计者层</span> +
+          <span style="background:#444;padding:4px 10px;border-radius:4px">L2 KP层</span> +
+          <span style="background:#444;padding:4px 10px;border-radius:4px">L1 玩家层</span>
+        </div>
+        <p style="color:#aaa;font-size:12px;margin-top:6px">可选：人工审核修订静态数据 · 核心：一键完成</p>
+      </div>
+
+      <!-- Phase 2: Runtime -->
+      <div style="background:#16213e;border-left:3px solid #27ae60;padding:14px;border-radius:6px">
+        <span class="label">阶段2 · 游戏进行中</span>
+        <div style="margin-top:8px">
+          <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+            <div style="background:#1a0a2e;border:1px solid #9b59b6;padding:10px;border-radius:6px;flex:1;min-width:130px">
+              <strong style="color:#9b59b6">L3 设计者层</strong>
+              <p style="font-size:12px;color:#999;margin:4px 0">🔒 不可变<br>世界观、逻辑链<br>设计意图</p>
+            </div>
+            <span style="align-self:center">→</span>
+            <div style="background:#1a1a3e;border:1px solid #3498db;padding:10px;border-radius:6px;flex:1;min-width:130px">
+              <strong style="color:#3498db">L2 KP层</strong>
+              <p style="font-size:12px;color:#999;margin:4px 0">🤖 LLM可动态生成<br>隐藏线索、DC<br>怪物数据、触发条件</p>
+            </div>
+            <span style="align-self:center">→</span>
+            <div style="background:#0d3320;border:1px solid #27ae60;padding:10px;border-radius:6px;flex:1;min-width:130px">
+              <strong style="color:#27ae60">L1 玩家层</strong>
+              <p style="font-size:12px;color:#999;margin:4px 0">🤖 LLM可动态生成<br>场景叙事<br>感官描写、对话</p>
+            </div>
+          </div>
+        </div>
+        <p style="color:#aaa;font-size:12px;margin-top:8px">LLM基于L3推断生成L2/L1，无人工KP</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>下一轮：武器库 & 敌人库设计</h3>
+<p class="subtitle">这是新增的独立子系统。需要确定范围、结构和COC规则兼容性。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>精简实用库</h3>
+      <p>只收录COC核心规则书中的常见武器（约20种）和神话生物（约30种）。结构化字段精简：名称、伤害、属性、技能关联。适合快速启动。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>完整COC 7th规则库</h3>
+      <p>包含所有COC 7th扩展规则书中的武器（约80+种）、神话生物与NPC模板。字段完整（年代、故障值、稀有度、法术关联）。适合深度模组设计。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>模块化可扩展库</h3>
+      <p>核心库（精简）+ 扩展包机制。每个扩展包可添加武器/敌人/自定义数据。用户可自行创建扩展包（JSON/YAML）。核心库随项目发布，扩展包可社区贡献。</p>
+    </div>
+  </div>
+</div>

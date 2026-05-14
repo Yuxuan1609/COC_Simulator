@@ -1,0 +1,45 @@
+<h2>L3 设计者层 · 整体结构</h2>
+<p class="subtitle">从顶层开始：L3 的6大组成部分及其设计理由</p>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">L3 顶层结构</div>
+  <div class="mockup-body">
+<pre style="color:#ccc;font-size:13px;line-height:1.6;margin:0">
+l3_designer.json = {
+  "module_meta":      <span style="color:#888">← 模组基本信息（谁写的、什么年代、什么主题）</span>
+  "world_rules":      <span style="color:#888">← 世界运行规则（不可违反的物理/超自然法则）</span>
+  "logic_chains":     <span style="color:#888">← 剧情逻辑链（主线/支线、分支条件）</span>
+  "scene_intents":    <span style="color:#888">← 每个场景的设计意图（为什么有这个场景）</span>
+  "ending_conditions":<span style="color:#888">← 结局条件（怎么触发、什么主题）</span>
+  "tone_constraints": <span style="color:#888">← 基调护栏（什么可以、什么禁止）</span>
+}
+</pre>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">设计理由：为什么是这6个而不是更多或更少？</div>
+  <div class="mockup-body" style="font-size:13px;line-height:1.6;color:#ccc">
+    <p><strong style="color:#9b59b6">module_meta</strong> — 元信息。让 library/injector 知道这是什么年代的模组（1920s 不能出现现代武器），让 LLM 了解基本设定。</p>
+    <p><strong style="color:#9b59b6">world_rules</strong> — 游戏引擎的"物理法则"。LLM 生成内容时必须遵守。例："Clicker无眼，通过声音定位" → 玩家如果安静就不会被攻击。</p>
+    <p><strong style="color:#9b59b6">logic_chains</strong> — 剧情骨架。不是线性流程，是有分支的节点图。L3 声明节点和分支条件，LLM 在运行时判断玩家处于哪个分支。</p>
+    <p><strong style="color:#9b59b6">scene_intents</strong> — 场景存在的原因。不是"这个场景有什么"，而是"为什么要设计这个场景"。LLM 用它来判断动态生成什么内容。</p>
+    <p><strong style="color:#9b59b6">ending_conditions</strong> — 终局。让 LLM 知道什么时候该结束、以什么情绪结束。</p>
+    <p><strong style="color:#9b59b6">tone_constraints</strong> — 全局护栏。跨场景的叙事约束，LLM 每次生成叙事时都应该参考。</p>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">核心问题：这6个够吗？需要增减什么？</div>
+  <div class="mockup-body">
+    <p style="color:#aaa;font-size:13px">一些可能的考量：</p>
+    <ul style="color:#ccc;font-size:12px;line-height:1.8">
+      <li><strong>是否需要 NPC 关系图？</strong> 目前 NPC 信息在 L2（具体互动）和 L1（外貌描述）中，L3 可能只需要知道"哪些NPC是关键的"（在 scene_intents 中体现）</li>
+      <li><strong>是否需要 faction（阵营）系统？</strong> 常暗之厢目前没有阵营博弈，但未来模组可能有</li>
+      <li><strong>是否需要 pacing（节奏）控制？</strong> 如"前2个场景安全，第3个场景开始加压"</li>
+      <li><strong>是否需要 difficulty_curve（难度曲线）？</strong> 检定难度随进度递增</li>
+    </ul>
+  </div>
+</div>
+
+<h3 style="margin-top:20px">这6个组成部分是否覆盖了你的需求？需要添加或移除什么？</h3>

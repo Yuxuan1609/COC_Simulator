@@ -1,0 +1,120 @@
+<h2>Section 2/4 · L1/L3 结构化数据模型 & 三层约束接口</h2>
+<p class="subtitle">L2沿用现有Interaction/Event结构对齐，L1和L3全新设计</p>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">L1 玩家可见层 — 结构化</div>
+  <div class="mockup-body">
+<pre style="color:#ccc;font-size:12px;line-height:1.5;margin:0">
+{
+  "<span style="color:#27ae60">6号车厢</span>": {
+    "<span style="color:#aaa">atmosphere</span>":    "昏暗封闭，窗外漆黑如深渊，空气中弥漫霉味",
+    "<span style="color:#aaa">entry_narrative</span>": "你在电车的摇晃中醒来，头痛欲裂...",
+    "<span style="color:#aaa">perceptible</span>": [
+      { "<span style="color:#aaa">type</span>": "object", "<span style="color:#aaa">name</span>": "门扉上的便签",
+        "<span style="color:#aaa">brief</span>": "泛黄的纸张贴在门扉上", "<span style="color:#aaa">detail_trigger</span>": "走近查看" },
+      { "<span style="color:#aaa">type</span>": "sound",  "<span style="color:#aaa">name</span>": "电车行驶声",
+        "<span style="color:#aaa">brief</span>": "规律的金属摩擦声从地板传来" },
+      { "<span style="color:#aaa">type</span>": "smell",  "<span style="color:#aaa">name</span>": "霉味",
+        "<span style="color:#aaa">brief</span>": "淡淡的霉变布料气味" }
+    ],
+    "<span style="color:#aaa">npc_appearances</span>": [],
+    "<span style="color:#aaa">ambient_hints</span>": ["后方车厢传来隐约的震动"],
+    "<span style="color:#aaa">mood</span>":           "困惑不安"
+  }
+}
+</pre>
+    <p style="color:#27ae60;font-size:11px;margin-top:6px">L1 是完全结构化的——LLM生成它，游戏引擎消费它。不是自然语言段落。</p>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">L3 设计者层 — 结构化</div>
+  <div class="mockup-body">
+<pre style="color:#ccc;font-size:12px;line-height:1.5;margin:0">
+{
+  "<span style="color:#9b59b6">world_rules</span>": [
+    { "<span style="color:#aaa">id</span>": "WR1", "<span style="color:#aaa">name</span>": "无路可退",
+      "<span style="color:#aaa">rule</span>": "后方车厢逐渐被吞噬，只能前进", "<span style="color:#aaa">affects</span>": ["movement"] },
+    { "<span style="color:#aaa">id</span>": "WR2", "<span style="color:#aaa">name</span>": "Clicker音感",
+      "<span style="color:#aaa">rule</span>": "无眼，对声音极度敏感", "<span style="color:#aaa">affects</span>": ["stealth","combat"] }
+  ],
+  "<span style="color:#9b59b6">logic_chains</span>": [
+    { "<span style="color:#aaa">id</span>": "LC1", "<span style="color:#aaa">name</span>": "获取钥匙→驾驶室",
+      "<span style="color:#aaa">nodes</span>": ["find_key_3","reach_lead_car","open_cabinet"],
+      "<span style="color:#aaa">branches</span>": [
+        {"<span style="color:#aaa">cond</span>": "flag:has_crew", "<span style="color:#aaa">effect</span>": "skip find_key_3"},
+        {"<span style="color:#aaa">cond</span>": "!flag:has_crew", "<span style="color:#aaa">effect</span>": "require skill:侦查"}
+      ]}
+  ],
+  "<span style="color:#9b59b6">scene_intents</span>": {
+    "<span style="color:#aaa">6号车厢</span>": {"<span style="color:#aaa">purpose</span>": "苏醒点·教学", "<span style="color:#aaa">emotion</span>": "困惑",
+                     "<span style="color:#aaa">key_info</span>": ["便签→钥匙在3号"], "<span style="color:#aaa">danger_level</span>": "safe"},
+    "<span style="color:#aaa">2号车厢</span>": {"<span style="color:#aaa">purpose</span>": "核心遭遇", "<span style="color:#aaa">emotion</span>": "极度紧张",
+                     "<span style="color:#aaa">key_threat</span>": "Clicker", "<span style="color:#aaa">danger_level</span>": "extreme"}
+  },
+  "<span style="color:#9b59b6">ending_conditions</span>": [
+    { "<span style="color:#aaa">id</span>": "END1", "<span style="color:#aaa">type</span>": "escape", "<span style="color:#aaa">cond</span>": "accelerate",
+      "<span style="color:#aaa">narrative_theme</span>": "回归现实但失忆" }
+  ],
+  "<span style="color:#9b59b6">tone_constraints</span>": {
+    "<span style="color:#aaa">genre</span>": "克苏鲁恐怖箱庭",
+    "<span style="color:#aaa">forbidden</span>": ["英雄主义", "轻松喜剧", "明确幸福结局"],
+    "<span style="color:#aaa">required</span>": ["孤立无援", "逐渐递增的恐惧", "人性的脆弱"]
+  }
+}
+</pre>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">三层约束接口 · 核心设计</div>
+  <div class="mockup-body" style="font-size:13px;line-height:1.6">
+    <div style="display:flex;flex-direction:column;gap:10px">
+
+      <div style="background:#1a0a2e;border-left:3px solid #9b59b6;padding:10px;border-radius:6px">
+        <strong style="color:#9b59b6">L3 → L2 约束</strong>
+        <span style="color:#aaa;font-size:11px">（设计者规则约束KP可操作空间）</span>
+        <div style="font-size:12px;margin-top:4px">
+          <code style="color:#ccc">L3.get_applicable_rules(scene, flags) → List[WorldRule]</code><br>
+          <code style="color:#ccc">L3.validate_spawn(enemy_type, scene) → bool</code><br>
+          <code style="color:#ccc">L3.evaluate_branch(chain_id, flags) → BranchState</code><br>
+          <code style="color:#ccc">L3.get_tone_context() → ToneConstraints</code>
+        </div>
+      </div>
+
+      <div style="background:#1a1a3e;border-left:3px solid #3498db;padding:10px;border-radius:6px">
+        <strong style="color:#3498db">L2 → L1 约束</strong>
+        <span style="color:#aaa;font-size:11px">（KP信息决定玩家能感知什么）</span>
+        <div style="font-size:12px;margin-top:4px">
+          <code style="color:#ccc">L2.get_visible(scene, perception_result) → VisibleSet</code><br>
+          <code style="color:#ccc">L2.filter_perceptible(scene, skill_level) → List[Perceptible]</code><br>
+          <code style="color:#ccc">L2.get_available_actions(scene, flags) → List[Interaction]</code>
+        </div>
+      </div>
+
+      <div style="background:#1a1a3e;border-left:3px solid #27ae60;padding:10px;border-radius:6px">
+        <strong style="color:#27ae60">L3 → L1 直接约束</strong>
+        <span style="color:#aaa;font-size:11px">（设计意图直接影响叙事基调）</span>
+        <div style="font-size:12px;margin-top:4px">
+          <code style="color:#ccc">L3.get_mood_palette(scene) → MoodDirective</code><br>
+          <code style="color:#ccc">L3.sanitize_narrative(l1_text) → str</code>  <span style="color:#888">// 删除违反L3的叙事</span>
+        </div>
+      </div>
+
+      <div style="background:#0d3320;border-left:3px solid #e67e22;padding:10px;border-radius:6px">
+        <strong style="color:#e67e22">生成护栏 · Generation Guardrails</strong>
+        <span style="color:#aaa;font-size:11px">（LLM动态生成时的硬性约束）</span>
+        <div style="font-size:12px;margin-top:4px;color:#ccc">
+          <span style="color:#e74c3c">✗</span> L2 只能 spawn <strong>library 中存在</strong> 且 <strong>L3 允许</strong> 的敌人<br>
+          <span style="color:#e74c3c">✗</span> L2 只能 grant <strong>library 中存在</strong> 且 <strong>L3 逻辑链包含</strong> 的物品<br>
+          <span style="color:#e74c3c">✗</span> L1 只能描述 <strong>L2.VisibleSet 范围内</strong> 的感知元素<br>
+          <span style="color:#27ae60">✓</span> 护栏可手动开关（允许测试时绕过）
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:24px">L1/L3 的结构化设计和约束接口符合预期吗？</h3>
+<p class="subtitle">下一节：武器/敌人库的数据结构 + 双层判定系统 + 注入模块</p>

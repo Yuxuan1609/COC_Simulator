@@ -1,0 +1,92 @@
+<h2>Section 4/4 · Game Loop 适配 + 动态生成触发流</h2>
+<p class="subtitle">利用现有 improvise_prompt 路径，注入库能力，添加偏离检测</p>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">适配后的 Game Loop 流程</div>
+  <div class="mockup-body">
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;font-family:monospace;line-height:1.7">
+
+      <div style="background:#1a1a2e;padding:8px 12px;border-radius:4px;border-left:3px solid #888">
+        <strong>Phase 1</strong> · LLM解析动作 <span style="color:#888">(不改)</span>
+      </div>
+      <div style="text-align:center;color:#888">↓</div>
+      <div style="background:#1a1a2e;padding:8px 12px;border-radius:4px;border-left:3px solid #888">
+        <strong>Phase 2</strong> · LLM判定事件 <span style="color:#888">(不改，并行于Phase1)</span>
+      </div>
+      <div style="text-align:center;color:#888">↓</div>
+      <div style="background:#1a1a2e;padding:8px 12px;border-radius:4px;border-left:3px solid #888">
+        <strong>Phase 3</strong> · 执行动作 + 消费side_effects <span style="color:#888">(扩展：新增SpawnEnemy/GrantItem)</span>
+      </div>
+      <div style="text-align:center;color:#888">↓</div>
+      <div style="background:#16213e;padding:8px 12px;border-radius:4px;border-left:3px solid #f39c12">
+        <strong style="color:#f39c12">Phase 3.5 ★ NEW</strong> · <strong>偏离检测 + 即兴注入</strong>
+        <div style="color:#ccc;margin-top:4px">
+          if <strong>all_other</strong> and <strong>!triggered_events</strong>:  <span style="color:#888">← 现有条件：玩家行为无匹配</span><br>
+          &nbsp;&nbsp;<span style="color:#f39c12">deviation_score</span> = <strong>L3.evaluate_deviation(context)</strong><br>
+          &nbsp;&nbsp;if deviation_score > threshold or <strong>runtime_injection_enabled</strong>:<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#3498db">library.injector.runtime()</span> → spawn/grant<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;call <span style="color:#27ae60">build_improvise_prompt()</span> ← 现有，增强L3/L1感知<br>
+          &nbsp;&nbsp;else:<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;现有 improvise 路径（不注入）
+        </div>
+      </div>
+      <div style="text-align:center;color:#888">↓</div>
+      <div style="background:#1a1a2e;padding:8px 12px;border-radius:4px;border-left:3px solid #888">
+        <strong>Phase 4</strong> · 执行事件 + 引擎二次确认 <span style="color:#888">(不改)</span>
+      </div>
+      <div style="text-align:center;color:#888">↓</div>
+      <div style="background:#16213e;padding:8px 12px;border-radius:4px;border-left:3px solid #f39c12">
+        <strong style="color:#f39c12">Phase 5 ★ 增强</strong> · <strong>叙事生成</strong>
+        <div style="color:#ccc;margin-top:4px">
+          build_narrative_prompt() 现在接收：<br>
+          &nbsp;&nbsp;+ <strong>L1.atmosphere</strong> + <strong>L1.perceptible</strong> <span style="color:#888">← 结构化感知信息</span><br>
+          &nbsp;&nbsp;+ <strong>L3.tone_constraints</strong> <span style="color:#888">← 基调约束</span><br>
+          &nbsp;&nbsp;+ <strong>L3.scene_intents[scene].emotion</strong> <span style="color:#888">← 设计情绪</span><br>
+          输出 → 拆解为 L1 结构化更新 + 沉浸式叙事文本
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">动态生成 · 三种路径总览</div>
+  <div class="mockup-body" style="font-size:13px;line-height:1.6">
+
+    <div style="background:#1a1a2e;border-left:3px solid #e74c3c;padding:10px;margin-bottom:8px;border-radius:6px">
+      <strong style="color:#e74c3c">路径A · 声明式（JSON锚点）</strong>
+      <p style="color:#aaa;font-size:11px;margin:4px 0">L2 JSON 中声明 encounters/items → 引擎自动实例化。模组初始化时填充。</p>
+      <p style="color:#888;font-size:10px">触发：进入场景 / 完成前置交互。无LLM参与。</p>
+    </div>
+
+    <div style="background:#1a1a2e;border-left:3px solid #27ae60;padding:10px;margin-bottom:8px;border-radius:6px">
+      <strong style="color:#27ae60">路径B · LLM自主（偏离检测）</strong>
+      <p style="color:#aaa;font-size:11px;margin:4px 0">玩家行为偏离L3预期路径 → LLM判断需要注入内容 → 查询L3约束 + 库 → 动态生成。</p>
+      <p style="color:#888;font-size:10px">触发：improvise_prompt路径 + deviation_score > threshold。可手动开关。</p>
+    </div>
+
+    <div style="background:#1a1a2e;border-left:3px solid #3498db;padding:10px;border-radius:6px">
+      <strong style="color:#3498db">路径C · 手动命令（测试用）</strong>
+      <p style="color:#aaa;font-size:11px;margin:4px 0">KP通过命令直接触发。</p>
+      <p style="color:#888;font-size:10px"><code>/spawn enemy Clicker</code> · <code>/spawn weapon "手电筒"</code> · <code>/spawn random</code> · <code>/inject toggle</code></p>
+    </div>
+
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">可开关控制点</div>
+  <div class="mockup-body">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:12px">
+      <div style="background:#333;padding:8px 12px;border-radius:4px"><strong>runtime_injection</strong><br><span style="color:#aaa">在线注入总开关</span></div>
+      <div style="background:#333;padding:8px 12px;border-radius:4px"><strong>tier2_llm_judgment</strong><br><span style="color:#aaa">双层判定T2开关</span></div>
+      <div style="background:#333;padding:8px 12px;border-radius:4px"><strong>deviation_threshold</strong><br><span style="color:#aaa">偏离触发敏感度</span></div>
+      <div style="background:#333;padding:8px 12px;border-radius:4px"><strong>l3_guardrails</strong><br><span style="color:#aaa">L3护栏开关</span></div>
+      <div style="background:#333;padding:8px 12px;border-radius:4px"><strong>offline_injection</strong><br><span style="color:#aaa">离线注入开关</span></div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:20px">整体设计展示完毕</h3>
+<p class="subtitle">四个子系统：三层信息模型 · 武器/敌人库 · 注入模块 · Game Loop适配。字段级细节后续逐步调整。</p>
+<p style="margin-top:16px">确认整体设计方向后，我写成正式的 design doc 并提交。</p>

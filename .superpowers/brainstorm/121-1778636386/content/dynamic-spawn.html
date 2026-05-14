@@ -1,0 +1,56 @@
+<h2>运行时动态生成机制</h2>
+<p class="subtitle">确认了双模式注入。现在需要设计：游戏中如何刷怪/发物资？触发者是谁？</p>
+
+<div class="mockup" style="margin-bottom:24px">
+  <div class="mockup-header">三种触发路径</div>
+  <div class="mockup-body">
+    <div style="display:flex;flex-direction:column;gap:12px;font-size:13px">
+
+      <div style="background:#1a1a2e;border-left:3px solid #3498db;padding:12px;border-radius:6px">
+        <strong>路径A · 玩家行为触发</strong>
+        <p style="color:#aaa;font-size:12px;margin:4px 0">玩家进入场景 / 执行动作 → Interaction.side_effects 中包含 spawn 类型 → 引擎从库中实例化</p>
+        <span style="font-size:11px;color:#666">例：进入2号车厢 → JSON声明 side_effect: spawn_enemy("Clicker") → 自动生成遭遇</span>
+      </div>
+
+      <div style="background:#1a1a2e;border-left:3px solid #e67e22;padding:12px;border-radius:6px">
+        <strong>路径B · LLM主动生成</strong>
+        <p style="color:#aaa;font-size:12px;margin:4px 0">叙事阶段LLM判断"当前情境需要敌人/物品" → 查阅L3设计意图 → 从库中选择 → 生成</p>
+        <span style="font-size:11px;color:#666">例：玩家反复调查某区域 → LLM认为应该给线索 → 建议生成"掉落的手电筒"</span>
+      </div>
+
+      <div style="background:#1a1a2e;border-left:3px solid #27ae60;padding:12px;border-radius:6px">
+        <strong>路径C · 手动命令</strong>
+        <p style="color:#aaa;font-size:12px;margin:4px 0">KP或玩家通过命令手动触发 → /spawn 系列命令 → 从库中选择或随机生成</p>
+        <span style="font-size:11px;color:#666">例：/spawn enemy Clicker / /giveitem 手电筒 / /randomencounter</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<h3>哪些路径应该纳入你的系统？</h3>
+<p class="subtitle">可以多选——它们并不互斥</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>声明式触发</h3>
+      <p>JSON中声明spawn锚点，引擎自动实例化。确定性，可审计。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>LLM自主触发</h3>
+      <p>叙事阶段LLM判断是否需要生成内容。高自由度，受L3约束。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>/spawn命令系列</h3>
+      <p>交互式命令手动刷怪/发物资。用于测试、调试、或人工KP介入。</p>
+    </div>
+  </div>
+</div>

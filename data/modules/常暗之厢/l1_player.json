@@ -1,0 +1,230 @@
+{
+  "6号车厢": {
+    "entry_narrative": "你们从深沉的睡梦中猛然惊醒，发现自己身在末班电车的车厢里。车内空无一人，窗外只有无尽漆黑，仿佛列车正穿行在无光的隧道中。车厢门扉上贴着一张晃动的便签，门旁还挂着电车的示意地图。一切都安静得离奇，只剩下电车行驶的机械嗡鸣。",
+    "atmosphere": "封闭的末班电车车厢，窗外漆黑一片，寂寥无人。",
+    "mood": "confused",
+    "perceptible": [
+      {
+        "type": "object",
+        "name": "门上便签",
+        "brief": "一张贴在车厢门上的便签，上面写着「只管前进吧 已经没有退路了」。",
+        "linked_interaction": "查看便签背面"
+      },
+      {
+        "type": "object",
+        "name": "电车示意地图",
+        "brief": "门旁挂着电车线路图，后面几节车厢的标识被人故意涂花。",
+        "linked_interaction": null
+      },
+      {
+        "type": "sight",
+        "name": "窗外的黑暗",
+        "brief": "窗外不见任何街灯或建筑，唯有纯粹的黑暗。",
+        "linked_interaction": null
+      },
+      {
+        "type": "sound",
+        "name": "电车行驶声",
+        "brief": "车轮与轨道规律的摩擦声，单调地回荡在车厢里。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "明明应该早已抵达终点站，列车却仍在行驶，让人隐约觉得有什么不对。",
+      "车厢里过分空旷，连其余乘客都消失得无影无踪。"
+    ],
+    "npc_appearances": []
+  },
+  "7号车厢": {
+    "entry_narrative": "门扉拉开的瞬间，一股浓烈的铁锈腥臭迎面扑来，几乎让人作呕。车厢地板上散落着撕裂的人类肢体，血迹溅满了座椅和墙壁。深处似乎隐没在更加幽深的黑暗里，某种难以名状的动静隐约可闻。",
+    "atmosphere": "血腥弥漫的人间地狱，残肢遍布，黑暗深处似有巨物蠕动。",
+    "mood": "terrified",
+    "perceptible": [
+      {
+        "type": "smell",
+        "name": "血腥臭味",
+        "brief": "浓烈的鲜血和内脏腐烂混合的腥臭，弥漫在整个车厢。",
+        "linked_interaction": null
+      },
+      {
+        "type": "sight",
+        "name": "散落的人类肢体",
+        "brief": "被撕裂的断肢和破碎的躯体凌乱地抛在地上，场面残酷骇人。",
+        "linked_interaction": "调查尸体"
+      },
+      {
+        "type": "sound",
+        "name": "深处的啃噬声",
+        "brief": "车厢深处隐约传来令人不安的嘎吱嘎吱咀嚼声。",
+        "linked_interaction": "观察深处"
+      },
+      {
+        "type": "sight",
+        "name": "消失的后车门",
+        "brief": "原本通往8号车厢的门完全消失，只剩下一片虚无的黑暗。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "满地的残骸似乎还很新鲜，死亡刚刚过去不久。",
+      "那种咀嚼声绝不是人类或野兽能发出的，令人本能地想要逃离。"
+    ],
+    "npc_appearances": []
+  },
+  "5号车厢": {
+    "entry_narrative": "这节车厢同样空无一人，但与6号车厢不同，这里弥漫着某种难以言说的违和感。座椅上散落着当天的报纸，行李架上还有几个没带走的包裹。车厢后半部分似乎正以极其缓慢的速度逐渐失去实体，边缘模糊得令人不安。",
+    "atmosphere": "看似平常的空车厢，却隐隐透出空间被侵蚀的诡异感。",
+    "mood": "uneasy",
+    "perceptible": [
+      {
+        "type": "object",
+        "name": "散落的报纸",
+        "brief": "一张报纸被随意扔在座位上，醒目地报道着昨夜的电车恐怖事件。",
+        "linked_interaction": "阅读报纸"
+      },
+      {
+        "type": "sight",
+        "name": "车厢后段虚化",
+        "brief": "6号车厢方向的门附近，车厢地板和墙壁仿佛正在慢慢溶入黑暗。",
+        "linked_interaction": null
+      },
+      {
+        "type": "sound",
+        "name": "细微的碎裂声",
+        "brief": "从后方隐隐传来类似玻璃或金属被挤压的轻微噼啪声。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "空间似乎在一点点缩减，留给你们的时间不多了。",
+      "这里的寂静与6号车厢无异，却更让人脊背发凉。"
+    ],
+    "npc_appearances": []
+  },
+  "4号车厢": {
+    "entry_narrative": "推开门的瞬间，你们就看见地板上倒着一名身穿制服的电车乘务员。他蜷缩在血泊旁，腿部有触目惊心的咬伤，气息微弱。周围座椅歪斜，看得出这里曾发生过激烈的挣扎与逃亡。",
+    "atmosphere": "经历袭击后的惨状，受伤的乘务员倒在血泊中，求生欲犹在。",
+    "mood": "tense",
+    "perceptible": [
+      {
+        "type": "sight",
+        "name": "休克的乘务员",
+        "brief": "一名男性乘务员倒在地上，腿部有被撕咬的伤口，处于昏迷或重伤状态。",
+        "linked_interaction": "急救乘务员"
+      },
+      {
+        "type": "sight",
+        "name": "血迹与挣扎痕迹",
+        "brief": "车厢内到处是溅落的血迹，座椅被撞歪，显示出打斗逃亡的痕迹。",
+        "linked_interaction": null
+      },
+      {
+        "type": "smell",
+        "name": "血腥与汗味",
+        "brief": "空气中混着鲜血的甜腥味和人类恐惧的汗臭味。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "袭击发生不久，乘务员或许还能救活。",
+      "他那被撕咬的伤口形状，不像是任何常见野兽所为。"
+    ],
+    "npc_appearances": [
+      {
+        "name": "京山 人吉",
+        "brief": "三十岁左右的男性乘务员，穿着被血染透的制服，腿部有严重的撕咬伤，脸色苍白，昏迷不醒。",
+        "demeanor": "陷入休克，呼吸微弱，眉间紧锁，仿佛还在噩梦中挣扎。"
+      }
+    ]
+  },
+  "3号车厢": {
+    "entry_narrative": "门一开，你们几乎被满地的行李绊倒。手提包、公文包、购物袋散落得到处都是，像是人们在极度慌乱中丢弃了一切。车厢在昏暗的紧急照明下显得影影绰绰，要在这里找特定物品绝非易事。",
+    "atmosphere": "狼藉一片，四处散落的行李诉说着刚刚经历的恐慌逃亡。",
+    "mood": "desperate",
+    "perceptible": [
+      {
+        "type": "sight",
+        "name": "遍地散落的行李",
+        "brief": "各种随身物品混乱地铺满过道和座位，阻碍行走，也隐藏着可能的线索。",
+        "linked_interaction": "寻找钥匙"
+      },
+      {
+        "type": "sight",
+        "name": "前门附近",
+        "brief": "乘务员提过的黑色提包可能就在靠近2号车厢的门附近。",
+        "linked_interaction": "寻找钥匙"
+      },
+      {
+        "type": "sight",
+        "name": "通往2号车厢的漆黑门扉",
+        "brief": "前方的车厢门玻璃后一片漆黑，什么也看不见。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "行李中或许能找到自己丢失的随身物品。",
+      "车厢那头的黑暗仿佛有了质感，光是注视就让人汗毛直立。"
+    ],
+    "npc_appearances": []
+  },
+  "2号车厢": {
+    "entry_narrative": "开门之后，无边的黑暗迎面压来，眼前什么都看不见。然而你们的耳朵瞬间捕捉到了近处粗重、湿黏的呼吸声，那是绝对不属于人类的声音。浓烈的血腥与腐肉味在这黑暗中愈发刺鼻，脚底黏腻的触感暗示着地面上躺着某些不祥之物。",
+    "atmosphere": "纯粹的黑暗中，只闻喘息与血腥，未知的恐怖近在咫尺。",
+    "mood": "terrified",
+    "perceptible": [
+      {
+        "type": "sound",
+        "name": "诡异的呼吸声",
+        "brief": "黑暗中传来数声粗重而湿漉漉的喘息，如同某些畸形生物的喉音。",
+        "linked_interaction": null
+      },
+      {
+        "type": "smell",
+        "name": "腐肉与鲜血的恶臭",
+        "brief": "令人反胃的腐臭味混着新鲜的铁锈腥气，浓烈得几乎窒息。",
+        "linked_interaction": null
+      },
+      {
+        "type": "touch",
+        "name": "脚下的黏腻触感",
+        "brief": "踏进车厢时，鞋底明显踩到了湿滑、半固态的恶心物质。",
+        "linked_interaction": null
+      },
+      {
+        "type": "sight",
+        "name": "无法穿透的黑暗",
+        "brief": "前方与周围完全被黑暗吞没，即使适应黑暗也看不到任何轮廓。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "喘息声似乎对光线没有反应，却可能对声音极度敏感。",
+      "这节车厢里潜伏着造成之前惨剧的真凶。"
+    ],
+    "npc_appearances": []
+  },
+  "先头车厢": {
+    "entry_narrative": "这一小段车厢出奇地安静和普通，没有血迹也没有打斗痕迹，只有和别处一样的昏暗。尽头那扇通往驾驶室的门紧紧锁着，旁边的控制面板仿佛在等待正确的钥匙来唤醒操纵杆。",
+    "atmosphere": "寂静得像是暴风眼，看似安全却承载着唯一的出路。",
+    "mood": "hopeful",
+    "perceptible": [
+      {
+        "type": "sight",
+        "name": "通往驾驶室的门",
+        "brief": "一扇普通的车厢隔门，紧锁着，需要特定钥匙打开。",
+        "linked_interaction": "使用钥匙开门"
+      },
+      {
+        "type": "sight",
+        "name": "车厢内部的昏暗",
+        "brief": "和之前所有车厢一样，只有应急照明勾勒出大致的轮廓。",
+        "linked_interaction": null
+      }
+    ],
+    "ambient_hints": [
+      "紧锁的驾驶室里或许藏着操控电车命运的方法。",
+      "这里是整列电车最前端，也是唯一没有受到破坏的地方。"
+    ],
+    "npc_appearances": []
+  }
+}

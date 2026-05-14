@@ -1,0 +1,81 @@
+<h2>Section 1/4 · 模块总览与数据流</h2>
+<p class="subtitle">新增两个包（module_designer + library），重构现有 parser 对齐 L2</p>
+
+<div class="mockup" style="margin-bottom:20px">
+  <div class="mockup-header">新项目结构</div>
+  <div class="mockup-body" style="font-size:13px;line-height:1.5">
+<pre style="color:#ccc;margin:0">
+src/
+├── scenario_core.py          <span style="color:#888"># 数据类：新增 SpawnEnemy, GrantItem, EncounterAnchor</span>
+├── <span style="color:#f39c12">parsers.py</span>                <span style="color:#f39c12"># 重构：目标输出 L2 KP 信息</span>
+├── <span style="color:#f39c12">pipeline.py</span>               <span style="color:#f39c12"># 重构：L2 管线（保留现有三阶段逻辑）</span>
+├── <span style="color:#f39c12">prompts.py</span>                <span style="color:#f39c12"># 扩展：L1/L3 感知的 prompt 构建</span>
+├── <span style="color:#f39c12">game_loop.py</span>              <span style="color:#f39c12"># 适配：消费三层数据 + 双层判定</span>
+│
+├── <span style="color:#2ecc71">module_designer/</span>            <span style="color:#2ecc71"># ★ 新包：三层信息引擎</span>
+│   ├── l1_player.py           <span style="color:#2ecc71"># L1 玩家可见层：叙事、线索、环境描述</span>
+│   ├── l2_keeper.py            <span style="color:#2ecc71"># L2 KP层：Interaction/Event/Node（现有对齐）</span>
+│   ├── l3_designer.py          <span style="color:#2ecc71"># L3 设计者层：世界观、逻辑链、分支条件</span>
+│   ├── layered_parser.py       <span style="color:#2ecc71"># LLM 一键解析 → 三层 JSON</span>
+│   └── layered_schema.py       <span style="color:#2ecc71"># 三层 JSON Schema 定义 + 验证</span>
+│
+├── <span style="color:#3498db">library/</span>                   <span style="color:#3498db"># ★ 新包：武器/敌人库 + 注入</span>
+│   ├── weapons.py              <span style="color:#3498db"># 武器数据类 + JSON 加载器</span>
+│   ├── enemies.py              <span style="color:#3498db"># 敌人数据类 + JSON 加载器</span>
+│   ├── injector.py             <span style="color:#3498db"># 离线预填充 + 运行时注入引擎</span>
+│   └── judgment.py             <span style="color:#3498db"># 双层判定：T1 确定性 + T2 LLM 增强</span>
+│
+data/
+├── <span style="color:#2ecc71">modules/</span>                  <span style="color:#2ecc71"># ★ 新：按模组组织的三层数据</span>
+│   └── 常暗之厢/
+│       ├── source.txt
+│       ├── l1_player.json
+│       ├── l2_keeper.json      <span style="color:#888"># 现有 scene/event 数据对齐</span>
+│       ├── l3_designer.json
+│       └── meta.json
+├── <span style="color:#3498db">library/</span>                  <span style="color:#3498db"># ★ 新：武器/敌人库</span>
+│   ├── core/weapons.json
+│   ├── core/enemies.json
+│   └── extensions/            <span style="color:#3498db"># 用户自定义扩展包</span>
+└── templates/
+</pre>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">数据流（离线 + 在线）</div>
+  <div class="mockup-body">
+    <div style="display:flex;flex-direction:column;gap:14px;font-size:13px">
+
+      <div style="background:#1a1a2e;border-left:3px solid #f39c12;padding:12px;border-radius:6px">
+        <span class="label">离线 · 模组导入</span>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="background:#444;padding:3px 8px;border-radius:3px">source.txt</span> →
+          <span style="background:#f39c12;padding:3px 8px;border-radius:3px">layered_parser</span> →
+          <span style="background:#2ecc71;padding:3px 8px;border-radius:3px">L1</span> +
+          <span style="background:#2ecc71;padding:3px 8px;border-radius:3px">L2</span> +
+          <span style="background:#2ecc71;padding:3px 8px;border-radius:3px">L3</span> →
+          <span style="background:#f39c12;padding:3px 8px;border-radius:3px">injector.offline()</span> →
+          <span style="background:#3498db;padding:3px 8px;border-radius:3px">填充武器/敌人引用</span>
+        </div>
+        <p style="color:#aaa;font-size:11px;margin-top:4px">人工审核可选，非必须</p>
+      </div>
+
+      <div style="background:#1a1a2e;border-left:3px solid #27ae60;padding:12px;border-radius:6px">
+        <span class="label">在线 · 游戏进行中</span>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="background:#2ecc71;padding:3px 8px;border-radius:3px">L3 🔒</span> →
+          <span style="background:#3498db;padding:3px 8px;border-radius:3px">LLM基于L3</span> →
+          <span style="background:#2ecc71;padding:3px 8px;border-radius:3px">动态L2</span> +
+          <span style="background:#2ecc71;padding:3px 8px;border-radius:3px">动态L1</span> →
+          <span style="background:#3498db;padding:3px 8px;border-radius:3px">injector.runtime()</span>
+        </div>
+        <p style="color:#aaa;font-size:11px;margin-top:4px">improvise_prompt 路径触发 · run-time injection 可手动开关</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:24px">这个顶层结构符合你的预期吗？</h3>
+<p class="subtitle">接下来会逐层展开 L1/L2/L3 的数据模型、武器/敌人库结构、注入模块设计、以及 game_loop 适配方案</p>

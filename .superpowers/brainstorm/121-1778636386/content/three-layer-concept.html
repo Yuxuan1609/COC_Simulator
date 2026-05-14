@@ -1,0 +1,65 @@
+<h2>当前信息模型 vs 三层信息架构</h2>
+<p class="subtitle">目前所有模组信息都是扁平的一层——场景描述、NPC对话、线索全部混在一起。我们来设计如何分层。</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">当前：单层扁平模型</div>
+    <div class="mockup-body" style="font-size:14px;line-height:1.6">
+      <div style="background:#1a1a2e;border:1px solid #333;padding:12px;margin:8px 0;border-radius:6px">
+        <strong>6号车厢</strong><br>
+        <span style="color:#aaa">description:</span> 调查员在此醒来，电车行驶中，窗外漆黑...<br>
+        <span style="color:#aaa">interactions:</span> 查看便签、查看地图...<br>
+        <span style="color:#aaa">events:</span> E1-大嘴吞噬7号车厢...
+      </div>
+      <p style="color:#e74c3c;margin-top:12px;font-size:13px">⚠ 所有信息对LLM一视同仁暴露，无法区分哪些是玩家可见的、哪些是KP才知道的</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">提案：三层信息模型</div>
+    <div class="mockup-body" style="font-size:14px;line-height:1.6">
+      <div style="background:#0d3320;border:1px solid #27ae60;padding:12px;margin:8px 0;border-radius:6px">
+        <strong>L1 · 玩家层</strong><br>
+        <span style="color:#aaa">场景叙事、可感知线索、NPC对话</span><br>
+        <span style="font-size:12px;color:#27ae60">→ 直接展示给玩家</span>
+      </div>
+      <div style="background:#1a1a3e;border:1px solid #3498db;padding:12px;margin:8px 0;border-radius:6px">
+        <strong>L2 · KP层</strong><br>
+        <span style="color:#aaa">隐藏线索、检定DC、怪物数据、触发条件</span><br>
+        <span style="font-size:12px;color:#3498db">→ KP裁决和游戏逻辑使用</span>
+      </div>
+      <div style="background:#3e1a2e;border:1px solid #9b59b6;padding:12px;margin:8px 0;border-radius:6px">
+        <strong>L3 · 设计者层</strong><br>
+        <span style="color:#aaa">世界观设定、逻辑链、设计意图、结局分支条件</span><br>
+        <span style="font-size:12px;color:#9b59b6">→ 指导LLM叙事一致性、自动内容生成</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:32px">第一轮澄清：谁来填充这些层？</h3>
+<p class="subtitle">这决定了 parser 的智能程度和人工介入的比例</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>LLM自动推断 + 人工审核</h3>
+      <p>Parser从模组文档自动将信息分类到三层，人只做最终审核和修正。适合快速处理大量模组文本。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>人工标注为主 + LLM辅助补全</h3>
+      <p>模组作者在撰写时就用标记区分三层（类似markdown frontmatter），LLM只负责补全遗漏。数据质量最高但人力成本也最高。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>混合模式：初始LLM分类 + 运行时动态补充</h3>
+      <p>Parser做初始三层分类，但系统设计为在游戏进行中KP可以随时调出信息进行修改，LLM也可以根据游戏进程自动生成新的L2/L3内容。</p>
+    </div>
+  </div>
+</div>

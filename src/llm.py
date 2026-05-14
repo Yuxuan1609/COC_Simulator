@@ -98,15 +98,15 @@ def call_deepseek(
     _thinking = thinking if thinking is not None else True
 
     if json_mode:
-        default_system = "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
+        default_system = system if model is not None else "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
         response = client.chat.completions.create(
             model=_model,
             messages=[
                 {"role": "system", "content": system or default_system},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,
-            max_tokens=16284,
+            temperature=0.3,
+            max_tokens=162840,
             reasoning_effort=_reasoning_effort,
             extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
         )
@@ -129,7 +129,7 @@ def call_deepseek(
                 print(f"[JSON解析失败] 原始返回内容:\n{raw[:2000]}")
                 raise
     else:
-        default_system = "你是一个专业的TRPG主持人（KP）。"
+        default_system =  system if model is not None else "你是一个专业的TRPG主持人（KP）。"
         response = client.chat.completions.create(
             model=_model,
             messages=[
@@ -137,111 +137,10 @@ def call_deepseek(
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=20000,
             reasoning_effort=_reasoning_effort,
             extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
         )
         result = response.choices[0].message.content.strip()
         _log_response(result)
         return result
-
-
-def call_deepseek_json(prompt: str) -> dict:
-    """调用 DeepSeek 进行结构化判定，返回解析后的 dict。"""
-    response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=[
-            {"role": "system", "content": "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2,
-        max_tokens=162840,
-        reasoning_effort="high",
-        extra_body={"thinking": {"type": "enabled"}}
-    )
-
-    content = response.choices[0].message.content.strip()
-    content = _extract_json(content)
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        print(f"[JSON解析失败] 原始返回内容:\n{content[:2000]}")
-        raise
-
-
-def call_deepseek_write(prompt: str) -> dict:
-    """调用 DeepSeek 进行创作性输出，返回解析后的 dict。"""
-    response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=[
-            {"role": "system", "content": "你是一个优秀的跑团模组创作者，按给定条件输出 JSON。"},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.9,
-        max_tokens=162840,
-        reasoning_effort="high",
-        extra_body={"thinking": {"type": "enabled"}}
-    )
-
-    content = response.choices[0].message.content.strip()
-    content = _extract_json(content)
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        print(f"[JSON解析失败] 原始返回内容:\n{content[:2000]}")
-        raise
-
-
-def call_deepseek_summarize(
-    content: str,
-    max_chars: int = 2000,
-    focus: str = "",
-    output_path: str = "summary.txt",
-) -> str:
-    """
-    调用 DeepSeek 对长文本进行缩写和概述，提炼核心信息。
-    """
-    focus_hint = ""
-    if focus:
-        focus_hint = f"\n请侧重保留与「{focus}」相关的信息，其他内容可大幅精简。"
-
-    prompt = f"""原文：
-\"\"\"
-{content}
-\"\"\" 请对原文文本进行浓缩式概述。要求：
-
-1. 对原文的故事脉络和背景进行概述性描述
-2. 删除重复描述、冗余修饰和旁枝末节
-3. 语言精炼，用最少的字数传达最完整的信息
-4. 输出概述的目标长度：不超过 {max_chars} 字
-5. 保持原文的语气基调（如恐怖、悬疑等）
-6. 输出文本用于帮助kp/游戏管理者 指导整体游戏进行
-7. 直接输出概述文本，不要包含任何解释、评价或 markdown 标记{focus_hint}
-
-"""
-
-    response = client.chat.completions.create(
-        model="deepseek-v4-pro",
-        messages=[
-            {"role": "system", "content": "你是一个专业的模组写作者，擅长将长文浓缩为故事概述。仅输出概述结果，不附加任何额外说明。"},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        max_tokens=16284,
-        reasoning_effort="high",
-        extra_body={"thinking": {"type": "enabled"}}
-    )
-
-    summary = response.choices[0].message.content.strip()
-
-    print(f"[概述完成] 原文 {len(content)} 字 -> 概述 {len(summary)} 字 "
-          f"(压缩比 {len(summary)/max(len(content),1)*100:.1f}%)")
-
-    if output_path:
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(summary)
-        print(f"已保存概述至: {output_path}")
-
-    return summary

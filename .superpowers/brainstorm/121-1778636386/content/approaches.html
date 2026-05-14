@@ -1,0 +1,38 @@
+<h2>三种架构方案</h2>
+<p class="subtitle">将所有新需求（三层信息、武器/敌人库、注入模块、动态生成）融入现有系统</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>增量扩展 — 扩展现有 parser/pipeline</h3>
+      <p>在现有 JSON 模板上新增 L1/L2/L3 标记字段和新的 side_effect 类型（SpawnEnemy, GrantItem）。武器/敌人库作为新 data 目录。注入模块作为 pipeline 新阶段。利用已有的 improvise_prompt + suggested_flags 路径实现 LLM 自主生成。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4><ul><li>最大化复用现有代码，改造成本最低</li><li>与已有 side_effects、RequirementResolver、pipeline 阶段无缝对接</li><li>improvise_prompt 已经是"偏离轨道"的钩子</li><li>开发周期最短</li></ul></div>
+        <div class="cons"><h4>劣势</h4><ul><li>现有 JSON 结构可能越来越冗长</li><li>三层信息标记和原有字段混在一起</li><li>未来大规模重构可能困难</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>新子系统 — 独立的模块设计工具包</h3>
+      <p>创建 src/module_designer/ 包（parser、library manager、injector 各自独立）。三层信息用新的文档格式（markdown + frontmatter）。库文件有独立的版本管理。game_loop 新增 RuntimeInjection 阶段。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4><ul><li>边界清晰，各模块可独立测试</li><li>库版本管理更规范</li><li>不影响现有 game_loop 稳定性</li></ul></div>
+        <div class="cons"><h4>劣势</h4><ul><li>与现有系统并行，有两套格式的维护成本</li><li>parser 的逻辑在 parsers.py 和 module_designer 之间会有重叠</li><li>开发周期长</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>混合方案 — 渐进式重构</h3>
+      <p>第一步按方案A快速落地（扩展 JSON + pipeline），第二步将成熟模块提取为独立子系统。三层信息先在 JSON 中用字段标记，后续可迁移到独立文档。库系统从一开始就独立设计。</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4><ul><li>先出可用成果，再优化架构</li><li>降低单次改动风险</li><li>方向清晰，不会走入死胡同</li></ul></div>
+        <div class="cons"><h4>劣势</h4><ul><li>需要两次修改（先扩展后提取）</li><li>中间的 JSON 格式可能不完美</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
