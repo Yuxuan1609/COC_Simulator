@@ -88,24 +88,25 @@
                          │  • module_meta (标题/年代/主题)   │
                          │  • characters: [{name,id}, ...]  │
                          │  • scenes: [{name,id}, ...]     │
+                         │  • map_overview (空间结构+移动)   │  ← 新增：地图独立解析
                          │  • condensed_text (精简模组)     │
                          │                                 │
                          │  → 名称和 ID 一次性固化          │
-                         │  → 精简模组供后续所有步骤使用     │
+                         │  → 地图从 interactions 中分离    │
                          └────────────┬────────────────────┘
                                       │
-                         Step 2 ──────┼──────────  (3 calls, 可并行)
+                         Step 2 ──────┼──────────  (4 calls)
                          ┌────────────▼────────────────────┐
                          │  ┌──────────┬──────────┬──────┐ │
-                         │  │  L1      │  L2      │ L3   │ │
-                         │  │  玩家    │  基础    │ 设计 │ │
-                         │  │  可见层  │  事件    │ 者层 │ │
-                         │  └──────────┴──────────┴──────┘ │
-                         │  均基于精简模组 + 统一场景名      │
-                         │  L1: 氛围/感知/NPC外貌           │
-                         │  L2: 仅基础 events (非 interactions)│
-                         │  L3: 世界规则/基调约束/driving_force│
-                         └────────────┬────────────────────┘
+                         │  │  L1      │ L2 2a    │ L3   │ │  ← 可并行
+                         │  │  玩家    │ interactions│设计 │ │
+                         │  │  可见层  │ (无clue)  │者层 │ │
+                         │  └──────────┴─────┬────┴──────┘ │
+                         │                   │             │
+                         │             L2 2b │ 事件解析     │  ← 依赖 2a 的 flag 名称
+                         │                   │ (结构化后果) │
+                         │  均基于精简模组 + 统一场景名 + 地图│
+                         └─────────────────────────────────┘
                                       │
                          Step 3 ──────▼──────────  (2 calls)
                          ┌─────────────────────────────────┐
@@ -137,7 +138,7 @@
                          └─────────────────────────────────┘
 ```
 
-**总 LLM 调用**: 8 次（当前 3 次），但单次 prompt 更短（~800-2000 tokens vs ~4000），总 token 消耗预计持平或更低。Step 2 的三个调用可完全并行。
+**总 LLM 调用**: ~10 次（当前 3 次），但单次 prompt 更短（~800-2000 tokens vs ~4000），总 token 消耗预计持平或更低。Step 2 的 L1/L2a/L3 可并行；L2b 串行依赖 L2a（需要对齐 flag 名称）。
 
 ---
 
@@ -248,10 +249,13 @@ notebooks/notebook_simplified.ipynb
 | `scenes[].to_here` | `Edge(source, method)` | ✓ |
 | `scenes[].interactions[].type` | `Interaction.type` | ✓ |
 | `scenes[].interactions[].name` | `Interaction.name` | ✓ |
+| `scenes[].interactions[].trigger` | `Interaction.trigger` | ✓ |
+| `scenes[].interactions[].result` | `Interaction.result` | ✓ |
 | `scenes[].interactions[].requirement` | `Requirement(ref_type, ref_scene, ref_name)` | ⚠️ 需 `_normalize_requirement` 容错 |
-| `scenes[].interactions[].side_effects` | `_parse_side_effects()` | ✓ (支持全部 6 种类型) |
+| `scenes[].interactions[].side_effects` | `_parse_side_effects()` | ✓ (支持全部 7 种类型，含 `other`) |
 | `scenes[].interactions[].skill_name` | **Interaction 无此字段** | ✗ 静默丢弃 |
 | `scenes[].interactions[].difficulty` | **Interaction 无此字段** | ✗ 静默丢弃 |
+| ~~`scenes[].interactions[].clue`~~ | **已移除** | — 与 `result` 字段重叠 |
 | `events` (list) | `DirectedGraph(events=list)` | ✓ |
 | `events[].id` | `GameEvent.event_id` | ✓ |
 | `events[].irreversible_impact` | `GameEvent.impact` (fallback to `impact`) | ✓ |
@@ -907,7 +911,7 @@ run_pipeline() 返回的 PipelineResult:
 
 ---
 
-### Step 1: 元信息提取 + 名称固化 + 模组精简
+### Step 1: 元信息提取 + 名称固化 + 地图解析 + 模组精简
 
 **调用次数**: 1 次 LLM
 
@@ -925,45 +929,80 @@ run_pipeline() 返回的 PipelineResult:
     { "name": "6号车厢", "id": "S1" },
     { "name": "7号车厢", "id": "S2" }
   ],
+  "map_overview": "## 空间结构\n\n电车共有8节车厢，从后到前依次为...\n\n### 移动规则\n- 相邻车厢可通过连接门通行\n- ...",
   "condensed_text": "精简后的模组文本（保留关键实体、事件、线索，去除非必要的叙事描写和冗余对话）"
 }
 ```
 
-**评估**: ✓ 合理，是关键改进。一次性固化名称和 ID 彻底解决场景名不一致问题。精简模组降低 Step 2/3 的 token 消耗（原文 ~12K → 估计 2-4K tokens）。
+**新增 — 地图解析** (`map_overview`):
+- 在 Step 1 中**独立章节**提取模组的空间结构信息
+- 内容：所有场景/区域的拓扑关系、移动路径、通行条件、关键地标位置
+- 格式：结构化 markdown（分节标题 + 列表 + 位置描述）
+- 目的：将地图从 interactions 中分离 —— 地图是场景的**固有属性**，不是"可执行动作"
+- 后续 Step 2a 生成 interactions 时，地图信息作为上下文注入但不重复生成
 
-**待确认**: "精简模组"的格式 —— 纯文本摘要还是结构化 JSON？如关键细节被压缩丢失，后续步骤质量连锁下降。建议：结构化，保留所有关键实体和事件但除去冗余叙事。
+**评估**: ✓ 合理。名称固化 + 地图分离一次性解决两个根本问题。地图独立解析后，Step 2a 的 interactions 不再需要描述"从哪里到哪里"的空间关系（那是地图的事），只需要引用地图中定义的位置名称。
 
 ---
 
-### Step 2: 三层并行解析
+### Step 2: 三层并行解析（含 interactions 生成）
 
-**调用次数**: 3 次 LLM（可完全并行，`ThreadPoolExecutor`）
+**调用次数**: 3 次 LLM（可完全并行，`ThreadPoolExecutor`）  
+**注**: 实际为 L1 (1 次) + L2 (分 2a/2b 两次) + L3 (1 次) = 4 次 LLM，但 L2 的两个调用串行依赖（2b 需要 2a 的输出做 flag 名称对齐），L1/L3 与 L2 并行。
 
-**输入**: Step 1 的 `condensed_text` + `scenes` 名称列表
+**输入**: Step 1 的 `condensed_text` + `scenes` 名称列表 + `map_overview`
 
 **L1 — 玩家可见层**（不变）:
 ```
-基于精简模组 + 场景名约束 ["S1:6号车厢", ...]，提取每个场景的初始感知信息。
+基于精简模组 + 场景名约束 + 地图，提取每个场景的初始感知信息。
+地图信息作为上下文（场景的空间位置和连接关系），但不需要在 L1 中重复描述地图。
 输出: l1_player.json
 ```
 
-**L2 — 仅基础事件解析**（范围缩减）:
+**L2 — 分两步**（范围扩展：interactions 在此生成）:
+
+*Step 2a — interactions 生成*:
 ```
-基于精简模组 + 场景名约束，提取每个场景的不可逆事件 (events) 列表。
-每个事件包含: id (E1,E2...), name, trigger, irreversible_impact
-注意: 不包含 interactions, encounters, scene_weapons, hidden_info
-输出: l2_events.json
+基于精简模组 + 场景名约束 + 地图，按场景生成玩家可执行的互动 (interactions)。
+关键约束:
+  - 地图/移动信息不再出现在 interactions 中（地图已在 Step 1 独立解析）
+  - interactions 聚焦于"可执行动作"：调查、搜索、对话、战斗、使用物品等
+  - 从地图中引用位置名（如"在3号车厢的第三个箱子前"），但不重复描述空间结构
+  - 每个 interaction 包含: type, name, trigger, result, requirement, skill_name, difficulty
+  - side_effects 承载**非结构化叙事结果**（如 other 类型的环境变化描述）
+  - **不含 clue 字段** — clue 与 result 重叠（result 已经描述了互动结果/发现），
+    且结构化后果（flag_set, item_gain 等）由 events 承载
+  - skill_name 建议直接使用 COC 7th 标准技能名（如"侦查""图书馆使用""聆听"）
+输出: interactions (按场景组织的 JSON)
+```
+
+*Step 2b — 基础事件解析*:
+```
+基于精简模组 + Step 2a 的 interactions 输出（用于对齐 flag 名称），
+提取每个场景的不可逆事件 (events) 列表。
+每个事件包含: id (E1,E2...), name, trigger, irreversible_impact, requirement
+events 承载**结构化后果**: flag 变更、物品获取、属性变化等
+输出: events (按场景组织的 JSON)
 ```
 
 **L3 — 设计者层**（基于新 l3_template.json）:
 ```
-基于精简模组 + 场景名约束，提取设计者信息。
-输出: l3_designer.json (world_rules, logic_chains, scene_intents, tone_constraints, driving_force, ending_conditions)
+基于精简模组 + 场景名约束 + 地图，提取设计者信息。
+输出: l3_designer.json
 ```
 
-**评估**: ✓ 三个调用独立可并行，延迟 = max(t1,t2,t3)。L2 缩减为基础事件降低了单次 prompt 复杂度。
+**评估**: ✓ 三个调用独立可并行。L2 拆为 interactions → events 解决了之前"interactions 归属不明"的 Q2 问题。
+✓ `clue` 移除与 `side_effects`/`events` 分工明确：interactions 的 side_effects 承载非结构化叙事后果（other 类型），events 承载结构化后果（flag/item/spawn 等）。
+✓ 地图从 interactions 分离 — 空间结构是场景固有属性，不是可执行动作。
 
-**⚠️ 待确认**: interactions 何时生成？当前方案中 interactions 未在任何 Step 中明确出现。L2 的核心可执行内容（每个场景 5-20 个互动）必须有一个归属步骤。建议：在 Step 3b 之后增加一步生成 interactions，或将其合并到 Step 3b 中。
+**字段分工表**:
+
+| 字段 | 归属 | 承载内容 |
+|------|------|---------|
+| `interactions[].result` | Interaction | 互动执行的**文字结果**（玩家看到/听到/发现什么） |
+| `interactions[].side_effects` | Interaction | **非结构化叙事后果**（other 类型：环境变化、氛围变化等自由文本） |
+| `events[].irreversible_impact` | Event | **结构化后果**（flag_set, item_gain, spawn_enemy 等确定性引擎操作） |
+| ~~`interactions[].clue`~~ | **已移除** | 与 `result` 重叠 — result 已描述互动结果和线索发现 |
 
 ---
 
@@ -1059,13 +1098,12 @@ LLM 必须从给定列表中选择，不允许自创名称。
 
 ### 14.3 影响范围
 
-| 组件 | 变化 | 破坏性 |
-|------|------|--------|
-| `layered_parser.py` | 核心重写 — parse_module() 改为 4 步入口，新增 parse_step1/step3b/step4a/step4b | **高** |
-| `layered_pipeline.py` | cross_validate 保留为确定性步骤 (Step 3a)，其余逻辑移入 parser 各步 | 中 |
-| `l2_keeper.py` | `SceneL2.hidden_info` 移除；interactions 可能需要延迟生成 | 中 |
-| `l2_template.json` | `hidden_info` 移除；events 新增 `type`/`effect` 字段 | 中 |
-| `scenario_core.py` | `GameEvent` 扩展 `type`/`effect`/`trigger_condition` 字段；新增 `OtherEffect` 类型；条件表达式解析器 | **高** |
-| `game_loop.py` | `_apply_side_effects` 新增 `OtherEffect` 处理；新增 auto_trigger 被动检测逻辑 | 中 |
-| `layered_schema.py` | L3 字段同步 (narrative_theme→narrative, required→recommended) | 低 |
-| `data/templates/l3_template.json` | 已由用户修改 ✓ | — |
+| 变更 | 影响文件 | 破坏性 |
+|------|---------|--------|
+| L2 渐进式流程 (Step 1-4) | `layered_parser.py` (核心重写), `layered_pipeline.py` (拆入 parser 各步) | **高** |
+| **clue 字段移除** | `l2_keeper.py` (Interaction.clue), `l2_template.json`, `layered_schema.py`, `scenario_core.py` | 中 — 字段删除，代码中的引用需清理 |
+| **地图独立解析** (Step 1 map_overview) | `layered_parser.py` (Step 1 prompt), `l2_keeper.py` (地图数据模型或独立文件) | 中 — 新增字段/文件，interactions prompt 需调整 |
+| side_effect 新增 `other` 类型 | `scenario_core.py` (+OtherEffect), `game_loop.py` (_apply_side_effects) | 低 |
+| HiddenInfo → auto_trigger 事件 | `l2_keeper.py`, `l2_template.json`, `scenario_core.py` (GameEvent), `game_loop.py` | **高** |
+| L3 字段同步 | `l3_template.json` (done), `l3_designer.py`, `layered_schema.py` | 低 |
+| Schema 同步 (L2 auto_triggers + L3 字段) | `layered_schema.py` | 低 |

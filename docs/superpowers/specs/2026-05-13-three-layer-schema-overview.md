@@ -119,10 +119,13 @@ l2_keeper.json = {
 | `requirement` | list[Requirement] | 前置条件 | 已有 |
 | `trigger` | string | 触发描述 | 已有 |
 | `result` | string | 结果描述 | 已有 |
-| `clue` | string? | 线索 | 已有 |
-| `side_effects` | list[SideEffect] | 副作用 | 已有，需扩展 |
+| ~~`clue`~~ | — | **已移除** — 与 `result` 字段重叠 | 2026-05-14 |
+| `side_effects` | list[SideEffect] | 副作用（非结构化叙事后果用 `other` 类型） | 已有，需扩展 |
 | `skill_name` | string? | 关联技能名 | **新增** |
 | `difficulty` | string | 检定难度 regular/hard/extreme | **新增** |
+
+> **clue 移除理由**: `result` 已描述互动结果和发现内容，`clue` 的信息与 `result` 完全重叠。
+> 结构化后果（flag/item/spawn）由 events 承载，非结构化叙事后果由 `side_effects` 的 `other` 类型承载。
 
 ### Encounter 子结构
 
