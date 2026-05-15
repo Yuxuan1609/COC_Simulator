@@ -842,12 +842,14 @@ def parse_step35(
 # ═══════════════════════════════════════════════════════════════
 
 STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
-你的任务是：根据模组内容和场景需求，从给定的武器/敌人库中选择合适的资源填入占位符，并标准化技能名。
+你的任务是：根据模组内容和场景需求，统一做所有标准化处理：enemy_ref/weapon_ref 匹配、技能名/属性名标准化、side_effect 结构化。
 
 重要原则：
 - 必须从提供的库列表中选择，不允许自创名称
 - 若无合适的库条目，填 "none"
-- 技能名必须从提供的标准技能列表中选择，不允许自创
+- 技能名必须从标准技能列表中选择
+- 属性名必须从标准属性列表中选择
+- side_effect 从自然语言解析为结构化对象
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -860,12 +862,14 @@ def build_step4_prompt(
     weapon_library_names: list[str],
     enemy_library_names: list[str],
     skill_names: list[str],
+    stat_names: list[str],
 ) -> str:
     weapons_list = "\n".join(f"- {w}" for w in weapon_library_names)
     enemies_list = "\n".join(f"- {e}" for e in enemy_library_names)
     skills_list = "\n".join(f"- {s}" for s in skill_names)
+    stats_list = "\n".join(f"- {s}" for s in stat_names)
     desc_list = "\n".join(f"- {sid}: {desc}" for sid, desc in l2_descriptions.items())
-    return f"""为以下内容的 enemy_ref、weapon_ref 占位符填值，并标准化 type 技能名。
+    return f"""标准化 enemy_ref/weapon_ref/type/stat_name，并结构化 side_effects。
 
 ## 可用武器库
 {weapons_list}
@@ -875,6 +879,9 @@ def build_step4_prompt(
 
 ## 标准技能列表（type 必须从此列表中选择）
 {skills_list}
+
+## 标准属性列表（stat_change 的 stat_name 必须从此列表中选择）
+{stats_list}
 
 ## 场景描述
 {desc_list}
@@ -887,22 +894,30 @@ def build_step4_prompt(
 {condensed_text}
 \"\"\"
 
-## Interactions (含空占位符)
+## Interactions (含空占位符和未结构化的 side_effects)
 {json.dumps(interactions, ensure_ascii=False, indent=2)}
 
-## Auto-triggers (含空占位符)
+## Auto-triggers (含空占位符和未结构化的 side_effects)
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. 为每个 enemy_ref 占位符从可用敌人库中选择匹配项。无匹配填 "none"。event（无 scene 字段的实体）跳过。
-2. 为每个 weapon_ref 占位符从可用武器库中选择匹配项。无匹配填 "none"。event（无 scene 字段的实体）跳过。
-3. 为每个 type 字段从标准技能列表中选择最匹配的技能名（如 "侦查"→"侦察"）。不涉及技能检定的 type 保持"无"不变。
-4. 不允许自创名称。
+1. 为每个 enemy_ref 从可用敌人库中选择匹配项。无匹配填 "none"。event（无 scene 字段的实体）跳过。
+2. 为每个 weapon_ref 从可用武器库中选择匹配项。无匹配填 "none"。event（无 scene 字段的实体）跳过。
+3. 为每个 type 从标准技能列表中选择最匹配的技能名。不涉及检定的 type 保持"无"。
+4. **Side_effect 结构化**: 将 side_effects 从自然语言字符串解析为结构化对象:
+   - item_gain: {{"type": "item_gain", "item_name": "物品名"}}
+   - stat_change: {{"type": "stat_change", "stat_name": "属性名", "delta": -1, "narrative": "角色经历（可选）"}}
+   - spawn_enemy: {{"type": "spawn_enemy", "enemy_ref": "敌人名", "scene": "场景ID", "trigger_condition": "...", "quantity": 1}}
+   - grant_item: {{"type": "grant_item", "item_ref": "武器/物品名", "scene": "场景ID"}}
+   - npc_state_change: {{"type": "npc_state_change", "npc_name": "NPC名", "new_state": "新状态"}}
+   无法归入以上类型的保留字符串。
+5. stat_change 的 stat_name 必须从标准属性列表中选择。narrative 字段可选，描述角色 fiction 层面的经历。
+6. 不允许自创名称。
 
 输出格式:
 {{
-  "interactions": [{{ ...原字段..., "enemy_ref": "库中名称或none", "weapon_ref": "库中名称或none", "type": "标准技能名或\"无\"" }}],
-  "auto_triggers": [{{ ...原字段..., "enemy_ref": "库中名称或none", "weapon_ref": "库中名称或none", "type": "标准技能名或\"无\"" }}]
+  "interactions": [{{ ...原字段..., "enemy_ref": "...", "weapon_ref": "...", "type": "标准技能名", "side_effects": [结构化对象或字符串] }}],
+  "auto_triggers": [{{ ...原字段..., "enemy_ref": "...", "weapon_ref": "...", "type": "标准技能名", "side_effects": [结构化对象或字符串] }}]
 }}
 
 仅输出 JSON。"""
@@ -917,11 +932,12 @@ def parse_step4(
     weapon_library_names: list[str],
     enemy_library_names: list[str],
     skill_names: list[str],
+    stat_names: list[str],
     llm_call,
 ) -> dict:
     prompt = build_step4_prompt(
         interactions, auto_triggers, l2_descriptions,
         scene_intents, condensed_text,
-        weapon_library_names, enemy_library_names, skill_names,
+        weapon_library_names, enemy_library_names, skill_names, stat_names,
     )
     return llm_call(prompt, system=STEP4_SYSTEM)
