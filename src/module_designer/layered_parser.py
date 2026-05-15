@@ -757,6 +757,87 @@ def parse_step3b(
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Step 3.5: 依赖图构建
+# ═══════════════════════════════════════════════════════════════
+
+STEP35_SYSTEM = """你是一个 TRPG 依赖关系解析助手。
+你的任务是：检查所有 interaction/event/auto_trigger 的 requirement 和 trigger 字段，将其中描述的依赖关系标准化为结构化 JSON。
+
+重要原则：
+- 从 requirement 和 trigger 的自然语言中提取依赖关系
+- requirement 中的 "interaction:I3 已完成" → {{"type": "interaction", "id": "I3", "condition": "completed"}}
+- requirement 中的 "持有手电筒" → {{"type": "item", "name": "手电筒", "condition": "possess"}}
+- trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "triggered"}}
+- 每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step35_prompt(
+    condensed_text: str,
+    interactions: list[dict],
+    events: list[dict],
+    auto_triggers: list[dict],
+) -> str:
+    interaction_list = json.dumps(interactions, ensure_ascii=False, indent=2)
+    events_list = json.dumps(events, ensure_ascii=False, indent=2)
+    at_list = json.dumps(auto_triggers, ensure_ascii=False, indent=2)
+    return f"""从以下 L2 实体的 requirement 和 trigger 字段中提取并标准化所有依赖关系。
+
+## 精修模组（参考上下文）
+\"\"\"
+{condensed_text}
+\"\"\"
+
+## Interactions
+{interaction_list}
+
+## Events
+{events_list}
+
+## Auto-triggers
+{at_list}
+
+任务:
+1. 扫描每个 entity 的 requirement 和 trigger 字段
+2. 提取其中描述的依赖关系，标准化为:
+   - interaction 依赖: {{"type": "interaction", "id": "I3", "condition": "completed"}} 或 "not_completed"
+   - event 依赖: {{"type": "event", "id": "E1", "condition": "triggered"}} 或 "not_triggered"
+   - auto_trigger 依赖: {{"type": "auto_trigger", "id": "AT1", "condition": "triggered"}}
+   - item 依赖: {{"type": "item", "name": "手电筒", "condition": "possess"}} 或 "not_possess"
+3. 每条 entity 必须在输出中列出，requires 为空列表表示无依赖
+4. 实体 ID 必须精确匹配（如 I3 不能写成 I03）
+
+输出格式:
+{{
+  "dependencies": [
+    {{
+      "entity_id": "I1",
+      "requires": []
+    }},
+    {{
+      "entity_id": "I3",
+      "requires": [
+        {{"type": "interaction", "id": "I1", "condition": "completed"}}
+      ]
+    }}
+  ]
+}}
+
+仅输出 JSON。"""
+
+
+def parse_step35(
+    condensed_text: str,
+    interactions: list[dict],
+    events: list[dict],
+    auto_triggers: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step35_prompt(condensed_text, interactions, events, auto_triggers)
+    return llm_call(prompt, system=STEP35_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Step 4: Library 匹配
 # ═══════════════════════════════════════════════════════════════
 
