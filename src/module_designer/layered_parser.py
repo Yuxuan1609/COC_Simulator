@@ -340,9 +340,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 14. based_on 始终填 null（派生关系由 Step 2b 标注）
 精修模组：
 \"\"\"
-{chapters.get('scenes','')}
-
-{chapters.get('locations_and_map','')}
+{"\n\n".join(chapters.values())}
 \"\"\""""
 def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call) -> dict:
     """从精修模组提取所有 interactions."""
@@ -362,7 +360,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 重要原则：
 - 事件使用与 interaction 相同的统一字段模型
 - 事件无 scene 字段（全局事件不绑定特定场景）
-- based_on 只能指向已知的 interaction ID
+- based_on 指向派生的 interaction ID（非派生事件则留空字符串）
 - requirement 是硬性前置条件（必须已完成的 interaction ID 或持有特定物品）；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
@@ -385,7 +383,7 @@ def build_step2b_events_prompt(
 已知场景:
 {scene_list}
 
-已知互动（事件只能基于这些互动派生，based_on 必须指向其 ID）:
+已知互动（事件可基于这些互动派生，based_on 指向其 ID；非派生事件留空）:
 {interaction_list}
 
 输出格式:
@@ -408,7 +406,7 @@ def build_step2b_events_prompt(
 
 要求：
 1. id 全局唯一 (E1, E2, E3...)
-2. based_on 只能指向已知的 interaction ID，非派生事件则填空字符串
+2. based_on 指向派生的 interaction ID，非派生事件则填空字符串
 3. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
 4. result 是直接结果：不可逆事件需明确标注”不可逆：”。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 “##END_坏结局:电车坠入黑暗## 不可逆：调查员们永远被困在噩梦中”）
 5. side_effects 是间接后果：与 result 不重合的附带影响。无条件则为空列表
@@ -418,9 +416,7 @@ def build_step2b_events_prompt(
 
 精修模组：
 \"\"\"
-{chapters.get('scenes','')}
-
-{chapters.get('events_summary','')}
+{"\n\n".join(chapters.values())}
 \"\"\""""
 
 
@@ -446,7 +442,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 重要原则：
 - auto_trigger 使用与 interaction 相同的统一字段模型
 - auto_trigger 绑定特定场景（scene 字段必填）
-- based_on 只能指向已知的 interaction ID
+- based_on 指向派生的 interaction ID（非派生 AT 则留空字符串）
 - requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
@@ -470,7 +466,7 @@ def build_step2b_at_prompt(
 已知场景:
 {scene_list}
 
-已知互动（auto_trigger 只能基于这些互动派生，based_on 必须指向其 ID）:
+已知互动（auto_trigger 可基于这些互动派生，based_on 指向其 ID；非派生 AT 留空）:
 {interaction_list}
 
 输出格式:
@@ -495,7 +491,7 @@ def build_step2b_at_prompt(
 要求：
 1. id 全局唯一 (AT1, AT2, AT3...)
 2. scene 使用场景中文名
-3. based_on 只能指向已知的 interaction ID
+3. based_on 指向派生的 interaction ID，非派生 AT 则留空字符串
 4. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
 5. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
 6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
@@ -504,7 +500,7 @@ def build_step2b_at_prompt(
 
 精修模组：
 \"\"\"
-{chapters.get('scenes','')}
+{"\n\n".join(chapters.values())}
 \"\"\""""
 
 
@@ -567,9 +563,7 @@ def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], charact
 
 精修模组：
 \"\"\"
-{chapters.get('scenes','')}
-
-{chapters.get('npcs','')}
+{"\n\n".join(chapters.values())}
 \"\"\""""
 
 
@@ -629,9 +623,7 @@ def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], charact
 
 精修模组：
 \"\"\"
-{chapters.get('module_overview','')}
-
-{chapters.get('events_summary','')}
+{"\n\n".join(chapters.values())}
 \"\"\""""
 
 
@@ -910,9 +902,7 @@ def build_phase1_prompt(
 
 ## 精修模组
 \"\"\"
-{chapters.get('enemies','')}
-
-{chapters.get('module_overview','')}
+{"\n\n".join(chapters.values())}
 \"\"\"
 
 输出格式:
