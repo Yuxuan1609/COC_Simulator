@@ -42,7 +42,8 @@ from module_designer import (
     build_step1a_prompt, build_step1b_prompt,
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
-    build_step3a_prompt, build_step3b_prompt, build_step35_prompt, build_step4_prompt,
+    build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
+    build_phase1_prompt, build_step4_prompt,
     # Parsers (for cross_validate)
     _is_valid_json_output, _with_fallback,
 )
@@ -51,7 +52,8 @@ from module_designer.layered_parser import (
     STEP1A_SYSTEM, STEP1B_SYSTEM,
     STEP2A_SYSTEM, STEP2B_EVENTS_SYSTEM, STEP2B_AT_SYSTEM,
     STEP2C_L1_SYSTEM, STEP2C_L3_SYSTEM,
-    STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM, STEP4_SYSTEM,
+    STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM,
+    PHASE1_SYSTEM, STEP4_SYSTEM,
 )
 from library import WeaponLibrary, EnemyLibrary
 
@@ -158,7 +160,7 @@ print(f"  do_text_call(step_name, call_name, prompt_fn, *args, system_prompt=, *
 # ============================================================
 # ═══ Step 1a: 结构化提取 ═══
 # 输入: 原始模组文档
-# 输出: module_meta + scenes[{name,id}] + characters[{name,id}]
+# 输出: module_meta + scenes[name, ...] + characters[{name,id}]
 with ThreadPoolExecutor(max_workers=2) as ex:
     f1a = ex.submit(do_json_call,
         "step_1", "1a_structured_extraction",
@@ -220,7 +222,7 @@ print("..." if len(condensed_text) > 600 else "")
 # ============================================================
 # ═══ Step 2a: Interactions ═══
 # 输入: condensed_text + scenes 列表
-# 输出: interactions 列表（含 ID + flag 名称 + 空 enemy_ref/weapon_ref）
+# 输出: interactions 列表（含 ID + 场景中文名）
 step2a = do_json_call(
     "step_2", "2a_interactions",
     build_step2a_prompt, chapters, scenes,
@@ -309,7 +311,7 @@ ending_conditions = l3_data.get("ending_conditions", [])
 step3a = do_json_call(
     "step_3", "3a_dedup_conflict",
     build_step3a_prompt,
-    condensed_text, interactions, events, auto_triggers, ending_conditions,
+    chapters, interactions, events, auto_triggers, ending_conditions,
     system_prompt=STEP3A_SYSTEM
 )
 interactions = step3a.get("interactions", interactions)
@@ -318,22 +320,30 @@ auto_triggers = step3a.get("auto_triggers", auto_triggers)
 print(f"Step 3a 完成: 去重 + 冲突 + 结局")
 print(f"  Interactions: {len(interactions)}, Events: {len(events)}, Auto-triggers: {len(auto_triggers)}")
 
+# ═══ 组装 L2 结构 ═══
+from module_designer.layered_pipeline import _assemble_l2
+l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data)
+print(f"L2 组装完成: {len(l2_assembled.get('scenes',{}))} 场景")
+
+# 从组装后的 L2 提取平面列表供 Step 3.5/4 使用
+step35_interactions = []
+step35_at = []
+for sdata in l2_assembled.get("scenes", {}).values():
+    step35_interactions.extend(sdata.get("interactions", []))
+    step35_at.extend(sdata.get("auto_triggers", []))
+step35_events = l2_assembled.get("events", [])
+
 
 # ============================================================
 # CELL 12 (code)
 # ============================================================
 # ═══ Step 3b: L1 ↔ L2 交叉核对 ═══
-# 输入: condensed_text + L1 + 3a 修正后的 L2 + L3 + scenes 列表
+# 输入: chapters + L1 + assembled L2 + L3 + scenes 列表
 # 输出: 修正后的 l1_data + l3_data
-l2_completed = {
-    "interactions": interactions,
-    "events": events,
-    "auto_triggers": auto_triggers,
-}
 step3b = do_json_call(
     "step_3", "3b_cross_check",
     build_step3b_prompt,
-    condensed_text, l1_data, l2_completed, l3_data, scenes,
+    chapters, l1_data, l2_assembled, l3_data, scenes,
     system_prompt=STEP3B_SYSTEM
 )
 l1_data = step3b.get("l1_data", l1_data)
@@ -381,13 +391,11 @@ try:
 except Exception:
     skill_names = []
 
-name_to_id = {s["name"]: s["id"] for s in scenes if s.get("name") and s.get("id")}
 l2_descriptions = {}
 for name, sdata in l1_data.items():
-    sid = name_to_id.get(name, name)
     desc = sdata.get("description", "") or sdata.get("atmosphere", "")
     if desc:
-        l2_descriptions[sid] = desc
+        l2_descriptions[name] = desc
 
 scene_intents_for_s4 = l3_data.get("scene_intents", {})
 
@@ -400,7 +408,7 @@ for attempt in range(1, MAX_TRIES + 1):
     step35 = do_json_call(
         "step_35", "35_dependency_graph",
         build_step35_prompt,
-        condensed_text, interactions, events, auto_triggers,
+        chapters, step35_interactions, step35_events, step35_at,
         system_prompt=STEP35_SYSTEM
     )
     deps = step35.get("dependencies", [])
@@ -419,18 +427,45 @@ for attempt in range(1, MAX_TRIES + 1):
         dep_graph.cut_random_edge_in_cycles()
         print(f"  [Step 3.5] 重调用尽，随机切断循环边")
 
-# ── Step 4: Library 匹配 + 标准化 ──
+# ── Phase 1: 风格预判 (与 Step 3.5 并行) ──
+scene_intents_for_p1 = l3_data.get("scene_intents", {})
+phase1 = do_json_call(
+    "phase_1", "phase1_style_preview",
+    build_phase1_prompt,
+    chapters, scene_intents_for_p1, weapon_names, enemy_names,
+    system_prompt=PHASE1_SYSTEM
+)
+phase1_clean = {"enemies": phase1.get("enemies", []),
+                "weapons": phase1.get("weapons", [])}
+print(f"Phase 1 完成: {len(phase1_clean['enemies'])} 敌人类型, {len(phase1_clean['weapons'])} 武器类型")
+
+# ── Phase 2: 精简标准化 (依赖 Phase 1 约束) ──
 step4 = do_json_call(
-    "step_4", "4_library_matching",
+    "phase_2", "phase2_standardization",
     build_step4_prompt,
-    interactions, auto_triggers, l2_descriptions,
-    scene_intents_for_s4, condensed_text,
-    weapon_names, enemy_names, skill_names, stat_names,
+    step35_interactions, step35_at, l2_descriptions,
+    scene_intents_for_s4, chapters,
+    phase1_clean, skill_names, stat_names,
     system_prompt=STEP4_SYSTEM
 )
-interactions = step4.get("interactions", interactions)
-auto_triggers = step4.get("auto_triggers", auto_triggers)
-print(f"Step 4 完成: enemy/weapon/skill/stat 标准化 + side_effect 结构化")
+interactions = step4.get("interactions", step35_interactions)
+auto_triggers = step4.get("auto_triggers", step35_at)
+print(f"Phase 2 完成: skill/stat 标准化 + @标记转化")
+
+# Strip based_on
+for e in interactions:
+    e.pop("based_on", None)
+for e in auto_triggers:
+    e.pop("based_on", None)
+for e in events:
+    e.pop("based_on", None)
+
+# ═══ 用 Phase 2 标准化后的实体重新组装 L2 ═══
+l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data)
+print(f"L2 重新组装完成: {len(l2_assembled.get('scenes',{}))} 场景")
+if dep_graph:
+    l2_assembled["dependency_graph"] = dep_graph.to_dict()
+l2_assembled["_phase1"] = phase1_clean
 
 
 # ============================================================
@@ -444,49 +479,14 @@ print(f"Step 4 完成: enemy/weapon/skill/stat 标准化 + side_effect 结构化
 # CELL 16 (code)
 # ============================================================
 # ═══ Schema 验证 + 交叉引用 ═══
-# 按 scene ID 分组构建 L2 for validation
-scenes_by_sid = {}
-for inter in interactions:
-    sid = inter.get("scene", "unknown")
-    scenes_by_sid.setdefault(sid, {
-        "interactions": [], "encounters": [],
-        "scene_weapons": [], "auto_triggers": [],
-        "from_here": [], "to_here": [],
-    })
-    scenes_by_sid[sid]["interactions"].append(inter)
-for at in auto_triggers:
-    sid = at.get("scene", "unknown")
-    scenes_by_sid.setdefault(sid, {
-        "interactions": [], "encounters": [],
-        "scene_weapons": [], "auto_triggers": [],
-        "from_here": [], "to_here": [],
-    })
-    scenes_by_sid[sid]["auto_triggers"].append(at)
-# 注入 scene_movements
-for sid, movement in scene_movements.items():
-    scenes_by_sid.setdefault(sid, {
-        "interactions": [], "encounters": [],
-        "scene_weapons": [], "auto_triggers": [],
-        "from_here": [], "to_here": [],
-    })
-    scenes_by_sid[sid]["from_here"] = movement.get("from_here", [])
-    scenes_by_sid[sid]["to_here"] = movement.get("to_here", [])
-
-l2_for_validation = {
-    "scenes": scenes_by_sid,
-    "events": events,
-    "npc_profiles": {},
-}
-
-# Schema 验证
-schema_reports = validate_all(l1_data, l2_for_validation, l3_data)
+schema_reports = validate_all(l1_data, l2_assembled, l3_data)
 print("═══ Schema 验证 ═══")
 for layer, report in schema_reports.items():
     status = "PASS" if report.is_valid else "ISSUES"
     print(f"  {layer} [{status}]: {report.summary()}")
 
 # 交叉引用
-cross_ref = cross_validate_layers(l1_data, l2_for_validation, l3_data, weapon_lib=wl, enemy_lib=el)
+cross_ref = cross_validate_layers(l1_data, l2_assembled, l3_data, weapon_lib=wl, enemy_lib=el)
 print(f"\n═══ 交叉引用 ═══")
 print(f"  {cross_ref.summary()}")
 
@@ -510,14 +510,9 @@ os.makedirs(MODULE_DIR, exist_ok=True)
 with open(f"{MODULE_DIR}/l1_player.json", "w", encoding="utf-8") as f:
     json.dump(l1_data, f, ensure_ascii=False, indent=2)
 
-# L2
-l2_out = {
-    "scenes": scenes_by_sid,
-    "events": events,
-    "npc_profiles": {},
-}
+# L2（已组装，含 scene_movements 和 description）
 with open(f"{MODULE_DIR}/l2_keeper.json", "w", encoding="utf-8") as f:
-    json.dump(l2_out, f, ensure_ascii=False, indent=2)
+    json.dump(l2_assembled, f, ensure_ascii=False, indent=2)
 
 # L3
 with open(f"{MODULE_DIR}/l3_designer.json", "w", encoding="utf-8") as f:
@@ -537,15 +532,16 @@ print(f"Step 1: {len(scenes)} 场景, {len(characters)} 角色, {len(condensed_t
 print(f"Step 2: {len(interactions)} interactions, {len(events)} events, {len(auto_triggers)} auto_triggers")
 print(f"        {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
 print(f"Step 3: 去重+冲突+结局 → 交叉核对 → 依赖图 (3.5)")
-print(f"Step 4: Library 匹配{'完成' if weapon_names or enemy_names or skill_names else '跳过'}")
+print(f"Step 4: Phase 1 风格预判 + Phase 2 标准化")
 print(f"")
-print(f"总 LLM 调用: 11 (Step 1:2 + Step 2:5 + Step 3:2 + Step 3.5:1 + Step 4:1)")
+print(f"总 LLM 调用: 12 (Step 1:2 + Step 2:5 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)")
 print(f"调试产物: {DEBUG_ROOT}/")
 print(f"├── step_1/   (1a_structured_extraction, 1b_condensed_text)")
 print(f"├── step_2/   (2a_interactions, 2b_events, 2b_auto_triggers, 2c_l1, 2c_l3)")
 print(f"├── step_3/   (3a_dedup_conflict, 3b_cross_check)")
 print(f"├── step_35/  (35_dependency_graph)")
-print(f"└── step_4/   (4_library_matching)")
+print(f"├── phase_1/  (phase1_style_preview)")
+print(f"└── phase_2/  (phase2_standardization)")
 print(f"")
 print(f"最终模组: {MODULE_DIR}/")
 print(f"  l1_player.json, l2_keeper.json, l3_designer.json")

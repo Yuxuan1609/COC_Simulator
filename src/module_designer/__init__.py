@@ -16,7 +16,8 @@ from module_designer.layered_parser import (
     build_step1a_prompt, build_step1b_prompt,
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
-    build_step3a_prompt, build_step3b_prompt, build_step35_prompt, build_step4_prompt,
+    build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
+    build_phase1_prompt, build_step4_prompt,
     _with_fallback, _is_valid_json_output,
 )
 from module_designer.dependency_graph import (
