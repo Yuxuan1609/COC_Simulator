@@ -36,10 +36,9 @@ def test_scene_l2_roundtrip():
             id="AT1",
             name="发现血迹",
             scene="S1",
-            trigger_condition="调查员搜索地板时触发",
-            effect_type="reveal_info",
-            effect_ref="",
-            reveal_narrative="你注意到地板缝隙中有暗红色的痕迹",
+            type="",
+            trigger="调查员搜索地板时触发",
+            result="你注意到地板缝隙中有暗红色的痕迹",
         )],
     )
     d = scene.to_dict()
@@ -49,21 +48,23 @@ def test_scene_l2_roundtrip():
     assert restored.encounters[0].enemy_ref == "Clicker"
     assert len(restored.auto_triggers) == 1
     assert restored.auto_triggers[0].id == "AT1"
-    assert restored.auto_triggers[0].effect_type == "reveal_info"
+    assert restored.auto_triggers[0].trigger == "调查员搜索地板时触发"
+    assert restored.auto_triggers[0].result == "你注意到地板缝隙中有暗红色的痕迹"
 
 
 def test_auto_trigger_roundtrip():
     at = AutoTrigger(
         id="AT1", name="Clicker 出现", scene="S2",
-        trigger_condition="玩家进入7号车厢且持有钥匙",
-        effect_type="spawn_enemy", effect_ref="Clicker",
-        reveal_narrative="",
+        type="",
+        trigger="玩家进入7号车厢且持有钥匙",
+        enemy_ref="Clicker",
+        result="",
     )
     d = at.to_dict()
     restored = AutoTrigger.from_dict(d)
     assert restored.id == "AT1"
-    assert restored.effect_type == "spawn_enemy"
-    assert restored.effect_ref == "Clicker"
+    assert restored.trigger == "玩家进入7号车厢且持有钥匙"
+    assert restored.enemy_ref == "Clicker"
 
 
 def test_npc_profile_roundtrip():
@@ -391,8 +392,10 @@ def test_build_step3a_prompt_structure():
     assert "I1" in prompt
     assert "E1" in prompt
     assert "AT1" in prompt
-    assert "flag" in prompt.lower()
+    assert "side_effects" in prompt
+    assert "based_on" in prompt
     assert "requirement" in prompt
+    assert "side_effect" in prompt.lower()
 
 
 def test_build_step3b_prompt_structure():
