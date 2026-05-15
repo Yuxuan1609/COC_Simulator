@@ -184,6 +184,10 @@ condensed_text = step1b.get("condensed_text", "")
 from module_designer.layered_parser import _parse_condensed_chapters
 chapters = _parse_condensed_chapters(condensed_text) if condensed_text else {}
 
+print(f"Chapters key: {list(chapters.keys())}")
+for k, v in chapters.items():
+    print(f"  {k}: {len(v)} 字符")
+
 # 保存 Step 1 汇总
 with open(f"{DEBUG_ROOT}/step_1/_summary.json", "w", encoding="utf-8") as f:
     json.dump({
