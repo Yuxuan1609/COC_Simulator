@@ -329,11 +329,14 @@ def parse_step2a(condensed_text: str, scenes: list[dict], llm_call) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全局不可逆事件。
-你的任务是：从精修模组文本和已知的互动列表中提取所有全局事件。
+你的任务是：从精修模组文本和已知互动中派生全局事件。事件是跨场景的、不可逆的世界级变化。
 
 重要原则：
-- 事件的 requirement 使用自然语言声明，可引用已存在的 interaction ID（如 I1, I2...）
-- 不可逆事件 = 一旦发生就永久改变世界状态的事件
+- 事件使用与 interaction 相同的统一字段模型（id, type, name, requirement, trigger, result, side_effects, difficulty, based_on）
+- 事件无 scene 字段（全局事件不绑定特定场景）
+- based_on 只能指向已知的 interaction ID（因为 Step 2b 并行，不能指向 auto_trigger 或其他 event）
+- type 填写关联技能名（如"侦察"），不涉及填"无"
+- result 需包含不可逆性描述（如"此事件不可逆：...")
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -352,7 +355,7 @@ def build_step2b_events_prompt(
 已知场景:
 {scene_list}
 
-已知互动（id + 描述 + 结果，互动完成即代表状态变更）:
+已知互动（事件只能基于这些互动派生，based_on 必须指向其 ID）:
 {interaction_list}
 
 输出格式:
@@ -360,19 +363,26 @@ def build_step2b_events_prompt(
   "events": [
     {{
       "id": "E1",
+      "type": "关联技能名，不涉及填\"无\"",
       "name": "事件名称",
+      "requirement": "前置条件声明（自然语言，可引用 interaction ID）",
       "trigger": "触发条件描述（自然语言）",
-      "irreversible_impact": "不可逆影响描述",
-      "requirement": "前置条件声明（自然语言，可引用已知的 interaction ID）"
+      "result": "触发后的结果描述（含不可逆性标注，如：不可逆——场景被摧毁）",
+      "side_effects": ["自然语言描述的副作用"],
+      "difficulty": "None/regular/hard/extreme",
+      "based_on": "I1"
     }}
   ]
 }}
 
 要求：
 1. id 全局唯一 (E1, E2, E3...)
-2. requirement 可引用已知的 interaction ID (如 I1, I2...)
-3. 不可逆事件包括：场景被破坏、NPC 死亡、关键物品销毁、时间节点等
-4. 事件是全局的，不绑定特定场景
+2. based_on 只能指向已知的 interaction ID (如 I1)，若此事件不是从特定互动派生的则填空字符串
+3. result 中如果此事件不可逆，需明确标注"不可逆："并描述影响
+4. type 选择关联的技能检定名称，不涉及填"无"
+5. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
+6. 不可逆事件包括：场景被破坏、NPC 死亡、关键物品销毁、时间节点等
+7. 事件是全局的，不绑定特定场景（无 scene 字段）
 
 精修模组：
 \"\"\"
