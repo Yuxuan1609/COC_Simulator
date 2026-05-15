@@ -388,7 +388,8 @@ def test_build_step3a_prompt_structure():
     interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先找到线索"}]
     events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后"}]
     auto_triggers = [{"id": "AT1", "name": "触发", "scene": "S1", "trigger_condition": "玩家进入场景"}]
-    prompt = build_step3a_prompt("精修模组", interactions, events, auto_triggers)
+    ending_conditions = [{"id": "END1", "condition": "...", "narrative": "真结局"}]
+    prompt = build_step3a_prompt("精修模组", interactions, events, auto_triggers, ending_conditions)
     assert "I1" in prompt
     assert "E1" in prompt
     assert "AT1" in prompt
@@ -420,6 +421,7 @@ def test_build_step4_prompt_structure():
         ["手电筒", ".45自动手枪"],
         ["Clicker", "深潜者"],
         ["侦察", "急救", "图书馆使用"],
+        ["STR", "CON", "DEX"],
     )
     assert "Clicker" in prompt
     assert "手电筒" in prompt

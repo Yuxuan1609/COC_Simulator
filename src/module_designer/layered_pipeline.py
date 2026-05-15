@@ -239,6 +239,7 @@ def run_pipeline(
     enemy_lib=None,
     max_retries: int = 3,
     verbose: bool = True,
+    inject_l3_wr0: bool = True,
 ) -> PipelineResult:
     """执行完整的四步渐进式解析管线."""
     from module_designer.layered_parser import (
@@ -247,6 +248,7 @@ def run_pipeline(
         parse_step2a, parse_step2b_events, parse_step2b_at,
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
+        parse_step35,
     )
     from concurrent.futures import ThreadPoolExecutor
 
@@ -362,6 +364,22 @@ def run_pipeline(
         if fb_data.get("_fallback"):
             result.fallbacks.append(fb_name)
 
+    # ── L3 后处理: 注入 WR0（创作者豁免）──
+    if inject_l3_wr0 and not l3_data.get("_fallback"):
+        world_rules = l3_data.setdefault("world_rules", [])
+        existing_ids = {wr.get("id", "") for wr in world_rules if isinstance(wr, dict)}
+        if "WR0" not in existing_ids:
+            wr0 = {
+                "id": "WR0",
+                "name": "创作者豁免",
+                "rule": "所有世界规则只约束KP和玩家，模组创作者不受世界规则约束",
+                "scope": "绝对全局",
+                "is_absolute": "最高规则，高于所有其他世界规则",
+            }
+            world_rules.insert(0, wr0)
+            if verbose:
+                print("  [L3] WR0 已注入（创作者豁免）")
+
     if verbose:
         print(f"  Step 2b 完成: {len(events)} events, {len(auto_triggers)} auto_triggers")
         print(f"  Step 2c 完成: {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
@@ -372,7 +390,8 @@ def run_pipeline(
         print("[Step 3a] L2 依赖解析...")
 
     def _do_step3a():
-        return parse_step3a(condensed_text, interactions, events, auto_triggers, llm_json)
+        ending_conditions = l3_data.get("ending_conditions", [])
+        return parse_step3a(condensed_text, interactions, events, auto_triggers, ending_conditions, llm_json)
     step3a = _with_fallback(
         _do_step3a, ["interactions"],
         {"interactions": interactions, "events": events, "auto_triggers": auto_triggers},
@@ -385,7 +404,7 @@ def run_pipeline(
         result.fallbacks.append("Step 3a")
 
     if verbose:
-        print(f"  Step 3a 完成: flag_mapping={step3a.get('flag_mapping', {})}")
+        print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
 
     # ── Step 3b ──────────────────────────────────────────────
     if verbose:
@@ -409,10 +428,27 @@ def run_pipeline(
     if step3b.get("_fallback"):
         result.fallbacks.append("Step 3b")
 
-    # ── Step 4 ──────────────────────────────────────────────
+    # ── L3 后处理: 重新确保 WR0（Step 3b 可能丢失）──
+    if inject_l3_wr0:
+        world_rules = l3_data.setdefault("world_rules", [])
+        existing_ids = {wr.get("id", "") for wr in world_rules if isinstance(wr, dict)}
+        if "WR0" not in existing_ids:
+            wr0 = {
+                "id": "WR0",
+                "name": "创作者豁免",
+                "rule": "所有世界规则只约束KP和玩家，模组创作者不受世界规则约束",
+                "scope": ["meta"],
+                "is_absolute": True,
+            }
+            world_rules.insert(0, wr0)
+
+    # ── Step 3.5 + Step 4 (并行) ──────────────────────────────
     if verbose:
         print("═" * 50)
-        print("[Step 4] Library 匹配...")
+        print("[Step 3.5 + Step 4] 依赖图构建 + Library 匹配 (并行)...")
+
+    # 标准属性集
+    stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
     # Build name→id map for scene descriptions
     name_to_id = {s["name"]: s["id"] for s in scenes if s.get("name") and s.get("id")}
@@ -422,6 +458,7 @@ def run_pipeline(
         desc = sdata.get("description", "") or sdata.get("atmosphere", "") or sdata.get("entry_narrative", "")
         if desc:
             l2_descriptions[sid] = desc
+
     weapon_names = []
     enemy_names = []
     try:
@@ -435,7 +472,6 @@ def run_pipeline(
     except Exception:
         pass
 
-    # 加载标准技能名列表
     skill_names = []
     try:
         import os as _os
@@ -448,28 +484,68 @@ def run_pipeline(
 
     scene_intents_for_step4 = l3_data.get("scene_intents", {})
 
-    if weapon_names or enemy_names or skill_names:
-        def _do_step4():
-            return parse_step4(
-                interactions, auto_triggers, l2_descriptions,
-                scene_intents_for_step4, condensed_text,
-                weapon_names, enemy_names, skill_names, llm_json,
-            )
-        step4 = _with_fallback(
+    from module_designer.dependency_graph import DependencyGraph
+
+    def _do_step35():
+        """Step 3.5: LLM 解析 → 有向图 → 循环检测."""
+        max_tries = 3
+        for attempt in range(1, max_tries + 1):
+            step35_result = parse_step35(condensed_text, interactions, events, auto_triggers, llm_json)
+            deps = step35_result.get("dependencies", [])
+            if not deps:
+                if attempt < max_tries:
+                    if verbose:
+                        print(f"  [Step 3.5] 第 {attempt} 次解析为空，重试...")
+                    continue
+                return {"graph": None, "dependencies": []}
+
+            graph = DependencyGraph()
+            graph.build(deps)
+            cycles = graph.detect_cycles()
+            if not cycles:
+                if verbose:
+                    print(f"  [Step 3.5] 依赖图: {len(graph.nodes)} 节点, {len(graph.edges)} 边, 无循环")
+                return {"graph": graph, "dependencies": deps}
+
+            if attempt < max_tries:
+                if verbose:
+                    cycle_ids = [str(p[0]) for p in cycles[:3]]
+                    print(f"  [Step 3.5] 第 {attempt} 次检测到 {len(cycles)} 个循环 ({cycle_ids}...)，重调 LLM...")
+                continue
+
+        # Fallback: cut random edge
+        if verbose:
+            print(f"  [Step 3.5] 重调用尽，随机切断一条循环边")
+        graph.cut_random_edge_in_cycles()
+        return {"graph": graph, "dependencies": deps, "_circular_cut": True}
+
+    def _do_step4():
+        return parse_step4(
+            interactions, auto_triggers, l2_descriptions,
+            scene_intents_for_step4, condensed_text,
+            weapon_names, enemy_names, skill_names, stat_names, llm_json,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f35 = ex.submit(_do_step35)
+        f4 = ex.submit(lambda: _with_fallback(
             _do_step4, ["interactions"],
             {"interactions": interactions, "auto_triggers": auto_triggers},
             max_retries, verbose, "Step 4",
-        )
-        interactions = step4.get("interactions", interactions)
-        auto_triggers = step4.get("auto_triggers", auto_triggers)
-        if step4.get("_fallback"):
-            result.fallbacks.append("Step 4")
+        ))
+        step35_result = f35.result()
+        step4 = f4.result()
 
-        if verbose:
-            print(f"  Step 4 完成: enemy/weapon refs 已填入")
-    else:
-        if verbose:
-            print("  Step 4 跳过: 无 library 可用")
+    interactions = step4.get("interactions", interactions)
+    auto_triggers = step4.get("auto_triggers", auto_triggers)
+    if step4.get("_fallback"):
+        result.fallbacks.append("Step 4")
+
+    dep_graph = step35_result.get("graph")
+    if dep_graph:
+        result.l2_data["dependency_graph"] = dep_graph.to_dict()
+    if step35_result.get("_circular_cut"):
+        result.fallbacks.append("Step 3.5 (circular cut)")
 
     # ── 最终: Schema 验证 + Cross-validate ─────────────────
     if verbose:
