@@ -76,6 +76,24 @@ def _is_valid_json_output(data: dict, required_keys: list[str]) -> bool:
     return True
 
 
+def _parse_condensed_chapters(markdown_text: str) -> dict[str, str]:
+    """按 ## 标题拆分为章节 dict。key 为标题名（去掉 ## 前缀和空格）."""
+    chapters = {}
+    current_title = "_header"
+    current_lines = []
+    for line in markdown_text.split("\n"):
+        if line.startswith("## "):
+            if current_lines:
+                chapters[current_title] = "\n".join(current_lines).strip()
+            current_title = line[3:].strip()
+            current_lines = []
+        else:
+            current_lines.append(line)
+    if current_lines:
+        chapters[current_title] = "\n".join(current_lines).strip()
+    return chapters
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Fallback wrapper
 # ═══════════════════════════════════════════════════════════════
@@ -261,7 +279,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - 仅输出 JSON，不要任何解释性文字"""
 
 
-def build_step2a_prompt(condensed_text: str, scenes: list[dict]) -> str:
+def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
     scene_list = "\n".join(
         f"- {s['id']}: {s['name']}" for s in scenes
     )
@@ -320,11 +338,13 @@ def build_step2a_prompt(condensed_text: str, scenes: list[dict]) -> str:
 15. based_on 始终填 null（派生关系由 Step 2b 标注）
 精修模组：
 \"\"\"
-{condensed_text}
+{chapters.get('scenes','')}
+
+{chapters.get('locations_and_map','')}
 \"\"\""""
-def parse_step2a(condensed_text: str, scenes: list[dict], llm_call) -> dict:
+def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call) -> dict:
     """从精修模组提取所有 interactions."""
-    prompt = build_step2a_prompt(condensed_text, scenes)
+    prompt = build_step2a_prompt(chapters, scenes)
     return llm_call(prompt, system=STEP2A_SYSTEM)
 
 
@@ -347,7 +367,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 
 
 def build_step2b_events_prompt(
-    condensed_text: str,
+    chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
 ) -> str:
@@ -394,17 +414,19 @@ def build_step2b_events_prompt(
 
 精修模组：
 \"\"\"
-{condensed_text}
+{chapters.get('scenes','')}
+
+{chapters.get('events_summary','')}
 \"\"\""""
 
 
 def parse_step2b_events(
-    condensed_text: str,
+    chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step2b_events_prompt(condensed_text, scenes, interactions)
+    prompt = build_step2b_events_prompt(chapters, scenes, interactions)
     return llm_call(prompt, system=STEP2B_EVENTS_SYSTEM)
 
 
@@ -429,7 +451,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 
 
 def build_step2b_at_prompt(
-    condensed_text: str,
+    chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
 ) -> str:
@@ -480,17 +502,17 @@ def build_step2b_at_prompt(
 
 精修模组：
 \"\"\"
-{condensed_text}
+{chapters.get('scenes','')}
 \"\"\""""
 
 
 def parse_step2b_at(
-    condensed_text: str,
+    chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step2b_at_prompt(condensed_text, scenes, interactions)
+    prompt = build_step2b_at_prompt(chapters, scenes, interactions)
     return llm_call(prompt, system=STEP2B_AT_SYSTEM)
 
 
@@ -510,7 +532,7 @@ STEP2C_L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩�
 """
 
 
-def build_step2c_l1_prompt(condensed_text: str, scenes: list[dict], characters: list[dict]) -> str:
+def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
     template = _load_template("l1_template.json")
     scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
     char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
@@ -542,12 +564,14 @@ def build_step2c_l1_prompt(condensed_text: str, scenes: list[dict], characters: 
 
 精修模组：
 \"\"\"
-{condensed_text}
+{chapters.get('scenes','')}
+
+{chapters.get('npcs','')}
 \"\"\""""
 
 
-def parse_step2c_l1(condensed_text: str, scenes: list[dict], characters: list[dict], llm_call) -> dict:
-    prompt = build_step2c_l1_prompt(condensed_text, scenes, characters)
+def parse_step2c_l1(chapters: dict[str, str], scenes: list[dict], characters: list[dict], llm_call) -> dict:
+    prompt = build_step2c_l1_prompt(chapters, scenes, characters)
     return llm_call(prompt, system=STEP2C_L1_SYSTEM)
 
 
@@ -568,7 +592,7 @@ STEP2C_L3_SYSTEM = """你是一个优秀的 TRPG 模组设计师，专门提取�
 """
 
 
-def build_step2c_l3_prompt(condensed_text: str, scenes: list[dict], characters: list[dict]) -> str:
+def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
     template = _load_template("l3_template.json")
     scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
     char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
@@ -602,12 +626,14 @@ def build_step2c_l3_prompt(condensed_text: str, scenes: list[dict], characters: 
 
 精修模组：
 \"\"\"
-{condensed_text}
+{chapters.get('module_overview','')}
+
+{chapters.get('events_summary','')}
 \"\"\""""
 
 
-def parse_step2c_l3(condensed_text: str, scenes: list[dict], characters: list[dict], llm_call) -> dict:
-    prompt = build_step2c_l3_prompt(condensed_text, scenes, characters)
+def parse_step2c_l3(chapters: dict[str, str], scenes: list[dict], characters: list[dict], llm_call) -> dict:
+    prompt = build_step2c_l3_prompt(chapters, scenes, characters)
     return llm_call(prompt, system=STEP2C_L3_SYSTEM)
 
 
@@ -619,7 +645,10 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 你的任务是：检查所有 interaction/event/auto_trigger，基于 based_on 去重，验证 graded_result，修剪 result/side_effects 重合，解决冲突，验证结局标记。
 
 重要原则：
-- based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction 且语义重复（name/result 高度相似），合并为一个
+- interaction/event/auto_trigger统称为entity
+- based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个entity和其based_on指向的entity
+    语义重复（name/result 高度相似），合并为一个。
+- 合并时优先保留auto_trigger和interaction
 - graded_result 在 type != "无" 时建议填写但不强制；type == "无" 时删除空 graded_result
 - result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
 - requirement/trigger 冲突以 condensed_text 为准修正
@@ -630,7 +659,7 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 
 
 def build_step3a_prompt(
-    condensed_text: str,
+    chapters: dict[str, str],
     interactions: list[dict],
     events: list[dict],
     auto_triggers: list[dict],
@@ -640,7 +669,7 @@ def build_step3a_prompt(
 
 ## 精修模组（参考上下文）
 \"\"\"
-{condensed_text}
+{"\n\n".join(chapters.values())}
 \"\"\"
 
 ## L3 结局条件（用于验证 ##END_## 标记）
@@ -656,7 +685,9 @@ def build_step3a_prompt(
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. **Based_on 去重**: 若两个 entity 的 based_on 指向同一 interaction 且 name/result 语义高度相似，合并为一个（保留较完整的版本，删除重复的）。
+1. **Based_on 去重**: - based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个entity和其based_on指向的entity
+    语义重复（name/result 高度相似），合并为一个。
+2. **Based_on 去重**:  合并时优先保留auto_trigger和interaction
 2. **Graded_result 检查**: type != "无" 时建议填写 graded_result 但不强制；type == "无" 时删除空 graded_result。
 3. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
 4. **冲突解决**: requirement/trigger 矛盾以 condensed_text 为准修正。
@@ -668,19 +699,19 @@ def build_step3a_prompt(
   "events": [{{ ...原字段... }}],
   "auto_triggers": [{{ ...原字段... }}]
 }}
-
+注意 interaction/event/auto_trigger统称为entity 
 仅输出 JSON。"""
 
 
 def parse_step3a(
-    condensed_text: str,
+    chapters: dict[str, str],
     interactions: list[dict],
     events: list[dict],
     auto_triggers: list[dict],
     ending_conditions: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step3a_prompt(condensed_text, interactions, events, auto_triggers, ending_conditions)
+    prompt = build_step3a_prompt(chapters, interactions, events, auto_triggers, ending_conditions)
     return llm_call(prompt, system=STEP3A_SYSTEM)
 
 
@@ -700,7 +731,7 @@ STEP3B_SYSTEM = """你是一个 TRPG 一致性校对助手。
 
 
 def build_step3b_prompt(
-    condensed_text: str,
+    chapters: dict[str, str],
     l1_data: dict,
     l2_completed: dict,
     l3_data: dict,
@@ -711,7 +742,7 @@ def build_step3b_prompt(
 
 ## 精修模组（参考上下文）
 \"\"\"
-{condensed_text}
+{"\n\n".join(chapters.values())}
 \"\"\"
 
 ## 统一场景名（Step 1 确定）
@@ -745,14 +776,14 @@ def build_step3b_prompt(
 
 
 def parse_step3b(
-    condensed_text: str,
+    chapters: dict[str, str],
     l1_data: dict,
     l2_completed: dict,
     l3_data: dict,
     step1_scenes: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step3b_prompt(condensed_text, l1_data, l2_completed, l3_data, step1_scenes)
+    prompt = build_step3b_prompt(chapters, l1_data, l2_completed, l3_data, step1_scenes)
     return llm_call(prompt, system=STEP3B_SYSTEM)
 
 
@@ -761,19 +792,21 @@ def parse_step3b(
 # ═══════════════════════════════════════════════════════════════
 
 STEP35_SYSTEM = """你是一个 TRPG 依赖关系解析助手。
-你的任务是：检查所有 interaction/event/auto_trigger 的 requirement 和 trigger 字段，将其中描述的依赖关系标准化为结构化 JSON。
+你的任务是：检查所有 interaction/event/auto_trigger 的 requirement 字段，将其中描述的依赖关系标准化为结构化 JSON。
 
 重要原则：
-- 从 requirement 和 trigger 的自然语言中提取依赖关系
+- interaction/event/auto_trigger统称为entity
+- 从 requirement 中提取依赖关系
 - requirement 中的 "interaction:I3 已完成" → {{"type": "interaction", "id": "I3", "condition": "completed"}}
-- requirement 中的 "持有手电筒" → {{"type": "item", "name": "手电筒", "condition": "possess"}}
-- trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "triggered"}}
+- trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "completed"}}
 - 每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
+- condition 只涉及entity不涉及其他要求
+- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定失败/entity已经鉴定成功
 - 仅输出 JSON，不要任何解释性文字"""
 
 
 def build_step35_prompt(
-    condensed_text: str,
+    chapters: dict[str, str],
     interactions: list[dict],
     events: list[dict],
     auto_triggers: list[dict],
@@ -785,7 +818,7 @@ def build_step35_prompt(
 
 ## 精修模组（参考上下文）
 \"\"\"
-{condensed_text}
+{"\n\n".join(chapters.values())}
 \"\"\"
 
 ## Interactions
@@ -798,12 +831,13 @@ def build_step35_prompt(
 {at_list}
 
 任务:
-1. 扫描每个 entity 的 requirement 和 trigger 字段
+1. 扫描每个 entity 的 requirement 字段
 2. 提取其中描述的依赖关系，标准化为:
-   - interaction 依赖: {{"type": "interaction", "id": "I3", "condition": "completed"}} 或 "not_completed"
-   - event 依赖: {{"type": "event", "id": "E1", "condition": "triggered"}} 或 "not_triggered"
-   - auto_trigger 依赖: {{"type": "auto_trigger", "id": "AT1", "condition": "triggered"}}
-   - item 依赖: {{"type": "item", "name": "手电筒", "condition": "possess"}} 或 "not_possess"
+   - entity 依赖: {{"type": "interaction", "id": "I3", "condition": "completed"}} 
+    每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
+- condition 只涉及entity不涉及其他要求
+- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定失败/entity已经鉴定成功
+
 3. 每条 entity 必须在输出中列出，requires 为空列表表示无依赖
 4. 实体 ID 必须精确匹配（如 I3 不能写成 I03）
 
@@ -827,13 +861,13 @@ def build_step35_prompt(
 
 
 def parse_step35(
-    condensed_text: str,
+    chapters: dict[str, str],
     interactions: list[dict],
     events: list[dict],
     auto_triggers: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step35_prompt(condensed_text, interactions, events, auto_triggers)
+    prompt = build_step35_prompt(chapters, interactions, events, auto_triggers)
     return llm_call(prompt, system=STEP35_SYSTEM)
 
 
@@ -858,7 +892,7 @@ def build_step4_prompt(
     auto_triggers: list[dict],
     l2_descriptions: dict[str, str],
     scene_intents: dict,
-    condensed_text: str,
+    chapters: dict[str, str],
     weapon_library_names: list[str],
     enemy_library_names: list[str],
     skill_names: list[str],
@@ -891,7 +925,7 @@ def build_step4_prompt(
 
 ## 精修模组（参考上下文）
 \"\"\"
-{condensed_text}
+{"\n\n".join(chapters.values())}
 \"\"\"
 
 ## Interactions (含空占位符和未结构化的 side_effects)
@@ -928,7 +962,7 @@ def parse_step4(
     auto_triggers: list[dict],
     l2_descriptions: dict[str, str],
     scene_intents: dict,
-    condensed_text: str,
+    chapters: dict[str, str],
     weapon_library_names: list[str],
     enemy_library_names: list[str],
     skill_names: list[str],

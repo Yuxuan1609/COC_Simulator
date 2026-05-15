@@ -284,6 +284,8 @@ def run_pipeline(
     scenes = step1a.get("scenes", [])
     characters = step1a.get("characters", [])
     condensed_text = step1b.get("condensed_text", "")
+    from module_designer.layered_parser import _parse_condensed_chapters
+    chapters = _parse_condensed_chapters(condensed_text) if condensed_text else {}
 
     result.step1_data = {
         "module_meta": step1a.get("module_meta", {}),
@@ -305,7 +307,7 @@ def run_pipeline(
         print("[Step 2a] Interactions 提取...")
 
     def _do_step2a():
-        return parse_step2a(condensed_text, scenes, llm_json)
+        return parse_step2a(chapters, scenes, llm_json)
     step2a = _with_fallback(
         _do_step2a, ["interactions"],
         {"interactions": []},
@@ -324,13 +326,13 @@ def run_pipeline(
         print("[Step 2b+2c] Events, Auto-triggers, L1, L3 (并行)...")
 
     def _do_events():
-        return parse_step2b_events(condensed_text, scenes, interactions, llm_json)
+        return parse_step2b_events(chapters, scenes, interactions, llm_json)
     def _do_at():
-        return parse_step2b_at(condensed_text, scenes, interactions, llm_json)
+        return parse_step2b_at(chapters, scenes, interactions, llm_json)
     def _do_l1():
-        return parse_step2c_l1(condensed_text, scenes, characters, llm_json)
+        return parse_step2c_l1(chapters, scenes, characters, llm_json)
     def _do_l3():
-        return parse_step2c_l3(condensed_text, scenes, characters, llm_json)
+        return parse_step2c_l3(chapters, scenes, characters, llm_json)
 
     with ThreadPoolExecutor(max_workers=4) as ex:
         f_ev = ex.submit(lambda: _with_fallback(
@@ -391,7 +393,7 @@ def run_pipeline(
 
     def _do_step3a():
         ending_conditions = l3_data.get("ending_conditions", [])
-        return parse_step3a(condensed_text, interactions, events, auto_triggers, ending_conditions, llm_json)
+        return parse_step3a(chapters, interactions, events, auto_triggers, ending_conditions, llm_json)
     step3a = _with_fallback(
         _do_step3a, ["interactions"],
         {"interactions": interactions, "events": events, "auto_triggers": auto_triggers},
@@ -417,7 +419,7 @@ def run_pipeline(
     }
 
     def _do_step3b():
-        return parse_step3b(condensed_text, l1_data, l2_completed, l3_data, scenes, llm_json)
+        return parse_step3b(chapters, l1_data, l2_completed, l3_data, scenes, llm_json)
     step3b = _with_fallback(
         _do_step3b, ["l1_data"],
         {"l1_data": l1_data, "l3_data": l3_data},
@@ -490,7 +492,7 @@ def run_pipeline(
         """Step 3.5: LLM 解析 → 有向图 → 循环检测."""
         max_tries = 3
         for attempt in range(1, max_tries + 1):
-            step35_result = parse_step35(condensed_text, interactions, events, auto_triggers, llm_json)
+            step35_result = parse_step35(chapters, interactions, events, auto_triggers, llm_json)
             deps = step35_result.get("dependencies", [])
             if not deps:
                 if attempt < max_tries:
@@ -522,7 +524,7 @@ def run_pipeline(
     def _do_step4():
         return parse_step4(
             interactions, auto_triggers, l2_descriptions,
-            scene_intents_for_step4, condensed_text,
+            scene_intents_for_step4, chapters,
             weapon_names, enemy_names, skill_names, stat_names, llm_json,
         )
 
