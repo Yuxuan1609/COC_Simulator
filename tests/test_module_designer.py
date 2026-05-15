@@ -408,7 +408,7 @@ def test_build_step3b_prompt_structure():
 
 def test_build_step4_prompt_structure():
     interactions = [{"id": "I1", "name": "战斗", "enemy_ref": None, "weapon_ref": None}]
-    auto_triggers = [{"id": "AT1", "name": "触发", "effect_ref": None}]
+    auto_triggers = [{"id": "AT1", "name": "触发", "enemy_ref": None, "weapon_ref": None}]
     prompt = build_step4_prompt(
         interactions, auto_triggers,
         {"S1": "测试场景"},
@@ -416,13 +416,15 @@ def test_build_step4_prompt_structure():
         "精修模组参考",
         ["手电筒", ".45自动手枪"],
         ["Clicker", "深潜者"],
+        ["侦察", "急救", "图书馆使用"],
     )
     assert "Clicker" in prompt
     assert "手电筒" in prompt
     assert ".45自动手枪" in prompt
+    assert "侦察" in prompt
+    assert "急救" in prompt
     assert "enemy_ref" in prompt
     assert "weapon_ref" in prompt
-    assert "effect_ref" in prompt
 
 
 def test_fallback_utility():
