@@ -264,7 +264,6 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 你的任务是：从精修模组文本中提取每个场景的全部互动选项，以及场景间的通行路径。
 
 重要原则：
-- enemy_ref 和 weapon_ref 留空（填 null），等待后续步骤匹配
 - requirement 是硬性前置条件：必须已完成的 interaction ID 或必须持有的物品。如 "interaction:I3 已完成"、"持有手电筒"。无条件则填空字符串
 - trigger 是触发场景描述：什么情况下玩家可以执行此互动。如 "玩家检查抽屉时"、"玩家进入此场景时"
 - result 是直接结果：互动直接产生的结果。如 "抽屉打开了，里面有一把钥匙"。如果此互动会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头，如 "##END_真结局:电车冲出梦境## 调查员们成功..."
@@ -296,8 +295,6 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
       "result": "直接结果（互动直接产生的结果），如：抽屉打开了，里面有一把钥匙",
       "side_effects": ["间接后果（与result不重合的附带影响），如：开抽屉的声响吸引了隔壁车厢的怪物。无条件则为空列表"],
       "graded_result": {{"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}},
-      "enemy_ref": null,
-      "weapon_ref": null,
       "difficulty": "regular",
       "based_on": null
     }}
@@ -318,19 +315,18 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 要求：
 1. id 全局唯一 (I1, I2, I3...)
 2. scene 使用场景中文名
-3. enemy_ref 和 weapon_ref 全部填 null（等后续步骤处理）
-4. requirement 是硬性前置条件：必须已完成的 interaction ID 或持有特定物品。无条件填空字符串。不要和 trigger 混淆
-5. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
-6. result 是直接结果：互动直接产生的可感知结果，不含间接影响。如果此互动会直接触发游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 "##END_真结局:电车冲出梦境##"），后续再写正常结果文本
-7. side_effects 是间接后果：与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
-8. type 是涉及的技能鉴定名，不涉及则为”无”
-9. difficulty 从以下选择：None/regular/hard/extreme；不涉及鉴定则为 None
-10. graded_result：type 不为”无”时填写。此时 result 必须填 “##GRADED##”（占位标记），side_effects 必须留空。所有结果文字写入 graded_result 的四等级中。四等级含义：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功、on_extreme=极难成功。若原文未区分等级结果，各等级可描述相同内容
-11. 提取原文中提到的所有互动，即使描述简略也要列出
-12. scene_movements 必须覆盖所有已知场景
-13. 通行路径的 target/source 使用场景中文名，method 描述通行方式，requirement 描述硬性通行前置条件
-14. 严格依据精修模组内容，基于场景氛围合理补充，不要和原文冲突
-15. based_on 始终填 null（派生关系由 Step 2b 标注）
+3. requirement 是硬性前置条件：必须已完成的 interaction ID 或持有特定物品。无条件填空字符串。不要和 trigger 混淆
+4. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
+5. result 是直接结果：互动直接产生的可感知结果，不含间接影响。如果此互动会直接触发游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 “##END_真结局:电车冲出梦境##”），后续再写正常结果文本
+6. side_effects 是间接后果：与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
+7. type 是涉及的技能鉴定名，不涉及则为”无”
+8. difficulty 从以下选择：None/regular/hard/extreme；不涉及鉴定则为 None
+9. graded_result：type 不为”无”时填写。此时 result 必须填 “##GRADED##”（占位标记），side_effects 必须留空。所有结果文字写入 graded_result 的四等级中。四等级含义：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功、on_extreme=极难成功。若原文未区分等级结果，各等级可描述相同内容
+10. 提取原文中提到的所有互动，即使描述简略也要列出
+11. scene_movements 必须覆盖所有已知场景
+12. 通行路径的 target/source 使用场景中文名，method 描述通行方式，requirement 描述硬性通行前置条件
+13. 严格依据精修模组内容，基于场景氛围合理补充，不要和原文冲突
+14. based_on 始终填 null（派生关系由 Step 2b 标注）
 精修模组：
 \"\"\"
 {chapters.get('scenes','')}
@@ -349,6 +345,8 @@ def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call) -> dict
 
 STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全局不可逆事件。
 你的任务是：从精修模组文本和已知互动中派生全局事件。事件是跨场景的、不可逆的世界级变化。
+
+术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
 
 重要原则：
 - 事件使用与 interaction 相同的统一字段模型
@@ -432,11 +430,12 @@ def parse_step2b_events(
 STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动触发事件。
 你的任务是：基于精修模组和已知互动，生成所有被动触发事件（auto_trigger）。
 
+术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
+
 重要原则：
 - auto_trigger 使用与 interaction 相同的统一字段模型
 - auto_trigger 绑定特定场景（scene 字段必填）
 - based_on 只能指向已知的 interaction ID
-- enemy_ref 和 weapon_ref 留空（填 null），等待 Step 4 library 匹配
 - requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
@@ -476,8 +475,6 @@ def build_step2b_at_prompt(
       "result": "直接结果（被动触发直接产生的结果）",
       "side_effects": ["间接后果（与result不重合的附带影响），无条件则为空列表"],
       "graded_result": {{"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}},
-      "enemy_ref": null,
-      "weapon_ref": null,
       "difficulty": "None/regular/hard/extreme",
       "based_on": "I1"
     }}
@@ -488,12 +485,11 @@ def build_step2b_at_prompt(
 1. id 全局唯一 (AT1, AT2, AT3...)
 2. scene 使用场景中文名
 3. based_on 只能指向已知的 interaction ID
-4. enemy_ref 和 weapon_ref 全部填 null
-5. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
-6. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
-7. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
-8. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
-9. 每个场景至少生成 0-2 个 auto_trigger
+4. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
+5. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
+6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
+7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
+8. 每个场景至少生成 0-2 个 auto_trigger
 
 精修模组：
 \"\"\"
@@ -515,16 +511,17 @@ def parse_step2b_at(
 #  Step 2c: L1 玩家可见层
 # ═══════════════════════════════════════════════════════════════
 
-STEP2C_L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
+STEP2C_L1_SYSTEM = “””你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
 你的任务是：从精修模组文本中提取每个场景的初始感知信息——玩家进入场景时无需任何检定即可直接感知的一切。
 
 重要原则：
 - 严格按照输出格式参考输出 json 文件
 - 只描述无条件可见的内容（外观、声音、气味、氛围）
 - 需要检定才能发现的信息 → 不放在这里（那是 L2 的事）
-- NPC 只描述外貌和神态，不写隐藏动机
-- 你是模组叙述者，你只负责描述玩家“现在”能见到/感受到的信息
-"""
+- NPC 只描述外貌和神态（name, brief, demeanor），不写隐藏动机、对话内容或互动逻辑
+- NPC 的互动由 L2 层通过 entity（interaction/auto_trigger/event）承载
+- 你是模组叙述者，你只负责描述玩家”现在”能见到/感受到的信息
+“””
 
 
 def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
@@ -680,9 +677,7 @@ def build_step3a_prompt(
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. **Based_on 去重**: - based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个entity和其based_on指向的entity
-    语义重复（name/result 高度相似），合并为一个。
-2. **Based_on 去重**:  合并时优先保留auto_trigger和interaction
+1. **Based_on 去重**: based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个 entity 和其 based_on 指向的 entity 语义重复（name/result 高度相似），合并为一个。合并时优先保留 auto_trigger 和 interaction（即优先合并 event）。
 2. **Graded_result 检查**: type != "无" 时建议填写 graded_result 但不强制；type == "无" 时删除空 graded_result。
 3. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
 4. **冲突解决**: requirement/trigger 矛盾以 condensed_text 为准修正。
@@ -867,11 +862,81 @@ def parse_step35(
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Phase 1: 风格预判
+# ═══════════════════════════════════════════════════════════════
+
+PHASE1_SYSTEM = """你是一个 TRPG 模组风格分析助手。
+你的任务是：根据模组精修文本，判断敌人和武器的风格方向和数量范围，用于后续约束生成。
+
+重要原则：
+- enemy_ref / weapon_ref 必须从提供的库列表中选择，不允许自创名称
+- 约束宽松，只需符合模组背景设定，允许随机性
+- 不做场景绑定——跑团中任何场景都可能出现
+- min_count 可为 0（表示可能不出现），max_count 为最多出现次数
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_phase1_prompt(
+    chapters: dict[str, str],
+    scene_intents: dict,
+    weapon_library_names: list[str],
+    enemy_library_names: list[str],
+) -> str:
+    weapons_list = "\n".join(f"- {w}" for w in weapon_library_names)
+    enemies_list = "\n".join(f"- {e}" for e in enemy_library_names)
+    return f"""根据模组背景确定敌人和武器的风格方向与数量范围。
+
+## 可用武器库
+{weapons_list}
+
+## 可用敌人库
+{enemies_list}
+
+## L3 Scene Intents（设计意图参考）
+{json.dumps(scene_intents, ensure_ascii=False, indent=2)}
+
+## 精修模组
+\"\"\"
+{chapters.get('enemies','')}
+
+{chapters.get('module_overview','')}
+\"\"\"
+
+输出格式:
+{{
+  "enemies": [
+    {{"enemy_ref": "敌人名", "min_count": 0, "max_count": 2}}
+  ],
+  "weapons": [
+    {{"weapon_ref": "武器名", "min_count": 1, "max_count": 1}}
+  ]
+}}
+
+要求：
+1. enemy_ref 和 weapon_ref 必须从可用库中选择，不允许自创
+2. 数量约束宽松，只需符合背景；若模组未提及敌人/武器，返回空列表
+3. 仅输出 JSON"""
+
+
+def parse_phase1(
+    chapters: dict[str, str],
+    scene_intents: dict,
+    weapon_library_names: list[str],
+    enemy_library_names: list[str],
+    llm_call,
+) -> dict:
+    prompt = build_phase1_prompt(chapters, scene_intents, weapon_library_names, enemy_library_names)
+    return llm_call(prompt, system=PHASE1_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Step 4: Library 匹配
 # ═══════════════════════════════════════════════════════════════
 
 STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
-你的任务是：根据模组内容和场景需求，统一做所有标准化处理：enemy_ref/weapon_ref 匹配、技能名/属性名标准化、side_effect 结构化。
+你的任务是：根据模组内容和场景需求，统一做所有标准化处理：技能名/属性名标准化、side_effect 结构化。
+
+术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
 
 重要原则：
 - 必须从提供的库列表中选择，不允许自创名称
@@ -898,12 +963,12 @@ def build_step4_prompt(
     skills_list = "\n".join(f"- {s}" for s in skill_names)
     stats_list = "\n".join(f"- {s}" for s in stat_names)
     desc_list = "\n".join(f"- {sid}: {desc}" for sid, desc in l2_descriptions.items())
-    return f"""标准化 enemy_ref/weapon_ref/type/stat_name，并结构化 side_effects。
+    return f"""标准化 type/stat_name，并结构化 side_effects。
 
-## 可用武器库
+## 可用武器库（供 side_effect 的 grant_item 匹配参考）
 {weapons_list}
 
-## 可用敌人库
+## 可用敌人库（供 side_effect 的 spawn_enemy 匹配参考）
 {enemies_list}
 
 ## 标准技能列表（type 必须从此列表中选择）
@@ -923,25 +988,24 @@ def build_step4_prompt(
 {"\n\n".join(chapters.values())}
 \"\"\"
 
-## Interactions (含空占位符和未结构化的 side_effects)
+## Interactions (含未结构化的 side_effects)
 {json.dumps(interactions, ensure_ascii=False, indent=2)}
 
-## Auto-triggers (含空占位符和未结构化的 side_effects)
+## Auto-triggers (含未结构化的 side_effects)
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. 为每个 enemy_ref 从可用敌人库中选择匹配项。无匹配填 "none"。event（无 scene 字段的实体）跳过。
-2. 为每个 weapon_ref 从可用武器库中选择匹配项。无匹配填 "none"。event（无 scene 字段的实体）跳过。
-3. 为每个 type 从标准技能列表中选择最匹配的技能名。不涉及检定的 type 保持"无"。
-4. **Side_effect 结构化**: 将 side_effects 从自然语言字符串解析为结构化对象:
+1. 为每个 type 从标准技能列表中选择最匹配的技能名。不涉及检定的 type 保持"无"。
+2. **Side_effect 结构化**: 将 side_effects 从自然语言字符串解析为结构化对象:
    - item_gain: {{"type": "item_gain", "item_name": "物品名"}}
    - stat_change: {{"type": "stat_change", "stat_name": "属性名", "delta": -1, "narrative": "角色经历（可选）"}}
-   - spawn_enemy: {{"type": "spawn_enemy", "enemy_ref": "敌人名", "scene": "场景ID", "trigger_condition": "...", "quantity": 1}}
-   - grant_item: {{"type": "grant_item", "item_ref": "武器/物品名", "scene": "场景ID"}}
+   - spawn_enemy: {{"type": "spawn_enemy", "enemy_ref": "敌人名", "scene": "场景中文名", "trigger_condition": "...", "quantity": 1}}
+   - grant_item: {{"type": "grant_item", "item_ref": "武器/物品名", "scene": "场景中文名"}}
    - npc_state_change: {{"type": "npc_state_change", "npc_name": "NPC名", "new_state": "新状态"}}
    无法归入以上类型的保留字符串。
-5. stat_change 的 stat_name 必须从标准属性列表中选择。narrative 字段可选，描述角色 fiction 层面的经历。
-6. 不允许自创名称。
+   spawn_enemy.enemy_ref 和 grant_item.item_ref 必须从可用库中选择，无匹配填 "none"。
+3. stat_change 的 stat_name 必须从标准属性列表中选择。narrative 字段可选，描述角色 fiction 层面的经历。
+4. 不允许自创名称。
 
 输出格式:
 {{
