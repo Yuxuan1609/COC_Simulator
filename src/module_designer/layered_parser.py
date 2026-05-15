@@ -95,6 +95,16 @@ def _parse_condensed_chapters(markdown_text: str) -> dict[str, str]:
     return chapters
 
 
+def _slim_entity(entity: dict) -> dict:
+    """从 entity dict 中提取 Phase 2 需要的 5-6 个字段（graded_result 可选）."""
+    slimmed = {k: entity.get(k, "") for k in ("name", "scene", "type")}
+    slimmed["result"] = entity.get("result", "")
+    if entity.get("graded_result"):
+        slimmed["graded_result"] = entity["graded_result"]
+    slimmed["side_effects"] = entity.get("side_effects", [])
+    return slimmed
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Fallback wrapper
 # ═══════════════════════════════════════════════════════════════
@@ -934,20 +944,22 @@ def parse_phase1(
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Step 4: Library 匹配
+#  Phase 2: 精简标准化（替代原 Step 4）
 # ═══════════════════════════════════════════════════════════════
 
 STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
-你的任务是：根据模组内容和场景需求，统一做所有标准化处理：技能名/属性名标准化、side_effect 结构化。
+你的任务是：将 entity 中的 type 标准化为技能名，并将 side_effects / result / graded_result 中的自然语言转化为 @函数(参数) 标记。
 
-术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
+术语：interaction、auto_trigger 统称为 entity（实体）。
 
 重要原则：
-- 必须从提供的库列表中选择，不允许自创名称
-- 若无合适的库条目，填 "none"
-- 技能名必须从标准技能列表中选择
-- 属性名必须从标准属性列表中选择
-- side_effect 从自然语言解析为结构化对象
+- type 必须从标准技能列表中选择，不涉及检定保持"无"
+- side_effects / result / graded_result 中的关键信息用 @函数(参数=值) 标记替代自然语言描述
+- @标记可嵌入任何文本字段中，与普通文本混合
+- spawn_enemy 和 grant_weapon 的 enemy_ref/weapon_ref 必须来自 Phase 1 约束列表，且总调用次数不超过对应 max_count
+- stat_change 的 stat_name 必须来自标准属性列表
+- @item_gain 用于纯文本物品，不做库匹配
+- 无法归入 @函数的自然语言保留原样
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -957,23 +969,26 @@ def build_step4_prompt(
     l2_descriptions: dict[str, str],
     scene_intents: dict,
     chapters: dict[str, str],
-    weapon_library_names: list[str],
-    enemy_library_names: list[str],
+    phase1_constraints: dict,
     skill_names: list[str],
     stat_names: list[str],
 ) -> str:
-    weapons_list = "\n".join(f"- {w}" for w in weapon_library_names)
-    enemies_list = "\n".join(f"- {e}" for e in enemy_library_names)
     skills_list = "\n".join(f"- {s}" for s in skill_names)
     stats_list = "\n".join(f"- {s}" for s in stat_names)
-    desc_list = "\n".join(f"- {sid}: {desc}" for sid, desc in l2_descriptions.items())
-    return f"""标准化 type/stat_name，并结构化 side_effects。
+    desc_list = "\n".join(f"- {name}: {desc}" for name, desc in l2_descriptions.items())
 
-## 可用武器库（供 side_effect 的 grant_item 匹配参考）
-{weapons_list}
+    # Slim entities to 6 fields only
+    slim_interactions = json.dumps(
+        [_slim_entity(i) for i in interactions], ensure_ascii=False, indent=2
+    )
+    slim_at = json.dumps(
+        [_slim_entity(a) for a in auto_triggers], ensure_ascii=False, indent=2
+    )
 
-## 可用敌人库（供 side_effect 的 spawn_enemy 匹配参考）
-{enemies_list}
+    return f"""标准化 type，将 side_effects/result/graded_result 转为 @函数(参数) 标记。
+
+## Phase 1 约束（spawn_enemy / grant_weapon 必须在约束范围内）
+{json.dumps(phase1_constraints, ensure_ascii=False, indent=2)}
 
 ## 标准技能列表（type 必须从此列表中选择）
 {skills_list}
@@ -981,7 +996,7 @@ def build_step4_prompt(
 ## 标准属性列表（stat_change 的 stat_name 必须从此列表中选择）
 {stats_list}
 
-## 场景描述
+## 场景描述（参考上下文）
 {desc_list}
 
 ## L3 Scene Intents
@@ -992,29 +1007,33 @@ def build_step4_prompt(
 {"\n\n".join(chapters.values())}
 \"\"\"
 
-## Interactions (含未结构化的 side_effects)
-{json.dumps(interactions, ensure_ascii=False, indent=2)}
+## Interactions (仅含需标准化的字段，side_effects 待结构化)
+{slim_interactions}
 
-## Auto-triggers (含未结构化的 side_effects)
-{json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
+## Auto-triggers (仅含需标准化的字段，side_effects 待结构化)
+{slim_at}
 
 任务:
-1. 为每个 type 从标准技能列表中选择最匹配的技能名。不涉及检定的 type 保持"无"。
-2. **Side_effect 结构化**: 将 side_effects 从自然语言字符串解析为结构化对象:
-   - item_gain: {{"type": "item_gain", "item_name": "物品名"}}
-   - stat_change: {{"type": "stat_change", "stat_name": "属性名", "delta": -1, "narrative": "角色经历（可选）"}}
-   - spawn_enemy: {{"type": "spawn_enemy", "enemy_ref": "敌人名", "scene": "场景中文名", "trigger_condition": "...", "quantity": 1}}
-   - grant_item: {{"type": "grant_item", "item_ref": "武器/物品名", "scene": "场景中文名"}}
-   - npc_state_change: {{"type": "npc_state_change", "npc_name": "NPC名", "new_state": "新状态"}}
-   无法归入以上类型的保留字符串。
-   spawn_enemy.enemy_ref 和 grant_item.item_ref 必须从可用库中选择，无匹配填 "none"。
-3. stat_change 的 stat_name 必须从标准属性列表中选择。narrative 字段可选，描述角色 fiction 层面的经历。
-4. 不允许自创名称。
+1. **type 标准化**: 从标准技能列表中选择最匹配的技能名。不涉及检定的保持"无"。
+2. **@标记转化**: 将 side_effects / result / graded_result 中的自然语言转化为 @函数(参数=值) 标记:
+
+   @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=1)
+   @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=1)
+   @stat_change(stat_name="属性名", delta=-1, narrative="角色经历（可选）")
+   @item_gain(item_name="物品名")
+   @npc_state_change(npc_name="NPC名", new_state="新状态")
+
+   无法归入以上类型的保留原自然语言。
+
+3. **数量约束**: spawn_enemy / grant_weapon 的总调用次数不得超过 Phase 1 约束中对应条目的 max_count。
+4. **结果嵌入**: @标记可嵌入 result / graded_result 各等级 / side_effects 等任何字段。graded_result 各等级为独立字符串，可独立含 @标记。
+5. 不允许自创 enemy_ref / weapon_ref / stat_name。
+6. type 为"无"的 entity 若无实质 side_effects 则保持原样。
 
 输出格式:
 {{
-  "interactions": [{{ ...原字段..., "type": "标准技能名", "side_effects": [结构化对象或字符串] }}],
-  "auto_triggers": [{{ ...原字段..., "type": "标准技能名", "side_effects": [结构化对象或字符串] }}]
+  "interactions": [{{ ...entity 字段..., "type": "标准技能名" }}],
+  "auto_triggers": [{{ ...entity 字段..., "type": "标准技能名" }}]
 }}
 
 仅输出 JSON。"""
@@ -1026,8 +1045,7 @@ def parse_step4(
     l2_descriptions: dict[str, str],
     scene_intents: dict,
     chapters: dict[str, str],
-    weapon_library_names: list[str],
-    enemy_library_names: list[str],
+    phase1_constraints: dict,
     skill_names: list[str],
     stat_names: list[str],
     llm_call,
@@ -1035,6 +1053,6 @@ def parse_step4(
     prompt = build_step4_prompt(
         interactions, auto_triggers, l2_descriptions,
         scene_intents, chapters,
-        weapon_library_names, enemy_library_names, skill_names, stat_names,
+        phase1_constraints, skill_names, stat_names,
     )
     return llm_call(prompt, system=STEP4_SYSTEM)
