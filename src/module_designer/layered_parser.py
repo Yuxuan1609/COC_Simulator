@@ -602,12 +602,14 @@ def parse_step2c_l3(condensed_text: str, scenes: list[dict], characters: list[di
 # ═══════════════════════════════════════════════════════════════
 
 STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息的依赖解析和统一。
-你的任务是：检查所有 interaction/event/auto_trigger，统一 flag 名称，补全 requirement 引用。
+你的任务是：检查所有 interaction/event/auto_trigger，解析 side_effects，利用 based_on 整理依赖关系，补全 requirement 引用，解决冲突。
 
 重要原则：
-- 语义相同的 flag 合并为一个名称（如 flag:has_key 和 flag:found_key → 统一为一个）
-- requirement 从自然语言声明补全为具体引用（指向 interaction ID / event ID / flag 名）
+- based_on 已标注派生关系（event/auto_trigger 的 based_on 指向派生的 interaction）
+- requirement 从自然语言声明补全为具体引用（指向 interaction ID 或 event ID）
+- 如果 event 和 auto_trigger 的 requirement/trigger 出现冲突，以 condensed_text 为准修正
 - 不删改任何内容的实质信息，只修正名称和引用
+- 互动完成即代表状态变更，不需要单独的 flag/标记
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -617,7 +619,7 @@ def build_step3a_prompt(
     events: list[dict],
     auto_triggers: list[dict],
 ) -> str:
-    return f"""对以下模组中的所有 L2 内容做依赖解析和 flag 统一。
+    return f"""对以下模组中的所有 L2 内容做依赖解析、side_effect 结构化和冲突解决。
 
 ## 精修模组（参考上下文）
 \"\"\"
@@ -627,28 +629,31 @@ def build_step3a_prompt(
 ## Interactions
 {json.dumps(interactions, ensure_ascii=False, indent=2)}
 
-## Events
+## Events（based_on 指向派生的 interaction，无 scene）
 {json.dumps(events, ensure_ascii=False, indent=2)}
 
-## Auto-triggers
+## Auto-triggers（based_on 指向派生的 interaction，有 scene）
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. **Flag 统一**: 语义相同的 flag 合并为一个。例如 flag:has_key 和 flag:found_key 指同一件事 → 统一为 flag:found_key，所有引用处同步更新。
-2. **Interaction requirement 补全**: 将自然语言声明转为引用已知实体（如 "需要先找到钥匙" → "flag:found_key AND interaction:I3"）。
-3. **Event requirement 补全**: 同上。
-4. **Auto-trigger condition 补全**: 同上。
-5. **Interaction ↔ Event 依赖**: 互动需要事件已/未触发。
-6. **Interaction ↔ Interaction 依赖**: 同一场景内互动执行顺序关系。
-7. **Event ↔ Event 依赖**: 事件链顺序。
-8. **Interaction ↔ Auto-trigger 依赖**: 被动触发对互动的引用。
+1. **Side_effect 结构化**: 将 interaction/event/auto_trigger 的 side_effects 从自然语言字符串列表解析为结构化对象列表。类型包括：
+   - item_gain: {{"type": "item_gain", "item_name": "物品名"}}
+   - stat_change: {{"type": "stat_change", "stat_name": "SAN/HP/...", "delta": -1}}
+   - spawn_enemy: {{"type": "spawn_enemy", "enemy_ref": "敌人名", "scene": "场景ID", "trigger_condition": "触发条件", "quantity": 1}}
+   - grant_item: {{"type": "grant_item", "item_ref": "武器/物品名", "scene": "场景ID"}}
+   - npc_state_change: {{"type": "npc_state_change", "npc_name": "NPC名", "new_state": "新状态"}}
+   无法归入以上类型的非结构性副作用直接保留字符串。
+2. **基于 based_on 验证依赖**: 检查每条 event/auto_trigger 的 based_on 是否正确指向存在的 interaction。若 based_on 指向不存在的 ID，修正或清空。
+3. **Interaction requirement 补全**: 将自然语言声明转为引用已知 interaction ID（如 "需要先找到钥匙" → "interaction:I3"）。
+4. **Event requirement 补全**: 同上，可引用 interaction ID 或 event ID。
+5. **Auto-trigger trigger 补全**: 同上。
+6. **冲突解决**: 如果 event 和 auto_trigger 的 requirement/trigger 出现矛盾，以 condensed_text 为准修正。
 
 输出格式:
 {{
-  "interactions": [{{ ...原字段..., "requirement": "补全后的引用" }}],
-  "events": [{{ ...原字段..., "requirement": "补全后的引用" }}],
-  "auto_triggers": [{{ ...原字段..., "trigger_condition": "补全后的引用" }}],
-  "flag_mapping": {{"has_key": "found_key"}}
+  "interactions": [{{ ...原字段..., "requirement": "补全后的引用", "side_effects": [结构化对象或字符串] }}],
+  "events": [{{ ...原字段..., "requirement": "补全后的引用", "side_effects": [结构化对象或字符串] }}],
+  "auto_triggers": [{{ ...原字段..., "trigger": "补全后的引用", "side_effects": [结构化对象或字符串] }}]
 }}
 
 仅输出 JSON。"""
