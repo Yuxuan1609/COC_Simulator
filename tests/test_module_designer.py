@@ -356,25 +356,31 @@ def test_build_step2b_at_prompt_structure():
     assert "精修模组内容" in prompt
     assert "auto_triggers" in prompt
     assert "AT1" in prompt
-    assert "reveal_info" in prompt
-    assert "effect_ref" in prompt
+    assert "requirement" in prompt
+    assert "side_effects" in prompt
+    assert "based_on" in prompt
+    assert "enemy_ref" in prompt
 
 
 def test_build_step2c_l1_prompt_structure():
     scenes = [{"id": "S1", "name": "6号车厢"}]
-    prompt = build_step2c_l1_prompt("精修模组内容", scenes)
+    characters = [{"id": "NPC_1", "name": "京山人吉"}]
+    prompt = build_step2c_l1_prompt("精修模组内容", scenes, characters)
     assert "精修模组内容" in prompt
     assert "感知" in prompt or "perceptible" in prompt
     assert "6号车厢" in prompt
+    assert "NPC_1" in prompt
 
 
 def test_build_step2c_l3_prompt_structure():
     scenes = [{"id": "S1", "name": "6号车厢"}]
-    prompt = build_step2c_l3_prompt("精修模组内容", scenes)
+    characters = [{"id": "NPC_1", "name": "京山人吉"}]
+    prompt = build_step2c_l3_prompt("精修模组内容", scenes, characters)
     assert "精修模组内容" in prompt
     assert "world_rules" in prompt
     assert "driving_force" in prompt
     assert "scene_intents" in prompt
+    assert "characters" in prompt
 
 
 def test_build_step3a_prompt_structure():

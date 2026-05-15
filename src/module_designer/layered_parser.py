@@ -405,12 +405,14 @@ def parse_step2b_events(
 # ═══════════════════════════════════════════════════════════════
 
 STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动触发事件。
-你的任务是：基于精修模组和已知互动，生成所有被动触发事件。
+你的任务是：基于精修模组和已知互动，生成所有被动触发事件（auto_trigger）。
 
 重要原则：
-- auto_trigger 是系统被动检测条件后自动揭示的信息或触发的事件
-- effect_ref 留空（填 null），等待 Step 4 library 匹配
-- 只生成自动触发的事件，不要生成需要玩家主动触发的事件
+- auto_trigger 使用与 interaction 相同的统一字段模型（id, scene, type, name, requirement, trigger, result, side_effects, enemy_ref, weapon_ref, difficulty, based_on）
+- auto_trigger 绑定特定场景（scene 字段必填）
+- based_on 只能指向已知的 interaction ID（因为 Step 2b 并行，不能指向其他 auto_trigger 或 event）
+- enemy_ref 和 weapon_ref 留空（填 null），等待 Step 4 library 匹配
+- 只生成被动触发的事件，不要生成玩家主动互动
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -429,7 +431,7 @@ def build_step2b_at_prompt(
 已知场景:
 {scene_list}
 
-已知互动（id + 描述 + 结果，互动完成即代表状态变更）:
+已知互动（auto_trigger 只能基于这些互动派生，based_on 必须指向其 ID）:
 {interaction_list}
 
 输出格式:
@@ -437,12 +439,17 @@ def build_step2b_at_prompt(
   "auto_triggers": [
     {{
       "id": "AT1",
-      "name": "自动触发名称",
       "scene": "S1",
-      "trigger_condition": "触发条件（自然语言，如：玩家进入场景且 I1 已完成）",
-      "effect_type": "reveal_info",
-      "effect_ref": null,
-      "reveal_narrative": "揭示时的叙事文本"
+      "type": "关联技能名，不涉及填\"无\"",
+      "name": "自动触发名称",
+      "requirement": "前置条件声明（自然语言，可引用 interaction ID）",
+      "trigger": "触发条件（自然语言，如：玩家进入场景且 I1 已完成）",
+      "result": "触发后的结果描述",
+      "side_effects": ["自然语言描述的副作用"],
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None/regular/hard/extreme",
+      "based_on": "I1"
     }}
   ]
 }}
@@ -450,10 +457,12 @@ def build_step2b_at_prompt(
 要求：
 1. id 全局唯一 (AT1, AT2, AT3...)
 2. scene 使用给定列表中的 ID
-3. effect_type 从以下选择：reveal_info / spawn_enemy / grant_weapon / npc_state_change
-4. effect_ref 全部填 null（等 Step 4 匹配 library）
-5. trigger_condition 用自然语言描述，可引用已知的 interaction ID (如 I1) 或 event ID (如 E1)
-6. 每个场景至少生成 0-2 个 auto_trigger
+3. based_on 只能指向已知的 interaction ID (如 I1)，标注此 auto_trigger 从哪个互动派生
+4. enemy_ref 和 weapon_ref 全部填 null（等 Step 4 匹配 library）
+5. trigger 用自然语言描述触发条件，可引用已知的 interaction ID (如 I1)
+6. type 选择关联的技能检定名称，不涉及填"无"
+7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
+8. 每个场景至少生成 0-2 个 auto_trigger
 
 精修模组：
 \"\"\"
