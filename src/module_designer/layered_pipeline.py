@@ -310,11 +310,12 @@ def run_pipeline(
         max_retries, verbose, "Step 2a",
     )
     interactions = step2a.get("interactions", [])
+    scene_movements = step2a.get("scene_movements", {})
     if step2a.get("_fallback"):
         result.fallbacks.append("Step 2a")
 
     if verbose:
-        print(f"  Step 2a 完成: {len(interactions)} interactions")
+        print(f"  Step 2a 完成: {len(interactions)} interactions, {len(scene_movements)} 场景通行路径")
 
     # ── Step 2b + 2c ─────────────────────────────────────────
     if verbose:
@@ -325,9 +326,9 @@ def run_pipeline(
     def _do_at():
         return parse_step2b_at(condensed_text, scenes, interactions, llm_json)
     def _do_l1():
-        return parse_step2c_l1(condensed_text, scenes, llm_json)
+        return parse_step2c_l1(condensed_text, scenes, characters, llm_json)
     def _do_l3():
-        return parse_step2c_l3(condensed_text, scenes, llm_json)
+        return parse_step2c_l3(condensed_text, scenes, characters, llm_json)
 
     with ThreadPoolExecutor(max_workers=4) as ex:
         f_ev = ex.submit(lambda: _with_fallback(
@@ -434,14 +435,25 @@ def run_pipeline(
     except Exception:
         pass
 
+    # 加载标准技能名列表
+    skill_names = []
+    try:
+        import os as _os
+        skill_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "skill_checks.json")
+        with open(skill_path, "r", encoding="utf-8") as _f:
+            skill_checks = json.load(_f)
+            skill_names = sorted(set(s["name"] for s in skill_checks))
+    except Exception:
+        pass
+
     scene_intents_for_step4 = l3_data.get("scene_intents", {})
 
-    if weapon_names or enemy_names:
+    if weapon_names or enemy_names or skill_names:
         def _do_step4():
             return parse_step4(
                 interactions, auto_triggers, l2_descriptions,
                 scene_intents_for_step4, condensed_text,
-                weapon_names, enemy_names, llm_json,
+                weapon_names, enemy_names, skill_names, llm_json,
             )
         step4 = _with_fallback(
             _do_step4, ["interactions"],
@@ -471,6 +483,7 @@ def run_pipeline(
         scenes_by_sid.setdefault(sid, {
             "interactions": [], "encounters": [],
             "scene_weapons": [], "auto_triggers": [],
+            "from_here": [], "to_here": [],
         })
         scenes_by_sid[sid]["interactions"].append(inter)
     for at in auto_triggers:
@@ -478,8 +491,17 @@ def run_pipeline(
         scenes_by_sid.setdefault(sid, {
             "interactions": [], "encounters": [],
             "scene_weapons": [], "auto_triggers": [],
+            "from_here": [], "to_here": [],
         })
         scenes_by_sid[sid]["auto_triggers"].append(at)
+    for sid, movement in scene_movements.items():
+        scenes_by_sid.setdefault(sid, {
+            "interactions": [], "encounters": [],
+            "scene_weapons": [], "auto_triggers": [],
+            "from_here": [], "to_here": [],
+        })
+        scenes_by_sid[sid]["from_here"] = movement.get("from_here", [])
+        scenes_by_sid[sid]["to_here"] = movement.get("to_here", [])
 
     l2_for_validation = {
         "scenes": scenes_by_sid,
@@ -499,6 +521,7 @@ def run_pipeline(
         "interactions": interactions,
         "events": events,
         "auto_triggers": auto_triggers,
+        "scene_movements": scene_movements,
     }
 
     if verbose:
@@ -520,6 +543,7 @@ def save_pipeline_result(result: PipelineResult, module_dir: str) -> None:
     # L2 — 按 scene ID 分组
     interactions = result.l2_data.get("interactions", [])
     auto_triggers = result.l2_data.get("auto_triggers", [])
+    scene_movements = result.l2_data.get("scene_movements", {})
 
     scenes_by_id: dict[str, dict] = {}
     for inter in interactions:
@@ -527,6 +551,7 @@ def save_pipeline_result(result: PipelineResult, module_dir: str) -> None:
         scenes_by_id.setdefault(sid, {
             "interactions": [], "encounters": [],
             "scene_weapons": [], "auto_triggers": [],
+            "from_here": [], "to_here": [],
         })
         scenes_by_id[sid]["interactions"].append(inter)
     for at in auto_triggers:
@@ -534,8 +559,17 @@ def save_pipeline_result(result: PipelineResult, module_dir: str) -> None:
         scenes_by_id.setdefault(sid, {
             "interactions": [], "encounters": [],
             "scene_weapons": [], "auto_triggers": [],
+            "from_here": [], "to_here": [],
         })
         scenes_by_id[sid]["auto_triggers"].append(at)
+    for sid, movement in scene_movements.items():
+        scenes_by_id.setdefault(sid, {
+            "interactions": [], "encounters": [],
+            "scene_weapons": [], "auto_triggers": [],
+            "from_here": [], "to_here": [],
+        })
+        scenes_by_id[sid]["from_here"] = movement.get("from_here", [])
+        scenes_by_id[sid]["to_here"] = movement.get("to_here", [])
 
     l2_out = {
         "scenes": scenes_by_id,
