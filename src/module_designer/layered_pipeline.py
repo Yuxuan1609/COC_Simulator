@@ -194,6 +194,39 @@ def cross_validate_layers(
     return report
 
 
+def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data) -> dict:
+    """将 Step 3a 后的实体按场景分组组装为 L2 结构."""
+    scenes: dict[str, dict] = {}
+    for inter in interactions:
+        sname = inter.get("scene", "")
+        if sname:
+            scenes.setdefault(sname, {"interactions": [], "auto_triggers": [],
+                                       "encounters": [], "scene_weapons": [],
+                                       "from_here": [], "to_here": [], "extra": {}})
+            scenes[sname]["interactions"].append(inter)
+    for at in auto_triggers:
+        sname = at.get("scene", "")
+        if sname:
+            scenes.setdefault(sname, {"interactions": [], "auto_triggers": [],
+                                       "encounters": [], "scene_weapons": [],
+                                       "from_here": [], "to_here": [], "extra": {}})
+            scenes[sname]["auto_triggers"].append(at)
+    for sname, movement in scene_movements.items():
+        scenes.setdefault(sname, {"interactions": [], "auto_triggers": [],
+                                   "encounters": [], "scene_weapons": [],
+                                   "from_here": [], "to_here": [], "extra": {}})
+        scenes[sname]["from_here"] = movement.get("from_here", [])
+        scenes[sname]["to_here"] = movement.get("to_here", [])
+    for sname in scenes:
+        l1_scene = l1_data.get(sname, {})
+        scenes[sname]["description"] = l1_scene.get("entry_narrative", "") or l1_scene.get("atmosphere", "")
+    return {
+        "scenes": scenes,
+        "events": events,
+        "npc_profiles": {},
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 #  管线
 # ═══════════════════════════════════════════════════════════════
@@ -408,18 +441,26 @@ def run_pipeline(
     if verbose:
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
 
+    # ── 组装 L2 结构 ──
+    l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data)
+    result.l2_data = l2_assembled
+
+    # Extract flat lists from assembled L2 for Step 3.5/4
+    step35_interactions = []
+    step35_at = []
+    for sdata in l2_assembled.get("scenes", {}).values():
+        step35_interactions.extend(sdata.get("interactions", []))
+        step35_at.extend(sdata.get("auto_triggers", []))
+    step35_events = l2_assembled.get("events", [])
+
     # ── Step 3b ──────────────────────────────────────────────
     if verbose:
         print("[Step 3b] L1 ↔ L2 交叉核对...")
 
-    l2_completed = {
-        "interactions": interactions,
-        "events": events,
-        "auto_triggers": auto_triggers,
-    }
+    l2_assembled_for_llm = l2_assembled
 
     def _do_step3b():
-        return parse_step3b(chapters, l1_data, l2_completed, l3_data, scenes, llm_json)
+        return parse_step3b(chapters, l1_data, l2_assembled, l3_data, scenes, llm_json)
     step3b = _with_fallback(
         _do_step3b, ["l1_data"],
         {"l1_data": l1_data, "l3_data": l3_data},
@@ -489,7 +530,7 @@ def run_pipeline(
         """Step 3.5: LLM 解析 → 有向图 → 循环检测."""
         max_tries = 3
         for attempt in range(1, max_tries + 1):
-            step35_result = parse_step35(chapters, interactions, events, auto_triggers, llm_json)
+            step35_result = parse_step35(chapters, step35_interactions, step35_events, step35_at, llm_json)
             deps = step35_result.get("dependencies", [])
             if not deps:
                 if attempt < max_tries:
@@ -520,7 +561,7 @@ def run_pipeline(
 
     def _do_step4():
         return parse_step4(
-            interactions, auto_triggers, l2_descriptions,
+            step35_interactions, step35_at, l2_descriptions,
             scene_intents_for_step4, chapters,
             weapon_names, enemy_names, skill_names, stat_names, llm_json,
         )
@@ -529,14 +570,14 @@ def run_pipeline(
         f35 = ex.submit(_do_step35)
         f4 = ex.submit(lambda: _with_fallback(
             _do_step4, ["interactions"],
-            {"interactions": interactions, "auto_triggers": auto_triggers},
+            {"interactions": step35_interactions, "auto_triggers": step35_at},
             max_retries, verbose, "Step 4",
         ))
         step35_result = f35.result()
         step4 = f4.result()
 
-    interactions = step4.get("interactions", interactions)
-    auto_triggers = step4.get("auto_triggers", auto_triggers)
+    interactions = step4.get("interactions", step35_interactions)
+    auto_triggers = step4.get("auto_triggers", step35_at)
     if step4.get("_fallback"):
         result.fallbacks.append("Step 4")
 
@@ -551,53 +592,16 @@ def run_pipeline(
         print("═" * 50)
         print("[Final] Schema 验证 + 交叉引用检查...")
 
-    # 按 scene ID 分组构建 L2 for validation
-    scenes_by_sid: dict[str, dict] = {}
-    for inter in interactions:
-        sid = inter.get("scene", "unknown")
-        scenes_by_sid.setdefault(sid, {
-            "interactions": [], "encounters": [],
-            "scene_weapons": [], "auto_triggers": [],
-            "from_here": [], "to_here": [],
-        })
-        scenes_by_sid[sid]["interactions"].append(inter)
-    for at in auto_triggers:
-        sid = at.get("scene", "unknown")
-        scenes_by_sid.setdefault(sid, {
-            "interactions": [], "encounters": [],
-            "scene_weapons": [], "auto_triggers": [],
-            "from_here": [], "to_here": [],
-        })
-        scenes_by_sid[sid]["auto_triggers"].append(at)
-    for sid, movement in scene_movements.items():
-        scenes_by_sid.setdefault(sid, {
-            "interactions": [], "encounters": [],
-            "scene_weapons": [], "auto_triggers": [],
-            "from_here": [], "to_here": [],
-        })
-        scenes_by_sid[sid]["from_here"] = movement.get("from_here", [])
-        scenes_by_sid[sid]["to_here"] = movement.get("to_here", [])
-
-    l2_for_validation = {
-        "scenes": scenes_by_sid,
-        "events": events,
-        "npc_profiles": {},
-    }
-    result.schema_reports = validate_all(l1_data, l2_for_validation, l3_data)
+    result.schema_reports = validate_all(l1_data, l2_assembled, l3_data)
 
     result.cross_ref_report = cross_validate_layers(
-        l1_data, l2_for_validation, l3_data,
+        l1_data, l2_assembled, l3_data,
         weapon_lib=weapon_lib, enemy_lib=enemy_lib,
     )
 
     result.l1_data = l1_data
     result.l3_data = l3_data
-    result.l2_data = {
-        "interactions": interactions,
-        "events": events,
-        "auto_triggers": auto_triggers,
-        "scene_movements": scene_movements,
-    }
+    result.l2_data = l2_assembled
 
     if verbose:
         print(result.summary())
@@ -615,46 +619,10 @@ def save_pipeline_result(result: PipelineResult, module_dir: str) -> None:
         json.dump(result.l1_data, f, ensure_ascii=False, indent=2)
     print(f"  L1 → {path}")
 
-    # L2 — 按 scene ID 分组
-    interactions = result.l2_data.get("interactions", [])
-    auto_triggers = result.l2_data.get("auto_triggers", [])
-    scene_movements = result.l2_data.get("scene_movements", {})
-
-    scenes_by_id: dict[str, dict] = {}
-    for inter in interactions:
-        sid = inter.get("scene", "unknown")
-        scenes_by_id.setdefault(sid, {
-            "interactions": [], "encounters": [],
-            "scene_weapons": [], "auto_triggers": [],
-            "from_here": [], "to_here": [],
-        })
-        scenes_by_id[sid]["interactions"].append(inter)
-    for at in auto_triggers:
-        sid = at.get("scene", "unknown")
-        scenes_by_id.setdefault(sid, {
-            "interactions": [], "encounters": [],
-            "scene_weapons": [], "auto_triggers": [],
-            "from_here": [], "to_here": [],
-        })
-        scenes_by_id[sid]["auto_triggers"].append(at)
-    for sid, movement in scene_movements.items():
-        scenes_by_id.setdefault(sid, {
-            "interactions": [], "encounters": [],
-            "scene_weapons": [], "auto_triggers": [],
-            "from_here": [], "to_here": [],
-        })
-        scenes_by_id[sid]["from_here"] = movement.get("from_here", [])
-        scenes_by_id[sid]["to_here"] = movement.get("to_here", [])
-
-    l2_out = {
-        "scenes": scenes_by_id,
-        "events": result.l2_data.get("events", []),
-        "npc_profiles": result.l2_data.get("npc_profiles", {}),
-    }
-
+    # L2 — already assembled
     path = os.path.join(module_dir, "l2_keeper.json")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(l2_out, f, ensure_ascii=False, indent=2)
+        json.dump(result.l2_data, f, ensure_ascii=False, indent=2)
     print(f"  L2 → {path}")
 
     # L3
