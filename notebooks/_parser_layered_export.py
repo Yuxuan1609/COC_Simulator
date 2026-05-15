@@ -179,6 +179,8 @@ step1b = {"condensed_text": step1b_raw} if isinstance(step1b_raw, str) else step
 scenes = step1a.get("scenes", [])
 characters = step1a.get("characters", [])
 condensed_text = step1b.get("condensed_text", "")
+from module_designer.layered_parser import _parse_condensed_chapters
+chapters = _parse_condensed_chapters(condensed_text) if condensed_text else {}
 
 # 保存 Step 1 汇总
 with open(f"{DEBUG_ROOT}/step_1/_summary.json", "w", encoding="utf-8") as f:
@@ -221,7 +223,7 @@ print("..." if len(condensed_text) > 600 else "")
 # 输出: interactions 列表（含 ID + flag 名称 + 空 enemy_ref/weapon_ref）
 step2a = do_json_call(
     "step_2", "2a_interactions",
-    build_step2a_prompt, condensed_text, scenes,
+    build_step2a_prompt, chapters, scenes,
     system_prompt=STEP2A_SYSTEM
 )
 interactions = step2a.get("interactions", [])
@@ -244,22 +246,22 @@ if len(interactions) > 5:
 with ThreadPoolExecutor(max_workers=4) as ex:
     f_ev = ex.submit(do_json_call,
         "step_2", "2b_events",
-        build_step2b_events_prompt, condensed_text, scenes, interactions,
+        build_step2b_events_prompt, chapters, scenes, interactions,
         system_prompt=STEP2B_EVENTS_SYSTEM
     )
     f_at = ex.submit(do_json_call,
         "step_2", "2b_auto_triggers",
-        build_step2b_at_prompt, condensed_text, scenes, interactions,
+        build_step2b_at_prompt, chapters, scenes, interactions,
         system_prompt=STEP2B_AT_SYSTEM
     )
     f_l1 = ex.submit(do_json_call,
         "step_2", "2c_l1",
-        build_step2c_l1_prompt, condensed_text, scenes, characters,
+        build_step2c_l1_prompt, chapters, scenes, characters,
         system_prompt=STEP2C_L1_SYSTEM
     )
     f_l3 = ex.submit(do_json_call,
         "step_2", "2c_l3",
-        build_step2c_l3_prompt, condensed_text, scenes, characters,
+        build_step2c_l3_prompt, chapters, scenes, characters,
         system_prompt=STEP2C_L3_SYSTEM
     )
     events_data = f_ev.result()
