@@ -945,8 +945,8 @@ def build_step4_prompt(
 
 输出格式:
 {{
-  "interactions": [{{ ...原字段..., "enemy_ref": "...", "weapon_ref": "...", "type": "标准技能名", "side_effects": [结构化对象或字符串] }}],
-  "auto_triggers": [{{ ...原字段..., "enemy_ref": "...", "weapon_ref": "...", "type": "标准技能名", "side_effects": [结构化对象或字符串] }}]
+  "interactions": [{{ ...原字段..., "type": "标准技能名", "side_effects": [结构化对象或字符串] }}],
+  "auto_triggers": [{{ ...原字段..., "type": "标准技能名", "side_effects": [结构化对象或字符串] }}]
 }}
 
 仅输出 JSON。"""
@@ -966,7 +966,7 @@ def parse_step4(
 ) -> dict:
     prompt = build_step4_prompt(
         interactions, auto_triggers, l2_descriptions,
-        scene_intents, condensed_text,
+        scene_intents, chapters,
         weapon_library_names, enemy_library_names, skill_names, stat_names,
     )
     return llm_call(prompt, system=STEP4_SYSTEM)

@@ -30,6 +30,7 @@ def read_json_file(file_path: str) -> dict:
 class Edge:
     target: str
     method: str          # 移动方式，如"步行通过车门"
+    requirement: str = ""  # 通行前置条件（自然语言），如"需要先找到钥匙"
 
     def __repr__(self):
         return f"Edge({self.target}, '{self.method}')"
@@ -49,8 +50,7 @@ class Interaction:
     type: str            # 调查 / 鉴定 / 搜索 / 急救 / 对话 / 决策 / 使用物品 / 策略 / 战斗 / 准备 / 事件
     name: str            # 动作名称
     trigger: str         # 触发条件描述
-    result: str          # 执行结果
-    clue: Optional[str] = None         # 对玩家的提示
+    result: str          # 执行结果（含线索信息）
     requirements: List[Requirement] = field(default_factory=list)   # 前置条件
     side_effects: list = field(default_factory=list)   # FlagSet | ItemGain | StatChange
 
@@ -123,8 +123,12 @@ class ActionResult:
     suggested_flags: list = field(default_factory=list)   # LLM 建议（预留，本轮不实现）
 
 
-def _parse_side_effect(data: dict):
-    """从 dict 解析单个 side effect"""
+def _parse_side_effect(data):
+    """从 dict 解析单个 side effect；字符串则原样保留供 LLM 解析."""
+    if isinstance(data, str):
+        return data
+    if not isinstance(data, dict):
+        return None
     type_ = data.get("type", "")
     if type_ == "flag_set":
         return FlagSet(key=data["key"], value=data.get("value", True))
@@ -249,7 +253,6 @@ class DirectedGraph:
                     name=inter["name"],
                     trigger=inter.get("trigger", ""),
                     result=inter.get("result", ""),
-                    clue=inter.get("clue"),
                     requirements=[
                         _normalize_requirement(req)
                         for req in inter.get("requirement", [])
@@ -260,11 +263,13 @@ class DirectedGraph:
             ]
 
             from_edges = [
-                Edge(target=conn["target"], method=conn["method"])
+                Edge(target=conn["target"], method=conn["method"],
+                     requirement=conn.get("requirement", ""))
                 for conn in node_info.get("from_here", [])
             ]
             to_edges = [
-                Edge(target=conn["source"], method=conn["method"])
+                Edge(target=conn["source"], method=conn["method"],
+                     requirement=conn.get("requirement", ""))
                 for conn in node_info.get("to_here", [])
             ]
 
@@ -343,15 +348,14 @@ class DirectedGraph:
             nodes_dict[nid] = {
                 "node_id": node.node_id,
                 "description": node.description,
-                "edges": [{"target": e.target, "method": e.method} for e in node.edges],
-                "to_here": [{"target": e.target, "method": e.method} for e in node.to_here],
+                "edges": [{"target": e.target, "method": e.method, "requirement": e.requirement} for e in node.edges],
+                "to_here": [{"target": e.target, "method": e.method, "requirement": e.requirement} for e in node.to_here],
                 "interactions": [
                     {
                         "type": i.type,
                         "name": i.name,
                         "trigger": i.trigger,
                         "result": i.result,
-                        "clue": i.clue,
                         "requirements": [
                             {"ref_type": r.ref_type, "ref_scene": r.ref_scene, "ref_name": r.ref_name}
                             for r in i.requirements
@@ -388,7 +392,6 @@ class DirectedGraph:
                     name=inter["name"],
                     trigger=inter.get("trigger", ""),
                     result=inter.get("result", ""),
-                    clue=inter.get("clue"),
                     requirements=[
                         _normalize_requirement(req)
                         for req in inter.get("requirements", [])
@@ -400,8 +403,10 @@ class DirectedGraph:
             graph.nodes[nid] = Node(
                 node_id=node_data["node_id"],
                 description=node_data.get("description", ""),
-                edges=[Edge(target=e["target"], method=e["method"]) for e in node_data.get("edges", [])],
-                to_here=[Edge(target=e["target"], method=e["method"]) for e in node_data.get("to_here", [])],
+                edges=[Edge(target=e["target"], method=e["method"],
+                             requirement=e.get("requirement", "")) for e in node_data.get("edges", [])],
+                to_here=[Edge(target=e["target"], method=e["method"],
+                              requirement=e.get("requirement", "")) for e in node_data.get("to_here", [])],
                 interactions=interactions,
             )
         events_data = data.get("events", [])
@@ -628,7 +633,6 @@ class ScenarioWorld:
             "interactions": [
                 {"type": i.type, "name": i.name, "trigger": i.trigger,
                  "completed": i.name in done,
-                 "clue": i.clue,
                  "requirements_met": self._are_requirements_met(i)}
                 for i in interactions
             ],

@@ -20,7 +20,7 @@ class DependencyNode:
                    name=data.get("name", ""))
 
 
-@dataclass
+@dataclass(frozen=True)
 class DependencyEdge:
     source: str     # 依赖方（需要满足条件才能触发）
     target: str     # 被依赖方

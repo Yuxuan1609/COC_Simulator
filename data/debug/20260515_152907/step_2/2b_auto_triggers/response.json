@@ -1,0 +1,141 @@
+{
+  "auto_triggers": [
+    {
+      "id": "AT1",
+      "scene": "S1",
+      "type": "无",
+      "name": "异常的时间感",
+      "requirement": "I1",
+      "trigger": "调查员阅读便签正面后，灵感属性≥50的角色将自动意识到电车行驶时间异常",
+      "result": "一股难以言喻的不安涌上心头：电车早该抵达终点站了，但窗外的黑暗却没有尽头的迹象。",
+      "side_effects": [],
+      "graded_result": null,
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None",
+      "based_on": "I1"
+    },
+    {
+      "id": "AT2",
+      "scene": "S3",
+      "type": "灵感",
+      "name": "察觉6号车厢的消失",
+      "requirement": "I9",
+      "trigger": "进入5号车厢后，若调查员已知晓后方巨嘴的存在，自动进行一次灵感检定",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只是隐约感到不安，但并未发现任何异常。",
+        "on_regular": "你猛然回头，透过车厢连接处看见6号车厢已有近一半被黑暗吞噬，仿佛被无形的巨口啃食。这种超自然景象令你头皮发麻，理智值减少1/1D2。",
+        "on_hard": "你清晰地看见6号车厢大半已没入黑暗，边缘甚至隐约有触手状的东西蠕动。理智值减少1/1D3。",
+        "on_extreme": "你瞬间洞悉了吞噬的轨迹，甚至短暂瞥见巨嘴内部那可怖的、布满獠牙的深渊。理智值减少1D2/1D4。"
+      },
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "regular",
+      "based_on": "I9"
+    },
+    {
+      "id": "AT3",
+      "scene": "S3",
+      "type": "无",
+      "name": "后方吞噬爆发",
+      "requirement": "I12",
+      "trigger": "在5号车厢停留的回合数超过行动限制",
+      "result": "后方传来门扉被挤压破碎的刺耳声响，你们脚下的立足点从车厢尾端开始逐步消失！必须立即向前奔跑逃离。目睹这种超自然现象，全体进行理智检定（1/1D6）。",
+      "side_effects": [
+        "通往6号车厢的门自动封死，已无法返回。",
+        "后方吞噬进度加快，此后所有行动都带有时间压力。"
+      ],
+      "graded_result": null,
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None",
+      "based_on": "I12"
+    },
+    {
+      "id": "AT4",
+      "scene": "S4",
+      "type": "无",
+      "name": "被抛弃的乘务员",
+      "requirement": "I14",
+      "trigger": "所有调查员离开4号车厢，且未背负乘务员同行",
+      "result": "后方那不可名状的巨嘴终于追了上来，车厢里传来乘务员京山人吉绝望的哀嚎，随后一切重归死寂。听到这临终惨叫，每名调查员理智值减少0/1D4。",
+      "side_effects": [
+        "乘务员死亡，此后所有与乘务员相关的线索和协助永久失去。"
+      ],
+      "graded_result": null,
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None",
+      "based_on": "I14"
+    },
+    {
+      "id": "AT5",
+      "scene": "S5",
+      "type": "敏捷",
+      "name": "杂乱行李的妨碍",
+      "requirement": "I13",
+      "trigger": "因后方吞噬爆发而一路奔逃进入3号车厢时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你被散落一地的行李狠狠绊倒，重重摔在地上，发出巨大的声响。这噪音瞬间吸引了前方2号车厢里循声者的注意，也让你损失了宝贵的时间。",
+        "on_regular": "你灵巧地跳过行李箱和杂物，有惊无险地通过了这片狼藉。",
+        "on_hard": "你的脚步轻盈而稳健，不仅完全没有碰到任何东西，还迅速找到了最便捷的路径。",
+        "on_extreme": "你仿佛排练过一般，在行李之间穿梭如入无人之境，没有发出一丝声响，甚至有余裕顺手捡起一件可作投掷用的杂物。"
+      },
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "regular",
+      "based_on": "I13"
+    },
+    {
+      "id": "AT6",
+      "scene": "S6",
+      "type": "无",
+      "name": "循声者的喘息",
+      "requirement": "I25",
+      "trigger": "调查员打开2号车厢门，踏入车厢的瞬间",
+      "result": "浓重的血腥味中，一阵粗重、断续的喘息声从黑暗深处传来。那绝非人类的呼吸方式，光是听到就足以让勇气冻结。全体调查员进行理智检定（0/1D3）。",
+      "side_effects": [],
+      "graded_result": null,
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None",
+      "based_on": "I25"
+    },
+    {
+      "id": "AT7",
+      "scene": "S7",
+      "type": "无",
+      "name": "乘务员坚持停车",
+      "requirement": "I33",
+      "trigger": "操作面板开启后，若乘务员同行且不知晓后方巨嘴的存在（未完成I9和I12）",
+      "result": "乘务员京山人吉焦急地冲向操作台，伸手想去拉右边的拉杆，大喊道：“快把拉杆拉上来让电车停下！我们必须趁现在逃出去！”",
+      "side_effects": [
+        "若调查员不立即阻止，乘务员将在下一轮动作中将油门拉杆上拉，触发结局B。"
+      ],
+      "graded_result": null,
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None",
+      "based_on": "I33"
+    },
+    {
+      "id": "AT8",
+      "scene": "S7",
+      "type": "无",
+      "name": "乘务员的恐惧与犹豫",
+      "requirement": "I33",
+      "trigger": "操作面板开启后，若乘务员同行且已知晓后方巨嘴的存在（完成过I9或I12）",
+      "result": "乘务员怔怔地望着操作杆，脸上写满恐惧。他颤抖着后退一步，小声嗫嚅道：“那…那个怪物还在后面……我们到底该怎么办……”他将最后的决策权完全交给了你们。",
+      "side_effects": [],
+      "graded_result": null,
+      "enemy_ref": null,
+      "weapon_ref": null,
+      "difficulty": "None",
+      "based_on": "I33"
+    }
+  ]
+}

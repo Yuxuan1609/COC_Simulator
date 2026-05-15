@@ -6,12 +6,12 @@
       {
         "name": "便签",
         "brief": "一张贴在门扉上的便签，正面写着：“只管前进吧 已经没有退路了”。",
-        "linked_interaction": "阅读便签正面"
+        "linked_interaction": ""
       },
       {
         "name": "电车示意地图",
         "brief": "门扉旁贴着电车路线示意图，标注着各个车厢的位置。",
-        "linked_interaction": "查看电车示意地图"
+        "linked_interaction": ""
       },
       {
         "name": "手机信号",
@@ -38,12 +38,12 @@
       {
         "name": "人类残肢",
         "brief": "散落一地、被暴力撕裂的人类肢体，死状惨不忍睹。",
-        "linked_interaction": "检查尸体"
+        "linked_interaction": ""
       },
       {
         "name": "消失的车厢门",
         "brief": "原本通往后方的车厢门消失了，只剩下一片深邃得异常的黑暗。",
-        "linked_interaction": "观察7号车厢深处"
+        "linked_interaction": ""
       },
       {
         "name": "血腥味",
@@ -82,7 +82,7 @@
       {
         "name": "休克的乘务员",
         "brief": "一名昏迷的男性乘务员，腿部有严重的咬伤，生命垂危。",
-        "linked_interaction": "对休克的乘务员进行急救"
+        "linked_interaction": ""
       },
       {
         "name": "血迹",
@@ -110,12 +110,12 @@
       {
         "name": "散乱的行李",
         "brief": "大量行李和私人物品杂乱地散落在车厢各处，堵住了部分通道。",
-        "linked_interaction": "找回丢失的随身物品"
+        "linked_interaction": ""
       },
       {
         "name": "前方黑暗",
         "brief": "通往2号车厢的门上，玻璃窗透出浓稠的黑暗，什么也看不见。",
-        "linked_interaction": "观察2号车厢"
+        "linked_interaction": ""
       }
     ],
     "ambient_hints": [
@@ -142,7 +142,7 @@
       {
         "name": "喘息声",
         "brief": "从车厢中段发出的粗重、非人的喘息声，在寂静中格外可怖。",
-        "linked_interaction": "判断车厢门附近是否有怪物"
+        "linked_interaction": ""
       },
       {
         "name": "破碎的尸体",
@@ -164,7 +164,7 @@
       {
         "name": "驾驶室门",
         "brief": "车厢尽头的紧闭房门，通往电车驾驶室，是这趟噩梦列车的最终出口。",
-        "linked_interaction": "使用钥匙打开驾驶室门"
+        "linked_interaction": ""
       },
       {
         "name": "安静的车厢",

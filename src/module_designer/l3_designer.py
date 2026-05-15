@@ -115,6 +115,25 @@ class ToneConstraints:
 
 
 @dataclass
+class CharacterDesign:
+    """NPC 设计意图（L3 设计者层）."""
+    id: str
+    name: str
+    behavior: str = ""  # 行为逻辑 + 叙事作用
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "behavior": self.behavior}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CharacterDesign":
+        return cls(
+            id=data["id"],
+            name=data.get("name", ""),
+            behavior=data.get("behavior", ""),
+        )
+
+
+@dataclass
 class L3Designer:
     """L3 设计者层完整数据."""
     module_meta: ModuleMeta = field(default_factory=ModuleMeta)
@@ -122,6 +141,7 @@ class L3Designer:
     scene_intents: dict[str, SceneIntent] = field(default_factory=dict)
     ending_conditions: List[EndingCondition] = field(default_factory=list)
     tone_constraints: ToneConstraints = field(default_factory=ToneConstraints)
+    characters: List[CharacterDesign] = field(default_factory=list)
     driving_force: str = ""
 
     def to_dict(self) -> dict:
@@ -131,6 +151,7 @@ class L3Designer:
             "scene_intents": {k: v.to_dict() for k, v in self.scene_intents.items()},
             "ending_conditions": [e.to_dict() for e in self.ending_conditions],
             "tone_constraints": self.tone_constraints.to_dict(),
+            "characters": [c.to_dict() for c in self.characters],
             "driving_force": self.driving_force,
         }
 
@@ -142,6 +163,7 @@ class L3Designer:
             scene_intents={k: SceneIntent.from_dict(v) for k, v in data.get("scene_intents", {}).items()},
             ending_conditions=[EndingCondition.from_dict(e) for e in data.get("ending_conditions", [])],
             tone_constraints=ToneConstraints.from_dict(data.get("tone_constraints", {})),
+            characters=[CharacterDesign.from_dict(c) for c in data.get("characters", [])],
             driving_force=data.get("driving_force", ""),
         )
 

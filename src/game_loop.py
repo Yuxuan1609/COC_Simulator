@@ -26,7 +26,6 @@ from scenario_core import FlagSet, ItemGain, StatChange, SpawnEnemy, GrantItem, 
 def _apply_side_effects(world: ScenarioWorld, side_effects: list) -> list:
     """
     消费 side effects。当前实现：
-    - FlagSet → world.set_flag
     - ItemGain → world.memory.note_item
     - SpawnEnemy → 记录到运行时遭遇表
     - GrantItem → 记录到 world.memory
@@ -87,7 +86,9 @@ def _execute_single_action(act: dict, world: ScenarioWorld, location: str) -> tu
         else:
             return ActionResult(True, "（仔细查看四周，没有特别的发现）"), True
     else:
-        return ActionResult(True, "（没有特别的事情发生）"), True
+        return ActionResult(True, "（没有特别的事情发生"
+                                  ""
+                                  "）"), True
 
 
 # ── 调试命令处理 ──

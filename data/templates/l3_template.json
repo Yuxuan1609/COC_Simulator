@@ -12,12 +12,12 @@
       "id": "WR1",
       "name": "规则名称",
       "rule": "规则描述（自然语言）",
-      "scope": ["movement", "combat"],
-      "is_absolute": true
+      "scope": "规则适用范围（自然语言描述）",
+      "is_absolute": "规则的刚性程度（自然语言描述）例如：绝对不可违反、一般情况不可违等等"
     }
   ],
   "scene_intents": {
-    "6号车厢": {
+    "3号车厢": {
       "purpose": "此场景的设计用途",
       "key_threat": "核心威胁（可选）",
       "notes": "设计备注（可选）"
@@ -36,5 +36,12 @@
     "recommended": ["建议包含的元素"],
     "narrative_style": "叙事风格描述"
   },
+  "characters": [
+    {
+      "id": "NPC_1",
+      "name": "NPC名称",
+      "behavior": "行为逻辑描述（该NPC在故事中行动的原动力，以及该角色的叙事作用）"
+    }
+  ],
   "driving_force": "一切事件的底层驱动力（为什么这一切在发生）"
 }

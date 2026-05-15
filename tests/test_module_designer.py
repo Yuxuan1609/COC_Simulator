@@ -57,14 +57,13 @@ def test_auto_trigger_roundtrip():
         id="AT1", name="Clicker 出现", scene="S2",
         type="",
         trigger="玩家进入7号车厢且持有钥匙",
-        enemy_ref="Clicker",
         result="",
     )
     d = at.to_dict()
     restored = AutoTrigger.from_dict(d)
     assert restored.id == "AT1"
     assert restored.trigger == "玩家进入7号车厢且持有钥匙"
-    assert restored.enemy_ref == "Clicker"
+    assert restored.scene == "S2"
 
 
 def test_npc_profile_roundtrip():
@@ -330,32 +329,32 @@ def test_pipeline_result_summary_with_fallbacks():
 
 
 def test_build_step2a_prompt_structure():
-    scenes = [{"id": "S1", "name": "6号车厢"}, {"id": "S2", "name": "7号车厢"}]
-    prompt = build_step2a_prompt("精修模组内容", scenes)
-    assert "精修模组内容" in prompt
+    scenes = ["6号车厢", "7号车厢"]
+    prompt = build_step2a_prompt({"scenes": "精修模组内容", "locations_and_map": ""}, scenes)
+    assert "6号车厢" in prompt
     assert "interactions" in prompt
     assert "I1" in prompt
-    assert "S1" in prompt
+    assert "7号车厢" in prompt
     assert "enemy_ref" in prompt
     assert "weapon_ref" in prompt
     assert "null" in prompt
 
 
 def test_build_step2b_events_prompt_structure():
-    scenes = [{"id": "S1", "name": "6号车厢"}]
+    scenes = ["6号车厢"]
     interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "side_effects": []}]
-    prompt = build_step2b_events_prompt("精修模组内容", scenes, interactions)
-    assert "精修模组内容" in prompt
+    prompt = build_step2b_events_prompt({"scenes": "精修模组内容", "events_summary": ""}, scenes, interactions)
+    assert "6号车厢" in prompt
     assert "events" in prompt
     assert "E1" in prompt
     assert "I1" in prompt
 
 
 def test_build_step2b_at_prompt_structure():
-    scenes = [{"id": "S1", "name": "6号车厢"}]
+    scenes = ["6号车厢"]
     interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "side_effects": []}]
-    prompt = build_step2b_at_prompt("精修模组内容", scenes, interactions)
-    assert "精修模组内容" in prompt
+    prompt = build_step2b_at_prompt({"scenes": "精修模组内容"}, scenes, interactions)
+    assert "6号车厢" in prompt
     assert "auto_triggers" in prompt
     assert "AT1" in prompt
     assert "requirement" in prompt
@@ -365,20 +364,19 @@ def test_build_step2b_at_prompt_structure():
 
 
 def test_build_step2c_l1_prompt_structure():
-    scenes = [{"id": "S1", "name": "6号车厢"}]
+    scenes = ["6号车厢"]
     characters = [{"id": "NPC_1", "name": "京山人吉"}]
-    prompt = build_step2c_l1_prompt("精修模组内容", scenes, characters)
-    assert "精修模组内容" in prompt
-    assert "感知" in prompt or "perceptible" in prompt
+    prompt = build_step2c_l1_prompt({"scenes": "精修模组内容", "npcs": ""}, scenes, characters)
     assert "6号车厢" in prompt
+    assert "感知" in prompt or "perceptible" in prompt
     assert "NPC_1" in prompt
 
 
 def test_build_step2c_l3_prompt_structure():
-    scenes = [{"id": "S1", "name": "6号车厢"}]
+    scenes = ["6号车厢"]
     characters = [{"id": "NPC_1", "name": "京山人吉"}]
-    prompt = build_step2c_l3_prompt("精修模组内容", scenes, characters)
-    assert "精修模组内容" in prompt
+    prompt = build_step2c_l3_prompt({"module_overview": "精修模组内容", "events_summary": ""}, scenes, characters)
+    assert "6号车厢" in prompt
     assert "world_rules" in prompt
     assert "driving_force" in prompt
     assert "scene_intents" in prompt
@@ -390,7 +388,7 @@ def test_build_step3a_prompt_structure():
     events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后", "type": "无", "difficulty": "None", "based_on": "I1", "side_effects": [], "result": "...", "trigger": ""}]
     auto_triggers = [{"id": "AT1", "name": "触发", "scene": "S1", "trigger": "玩家进入场景", "type": "无", "based_on": "I1", "side_effects": [], "result": "...", "requirement": ""}]
     ending_conditions = [{"id": "END1", "condition": "...", "narrative": "真结局"}]
-    prompt = build_step3a_prompt("精修模组", interactions, events, auto_triggers, ending_conditions)
+    prompt = build_step3a_prompt({"test": "精修模组"}, interactions, events, auto_triggers, ending_conditions)
     assert "I1" in prompt
     assert "E1" in prompt
     assert "AT1" in prompt
@@ -403,7 +401,7 @@ def test_build_step35_prompt_structure():
     interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先完成I3", "trigger": "", "result": "找到钥匙", "side_effects": []}]
     events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后", "trigger": ""}]
     auto_triggers = []
-    prompt = build_step35_prompt("精修模组", interactions, events, auto_triggers)
+    prompt = build_step35_prompt({"test": "精修模组"}, interactions, events, auto_triggers)
     assert "精修模组" in prompt
     assert "dependencies" in prompt
     assert "entity_id" in prompt
@@ -416,8 +414,8 @@ def test_build_step3b_prompt_structure():
     l1 = {"6号车厢": {"entry_narrative": "测试"}}
     l2 = {"interactions": [{"id": "I1", "name": "搜查"}], "events": [], "auto_triggers": []}
     l3 = {"scene_intents": {"6号车厢": {"purpose": "测试"}}}
-    scenes = [{"id": "S1", "name": "6号车厢"}]
-    prompt = build_step3b_prompt("精修模组", l1, l2, l3, scenes)
+    scenes = ["6号车厢"]
+    prompt = build_step3b_prompt({"test": "精修模组"}, l1, l2, l3, scenes)
     assert "linked_interaction" in prompt
     assert "6号车厢" in prompt
     assert "scene_intents" in prompt
@@ -430,7 +428,7 @@ def test_build_step4_prompt_structure():
         interactions, auto_triggers,
         {"S1": "测试场景"},
         {"6号车厢": {"purpose": "测试"}},
-        "精修模组参考",
+        {"test": "精修模组参考"},
         ["手电筒", ".45自动手枪"],
         ["Clicker", "深潜者"],
         ["侦察", "急救", "图书馆使用"],

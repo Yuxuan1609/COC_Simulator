@@ -12,7 +12,10 @@
       "Bash(git *)",
       "Bash(python3 *)",
       "Bash(bash *)",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(git merge-base *)",
+      "Bash(git show *)",
+      "Bash(rm notebooks/_parser_layered_export.ipynb.tmp)"
     ]
   }
 }
