@@ -9,12 +9,16 @@
           "id": "I1",
           "type": "关联技能名，不涉及填\"无\"",
           "name": "互动名称",
-          "requirement": "前置条件声明（自然语言）",
-          "trigger": "触发条件",
-          "result": "结果描述（含线索信息）",
-          "side_effects": ["自然语言描述的副作用"],
-          "enemy_ref": null,
-          "weapon_ref": null,
+          "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），如：interaction:I3 已完成。无条件填空字符串",
+          "trigger": "触发场景（描述什么情况下玩家可以执行此互动），如：玩家检查抽屉时",
+          "result": "直接结果（互动/事件直接产生的结果），如：抽屉打开了，里面有一把钥匙",
+          "side_effects": ["间接后果（与result不重合的附带影响），如：开抽屉的声响吸引了隔壁车厢的怪物"],
+          "graded_result": {
+            "on_failure": "检定失败时的结果",
+            "on_regular": "常规成功时的结果",
+            "on_hard": "困难成功时的结果",
+            "on_extreme": "极难成功时的结果"
+          },
           "difficulty": "regular",
           "based_on": null
         }
@@ -43,12 +47,16 @@
           "type": "关联技能名，不涉及填\"无\"",
           "name": "自动触发名称",
           "scene": "S1",
-          "requirement": "前置条件声明（自然语言）",
-          "trigger": "触发条件（自然语言）",
-          "result": "触发后的结果描述",
-          "side_effects": ["自然语言描述的副作用"],
-          "enemy_ref": null,
-          "weapon_ref": null,
+          "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串",
+          "trigger": "触发场景（描述什么情况下此被动事件触发），如：玩家进入场景且 I1 已完成",
+          "result": "直接结果（被动触发直接产生的结果）",
+          "side_effects": ["间接后果（与result不重合的附带影响）"],
+          "graded_result": {
+            "on_failure": "检定失败时的结果",
+            "on_regular": "常规成功时的结果",
+            "on_hard": "困难成功时的结果",
+            "on_extreme": "极难成功时的结果"
+          },
           "difficulty": "regular",
           "based_on": "I1"
         }
@@ -61,10 +69,16 @@
       "id": "E1",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "事件名称",
-      "requirement": "前置条件声明（自然语言）",
-      "trigger": "触发条件描述",
-      "result": "触发后的结果描述（含不可逆影响）",
-      "side_effects": ["自然语言描述的副作用"],
+      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串",
+      "trigger": "触发场景（描述什么情况下此事件触发），如：I5 完成后此事件触发",
+      "result": "直接结果（事件直接产生的结果，含不可逆影响标注）",
+      "side_effects": ["间接后果（与result不重合的附带影响）"],
+      "graded_result": {
+        "on_failure": "检定失败时的结果",
+        "on_regular": "常规成功时的结果",
+        "on_hard": "困难成功时的结果",
+        "on_extreme": "极难成功时的结果"
+      },
       "difficulty": "regular",
       "based_on": "I1",
       "extra": {}

@@ -74,10 +74,9 @@ class AutoTrigger:
     trigger: str = ""            # 触发条件描述
     result: str = ""             # 触发后结果描述
     side_effects: list = field(default_factory=list)  # 自然语言字符串列表
-    enemy_ref: str = ""          # Step 4 填入
-    weapon_ref: str = ""         # Step 4 填入
     difficulty: str = ""         # None / regular / hard / extreme
     based_on: str = ""           # 派生来源 interaction ID
+    graded_result: Optional[dict] = None  # 分级检定后果
     extra: Optional[dict] = None
 
     def to_dict(self) -> dict:
@@ -88,11 +87,11 @@ class AutoTrigger:
             "trigger": self.trigger,
             "result": self.result,
             "side_effects": self.side_effects,
-            "enemy_ref": self.enemy_ref,
-            "weapon_ref": self.weapon_ref,
             "difficulty": self.difficulty,
             "based_on": self.based_on,
         }
+        if self.graded_result:
+            d["graded_result"] = self.graded_result
         if self.extra:
             d["extra"] = self.extra
         return d
@@ -107,10 +106,9 @@ class AutoTrigger:
             trigger=data.get("trigger", ""),
             result=data.get("result", ""),
             side_effects=data.get("side_effects", []),
-            enemy_ref=data.get("enemy_ref", ""),
-            weapon_ref=data.get("weapon_ref", ""),
             difficulty=data.get("difficulty", ""),
             based_on=data.get("based_on", ""),
+            graded_result=data.get("graded_result"),
             extra=data.get("extra"),
         )
 

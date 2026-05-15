@@ -49,6 +49,7 @@ L2_INTERACTION_SCHEMA = {
     "skill_name": {"required": False},
     "difficulty": {"required": False, "values": L2_DIFFICULTIES},
     "based_on": {"required": False},
+    "graded_result": {"required": False},
 }
 
 L2_ENCOUNTER_SCHEMA = {
@@ -79,6 +80,7 @@ L2_EVENT_SCHEMA = {
     "side_effects": {"required": False},
     "difficulty": {"required": False},
     "based_on": {"required": False},
+    "graded_result": {"required": False},
     "extra": {"required": False},
 }
 
