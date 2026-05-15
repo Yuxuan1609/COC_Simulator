@@ -4,7 +4,7 @@ from module_designer.l2_keeper import (
     SceneL2, Encounter, SceneWeapon, AutoTrigger, NPCProfile, load_l2, save_l2,
 )
 from module_designer.l3_designer import (
-    L3Designer, ModuleMeta, WorldRule,
+    L3Designer, ModuleMeta, WorldRule, CharacterDesign,
     SceneIntent, EndingCondition, ToneConstraints, load_l3, save_l3,
 )
 from module_designer.layered_schema import (
@@ -18,6 +18,9 @@ from module_designer.layered_parser import (
     build_step2c_l1_prompt, build_step2c_l3_prompt,
     build_step3a_prompt, build_step3b_prompt, build_step4_prompt,
     _with_fallback, _is_valid_json_output,
+)
+from module_designer.dependency_graph import (
+    DependencyGraph, DependencyNode, DependencyEdge,
 )
 from module_designer.layered_pipeline import (
     run_pipeline, cross_validate_layers, PipelineResult,
