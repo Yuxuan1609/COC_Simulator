@@ -1,6 +1,6 @@
-# Next Session — Step 4 详解 + 最终输出格式
+# Next Session — 管线总览 + 最终输出格式
 
-**日期**: 2026-05-15
+**日期**: 2026-05-16
 **分支**: main
 **状态**: 管线全部就绪
 
@@ -16,56 +16,66 @@ Step 1b: 精修模组 → condensed_text → chapters dict (按 ## 标题拆分)
     ↓
 Step 2a: Interactions + scene_movements (统一实体格式, based_on 留空)
     ↓
-Step 2b: Events + Auto-triggers (并行, 分类并标注 based_on → interaction)
+Step 2b: Events + Auto-triggers (并行, based_on 指向派生的 interaction，非派生则留空)
 Step 2c: L1 + L3 (并行, L1 用 characters 指导 NPC, L3 含 characters 行为设计)
     ↓
 Step 3a: 去重 + 冲突 + 结局验证 (轻量 LLM)
     ↓
+组装 L2 结构 (_assemble_l2)
+    ↓
 Step 3b: L1 ↔ L2 ↔ L3 交叉核对
     ↓
-Step 3.5 + Step 4: 并行
+Step 3.5 + Phase 1: 并行
     ├─ 3.5: 依赖图 (requirement 标准化 → 有向图 → 循环检测)
-    └─ 4:   标准化 (技能/属性/side_effect 结构化)
+    └─ Phase 1: 风格预判 (enemy/weapon 类型 + 数量范围)
+    ↓
+Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
     ↓
 最终验证 + 保存 L1/L2/L3 JSON
 ```
 
-## Step 4 详解：标准化收口
+总 LLM 调用: **12 次** (Step 1:2 + Step 2:5 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)
 
-**职责**：管线最后一步，将所有半结构化信息统一为标准格式。与 Step 3.5 并行执行。
+---
 
-### 输入
+## Phase 1：风格预判
 
-| 参数 | 来源 |
-|------|------|
-| `interactions` | Step 3a → 3b 修正后 |
-| `auto_triggers` | Step 3a → 3b 修正后 |
-| `l2_descriptions` | 从 L1 提取（entry_narrative 或 atmosphere） |
-| `scene_intents` | L3 设计意图 |
-| `chapters` | Step 1b 章节化文本 |
-| `skill_names` | data/skill_checks.json 45 项 COC 标准技能 |
-| `stat_names` | STR, CON, SIZ, DEX, APP, INT, POW, EDU, SAN, HP, LUCK, MP |
+**职责**：与 Step 3.5 并行执行。根据完整模组文本，确定武器/敌人的风格方向和数量范围。约束宽松，只需符合背景设定，允许随机性。不做场景绑定。
 
-### 五个标准化任务
+**输出**：写入 L2 的 `_phase1` 字段，同时作为 Phase 2 的约束输入。
 
-| # | 任务 | 说明 |
-|---|------|------|
-| 1 | `enemy_ref` 匹配 | 为 side_effects 中的 spawn_enemy 匹配敌人库 |
-| 2 | `weapon_ref` 匹配 | 为 side_effects 中的 grant_item 匹配武器库 |
-| 3 | `type` 技能标准化 | "侦查"→"侦察"，与 skill_checks.json 对齐 |
-| 4 | `side_effect` 结构化 | 自然语言 → 结构化对象（见下方） |
-| 5 | `stat_name` 标准化 | stat_change 的属性名对齐标准属性集 |
+```json
+{
+  "_phase1": {
+    "enemies": [
+      {"enemy_ref": "Clicker", "min_count": 1, "max_count": 3}
+    ],
+    "weapons": [
+      {"weapon_ref": "手电筒", "min_count": 0, "max_count": 3}
+    ]
+  }
+}
+```
 
-### side_effect 结构化类型
+## Phase 2：精简标准化
 
-| 类型 | 格式 | 说明 |
+**职责**：替代原 Step 4。只传 entity 的 6 个相关字段（name, scene, type, result, graded_result, side_effects），去掉 id/requirement/trigger/difficulty/based_on。将 side_effects/result/graded_result 中的自然语言转化为 `@函数(参数=值)` 标记。
+
+### @标记语法
+
+五种标准函数，可嵌入 result / graded_result 各等级 / side_effects 等任何文本字段：
+
+| 函数 | 参数 | 说明 |
 |------|------|------|
-| `item_gain` | `{"type":"item_gain", "item_name":"..."}` | 获得物品 |
-| `stat_change` | `{"type":"stat_change", "stat_name":"SAN", "delta":-1, "narrative":"..."}` | 属性/状态变化，narrative 可选 |
-| `spawn_enemy` | `{"type":"spawn_enemy", "enemy_ref":"深潜者", "scene":"7号车厢", "quantity":1}` | 敌人出现 |
-| `grant_item` | `{"type":"grant_item", "item_ref":"手电筒", "scene":"6号车厢"}` | 授予武器/物品 |
-| `npc_state_change` | `{"type":"npc_state_change", "npc_name":"京山人吉", "new_state":"死亡"}` | NPC 状态变化 |
-| (string) | 保留原始字符串 | 无法归入以上类型的副作用 |
+| `@spawn_enemy` | enemy_ref, scene, quantity=1 | 生成敌人遭遇 |
+| `@grant_weapon` | weapon_ref, scene="", quantity=1 | 授予标准化武器 |
+| `@stat_change` | stat_name, delta=0, narrative="" | 属性/状态变化 |
+| `@item_gain` | item_name | 获得物品（纯文本） |
+| `@npc_state_change` | npc_name, new_state | NPC 状态变化 |
+
+数量约束：spawn_enemy / grant_weapon 的 enemy_ref / weapon_ref 必须在 Phase 1 约束列表内，总调用次数不超过 max_count。
+
+---
 
 ## 最终输出格式
 
@@ -76,29 +86,36 @@ Step 3.5 + Step 4: 并行
 ```json
 {
   "6号车厢": {
-    "entry_narrative": "调查员们在此处醒来...",
-    "atmosphere": "昏暗封闭的车厢，空气中弥漫着不自然的死寂",
+    "description": "叙事文本，KP 可直接朗读（30-200字）",
+    "atmosphere": "场景氛围一句话总结",
     "mood": "uneasy",
     "perceptible": [
-      {"type": "object", "name": "便签", "brief": "一张贴在门上的泛黄纸条",
-       "linked_interaction": "阅读便签正面"}
+      {
+        "type": "object",
+        "name": "便签",
+        "brief": "贴在车门上的醒目便签",
+        "linked_interaction": "阅读车门便签"
+      }
     ],
-    "ambient_hints": ["后方传来若有若无的震动"],
+    "ambient_hints": ["微妙的环境线索"],
     "npc_appearances": [
-      {"name": "京山人吉", "brief": "穿着制服的乘务员，面色苍白",
-       "demeanor": "昏迷不醒"}
+      {
+        "name": "京山人吉",
+        "brief": "穿着制服的乘务员，面色苍白",
+        "demeanor": "昏迷不醒"
+      }
     ]
   }
 }
 ```
 
 **字段含义**：
-- `entry_narrative`: KP 可直接朗读的场景入场文本
+- `description`: 场景基本信息的叙事文本（KP 可直接朗读）
 - `atmosphere`: 场景氛围一句话
 - `mood`: 情绪基调 (confused/uneasy/tense/terrified/hopeful/desperate)
-- `perceptible`: 无需检定即可感知的元素。`linked_interaction` 指向 L2 的 interaction name
-- `ambient_hints`: 微妙的环境线索
-- `npc_appearances`: 当前场景 NPC 外貌
+- `perceptible`: 无需检定即可感知的元素，`linked_interaction` 指向 L2 的 interaction name
+- `ambient_hints`: 微妙的环境线索列表
+- `npc_appearances`: 当前场景 NPC 外貌描述（仅可见信息，不含隐藏动机）
 
 ### l2_keeper.json — KP 守秘人层
 
@@ -106,124 +123,115 @@ Step 3.5 + Step 4: 并行
 {
   "scenes": {
     "6号车厢": {
-      "description": "调查员们从沉睡中惊醒的初始地点...",
+      "description": "场景描述（来自 L1 atmosphere）",
       "from_here": [{"target": "7号车厢", "method": "步行通过车门", "requirement": ""}],
       "to_here": [{"source": "5号车厢", "method": "步行通过车门", "requirement": ""}],
       "interactions": [
         {
-          "id": "I1", "type": "侦察", "name": "阅读便签正面",
-          "requirement": "", "trigger": "调查员注意到门上的便签",
-          "result": "上面写着「只管前进吧 已经没有退路了」",
-          "side_effects": ["发现关键提示信息"],
+          "name": "阅读车门便签",
+          "scene": "6号车厢",
+          "type": "无",
+          "result": "便签上写着「只管前进吧 已经没有退路了」",
+          "side_effects": ["意识到无路可退的氛围"],
           "graded_result": {
-            "on_failure": "字迹模糊无法辨认",
+            "on_failure": "@stat_change(stat_name=\"SAN\", delta=-1)",
             "on_regular": "看清了便签内容",
             "on_hard": "看清便签内容且注意到纸张质地异常",
-            "on_extreme": "完全理解便签含义，感知到警告"
-          },
-          "difficulty": "regular", "based_on": null
+            "on_extreme": "完全理解便签含义"
+          }
         }
       ],
       "auto_triggers": [
         {
-          "id": "AT1", "type": "灵感", "name": "察觉后方异常",
-          "scene": "6号车厢", "requirement": "",
-          "trigger": "调查员在车厢内停留超过5分钟",
-          "result": "##GRADED##",
-          "side_effects": [],
-          "graded_result": {
-            "on_failure": "你隐约感到不安",
-            "on_regular": "你察觉到后方传来的震动在缓慢靠近",
-            "on_hard": "你意识到有东西正在从后方车厢吞噬一切",
-            "on_extreme": "你清晰地感知到一张巨口正从后方逼近"
-          },
-          "difficulty": "regular", "based_on": "I1"
+          "name": "靠近后门闻到血腥味",
+          "scene": "6号车厢",
+          "type": "无",
+          "result": "一股浓烈的血腥臭味从7号车厢飘来，令人作呕",
+          "side_effects": []
         }
       ],
       "encounters": [],
       "scene_weapons": [],
+      "from_here": [],
+      "to_here": [],
       "extra": {}
     }
   },
   "events": [
     {
-      "id": "E1", "type": "无", "name": "巨口吞噬电车",
-      "requirement": "interaction:I6", "trigger": "调查员触发7号车厢的后方观察",
-      "result": "##END_坏结局:电车被吞噬## 不可逆：后方车厢被巨口完全吞没...",
-      "side_effects": ["所有在后方车厢的调查员立即死亡"],
-      "difficulty": "None", "based_on": "I6",
-      "extra": {}
+      "id": "E1",
+      "type": "无",
+      "name": "退路断绝",
+      "result": "##END_坏结局:电车被吞噬##",
+      "side_effects": []
     }
   ],
-  "npc_profiles": {
-    "京山人吉": {
-      "name": "京山人吉", "role": "关键情报源",
-      "motivation": "保护乘客安全",
-      "knowledge": ["怪物对声音敏感", "驾驶室钥匙在3号车厢"],
-      "personality": "冷静但内心焦虑",
-      "voice_notes": "声音微微颤抖",
-      "notes": "在4号车厢被发现时处于昏迷状态",
-      "extra": {}
-    }
+  "npc_profiles": {},
+  "dependency_graph": {
+    "nodes": {"I1": {"entity_id": "I1", "entity_type": "interaction", "name": "阅读车门便签"}},
+    "edges": [{"source": "I3", "target": "I1", "dep_type": "interaction", "condition": "completed"}],
+    "_circular_cut": false, "_cut_info": null
+  },
+  "_phase1": {
+    "enemies": [{"enemy_ref": "Clicker", "min_count": 1, "max_count": 3}],
+    "weapons": [{"weapon_ref": "手电筒", "min_count": 0, "max_count": 3}]
   }
 }
 ```
 
-**统一实体字段含义**（interaction / auto_trigger / event 共享）：
+**术语约定**：interaction、auto_trigger、event 三者统称为 **entity（实体）**。
+
+**Entity 字段含义**（最终输出中保留的字段）：
 
 | 字段 | 含义 | 特殊值 |
 |------|------|--------|
-| `id` | 全局唯一标识 | I1.. / AT1.. / E1.. |
-| `scene` | 所属场景中文名 | event 无此字段 |
-| `type` | 关联技能名 | "侦察"、"急救"、"无" |
 | `name` | 实体名称 | |
-| `requirement` | 硬性前置条件（必须已完成的 ID 或持有的物品） | 无条件为空字符串 |
-| `trigger` | 触发场景描述（什么情况下触发） | 与 requirement 不可混淆 |
-| `result` | 直接结果 | `##GRADED##` 表示结果在 graded_result 中；`##END_名称:简述##` 表示结局 |
-| `side_effects` | 间接后果（与 result 不重合） | 自然语言字符串列表，Step 4 后部分结构化 |
+| `scene` | 所属场景中文名 | event 无此字段 |
+| `type` | 关联技能名（标准 COC 45 项） | "无" 表示不涉及检定 |
+| `result` | 直接结果 | `##GRADED##` 表示在 graded_result 中；`##END_名称:简述##` 表示结局 |
+| `side_effects` | 间接后果 | `@函数(参数)` 标记字符串或自然语言 |
 | `graded_result` | 分级检定后果 | type != "无" 时填写；四等级 on_failure/on_regular/on_hard/on_extreme |
-| `difficulty` | 检定难度 | None / regular / hard / extreme |
-| `based_on` | 派生来源 interaction ID | interaction 为 null；AT/event 指向派生的 interaction |
+
+**已从最终输出中移除的字段**：`id`、`based_on`、`requirement`、`trigger`、`difficulty`、`enemy_ref`、`weapon_ref`。这些字段在管线中间步骤使用，不进入最终 JSON。实体唯一性由 name + scene 组合确定。
+
+**L2 顶层字段**：
+- `scenes`: 按场景中文名分组的 entity + 通行路径 + 描述
+- `events`: 全局不可逆事件列表（不绑定特定场景）
+- `npc_profiles`: NPC 完整信息（待填充）
+- `dependency_graph`: Step 3.5 生成的依赖有向图（nodes + edges + 循环标记）
+- `_phase1`: Phase 1 产出的武器/敌人约束
 
 ### l3_designer.json — 设计者层
 
 ```json
 {
   "module_meta": {
-    "title": "常暗之厢", "author": "", "era": "1920s",
-    "theme": "封闭空间中的绝望逃亡", "expected_duration": "2-3小时", "player_count": "3-5"
+    "title": "逃出无限电车", "author": "", "era": "2010s",
+    "theme": "梦境逃脱与克苏鲁恐怖", "expected_duration": "单次团（3-4小时）", "player_count": "3-5人"
   },
   "world_rules": [
     {
       "id": "WR0", "name": "创作者豁免",
       "rule": "所有世界规则只约束KP和玩家，模组创作者不受世界规则约束",
       "scope": ["meta"], "is_absolute": true
-    },
-    {
-      "id": "WR1", "name": "无路可退",
-      "rule": "后方车厢被巨口吞噬，调查员只能向前探索",
-      "scope": ["movement"], "is_absolute": true
     }
   ],
   "scene_intents": {
-    "6号车厢": {"purpose": "苏醒点——建立基础恐慌和前进动机", "notes": "便签是关键线索引导"},
-    "7号车厢": {"purpose": "恐怖展场——展示巨口的威胁", "key_threat": "巨口吞噬"}
+    "6号车厢": {"purpose": "初始化场景", "key_threat": "未知与逐渐逼近的威胁感", "notes": ""}
   },
   "ending_conditions": [
-    {"id": "END1", "condition": "加速逃脱", "narrative": "真结局——调查员冲破噩梦醒来"},
-    {"id": "END2", "condition": "减速停车", "narrative": "坏结局——永远困在噩梦中"},
-    {"id": "END3", "condition": "SAN归零", "narrative": "疯狂结局——调查员精神崩溃"}
+    {"id": "END1", "condition": "加速逃脱", "narrative": "真结局——调查员冲破噩梦醒来"}
   ],
   "tone_constraints": {
     "genre": "克苏鲁恐怖",
-    "forbidden": ["喜剧化", "轻松氛围", "超现实解围"],
+    "forbidden": ["喜剧化", "轻松氛围"],
     "recommended": ["压迫感", "时间紧迫", "声音恐惧"],
-    "narrative_style": "以调查员的感官体验为中心，强调狭窄空间的压迫感和不可名状的恐怖"
+    "narrative_style": "以调查员的感官体验为中心"
   },
   "characters": [
     {
       "id": "NPC_1", "name": "京山人吉",
-      "behavior": "乘务员，在4号车厢昏迷。苏醒后会提供驾驶室位置和怪物情报。若调查员触发巨口吞噬，乘务员会为保护调查员而牺牲。叙事作用：情报传递 + 牺牲制造情感冲击"
+      "behavior": "乘务员，在4号车厢昏迷。苏醒后提供驾驶室位置和怪物情报。叙事作用：情报传递"
     }
   ],
   "driving_force": "奈亚拉托提普的化身出于对电子游戏的热衷，将调查员拉入这场噩梦试炼"
@@ -239,32 +247,16 @@ Step 3.5 + Step 4: 并行
 - `characters`: NPC 的行为逻辑和叙事作用（设计意图层）
 - `driving_force`: 一切事件的根本驱动力
 
-### dependency_graph（Step 3.5 产物，嵌入 L2 数据）
-
-```json
-{
-  "nodes": {
-    "I1": {"entity_id": "I1", "entity_type": "interaction", "name": "阅读便签正面"},
-    "I3": {"entity_id": "I3", "entity_type": "interaction", "name": "撕下便签查看背面"},
-    "E1": {"entity_id": "E1", "entity_type": "event", "name": "巨口吞噬电车"}
-  },
-  "edges": [
-    {"source": "I3", "target": "I1", "dep_type": "interaction", "condition": "completed"},
-    {"source": "E1", "target": "I6", "dep_type": "interaction", "condition": "completed"}
-  ],
-  "_circular_cut": false, "_cut_info": null
-}
-```
-
-**有向边含义**：source 依赖 target。如 I3→I1 表示"执行 I3 需要先完成 I1"。
+---
 
 ## 特殊标记约定
 
 | 标记 | 位置 | 含义 |
 |------|------|------|
-| `##GRADED##` | `result` 字段 | 实际结果在 `graded_result` 中，side_effects 为空 |
+| `##GRADED##` | `result` 字段 | 实际结果在 `graded_result` 中 |
 | `##END_名称:简述##` | `result` 字段开头 | 此实体会触发游戏结局 |
+| `@函数名(参数=值)` | side_effects / result / graded_result | 运行时解析为 side_effect 类实例 |
 
 ## 已知预留位
 
-`encounters` 和 `scene_weapons` 在 L2 模板中保留空数组占位。当前 pipeline 不填充这两个字段——敌人/武器信息通过 `side_effects` 中的结构化对象（spawn_enemy / grant_item）承载，无需单独字段。
+`encounters` 和 `scene_weapons` 在 L2 场景中保留空数组占位。当前 pipeline 不填充这两个字段——敌人/武器信息通过 side_effects 中的 `@spawn_enemy` / `@grant_weapon` 标记承载，Phase 1 约束记录在 `_phase1` 中。
