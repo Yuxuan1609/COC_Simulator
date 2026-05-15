@@ -2,22 +2,21 @@
   "scenes": {
     "6号车厢": {
       "description": "场景功能性描述（KP用）",
-      "from_here": [{"target": "目标场景", "method": "通行方式"}],
-      "to_here": [{"source": "来源场景", "method": "通行方式"}],
+      "from_here": [{"target": "目标场景", "method": "通行方式", "requirement": "通行前置条件（可选）"}],
+      "to_here": [{"source": "来源场景", "method": "通行方式", "requirement": "通行前置条件（可选）"}],
       "interactions": [
         {
           "id": "I1",
-          "type": "调查",
+          "type": "关联技能名，不涉及填\"无\"",
           "name": "互动名称",
           "requirement": "前置条件声明（自然语言）",
           "trigger": "触发条件",
-          "result": "结果描述",
-          "clue": "线索（可选）",
-          "side_effects": [],
+          "result": "结果描述（含线索信息）",
+          "side_effects": ["自然语言描述的副作用"],
           "enemy_ref": null,
           "weapon_ref": null,
-          "skill_name": "关联技能（可选）",
-          "difficulty": "regular"
+          "difficulty": "regular",
+          "based_on": null
         }
       ],
       "encounters": [
@@ -41,12 +40,17 @@
       "auto_triggers": [
         {
           "id": "AT1",
+          "type": "关联技能名，不涉及填\"无\"",
           "name": "自动触发名称",
           "scene": "S1",
-          "trigger_condition": "触发条件（自然语言）",
-          "effect_type": "reveal_info",
-          "effect_ref": null,
-          "reveal_narrative": "揭示时的叙事文本"
+          "requirement": "前置条件声明（自然语言）",
+          "trigger": "触发条件（自然语言）",
+          "result": "触发后的结果描述",
+          "side_effects": ["自然语言描述的副作用"],
+          "enemy_ref": null,
+          "weapon_ref": null,
+          "difficulty": "regular",
+          "based_on": "I1"
         }
       ],
       "extra": {}
@@ -55,10 +59,14 @@
   "events": [
     {
       "id": "E1",
+      "type": "关联技能名，不涉及填\"无\"",
       "name": "事件名称",
-      "trigger": "触发描述",
-      "irreversible_impact": "不可逆影响",
       "requirement": "前置条件声明（自然语言）",
+      "trigger": "触发条件描述",
+      "result": "触发后的结果描述（含不可逆影响）",
+      "side_effects": ["自然语言描述的副作用"],
+      "difficulty": "regular",
+      "based_on": "I1",
       "extra": {}
     }
   ],
