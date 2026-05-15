@@ -45,10 +45,10 @@ L2_INTERACTION_SCHEMA = {
     "requirement": {"required": False},
     "trigger": {"required": False},
     "result": {"required": False},
-    "clue": {"required": False},
     "side_effects": {"required": False},
     "skill_name": {"required": False},
     "difficulty": {"required": False, "values": L2_DIFFICULTIES},
+    "based_on": {"required": False},
 }
 
 L2_ENCOUNTER_SCHEMA = {
@@ -67,23 +67,18 @@ L2_SCENE_WEAPON_SCHEMA = {
     "extra": {"required": False},
 }
 
-L2_AUTO_TRIGGER_SCHEMA = {
-    "id": {"required": True},
-    "name": {"required": True},
-    "scene": {"required": False},
-    "trigger_condition": {"required": False},
-    "effect_type": {"required": False},
-    "effect_ref": {"required": False},
-    "reveal_narrative": {"required": False},
-    "extra": {"required": False},
-}
+L2_AUTO_TRIGGER_SCHEMA = L2_INTERACTION_SCHEMA  # 统一字段模型
 
 L2_EVENT_SCHEMA = {
     "id": {"required": True},
     "name": {"required": True},
-    "trigger": {"required": False},
-    "irreversible_impact": {"required": False},
+    "type": {"required": False},
     "requirement": {"required": False},
+    "trigger": {"required": False},
+    "result": {"required": False},
+    "side_effects": {"required": False},
+    "difficulty": {"required": False},
+    "based_on": {"required": False},
     "extra": {"required": False},
 }
 
@@ -150,12 +145,19 @@ L3_TONE_CONSTRAINTS_SCHEMA = {
     "narrative_style": {"required": False},
 }
 
+L3_CHARACTER_SCHEMA = {
+    "id": {"required": True},
+    "name": {"required": True},
+    "behavior": {"required": False},
+}
+
 L3_TOP_SCHEMA = {
     "module_meta": {"required": False, "nested": L3_MODULE_META_SCHEMA},
     "world_rules": {"required": False, "list_of": L3_WORLD_RULE_SCHEMA},
     "scene_intents": {"required": False},
     "ending_conditions": {"required": False, "list_of": L3_ENDING_CONDITION_SCHEMA},
     "tone_constraints": {"required": False, "nested": L3_TONE_CONSTRAINTS_SCHEMA},
+    "characters": {"required": False, "list_of": L3_CHARACTER_SCHEMA},
     "driving_force": {"required": False},
 }
 
