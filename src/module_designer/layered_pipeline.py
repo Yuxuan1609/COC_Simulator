@@ -452,14 +452,11 @@ def run_pipeline(
     # 标准属性集
     stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
-    # Build name→id map for scene descriptions
-    name_to_id = {s["name"]: s["id"] for s in scenes if s.get("name") and s.get("id")}
     l2_descriptions = {}
     for name, sdata in l1_data.items():
-        sid = name_to_id.get(name, name)
         desc = sdata.get("description", "") or sdata.get("atmosphere", "") or sdata.get("entry_narrative", "")
         if desc:
-            l2_descriptions[sid] = desc
+            l2_descriptions[name] = desc
 
     weapon_names = []
     enemy_names = []

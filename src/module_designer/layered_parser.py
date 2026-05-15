@@ -139,9 +139,9 @@ STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
 你的任务是：从模组文档中提取模组的元信息、场景列表和人物列表，使用固定的 ID 体系。
 
 重要原则：
-- 场景 ID 使用 S1, S2, S3... 格式
+- 场景使用原文中的中文名称（不需要 ID）
 - 人物 ID 使用 NPC_1, NPC_2... 格式
-- 场景名和人物名使用原文中的中文名称
+- 人物名使用原文中的中文名称
 - 仅输出 JSON，不要任何解释性文字
 - 如果模组文档没有出现可以为空，保留占位符
 - 注意：不能理智性交互或有意义对话的怪物/邪教徒不属characters
@@ -155,10 +155,7 @@ def build_step1a_prompt(content: str) -> str:
 输出格式:
 {{
   "module_meta": {{"title": "模组标题", "era": "年代（如1920s）", "theme": "核心主题"}},
-  "scenes": [
-    {{"name": "场景中文名", "id": "S1"}},
-    {{"name": "场景中文名", "id": "S2"}}
-  ],
+  "scenes": ["场景中文名", ...],
   "characters": [
     {{"name": "角色中文名", "id": "NPC_1"}},
     {{"name": "角色中文名", "id": "NPC_2"}}
@@ -166,7 +163,7 @@ def build_step1a_prompt(content: str) -> str:
 }}
 
 要求：
-1. scenes 按玩家可能到达的顺序排列
+1. scenes 按玩家可能到达的顺序排列，使用场景中文名
 2. characters 列出所有有名字或有重要作用的角色
 3. 仅输出 JSON
 
@@ -280,9 +277,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 
 
 def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
-    scene_list = "\n".join(
-        f"- {s['id']}: {s['name']}" for s in scenes
-    )
+    scene_list = "\n".join(f"- {s}" for s in scenes)
     return f"""从精修模组文本中提取每个场景的全部可执行互动，以及场景间的通行路径。
 
 已知场景列表:
@@ -293,7 +288,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
   "interactions": [
     {{
       "id": "I1",
-      "scene": "S1",
+      "scene": "6号车厢",
       "type":  关联技能鉴定如“侦察”、“急救”等，不涉及则为“无”,
       "name": "互动名称",
       "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），如：interaction:I3 已完成。无条件填空字符串",
@@ -308,21 +303,21 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
     }}
   ],
   "scene_movements": {{
-    "S1": {{
+    "6号车厢": {{
       "from_here": [
-        {{"target": "S2", "method": "步行通过车门", "requirement": "门未上锁"}}
+        {{"target": "7号车厢", "method": "步行通过车门", "requirement": "门未上锁"}}
       ],
       "to_here": [
-        {{"source": "S0", "method": "步行通过车门", "requirement": ""}}
+        {{"source": "5号车厢", "method": "步行通过车门", "requirement": ""}}
       ]
     }},
-    "S2": {{ ... }}
+    "7号车厢": {{ ... }}
   }}
 }}
 
 要求：
 1. id 全局唯一 (I1, I2, I3...)
-2. scene 使用给定列表中的 ID (S1, S2...)
+2. scene 使用场景中文名
 3. enemy_ref 和 weapon_ref 全部填 null（等后续步骤处理）
 4. requirement 是硬性前置条件：必须已完成的 interaction ID 或持有特定物品。无条件填空字符串。不要和 trigger 混淆
 5. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
@@ -333,7 +328,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 10. graded_result：type 不为”无”时填写。此时 result 必须填 “##GRADED##”（占位标记），side_effects 必须留空。所有结果文字写入 graded_result 的四等级中。四等级含义：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功、on_extreme=极难成功。若原文未区分等级结果，各等级可描述相同内容
 11. 提取原文中提到的所有互动，即使描述简略也要列出
 12. scene_movements 必须覆盖所有已知场景
-13. 通行路径的 target/source 使用场景 ID，method 描述通行方式，requirement 描述硬性通行前置条件
+13. 通行路径的 target/source 使用场景中文名，method 描述通行方式，requirement 描述硬性通行前置条件
 14. 严格依据精修模组内容，基于场景氛围合理补充，不要和原文冲突
 15. based_on 始终填 null（派生关系由 Step 2b 标注）
 精修模组：
@@ -371,7 +366,7 @@ def build_step2b_events_prompt(
     scenes: list[dict],
     interactions: list[dict],
 ) -> str:
-    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    scene_list = "\n".join(f"- {s}" for s in scenes)
     interaction_list = "\n".join(
         f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
         for i in interactions
@@ -455,7 +450,7 @@ def build_step2b_at_prompt(
     scenes: list[dict],
     interactions: list[dict],
 ) -> str:
-    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    scene_list = "\n".join(f"- {s}" for s in scenes)
     interaction_list = "\n".join(
         f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
         for i in interactions
@@ -473,7 +468,7 @@ def build_step2b_at_prompt(
   "auto_triggers": [
     {{
       "id": "AT1",
-      "scene": "S1",
+      "scene": "6号车厢",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "自动触发名称",
       "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串",
@@ -491,7 +486,7 @@ def build_step2b_at_prompt(
 
 要求：
 1. id 全局唯一 (AT1, AT2, AT3...)
-2. scene 使用给定列表中的 ID
+2. scene 使用场景中文名
 3. based_on 只能指向已知的 interaction ID
 4. enemy_ref 和 weapon_ref 全部填 null
 5. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
@@ -534,7 +529,7 @@ STEP2C_L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩�
 
 def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
     template = _load_template("l1_template.json")
-    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    scene_list = "\n".join(f"- {s}" for s in scenes)
     char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
     return f"""从精修模组文本中提取每个场景的「玩家初始感知信息」。
 
@@ -594,7 +589,7 @@ STEP2C_L3_SYSTEM = """你是一个优秀的 TRPG 模组设计师，专门提取�
 
 def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
     template = _load_template("l3_template.json")
-    scene_list = "\n".join(f"- {s['id']}: {s['name']}" for s in scenes)
+    scene_list = "\n".join(f"- {s}" for s in scenes)
     char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
     return f"""从精修模组文本中提取「设计者层」信息（L3 层）。
 
@@ -737,7 +732,7 @@ def build_step3b_prompt(
     l3_data: dict,
     step1_scenes: list[dict],
 ) -> str:
-    scene_names = ", ".join(s['name'] for s in step1_scenes)
+    scene_names = ", ".join(step1_scenes)
     return f"""核对 L1 与 L2 的交叉引用。
 
 ## 精修模组（参考上下文）
