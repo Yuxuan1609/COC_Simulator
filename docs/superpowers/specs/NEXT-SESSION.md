@@ -181,18 +181,24 @@ Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
 
 **术语约定**：interaction、auto_trigger、event 三者统称为 **entity（实体）**。
 
-**Entity 字段含义**（最终输出中保留的字段）：
+**Entity 字段含义**（最终输出中保留的完整字段）：
 
 | 字段 | 含义 | 特殊值 |
 |------|------|--------|
 | `name` | 实体名称 | |
 | `scene` | 所属场景中文名 | event 无此字段 |
-| `type` | 关联技能名（标准 COC 45 项） | "无" 表示不涉及检定 |
-| `result` | 直接结果 | `##GRADED##` 表示在 graded_result 中；`##END_名称:简述##` 表示结局 |
-| `side_effects` | 间接后果 | `@函数(参数)` 标记字符串或自然语言 |
-| `graded_result` | 分级检定后果 | type != "无" 时填写；四等级 on_failure/on_regular/on_hard/on_extreme |
+| `type` | 关联技能名（标准 COC 45 项，Phase 2 标准化） | "无" 表示不涉及检定 |
+| `result` | 直接结果（Phase 2 可含 @标记） | `##GRADED##` 表示在 graded_result 中；`##END_名称:简述##` 表示结局 |
+| `side_effects` | 间接后果（Phase 2 @标记化） | `@函数(参数)` 标记字符串或自然语言 |
+| `graded_result` | 分级检定后果（Phase 2 可含 @标记） | type != "无" 时填写 |
+| `id` | 全局唯一标识 | I1../AT1../E1.. |
+| `requirement` | 硬性前置条件 | |
+| `trigger` | 触发场景描述 | |
+| `difficulty` | 检定难度 | None/regular/hard/extreme |
 
-**已从最终输出中移除的字段**：`id`、`based_on`、`requirement`、`trigger`、`difficulty`、`enemy_ref`、`weapon_ref`。这些字段在管线中间步骤使用，不进入最终 JSON。实体唯一性由 name + scene 组合确定。
+**Phase 2 处理方式**：prompt 仅传前 6 个字段（name/scene/type/result/graded_result/side_effects）给 LLM 做标准化以节省 token。标准化结果通过 `_merge_phase2_fields` 合并回原始完整 entity（保留 id/requirement/trigger/difficulty 不变）。
+
+**已从最终输出中移除的字段**：`based_on`、`enemy_ref`、`weapon_ref`。`based_on` 仅在 Step 2b/3a/3.5 内部做依赖推导，不进入最终 JSON。
 
 **L2 顶层字段**：
 - `scenes`: 按场景中文名分组的 entity + 通行路径 + 描述

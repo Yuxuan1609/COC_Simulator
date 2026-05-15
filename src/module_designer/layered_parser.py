@@ -105,6 +105,29 @@ def _slim_entity(entity: dict) -> dict:
     return slimmed
 
 
+def _merge_phase2_fields(originals: list[dict], phase2_entities: list[dict]) -> list[dict]:
+    """将 Phase 2 标准化后的字段合并回完整 entity。
+
+    Phase 2 prompt 只传 6 个字段给 LLM 以节省 token，LLM 返回标准化后的
+    type/side_effects/result/graded_result。此函数将这些字段写回原始完整 entity。
+    匹配依据: (name, scene)。
+    """
+    lookup = {}
+    for i, e in enumerate(originals):
+        key = (e.get("name", ""), e.get("scene", ""))
+        lookup[key] = i
+
+    merged = [dict(e) for e in originals]
+    for p2e in phase2_entities:
+        key = (p2e.get("name", ""), p2e.get("scene", ""))
+        if key in lookup:
+            idx = lookup[key]
+            for field in ("type", "side_effects", "result", "graded_result"):
+                if field in p2e:
+                    merged[idx][field] = p2e[field]
+    return merged
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Fallback wrapper
 # ═══════════════════════════════════════════════════════════════
@@ -496,7 +519,7 @@ def build_step2b_at_prompt(
 5. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
 6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
 7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
-8. 每个场景至少生成 0-2 个 auto_trigger
+8. 每个场景生成 0-2 个 auto_trigger
 
 精修模组：
 \"\"\"

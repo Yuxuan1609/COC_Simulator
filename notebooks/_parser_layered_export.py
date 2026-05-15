@@ -404,6 +404,7 @@ for name, sdata in l1_data.items():
 scene_intents_for_s4 = l3_data.get("scene_intents", {})
 
 from module_designer.dependency_graph import DependencyGraph
+from module_designer.layered_parser import _merge_phase2_fields
 
 # ── Step 3.5: 依赖图 ──
 MAX_TRIES = 3
@@ -452,8 +453,11 @@ step4 = do_json_call(
     phase1_clean, skill_names, stat_names,
     system_prompt=STEP4_SYSTEM
 )
-interactions = step4.get("interactions", step35_interactions)
-auto_triggers = step4.get("auto_triggers", step35_at)
+# Merge Phase 2 standardized fields back into complete originals
+p2_interactions = step4.get("interactions", step35_interactions)
+p2_auto_triggers = step4.get("auto_triggers", step35_at)
+interactions = _merge_phase2_fields(step35_interactions, p2_interactions)
+auto_triggers = _merge_phase2_fields(step35_at, p2_auto_triggers)
 print(f"Phase 2 完成: skill/stat 标准化 + @标记转化")
 
 # Strip based_on

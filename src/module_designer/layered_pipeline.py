@@ -282,6 +282,7 @@ def run_pipeline(
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
         parse_step35, parse_phase1,
+        _merge_phase2_fields, _slim_entity,
     )
     from concurrent.futures import ThreadPoolExecutor
 
@@ -601,8 +602,11 @@ def run_pipeline(
         max_retries, verbose, "Phase 2",
     )
 
-    interactions = phase2_result.get("interactions", step35_interactions)
-    auto_triggers = phase2_result.get("auto_triggers", step35_at)
+    # Merge Phase 2 standardized fields back into complete originals
+    p2_interactions = phase2_result.get("interactions", step35_interactions)
+    p2_auto_triggers = phase2_result.get("auto_triggers", step35_at)
+    interactions = _merge_phase2_fields(step35_interactions, p2_interactions)
+    auto_triggers = _merge_phase2_fields(step35_at, p2_auto_triggers)
     if phase2_result.get("_fallback"):
         result.fallbacks.append("Phase 2")
 
