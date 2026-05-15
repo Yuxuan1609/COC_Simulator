@@ -65,22 +65,33 @@ class SceneWeapon:
 
 @dataclass
 class AutoTrigger:
-    """自动触发事件（替代 HiddenInfo）."""
+    """自动触发事件（与 interaction 统一字段模型）."""
     id: str                      # AT1, AT2...
     name: str
     scene: str = ""              # 生效场景 ID (S1, S2...)
-    trigger_condition: str = ""  # 自然语言触发条件
-    effect_type: str = ""        # reveal_info / spawn_enemy / grant_weapon / npc_state_change
-    effect_ref: str = ""         # 引用目标（enemy名/weapon名/NPC名，Step 4 填）
-    reveal_narrative: str = ""   # 揭示叙事（仅 reveal_info 类型）
+    type: str = ""               # 关联技能名，不涉及填"无"
+    requirement: str = ""        # 前置条件（自然语言）
+    trigger: str = ""            # 触发条件描述
+    result: str = ""             # 触发后结果描述
+    side_effects: list = field(default_factory=list)  # 自然语言字符串列表
+    enemy_ref: str = ""          # Step 4 填入
+    weapon_ref: str = ""         # Step 4 填入
+    difficulty: str = ""         # None / regular / hard / extreme
+    based_on: str = ""           # 派生来源 interaction ID
     extra: Optional[dict] = None
 
     def to_dict(self) -> dict:
         d = {
             "id": self.id, "name": self.name, "scene": self.scene,
-            "trigger_condition": self.trigger_condition,
-            "effect_type": self.effect_type, "effect_ref": self.effect_ref,
-            "reveal_narrative": self.reveal_narrative,
+            "type": self.type,
+            "requirement": self.requirement,
+            "trigger": self.trigger,
+            "result": self.result,
+            "side_effects": self.side_effects,
+            "enemy_ref": self.enemy_ref,
+            "weapon_ref": self.weapon_ref,
+            "difficulty": self.difficulty,
+            "based_on": self.based_on,
         }
         if self.extra:
             d["extra"] = self.extra
@@ -91,10 +102,15 @@ class AutoTrigger:
         return cls(
             id=data["id"], name=data["name"],
             scene=data.get("scene", ""),
-            trigger_condition=data.get("trigger_condition", ""),
-            effect_type=data.get("effect_type", ""),
-            effect_ref=data.get("effect_ref", ""),
-            reveal_narrative=data.get("reveal_narrative", ""),
+            type=data.get("type", ""),
+            requirement=data.get("requirement", ""),
+            trigger=data.get("trigger", ""),
+            result=data.get("result", ""),
+            side_effects=data.get("side_effects", []),
+            enemy_ref=data.get("enemy_ref", ""),
+            weapon_ref=data.get("weapon_ref", ""),
+            difficulty=data.get("difficulty", ""),
+            based_on=data.get("based_on", ""),
             extra=data.get("extra"),
         )
 
