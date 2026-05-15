@@ -9,7 +9,8 @@
   Step 2c: L1 + L3 (并行)
   Step 3a: L2 依赖解析 + L2生成
   Step 3b: L1 ↔ L2 交叉核对
-  Step 4:  Library 匹配 enemies/weapons
+  Phase 1: 风格预判 (与 Step 3.5 并行)
+  Phase 2: 精简标准化 (替代原 Step 4)
 
 保底策略: 每步格式/内容失败 → 重调 (最多 N 次) → 仍失败则基于可解析内容写 JSON。
 """
@@ -865,6 +866,8 @@ def parse_step35(
 #  Phase 1: 风格预判
 # ═══════════════════════════════════════════════════════════════
 
+# Phase 命名说明：Phase 1/2 不同于 Step 1-4。Step 是管线串行步骤，
+# Phase 1 与 Step 3.5 并行，Phase 2 串行在 Phase 1 之后，是更细粒度的阶段划分。
 PHASE1_SYSTEM = """你是一个 TRPG 模组风格分析助手。
 你的任务是：根据模组精修文本，判断敌人和武器的风格方向和数量范围，用于后续约束生成。
 
@@ -925,6 +928,7 @@ def parse_phase1(
     enemy_library_names: list[str],
     llm_call,
 ) -> dict:
+    """从精修模组判断敌人和武器的风格方向与数量范围."""
     prompt = build_phase1_prompt(chapters, scene_intents, weapon_library_names, enemy_library_names)
     return llm_call(prompt, system=PHASE1_SYSTEM)
 
