@@ -511,7 +511,7 @@ def parse_step2b_at(
 #  Step 2c: L1 玩家可见层
 # ═══════════════════════════════════════════════════════════════
 
-STEP2C_L1_SYSTEM = “””你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
+STEP2C_L1_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取「玩家可见层」信息。
 你的任务是：从精修模组文本中提取每个场景的初始感知信息——玩家进入场景时无需任何检定即可直接感知的一切。
 
 重要原则：
@@ -521,7 +521,7 @@ STEP2C_L1_SYSTEM = “””你是一个 TRPG 模组解析助手，专门提取�
 - NPC 只描述外貌和神态（name, brief, demeanor），不写隐藏动机、对话内容或互动逻辑
 - NPC 的互动由 L2 层通过 entity（interaction/auto_trigger/event）承载
 - 你是模组叙述者，你只负责描述玩家”现在”能见到/感受到的信息
-“””
+"""
 
 
 def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
