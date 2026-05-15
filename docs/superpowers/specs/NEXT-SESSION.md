@@ -2,7 +2,7 @@
 
 **日期**: 2026-05-15
 **分支**: main
-**状态**: 管线全部就绪，Step 4 有 minor issues 待修复
+**状态**: 管线全部就绪
 
 ---
 
@@ -265,8 +265,6 @@ Step 3.5 + Step 4: 并行
 | `##GRADED##` | `result` 字段 | 实际结果在 `graded_result` 中，side_effects 为空 |
 | `##END_名称:简述##` | `result` 字段开头 | 此实体会触发游戏结局 |
 
-## Step 4 待修复问题
+## 已知预留位
 
-1. **Prompt 任务 1/2 提到 enemy_ref/weapon_ref** — 这两个顶层字段已从实体模型中删除。enemy/weapon 现在通过 `side_effects` 中的 `spawn_enemy.enemy_ref` 和 `grant_item.item_ref` 承载。Prompt 中的表述需更新：改为"为 side_effects 中的 spawn_enemy 匹配敌人库"和"为 grant_item 匹配武器库"。
-2. **encounters/scene_weapons** — 模板和 schema 中有空数组占位，pipeline 从未填充。后续可考虑删除或保留。
-3. **parse_step4 仍引用 condensed_text** — `layered_parser.py:969` 处 `parse_step4` 内部调用仍写 `condensed_text`，虽然运行时 pipeline 已传入 `chapters` dict，但变量名不一致（已修复本轮）。
+`encounters` 和 `scene_weapons` 在 L2 模板中保留空数组占位。当前 pipeline 不填充这两个字段——敌人/武器信息通过 `side_effects` 中的结构化对象（spawn_enemy / grant_item）承载，无需单独字段。
