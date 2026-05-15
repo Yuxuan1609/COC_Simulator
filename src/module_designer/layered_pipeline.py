@@ -276,12 +276,12 @@ def run_pipeline(
 ) -> PipelineResult:
     """执行完整的四步渐进式解析管线."""
     from module_designer.layered_parser import (
-        _is_valid_json_output, _with_fallback,
+        _with_fallback,
         parse_step1a, parse_step1b,
         parse_step2a, parse_step2b_events, parse_step2b_at,
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
-        parse_step35,
+        parse_step35, parse_phase1,
     )
     from concurrent.futures import ThreadPoolExecutor
 
@@ -457,8 +457,6 @@ def run_pipeline(
     if verbose:
         print("[Step 3b] L1 ↔ L2 交叉核对...")
 
-    l2_assembled_for_llm = l2_assembled
-
     def _do_step3b():
         return parse_step3b(chapters, l1_data, l2_assembled, l3_data, scenes, llm_json)
     step3b = _with_fallback(
@@ -485,12 +483,11 @@ def run_pipeline(
             }
             world_rules.insert(0, wr0)
 
-    # ── Step 3.5 + Step 4 (并行) ──────────────────────────────
+    # ── Step 3.5 + Phase 1 (并行) ──────────────────────────────
     if verbose:
         print("═" * 50)
-        print("[Step 3.5 + Step 4] 依赖图构建 + Library 匹配 (并行)...")
+        print("[Step 3.5 + Phase 1] 依赖图构建 + 风格预判 (并行)...")
 
-    # 标准属性集
     stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
     l2_descriptions = {}
@@ -522,8 +519,6 @@ def run_pipeline(
     except Exception:
         pass
 
-    scene_intents_for_step4 = l3_data.get("scene_intents", {})
-
     from module_designer.dependency_graph import DependencyGraph
 
     def _do_step35():
@@ -553,39 +548,79 @@ def run_pipeline(
                     print(f"  [Step 3.5] 第 {attempt} 次检测到 {len(cycles)} 个循环 ({cycle_ids}...)，重调 LLM...")
                 continue
 
-        # Fallback: cut random edge
         if verbose:
             print(f"  [Step 3.5] 重调用尽，随机切断一条循环边")
         graph.cut_random_edge_in_cycles()
         return {"graph": graph, "dependencies": deps, "_circular_cut": True}
 
-    def _do_step4():
-        return parse_step4(
-            step35_interactions, step35_at, l2_descriptions,
-            scene_intents_for_step4, chapters,
-            weapon_names, enemy_names, skill_names, stat_names, llm_json,
+    def _do_phase1():
+        return parse_phase1(
+            chapters, l3_data.get("scene_intents", {}),
+            weapon_names, enemy_names, llm_json,
         )
 
     with ThreadPoolExecutor(max_workers=2) as ex:
         f35 = ex.submit(_do_step35)
-        f4 = ex.submit(lambda: _with_fallback(
-            _do_step4, ["interactions"],
-            {"interactions": step35_interactions, "auto_triggers": step35_at},
-            max_retries, verbose, "Step 4",
+        f_p1 = ex.submit(lambda: _with_fallback(
+            _do_phase1, ["enemies"],
+            {"enemies": [], "weapons": []},
+            max_retries, verbose, "Phase 1",
         ))
         step35_result = f35.result()
-        step4 = f4.result()
-
-    interactions = step4.get("interactions", step35_interactions)
-    auto_triggers = step4.get("auto_triggers", step35_at)
-    if step4.get("_fallback"):
-        result.fallbacks.append("Step 4")
+        phase1_result = f_p1.result()
 
     dep_graph = step35_result.get("graph")
     if dep_graph:
         result.l2_data["dependency_graph"] = dep_graph.to_dict()
     if step35_result.get("_circular_cut"):
         result.fallbacks.append("Step 3.5 (circular cut)")
+    if phase1_result.get("_fallback"):
+        result.fallbacks.append("Phase 1")
+
+    if verbose:
+        print(f"  Phase 1 完成: {len(phase1_result.get('enemies',[]))} 敌人类型, {len(phase1_result.get('weapons',[]))} 武器类型")
+
+    # Strip fallback metadata before passing to Phase 2 LLM prompt
+    phase1_clean = {"enemies": phase1_result.get("enemies", []),
+                    "weapons": phase1_result.get("weapons", [])}
+
+    # ── Phase 2 (串行，依赖 Phase 1 约束) ─────────────────────
+    if verbose:
+        print("[Phase 2] 精简标准化...")
+
+    def _do_phase2():
+        return parse_step4(
+            step35_interactions, step35_at, l2_descriptions,
+            l3_data.get("scene_intents", {}), chapters,
+            phase1_clean, skill_names, stat_names, llm_json,
+        )
+
+    phase2_result = _with_fallback(
+        _do_phase2, ["interactions"],
+        {"interactions": step35_interactions, "auto_triggers": step35_at},
+        max_retries, verbose, "Phase 2",
+    )
+
+    interactions = phase2_result.get("interactions", step35_interactions)
+    auto_triggers = phase2_result.get("auto_triggers", step35_at)
+    if phase2_result.get("_fallback"):
+        result.fallbacks.append("Phase 2")
+
+    # Strip based_on from all entities
+    for e in interactions:
+        e.pop("based_on", None)
+    for e in auto_triggers:
+        e.pop("based_on", None)
+    for e in step35_events:
+        e.pop("based_on", None)
+
+    # Re-assemble L2 with Phase 2 standardized entities
+    l2_assembled.clear()
+    l2_assembled.update(_assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data))
+    if dep_graph:
+        l2_assembled["dependency_graph"] = dep_graph.to_dict()
+    l2_assembled["_phase1"] = {"enemies": phase1_result.get("enemies", []),
+                                "weapons": phase1_result.get("weapons", [])}
 
     # ── 最终: Schema 验证 + Cross-validate ─────────────────
     if verbose:
