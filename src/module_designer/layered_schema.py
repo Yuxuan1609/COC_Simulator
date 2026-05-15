@@ -52,22 +52,6 @@ L2_INTERACTION_SCHEMA = {
     "graded_result": {"required": False},
 }
 
-L2_ENCOUNTER_SCHEMA = {
-    "enemy_ref": {"required": True},
-    "trigger_condition": {"required": False},
-    "initial_behavior": {"required": False},
-    "quantity": {"required": False},
-    "notes": {"required": False},
-    "extra": {"required": False},
-}
-
-L2_SCENE_WEAPON_SCHEMA = {
-    "weapon_ref": {"required": True},
-    "location": {"required": False},
-    "discovery_method": {"required": False},
-    "extra": {"required": False},
-}
-
 L2_AUTO_TRIGGER_SCHEMA = L2_INTERACTION_SCHEMA  # 统一字段模型
 
 L2_EVENT_SCHEMA = {
@@ -100,8 +84,6 @@ L2_SCENE_SCHEMA = {
     "from_here": {"required": False},
     "to_here": {"required": False},
     "interactions": {"required": False, "list_of": L2_INTERACTION_SCHEMA},
-    "encounters": {"required": False, "list_of": L2_ENCOUNTER_SCHEMA},
-    "scene_weapons": {"required": False, "list_of": L2_SCENE_WEAPON_SCHEMA},
     "auto_triggers": {"required": False, "list_of": L2_AUTO_TRIGGER_SCHEMA},
     "extra": {"required": False},
 }
