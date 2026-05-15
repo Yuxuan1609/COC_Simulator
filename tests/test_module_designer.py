@@ -230,6 +230,7 @@ from module_designer.layered_parser import (
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
     build_step3a_prompt, build_step3b_prompt, build_step4_prompt,
+    build_step35_prompt,
 )
 
 
@@ -385,18 +386,30 @@ def test_build_step2c_l3_prompt_structure():
 
 
 def test_build_step3a_prompt_structure():
-    interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先找到线索"}]
-    events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后"}]
-    auto_triggers = [{"id": "AT1", "name": "触发", "scene": "S1", "trigger_condition": "玩家进入场景"}]
+    interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先找到线索", "side_effects": [], "result": "找到线索", "type": "无", "trigger": ""}]
+    events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后", "type": "无", "difficulty": "None", "based_on": "I1", "side_effects": [], "result": "...", "trigger": ""}]
+    auto_triggers = [{"id": "AT1", "name": "触发", "scene": "S1", "trigger": "玩家进入场景", "type": "无", "based_on": "I1", "side_effects": [], "result": "...", "requirement": ""}]
     ending_conditions = [{"id": "END1", "condition": "...", "narrative": "真结局"}]
     prompt = build_step3a_prompt("精修模组", interactions, events, auto_triggers, ending_conditions)
     assert "I1" in prompt
     assert "E1" in prompt
     assert "AT1" in prompt
-    assert "side_effects" in prompt
     assert "based_on" in prompt
-    assert "requirement" in prompt
-    assert "side_effect" in prompt.lower()
+    assert "去重" in prompt
+    assert "graded_result" in prompt
+
+
+def test_build_step35_prompt_structure():
+    interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先完成I3", "trigger": "", "result": "找到钥匙", "side_effects": []}]
+    events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后", "trigger": ""}]
+    auto_triggers = []
+    prompt = build_step35_prompt("精修模组", interactions, events, auto_triggers)
+    assert "精修模组" in prompt
+    assert "dependencies" in prompt
+    assert "entity_id" in prompt
+    assert "requires" in prompt
+    assert "I1" in prompt
+    assert "E1" in prompt
 
 
 def test_build_step3b_prompt_structure():
