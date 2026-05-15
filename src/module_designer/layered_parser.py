@@ -250,11 +250,12 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 
 重要原则：
 - enemy_ref 和 weapon_ref 留空（填 null），等待后续步骤匹配
-- requirement 使用自然语言声明（如 "需要先找到钥匙"），不引用其他 ID
-- 每个互动必须有唯一 id (I1, I2, I3...)，互动完成后其 id 即代表触发状态
-- result 合并了结果描述和线索信息
-- side_effects 是自然语言字符串列表，描述非状态性的副作用（如获得物品、属性变化、NPC状态变化）
-- 结构化的状态追踪（如"已找到钥匙"）由互动本身的完成状态替代，不需要在 side_effects 中记录 flag
+- requirement 是硬性前置条件：必须已完成的 interaction ID 或必须持有的物品。如 "interaction:I3 已完成"、"持有手电筒"。无条件则填空字符串
+- trigger 是触发场景描述：什么情况下玩家可以执行此互动。如 "玩家检查抽屉时"、"玩家进入此场景时"
+- result 是直接结果：互动直接产生的结果。如 "抽屉打开了，里面有一把钥匙"。如果此互动会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头，如 "##END_真结局:电车冲出梦境## 调查员们成功..."
+- side_effects 是间接后果：与 result 不重合的附带影响。如 "开抽屉的声响吸引了隔壁车厢的怪物"。自然语言字符串列表
+- 互动完成即代表状态变更，不需要单独的 flag
+- type 涉及技能鉴定时，填入 graded_result（分级检定后果），此时 result 填 "##GRADED##"（占位标记），side_effects 留空。所有结果描述写入 graded_result 各等级中；type 为"无"时不填 graded_result
 - based_on 始终为 null（Step 2b 会给派生实体填值）
 - 通行路径记录每个场景的出边（from_here）和入边（to_here），包含通行方式和前置条件
 - 仅输出 JSON，不要任何解释性文字"""
@@ -277,10 +278,11 @@ def build_step2a_prompt(condensed_text: str, scenes: list[dict]) -> str:
       "scene": "S1",
       "type":  关联技能鉴定如“侦察”、“急救”等，不涉及则为“无”,
       "name": "互动名称",
-      "requirement": "前置条件声明（自然语言）",
-      "trigger": "触发条件描述",
-      "result": "结果描述（含线索信息）",
-      "side_effects": ["自然语言描述的基于result的间接作用，如：result是目击怪物，side_effects为san值失去1d3"（可选）],
+      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），如：interaction:I3 已完成。无条件填空字符串",
+      "trigger": "触发场景（描述什么情况下玩家可以执行此互动），如：玩家检查抽屉时",
+      "result": "直接结果（互动直接产生的结果），如：抽屉打开了，里面有一把钥匙",
+      "side_effects": ["间接后果（与result不重合的附带影响），如：开抽屉的声响吸引了隔壁车厢的怪物。无条件则为空列表"],
+      "graded_result": {{"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}},
       "enemy_ref": null,
       "weapon_ref": null,
       "difficulty": "regular",
@@ -304,16 +306,18 @@ def build_step2a_prompt(condensed_text: str, scenes: list[dict]) -> str:
 1. id 全局唯一 (I1, I2, I3...)
 2. scene 使用给定列表中的 ID (S1, S2...)
 3. enemy_ref 和 weapon_ref 全部填 null（等后续步骤处理）
-4. requirement 使用自然语言描述前置条件
-5. type interaction 是涉及的技能鉴定如“侦察”、“急救”等，不涉及则为“无”
-6. difficulty 从以下选择：None/regular/hard/extreme用于描述鉴定难度(如果有)，没有难度提及默认regular，不涉及鉴定（type == “无”）则为None
-7. 提取原文中提到的所有互动，即使描述简略也要列出
-8. result 合并了结果描述和线索信息
-9. side_effects 为自然语言字符串列表，只记录非状态性的副作用（获得物品、属性变化、NPC状态变化、敌人出现等）。不要记录 flag/标记类的状态变更（互动完成即代表状态变更）
-10. scene_movements 必须覆盖所有已知场景，from_here 列出从该场景可到达的目标场景，to_here 列出可到达该场景的来源场景
-11. 通行路径的 target/source 使用场景 ID (S1, S2...)，method 描述通行方式，requirement 描述通行前置条件（无条件则留空字符串）
-12. 重要，严格依据精修模组中的内容给出结果，对原文没有提及的内容基于场景氛围合理补充可以进行补充但是不要和原文冲突
-13. based_on 始终填 null（派生关系由 Step 2b 标注）
+4. requirement 是硬性前置条件：必须已完成的 interaction ID 或持有特定物品。无条件填空字符串。不要和 trigger 混淆
+5. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
+6. result 是直接结果：互动直接产生的可感知结果，不含间接影响。如果此互动会直接触发游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 "##END_真结局:电车冲出梦境##"），后续再写正常结果文本
+7. side_effects 是间接后果：与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
+8. type 是涉及的技能鉴定名，不涉及则为”无”
+9. difficulty 从以下选择：None/regular/hard/extreme；不涉及鉴定则为 None
+10. graded_result：type 不为”无”时填写。此时 result 必须填 “##GRADED##”（占位标记），side_effects 必须留空。所有结果文字写入 graded_result 的四等级中。四等级含义：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功、on_extreme=极难成功。若原文未区分等级结果，各等级可描述相同内容
+11. 提取原文中提到的所有互动，即使描述简略也要列出
+12. scene_movements 必须覆盖所有已知场景
+13. 通行路径的 target/source 使用场景 ID，method 描述通行方式，requirement 描述硬性通行前置条件
+14. 严格依据精修模组内容，基于场景氛围合理补充，不要和原文冲突
+15. based_on 始终填 null（派生关系由 Step 2b 标注）
 精修模组：
 \"\"\"
 {condensed_text}
@@ -332,11 +336,13 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 你的任务是：从精修模组文本和已知互动中派生全局事件。事件是跨场景的、不可逆的世界级变化。
 
 重要原则：
-- 事件使用与 interaction 相同的统一字段模型（id, type, name, requirement, trigger, result, side_effects, difficulty, based_on）
+- 事件使用与 interaction 相同的统一字段模型
 - 事件无 scene 字段（全局事件不绑定特定场景）
-- based_on 只能指向已知的 interaction ID（因为 Step 2b 并行，不能指向 auto_trigger 或其他 event）
-- type 填写关联技能名（如"侦察"），不涉及填"无"
-- result 需包含不可逆性描述（如"此事件不可逆：...")
+- based_on 只能指向已知的 interaction ID
+- requirement 是硬性前置条件（必须已完成的 interaction ID 或持有特定物品）；trigger 是触发场景描述，两者不可混淆
+- result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
+- side_effects 是与 result 不重合的间接后果
+- type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -365,24 +371,26 @@ def build_step2b_events_prompt(
       "id": "E1",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "事件名称",
-      "requirement": "前置条件声明（自然语言，可引用 interaction ID）",
-      "trigger": "触发条件描述（自然语言）",
-      "result": "触发后的结果描述（含不可逆性标注，如：不可逆——场景被摧毁）",
-      "side_effects": ["自然语言描述的副作用"],
-      "difficulty": "None/regular/hard/extreme",
-      "based_on": "I1"
+      “requirement”: “硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串”,
+      “trigger”: “触发场景（描述什么情况下此事件触发），如：I5 完成后此事件触发”,
+      “result”: “直接结果（事件直接产生的结果，含不可逆标注）”,
+      “side_effects”: [“间接后果（与result不重合的附带影响），无条件则为空列表”],
+      “graded_result”: {{“on_failure”: “...”, “on_regular”: “...”, “on_hard”: “...”, “on_extreme”: “...”}},
+      “difficulty”: “None/regular/hard/extreme”,
+      “based_on”: “I1”
     }}
   ]
 }}
 
 要求：
 1. id 全局唯一 (E1, E2, E3...)
-2. based_on 只能指向已知的 interaction ID (如 I1)，若此事件不是从特定互动派生的则填空字符串
-3. result 中如果此事件不可逆，需明确标注"不可逆："并描述影响
-4. type 选择关联的技能检定名称，不涉及填"无"
-5. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
-6. 不可逆事件包括：场景被破坏、NPC 死亡、关键物品销毁、时间节点等
-7. 事件是全局的，不绑定特定场景（无 scene 字段）
+2. based_on 只能指向已知的 interaction ID，非派生事件则填空字符串
+3. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
+4. result 是直接结果：不可逆事件需明确标注”不可逆：”。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 “##END_坏结局:电车坠入黑暗## 不可逆：调查员们永远被困在噩梦中”）
+5. side_effects 是间接后果：与 result 不重合的附带影响。无条件则为空列表
+6. type 是关联技能名，不涉及填”无”；涉及鉴定时填写 graded_result。此时 result 填 “##GRADED##”，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功。若原文未区分等级，各等级可描述相同
+7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
+8. 事件是全局的，不绑定特定场景（无 scene 字段）
 
 精修模组：
 \"\"\"
@@ -408,10 +416,14 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 你的任务是：基于精修模组和已知互动，生成所有被动触发事件（auto_trigger）。
 
 重要原则：
-- auto_trigger 使用与 interaction 相同的统一字段模型（id, scene, type, name, requirement, trigger, result, side_effects, enemy_ref, weapon_ref, difficulty, based_on）
+- auto_trigger 使用与 interaction 相同的统一字段模型
 - auto_trigger 绑定特定场景（scene 字段必填）
-- based_on 只能指向已知的 interaction ID（因为 Step 2b 并行，不能指向其他 auto_trigger 或 event）
+- based_on 只能指向已知的 interaction ID
 - enemy_ref 和 weapon_ref 留空（填 null），等待 Step 4 library 匹配
+- requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
+- result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
+- side_effects 是与 result 不重合的间接后果
+- type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - 只生成被动触发的事件，不要生成玩家主动互动
 - 仅输出 JSON，不要任何解释性文字"""
 
@@ -442,10 +454,11 @@ def build_step2b_at_prompt(
       "scene": "S1",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "自动触发名称",
-      "requirement": "前置条件声明（自然语言，可引用 interaction ID）",
-      "trigger": "触发条件（自然语言，如：玩家进入场景且 I1 已完成）",
-      "result": "触发后的结果描述",
-      "side_effects": ["自然语言描述的副作用"],
+      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串",
+      "trigger": "触发场景（描述什么情况下此被动事件触发），如：玩家进入场景且 I1 已完成",
+      "result": "直接结果（被动触发直接产生的结果）",
+      "side_effects": ["间接后果（与result不重合的附带影响），无条件则为空列表"],
+      "graded_result": {{"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}},
       "enemy_ref": null,
       "weapon_ref": null,
       "difficulty": "None/regular/hard/extreme",
@@ -457,12 +470,13 @@ def build_step2b_at_prompt(
 要求：
 1. id 全局唯一 (AT1, AT2, AT3...)
 2. scene 使用给定列表中的 ID
-3. based_on 只能指向已知的 interaction ID (如 I1)，标注此 auto_trigger 从哪个互动派生
-4. enemy_ref 和 weapon_ref 全部填 null（等 Step 4 匹配 library）
-5. trigger 用自然语言描述触发条件，可引用已知的 interaction ID (如 I1)
-6. type 选择关联的技能检定名称，不涉及填"无"
-7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
-8. 每个场景至少生成 0-2 个 auto_trigger
+3. based_on 只能指向已知的 interaction ID
+4. enemy_ref 和 weapon_ref 全部填 null
+5. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
+6. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
+7. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
+8. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
+9. 每个场景至少生成 0-2 个 auto_trigger
 
 精修模组：
 \"\"\"
@@ -601,15 +615,17 @@ def parse_step2c_l3(condensed_text: str, scenes: list[dict], characters: list[di
 #  Step 3a: L2 依赖解析
 # ═══════════════════════════════════════════════════════════════
 
-STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息的依赖解析和统一。
-你的任务是：检查所有 interaction/event/auto_trigger，解析 side_effects，利用 based_on 整理依赖关系，补全 requirement 引用，解决冲突。
+STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息的去重和冲突解决。
+你的任务是：检查所有 interaction/event/auto_trigger，基于 based_on 去重，验证 graded_result，修剪 result/side_effects 重合，解决冲突，验证结局标记。
 
 重要原则：
-- based_on 已标注派生关系（event/auto_trigger 的 based_on 指向派生的 interaction）
-- requirement 从自然语言声明补全为具体引用（指向 interaction ID 或 event ID）
-- 如果 event 和 auto_trigger 的 requirement/trigger 出现冲突，以 condensed_text 为准修正
-- 不删改任何内容的实质信息，只修正名称和引用
-- 互动完成即代表状态变更，不需要单独的 flag/标记
+- based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction 且语义重复（name/result 高度相似），合并为一个
+- graded_result 在 type != "无" 时建议填写但不强制；type == "无" 时删除空 graded_result
+- result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
+- requirement/trigger 冲突以 condensed_text 为准修正
+- ##END_## 标记与 L3 ending_conditions 相互补齐
+- 不删改实质信息，只修正名称和引用
+- 互动完成即代表状态变更，不需要单独的 flag
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -618,13 +634,17 @@ def build_step3a_prompt(
     interactions: list[dict],
     events: list[dict],
     auto_triggers: list[dict],
+    ending_conditions: list[dict],
 ) -> str:
-    return f"""对以下模组中的所有 L2 内容做依赖解析、side_effect 结构化和冲突解决。
+    return f"""对以下模组中的所有 L2 内容做去重、冲突解决和结局验证。
 
 ## 精修模组（参考上下文）
 \"\"\"
 {condensed_text}
 \"\"\"
+
+## L3 结局条件（用于验证 ##END_## 标记）
+{json.dumps(ending_conditions, ensure_ascii=False, indent=2)}
 
 ## Interactions
 {json.dumps(interactions, ensure_ascii=False, indent=2)}
@@ -636,24 +656,17 @@ def build_step3a_prompt(
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. **Side_effect 结构化**: 将 interaction/event/auto_trigger 的 side_effects 从自然语言字符串列表解析为结构化对象列表。类型包括：
-   - item_gain: {{"type": "item_gain", "item_name": "物品名"}}
-   - stat_change: {{"type": "stat_change", "stat_name": "SAN/HP/...", "delta": -1}}
-   - spawn_enemy: {{"type": "spawn_enemy", "enemy_ref": "敌人名", "scene": "场景ID", "trigger_condition": "触发条件", "quantity": 1}}
-   - grant_item: {{"type": "grant_item", "item_ref": "武器/物品名", "scene": "场景ID"}}
-   - npc_state_change: {{"type": "npc_state_change", "npc_name": "NPC名", "new_state": "新状态"}}
-   无法归入以上类型的非结构性副作用直接保留字符串。
-2. **基于 based_on 验证依赖**: 检查每条 event/auto_trigger 的 based_on 是否正确指向存在的 interaction。若 based_on 指向不存在的 ID，修正或清空。
-3. **Interaction requirement 补全**: 将自然语言声明转为引用已知 interaction ID（如 "需要先找到钥匙" → "interaction:I3"）。
-4. **Event requirement 补全**: 同上，可引用 interaction ID 或 event ID。
-5. **Auto-trigger trigger 补全**: 同上。
-6. **冲突解决**: 如果 event 和 auto_trigger 的 requirement/trigger 出现矛盾，以 condensed_text 为准修正。
+1. **Based_on 去重**: 若两个 entity 的 based_on 指向同一 interaction 且 name/result 语义高度相似，合并为一个（保留较完整的版本，删除重复的）。
+2. **Graded_result 检查**: type != "无" 时建议填写 graded_result 但不强制；type == "无" 时删除空 graded_result。
+3. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
+4. **冲突解决**: requirement/trigger 矛盾以 condensed_text 为准修正。
+5. **结局标记验证**: 扫描 ##END_## 标记与 L3 ending_conditions 做语义匹配。标记缺失则相互补齐。
 
 输出格式:
 {{
-  "interactions": [{{ ...原字段..., "requirement": "补全后的引用", "side_effects": [结构化对象或字符串] }}],
-  "events": [{{ ...原字段..., "requirement": "补全后的引用", "side_effects": [结构化对象或字符串] }}],
-  "auto_triggers": [{{ ...原字段..., "trigger": "补全后的引用", "side_effects": [结构化对象或字符串] }}]
+  "interactions": [{{ ...原字段... }}],
+  "events": [{{ ...原字段... }}],
+  "auto_triggers": [{{ ...原字段... }}]
 }}
 
 仅输出 JSON。"""
@@ -664,9 +677,10 @@ def parse_step3a(
     interactions: list[dict],
     events: list[dict],
     auto_triggers: list[dict],
+    ending_conditions: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step3a_prompt(condensed_text, interactions, events, auto_triggers)
+    prompt = build_step3a_prompt(condensed_text, interactions, events, auto_triggers, ending_conditions)
     return llm_call(prompt, system=STEP3A_SYSTEM)
 
 
@@ -675,10 +689,11 @@ def parse_step3a(
 # ═══════════════════════════════════════════════════════════════
 
 STEP3B_SYSTEM = """你是一个 TRPG 一致性校对助手。
-你的任务是：检查 L1 玩家可见层与 L2 的交叉引用是否正确，修正不一致。
+你的任务是：检查 L1 与 L2/L3 的交叉引用和命名一致性，修正不一致。
 
 重要原则：
 - linked_interaction 必须指向 L2 中真实存在的 interaction name
+- L1 中的 NPC 名称必须与 L3 characters 中的名称一致
 - 场景名必须在所有层中一致
 - 仅修正名称和引用，不改变实质内容
 - 仅输出 JSON，不要任何解释性文字"""
@@ -713,10 +728,12 @@ def build_step3b_prompt(
 
 任务:
 1. L1 场景名是否与统一场景名一致 → 不一致则修正
-2. L1 linked_interaction 是否指向 L2 中存在的 interaction name → 不存在则修正为正确的名称或清空
-3. 检查是否有 L1 感知元素应该关联 L2 互动但未关联 → 补充 linked_interaction
-4. L3 scene_intents 的 key 是否覆盖所有场景 → 缺失则补充
-5. 所有层的场景名统一
+2. L1 linked_interaction 是否指向 L2 中存在的 interaction name → 不存在则修正或清空
+3. L1 npc_appearances 中 NPC 名称是否与 L3 characters 中的名称一致 → 不一致则统一为 L3 中的名称
+4. 检查 L1 感知元素是否应关联 L2 互动但未关联 → 补充 linked_interaction
+5. L3 scene_intents 的 key 是否覆盖所有场景 → 缺失则补充
+6. L3 characters 是否覆盖所有在 L1/L2 中出现的 NPC → 缺失则补充
+7. 所有层的场景名和角色名统一
 
 输出格式:
 {{
