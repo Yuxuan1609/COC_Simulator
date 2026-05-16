@@ -393,6 +393,13 @@ def run_pipeline(
 
     events = events_data.get("events", [])
     auto_triggers = at_data.get("auto_triggers", [])
+    # Inject world-generation auto_trigger
+    auto_triggers.append({
+        "id": "AT_WORLD", "name": "世界生成", "scene": "world", "type": "无",
+        "requirement": "", "trigger": "模组开始时自动触发",
+        "result": "世界环境初始化", "side_effects": [],
+        "difficulty": "None", "based_on": "",
+    })
     for fb_name, fb_data in [("Step 2b events", events_data),
                               ("Step 2b auto_triggers", at_data),
                               ("Step 2c L1", l1_data),
@@ -501,12 +508,12 @@ def run_pipeline(
     enemy_names = []
     try:
         if weapon_lib:
-            weapon_names = [w.name for w in weapon_lib.list_all()]
+            weapon_names = [f"{w.name} — {w.description}" if w.description else w.name for w in weapon_lib.list_all()]
     except Exception:
         pass
     try:
         if enemy_lib:
-            enemy_names = [e.name for e in enemy_lib.list_all()]
+            enemy_names = [f"{e.name} — {e.description}" if e.description else e.name for e in enemy_lib.list_all()]
     except Exception:
         pass
 

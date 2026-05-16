@@ -277,6 +277,13 @@ with ThreadPoolExecutor(max_workers=4) as ex:
 
 events = events_data.get("events", [])
 auto_triggers = at_data.get("auto_triggers", [])
+# Inject world-generation auto_trigger
+auto_triggers.append({
+    "id": "AT_WORLD", "name": "世界生成", "scene": "world", "type": "无",
+    "requirement": "", "trigger": "模组开始时自动触发",
+    "result": "世界环境初始化", "side_effects": [],
+    "difficulty": "None", "based_on": "",
+})
 
 # 保存 Step 2 汇总
 with open(f"{DEBUG_ROOT}/step_2/_summary.json", "w", encoding="utf-8") as f:
@@ -381,8 +388,8 @@ print(f"  L3 scene_intents: {list(l3_data.get('scene_intents', {}).keys())}")
 # CELL 14 (code)
 # ============================================================
 # ═══ Step 3.5 + Step 4: 依赖图 + Library 匹配 (并行) ═══
-weapon_names = [w.name for w in wl.list_all()]
-enemy_names = [e.name for e in el.list_all()]
+weapon_names = [f"{w.name} — {w.description}" if w.description else w.name for w in wl.list_all()]
+enemy_names = [f"{e.name} — {e.description}" if e.description else e.name for e in el.list_all()]
 stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
 import json as _json

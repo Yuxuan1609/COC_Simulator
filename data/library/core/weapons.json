@@ -9,7 +9,8 @@
       "malfunction": 100,
       "era": "all",
       "rarity": "common",
-      "special_rules": ""
+      "special_rules": "",
+      "description": "徒手攻击，人人具备的基础战斗方式"
     },
     {
       "name": "小刀",
@@ -20,7 +21,8 @@
       "malfunction": 100,
       "era": "all",
       "rarity": "common",
-      "special_rules": "可投掷，投掷时使用投掷技能"
+      "special_rules": "可投掷，投掷时使用投掷技能",
+      "description": "小型利器，便于隐藏携带，也可投掷"
     },
     {
       "name": ".45自动手枪",
@@ -31,7 +33,8 @@
       "malfunction": 100,
       "era": "1920s",
       "rarity": "common",
-      "special_rules": "可连射，每追加一发-5惩罚"
+      "special_rules": "可连射，每追加一发-5惩罚",
+      "description": "大威力半自动手枪，可快速连射"
     },
     {
       "name": ".38左轮手枪",
@@ -42,7 +45,8 @@
       "malfunction": 100,
       "era": "1920s",
       "rarity": "common",
-      "special_rules": ""
+      "special_rules": "",
+      "description": "可靠的六发左轮手枪，结构简单不易卡壳"
     },
     {
       "name": "霰弹枪(12号)",
@@ -53,7 +57,8 @@
       "malfunction": 100,
       "era": "1920s",
       "rarity": "uncommon",
-      "special_rules": "散射武器，伤害随距离递减"
+      "special_rules": "散射武器，伤害随距离递减",
+      "description": "双管猎枪，散射伤害，近距离威力巨大"
     },
     {
       "name": "手电筒",
@@ -64,7 +69,8 @@
       "malfunction": 100,
       "era": "all",
       "rarity": "common",
-      "special_rules": "作为武器使用时视为临时武器；主要功能为提供光源"
+      "special_rules": "作为武器使用时视为临时武器；主要功能为提供光源",
+      "description": "常见便携照明工具，主要功能为提供光源，黑暗中必不可少，也可作为临时武器"
     },
     {
       "name": "消防斧",
@@ -75,7 +81,8 @@
       "malfunction": 100,
       "era": "all",
       "rarity": "uncommon",
-      "special_rules": "双手武器"
+      "special_rules": "双手武器",
+      "description": "消防用双手斧，破坏力强，适合破门和对付大型目标"
     },
     {
       "name": "撬棍",
@@ -86,7 +93,8 @@
       "malfunction": 100,
       "era": "all",
       "rarity": "common",
-      "special_rules": "也可用于撬开门/箱子"
+      "special_rules": "也可用于撬开门/箱子",
+      "description": "多功能金属工具，既可战斗也可撬开门箱，调查员常用装备"
     },
     {
       "name": "警棍",
@@ -97,7 +105,8 @@
       "malfunction": 100,
       "era": "1920s",
       "rarity": "common",
-      "special_rules": ""
+      "special_rules": "",
+      "description": "执法人员标准配备的打击武器"
     },
     {
       "name": "步枪(.30-06)",
@@ -108,7 +117,8 @@
       "malfunction": 100,
       "era": "1920s",
       "rarity": "uncommon",
-      "special_rules": "每轮一发"
+      "special_rules": "每轮一发",
+      "description": "长射程高精度步枪，适合远距离射击，但射速较慢"
     }
   ]
 }

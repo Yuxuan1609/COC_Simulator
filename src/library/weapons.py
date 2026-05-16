@@ -17,6 +17,7 @@ class LibraryWeapon:
     era: str = "all"
     rarity: str = "common"
     special_rules: str = ""
+    description: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -29,6 +30,7 @@ class LibraryWeapon:
             "era": self.era,
             "rarity": self.rarity,
             "special_rules": self.special_rules,
+            "description": self.description,
         }
 
     @classmethod
@@ -43,6 +45,7 @@ class LibraryWeapon:
             era=data.get("era", "all"),
             rarity=data.get("rarity", "common"),
             special_rules=data.get("special_rules", ""),
+            description=data.get("description", ""),
         )
 
 

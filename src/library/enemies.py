@@ -47,6 +47,7 @@ class LibraryEnemy:
     special_abilities: list
     san_loss: str
     combat_behavior: str
+    description: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +61,7 @@ class LibraryEnemy:
             ],
             "san_loss": self.san_loss,
             "combat_behavior": self.combat_behavior,
+            "description": self.description,
         }
 
     @classmethod
@@ -75,6 +77,7 @@ class LibraryEnemy:
             ],
             san_loss=data.get("san_loss", ""),
             combat_behavior=data.get("combat_behavior", ""),
+            description=data.get("description", ""),
         )
 
 
