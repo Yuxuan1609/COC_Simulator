@@ -16,7 +16,7 @@ class Narrator:
     def __init__(self, l1_data: dict[str, Any]):
         self.l1_data = l1_data
 
-    def narrate(self, brief: NarratorBrief, l3_data: Any = None) -> tuple[str, str]:
+    def narrate(self, brief: NarratorBrief) -> tuple[str, str]:
         """Generate immersive narrative from KP's curated brief.
 
         Returns (brief_summary, immersive_narrative).
@@ -24,10 +24,9 @@ class Narrator:
         scene_name = brief.scene_snapshot.location
         l1_scene = self.l1_data.get(scene_name) if self.l1_data else None
 
-        prompt = self._build_prompt(brief, l1_scene=l1_scene, l3_data=l3_data)
+        prompt = self._build_prompt(brief, l1_scene=l1_scene)
         response = call_deepseek(prompt, json_mode=False)
         return parse_narrative_output(response)
 
-    def _build_prompt(self, brief: NarratorBrief,
-                      l1_scene: Any = None, l3_data: Any = None) -> str:
-        return build_narrator_prompt(brief, l1_scene=l1_scene, l3_data=l3_data)
+    def _build_prompt(self, brief: NarratorBrief, l1_scene: Any = None) -> str:
+        return build_narrator_prompt(brief, l1_scene=l1_scene)

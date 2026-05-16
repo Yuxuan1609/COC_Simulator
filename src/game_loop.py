@@ -154,7 +154,6 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         "keeper": keeper,
         "narrator": narrator,
         "author": author,
-        "l3_data": author.l3_data,
     }
 
 
@@ -165,7 +164,6 @@ def run_turn(game: dict, user_input: str,
     narrator = game["narrator"]
     author = game["author"]
     world = keeper.world
-    l3_data = game["l3_data"]
 
     # Handle debug commands
     if user_input.strip().startswith("/"):
@@ -183,7 +181,7 @@ def run_turn(game: dict, user_input: str,
         display_brief = str(brief) if brief else ""
 
     try:
-        narrative_brief, narrative = narrator.narrate(brief, l3_data)
+        narrative_brief, narrative = narrator.narrate(brief)
     except Exception as e:
         narrative_brief = display_brief or "（处理中）"
         narrative = f"（叙事生成失败：{e}）"

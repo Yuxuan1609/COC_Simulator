@@ -731,7 +731,7 @@ def build_keeper_enrich_prompt(world, action_outcomes, at_results, pending_event
 
 # ── Narrator prompt ──
 
-def build_narrator_prompt(brief, l1_scene=None, l3_data=None) -> str:
+def build_narrator_prompt(brief, l1_scene=None) -> str:
     """Narrator: converts NarratorBrief + L1 context into immersive narrative."""
     outcomes_text = ""
     for o in brief.action_outcomes:
@@ -739,10 +739,10 @@ def build_narrator_prompt(brief, l1_scene=None, l3_data=None) -> str:
 
     ambient_text = "\n".join(f"  · {a}" for a in brief.ambient_changes) or "（无）"
 
-    l1l3_ctx = _build_l1l3_context(l1_scene=l1_scene, l3_data=l3_data,
-                                    scene_name=brief.scene_snapshot.location)
+    l1_ctx = _build_l1l3_context(l1_scene=l1_scene,
+                                  scene_name=brief.scene_snapshot.location)
 
-    prompt = f"""{l1l3_ctx}
+    prompt = f"""{l1_ctx}
 
 【当前场景】{brief.scene_snapshot.location}
 {brief.scene_snapshot.description}
@@ -762,8 +762,8 @@ def build_narrator_prompt(brief, l1_scene=None, l3_data=None) -> str:
 
 规则：
 - 不要给出前文没有的实质性信息
-- 语气贴合【基调约束】中的氛围
-- 遵守禁止项和必须包含项
+- 以上下文语境和场景氛围为准
+- 叙事强调指明了本轮的叙事方向
 """
     _show_prompt("Narrator", prompt)
     return prompt
