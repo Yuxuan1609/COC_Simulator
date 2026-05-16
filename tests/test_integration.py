@@ -24,21 +24,22 @@ def test_full_init_chain():
     world = ScenarioWorld(graph, start_node=start_node)
     assert world.current_location == start_node
 
-    # Verify interactions loaded as Interaction
+    # Verify interactions loaded as Entity
     node = graph.nodes[start_node]
     assert len(node.interactions) > 0
     inter = node.interactions[0]
-    assert hasattr(inter, "name")
-    assert hasattr(inter, "type")
+    assert hasattr(inter, "entity_type")
+    assert inter.entity_type == "interaction"
     assert len(inter.name) > 0
 
     # Verify edges loaded
     assert isinstance(node.edges, list)
 
-    # Verify events dict exists (may be empty)
+    # Verify events loaded as Entity
     if graph.events:
         ev = list(graph.events.values())[0]
-        assert hasattr(ev, "event_id")
+        assert hasattr(ev, "entity_type")
+        assert ev.entity_type == "event"
         assert len(ev.name) > 0
 
 
