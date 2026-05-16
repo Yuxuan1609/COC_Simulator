@@ -2,7 +2,7 @@
 
 **日期**: 2026-05-16
 **分支**: main
-**状态**: 管线全部就绪
+**状态**: 管线全部就绪 | Game Loop 多 Agent 架构已实现，测试 Harness 已部署
 
 ---
 
@@ -301,3 +301,54 @@ Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
 ## 已知预留位
 
 `encounters` 和 `scene_weapons` 在 L2 场景中保留空数组占位。当前 pipeline 不填充这两个字段——敌人/武器信息通过 side_effects 中的 `@spawn_enemy` / `@grant_weapon` 标记承载，Phase 1 约束记录在 `_phase1` 中。
+
+---
+
+## Game Loop — Multi-Agent 架构 (2026-05-16 实现)
+
+### 执行流
+
+```
+玩家输入 → Parse(LLM) → Judge(确定) → Enrich(LLM) → Escalate?(LLM) → Curate → Narrate(LLM) → 输出
+```
+
+### Agent 对应
+
+| Agent | 拥有数据 | 接口 |
+|-------|---------|------|
+| Keeper | L2 + ScenarioWorld | `process_turn(TurnInput, author)` → `{brief: NarratorBrief, escalation: EscalationRequest|null}` |
+| Narrator | L1 | `narrate(NarratorBrief)` → `(brief, narrative)` |
+| Author | L3 | `handle_escalation(EscalationRequest)` → `ModulePatch` |
+
+### 关键约束
+- 仅 Narrator 面向玩家
+- L3 数据仅 Author 持有，不外泄
+- ScenarioWorld 仅通过 `keeper.world` 访问
+- 游戏循环 LLM 调用使用 `deepseek-v4-flash`（非 pro）
+
+### 新增文件
+
+```
+src/game/
+├── messages.py, judge.py, curator.py, escalation.py
+└── agents/keeper.py, narrator.py, author.py
+tests/game_loop_harness.py          # 15 案例测试 Harness
+data/modules/<模组>/escalation_config.json  # 升级策略配置
+```
+
+### 测试 Harness
+
+`tests/game_loop_harness.py` — 15 案例，每案例遍历完整 parse→narrate 流程。
+输出：`data/debug/test_harness/<timestamp>/`（每案例目录，每回合 7 个日志文件）。
+模型：`deepseek-v4-flash`（约 40-50 次 LLM 调用）。
+
+### 已知缺口
+
+| # | 问题 | 状态 |
+|---|------|------|
+| G1 | Judge 需求检查仅 `flag:` 前缀 | TODO |
+| G2 | `from_dict` 未更新 Entity 格式 | TODO |
+| G3 | 升级递归无深度保护 | TODO |
+| G4 | `run_turn` 输出格式 | FIXED |
+| G5 | 结局检测未接入 | TODO |
+| G6 | Keeper 无单元测试 | TODO |
