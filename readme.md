@@ -27,12 +27,21 @@
 │   └── output/
 │       └── archive/                         # 旧 pipeline 输出存档
 ├── src/
-│   ├── scenario_core.py                     # 数据类、有向图、世界状态、记忆管理、side_effect dataclass
+│   ├── scenario_core.py                     # 数据类、有向图、世界状态、记忆管理、Entity/@markup
 │   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
 │   ├── trpg_display.py                      # Notebook UI 显示组件
 │   ├── utils.py                             # 文件解析、Token 估算、掷骰、技能定义加载
-│   ├── prompts.py                           # LLM Prompt 构建器 + 叙事输出解析（L1/L3 感知）
-│   ├── game_loop.py                         # 主循环：动作执行 + LLM 调用链编排 + /spawn 命令
+│   ├── prompts.py                           # LLM Prompt 构建器（Keeper/Narrator/Author 各自 prompt）
+│   ├── game_loop.py                         # 多 Agent 入口：init_game() + run_turn()
+│   ├── game/                                # Multi-Agent 游戏循环
+│   │   ├── messages.py                      #   8 个消息 dataclass（NarratorBrief, EscalationRequest 等）
+│   │   ├── judge.py                         #   确定性闸门（需求 + 技能检定 + @markup + ##GRADED##）
+│   │   ├── curator.py                       #   策展器：outcomes → NarratorBrief
+│   │   ├── escalation.py                    #   可配置升级策略（LLM 评估维度 + 自然语言规则）
+│   │   └── agents/
+│   │       ├── keeper.py                    #   KP 守秘人（回合编配：parse → judge → enrich → curate）
+│   │       ├── narrator.py                  #   叙事者（唯一面向玩家，L1 + NarratorBrief → 叙事）
+│   │       └── author.py                    #   作者（L3 + EscalationRequest → ModulePatch）
 │   ├── library/                             # 武器/敌人资源库
 │   │   ├── weapons.py                       #   LibraryWeapon + WeaponLibrary
 │   │   ├── enemies.py                       #   LibraryEnemy + EnemyLibrary
@@ -160,11 +169,46 @@ DEEPSEEK_API_KEY=your-key
 
 `src/llm.py` 启动时自动加载 `.env`，无需手动 export。
 
+## Multi-Agent 游戏循环
+
+2026-05-16 重构。3-Agent 架构替代单体 `handle_user_input()`：
+
+| Agent | 层 | 职责 | 文件 |
+|-------|----|------|------|
+| Keeper | L2 | 回合编配：parse → judge → enrich → escalate → curate | `src/game/agents/keeper.py` |
+| Narrator | L1 | 唯一面向玩家，生成沉浸式叙事 | `src/game/agents/narrator.py` |
+| Author | L3 | 仅 KP 调用，按 L3 设计意图生成 ModulePatch | `src/game/agents/author.py` |
+
+入口：`init_game()` 加载所有 JSON + 初始化三 Agent，`run_turn()` 驱动每回合。
+仅 `keeper.world` 暴露 ScenarioWorld，L3 数据内聚在 Author。
+
+设计文档：`docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
+测试 Harness：`tests/game_loop_harness.py`（15 案例，日志输出到 `data/debug/test_harness/`）
+
+### 已知缺口
+
+| # | 问题 | 状态 |
+|---|------|------|
+| G1 | Judge 需求检查仅支持 `flag:` 前缀，不支持 interaction/event 前置 | TODO |
+| G2 | `DirectedGraph.from_dict` 未更新 Entity 格式 | TODO |
+| G3 | Escalation 递归无深度保护 | TODO |
+| G4 | `run_turn` 输出格式（`hasattr` 基本可用） | FIXED |
+| G5 | `has_ending()` 已实现但入口点不检查 `##END_*` | TODO |
+| G6 | Keeper.process_turn 无单元测试 | TODO |
+
+## 待实现
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 战斗系统 | TODO | COC 7th 回合制战斗 |
+| 同伴机制 | TODO | 复数调查员/同伴 NPC 的行动协同与 AI 行为 |
+
 ## 运行
 
 管道测试：在 Jupyter 中打开 `notebooks/parser_test.ipynb`，按顺序执行所有 Cell。
 
 主游戏循环：`notebooks/notebook_simplified.ipynb`。
+测试 Harness：`cd tests && python game_loop_harness.py`（需 API Key，约 40-50 次 LLM 调用）。
 
 ### 调试命令
 
