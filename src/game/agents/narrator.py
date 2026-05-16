@@ -25,7 +25,7 @@ class Narrator:
         l1_scene = self.l1_data.get(scene_name) if self.l1_data else None
 
         prompt = self._build_prompt(brief, l1_scene=l1_scene)
-        response = call_deepseek(prompt, json_mode=False)
+        response = call_deepseek(prompt, json_mode=False, model="deepseek-v4-flash")
         return parse_narrative_output(response)
 
     def _build_prompt(self, brief: NarratorBrief, l1_scene: Any = None) -> str:

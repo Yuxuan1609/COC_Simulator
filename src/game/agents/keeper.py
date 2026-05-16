@@ -147,7 +147,7 @@ class Keeper:
 
         # Memory compression check
         if self.world.memory.should_compress():
-            self.world.memory.compress(lambda p: call_deepseek(p, json_mode=False))
+            self.world.memory.compress(lambda p: call_deepseek(p, json_mode=False, model="deepseek-v4-flash"))
 
         return {"brief": brief, "escalation": escalation_req}
 
@@ -155,7 +155,7 @@ class Keeper:
 
     def _parse(self, raw: str) -> list[ActionIntent]:
         prompt = build_keeper_parse_prompt(self.world, raw)
-        response = call_deepseek(prompt, json_mode=True)
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash")
         data = json.loads(response) if isinstance(response, str) else response
         actions = data.get("actions", [])
         if not actions:
@@ -177,7 +177,7 @@ class Keeper:
             self.world, action_outcomes, at_results,
             pending_events, deferred_ats, user_input
         )
-        response = call_deepseek(prompt, json_mode=True)
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash")
         return json.loads(response) if isinstance(response, str) else response
 
     def _check_escalation(self, raw, parsed, outcomes, at_results) -> EscalationRequest | None:
@@ -201,7 +201,7 @@ class Keeper:
         )
         # Build LLM eval prompt and call
         eval_prompt = self.escalation_policy._build_eval_prompt(ctx)
-        eval_result = call_deepseek(eval_prompt, json_mode=True, reasoning_effort="low")
+        eval_result = call_deepseek(eval_prompt, json_mode=True, reasoning_effort="low", model="deepseek-v4-flash")
         eval_data = json.loads(eval_result) if isinstance(eval_result, str) else eval_result
 
         severities = eval_data.get("severities", {})

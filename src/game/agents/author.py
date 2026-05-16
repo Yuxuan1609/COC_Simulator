@@ -24,7 +24,7 @@ class Author:
         self.escalation_history.append(request)
 
         prompt = self._build_prompt(request)
-        response = call_deepseek(prompt, json_mode=True)
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash")
         patch_data = json.loads(response) if isinstance(response, str) else response
 
         return ModulePatch(
