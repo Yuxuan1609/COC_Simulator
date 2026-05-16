@@ -6,6 +6,7 @@ Prompt 构建器 —— 为 LLM 调用链构建结构化 prompt。
 """
 
 from __future__ import annotations
+import json
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -622,3 +623,195 @@ def parse_narrative_output(text: str) -> tuple[str, str]:
     # Fallback: 整个文本作为叙事
     fallback_brief = text[:60] + "..." if len(text) > 60 else text
     return fallback_brief, text
+
+
+# ── Keeper: Parse (Step 1) ──
+
+def build_keeper_parse_prompt(world, user_input: str) -> str:
+    """Keeper step 1: parse raw player input into structured ActionIntent[]."""
+    scene_ctx = _build_scene_context(world)
+    state = _build_world_state(world)
+    context = world.memory.get_context()
+
+    prompt = f"""【玩家历史行动】
+{context or '（游戏刚开始）'}
+
+【世界状态】
+{state}
+
+{scene_ctx}
+
+【玩家输入】
+{user_input}
+
+请判断玩家意图。返回 JSON：
+{{
+  "actions": [
+    {{
+      "action": "move" | "interact" | "search" | "other",
+      "target": "目标地点或动作名称",
+      "skill_checks": ["技能名"],
+      "reasoning": "简要推理"
+    }}
+  ]
+}}
+规则：
+- move：target 填可移动方向中列出的目标
+- interact：target 精确复制可执行动作的名称
+- search：探索当前场景
+- 直接输出 JSON，不要额外文字
+"""
+    _show_prompt("Keeper Parse", prompt)
+    return prompt
+
+
+# ── Keeper: Enrich (Step 3) ──
+
+def build_keeper_enrich_prompt(world, action_outcomes, at_results, pending_events,
+                                deferred_ats, user_input) -> str:
+    """Keeper step 3: LLM enriches results, matches events, resolves NL ATs."""
+    state = _build_world_state(world)
+
+    outcomes_text = ""
+    for o in action_outcomes:
+        outcomes_text += f"  [{o.entity_type}] {o.entity_id}: {o.message} (success={o.success})\n"
+
+    at_text = ""
+    for a in at_results:
+        at_text += f"  [AT] {a.entity_id}: {a.message}\n"
+
+    deferred_at_text = ""
+    for dat in deferred_ats:
+        deferred_at_text += f"  [{dat.id}] {dat.name}: requirement=\"{dat.requirement}\" trigger=\"{dat.trigger}\"\n"
+
+    events_text = ""
+    for ev in pending_events:
+        events_text += f"  [{ev.id}] {ev.name}: trigger=\"{ev.trigger}\"\n"
+
+    prompt = f"""【世界状态】
+{state}
+
+【当前场景】{world.current_location}
+{world.get_current_description()}
+
+【玩家输入】{user_input}
+
+【已执行动作结果】
+{outcomes_text or '（无）'}
+
+【已触发Auto-trigger】
+{at_text or '（无）'}
+
+【待判定Auto-trigger（自然语言前置条件）】
+{deferred_at_text or '（无）'}
+
+【待判定Event】
+{events_text or '（无）'}
+
+请判断：
+1. 哪些待判定AT应触发（其自然语言前置条件是否满足）
+2. 哪些待判定Event的触发条件被满足
+3. 为所有已触发的entity丰富结果描述
+4. 设置新的world flags
+
+返回 JSON：
+{{
+  "triggered_ats": ["AT2"],
+  "triggered_events": ["E1"],
+  "enriched_results": {{"I1": "丰富后的结果描述"}},
+  "new_flags": {{"flag_name": true}},
+  "emphasis_hint": "叙事强调方向"
+}}
+
+直接输出 JSON。
+"""
+    _show_prompt("Keeper Enrich", prompt)
+    return prompt
+
+
+# ── Narrator prompt ──
+
+def build_narrator_prompt(brief, l1_scene=None, l3_data=None) -> str:
+    """Narrator: converts NarratorBrief + L1 context into immersive narrative."""
+    outcomes_text = ""
+    for o in brief.action_outcomes:
+        outcomes_text += f"  {'✓' if o.success else '✗'} {o.message}\n"
+
+    ambient_text = "\n".join(f"  · {a}" for a in brief.ambient_changes) or "（无）"
+
+    l1l3_ctx = _build_l1l3_context(l1_scene=l1_scene, l3_data=l3_data,
+                                    scene_name=brief.scene_snapshot.location)
+
+    prompt = f"""{l1l3_ctx}
+
+【当前场景】{brief.scene_snapshot.location}
+{brief.scene_snapshot.description}
+
+【可通行方向】{', '.join(f"{e['target']}({e['method']})" for e in brief.scene_snapshot.exits)}
+
+【行动结果】
+{outcomes_text}
+
+【环境变化】
+{ambient_text}
+
+【叙事强调】{brief.suggested_emphasis}
+
+请以TRPG主持人身份生成沉浸式叙事。
+输出格式：结果："简要描述" \n\n\n 沉浸式叙事："沉浸式中文不超过100字"
+
+规则：
+- 不要给出前文没有的实质性信息
+- 语气贴合【基调约束】中的氛围
+- 遵守禁止项和必须包含项
+"""
+    _show_prompt("Narrator", prompt)
+    return prompt
+
+
+# ── Author prompt ──
+
+def build_author_prompt(request, l3_data) -> str:
+    """Author: generates ModulePatch from EscalationRequest + L3 context."""
+    l3_ctx = _build_l1l3_context(l3_data=l3_data, scene_name=request.world_context.get("location", ""))
+
+    prompt = f"""{l3_ctx}
+
+【玩家输入】{request.player_input}
+【触发维度】{request.trigger} (severity={request.severity})
+【原因】{request.reason}
+【未匹配意图】{request.unmatched_intent or '无'}
+【世界上下文】
+{json.dumps(request.world_context, ensure_ascii=False, indent=2)}
+
+你拥有WR0创作者豁免权。请基于L3设计意图，为KP创建新的entity（interaction/auto_trigger/event）来处理这个超出KP能力的情况。
+
+返回 JSON：
+{{
+  "entities": [
+    {{
+      "id": "NEW_1",
+      "entity_type": "interaction",
+      "scene": "场景名",
+      "name": "entity名称",
+      "type": "关联技能名或留空",
+      "requirement": "",
+      "trigger": "触发描述",
+      "result": "结果描述",
+      "side_effects": ["@stat_change(stat_name=SAN, delta=-1, narrative=xxx)"],
+      "graded_result": null,
+      "difficulty": "regular"
+    }}
+  ],
+  "scene_descriptions": {{}},
+  "justification": "L3层面理由"
+}}
+
+规则：
+- 只添加必要的entity，不要过度扩充
+- side_effects 使用 @function(param=value) 语法
+- justification 必须引用L3设计意图
+- 直接输出 JSON
+"""
+    _show_prompt("Author", prompt)
+    return prompt
