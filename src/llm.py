@@ -104,11 +104,11 @@ def call_deepseek(
     if json_mode:
         _temperature = temperature if temperature is not None else 0.3
         _max_tokens = max_tokens if max_tokens is not None else 162840
-        default_system = system if model is not None else "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
+        default_system = system or "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
         response = client.chat.completions.create(
             model=_model,
             messages=[
-                {"role": "system", "content": system or default_system},
+                {"role": "system", "content": default_system},
                 {"role": "user", "content": prompt}
             ],
             temperature=_temperature,
@@ -137,11 +137,11 @@ def call_deepseek(
     else:
         _temperature = temperature if temperature is not None else 0.7
         _max_tokens = max_tokens if max_tokens is not None else 20000
-        default_system =  system if model is not None else "你是一个专业的TRPG主持人（KP）。"
+        default_system = system or "你是一个专业的TRPG主持人（KP）。"
         response = client.chat.completions.create(
             model=_model,
             messages=[
-                {"role": "system", "content": system or default_system},
+                {"role": "system", "content": default_system},
                 {"role": "user", "content": prompt}
             ],
             temperature=_temperature,
