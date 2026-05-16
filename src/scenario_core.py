@@ -348,14 +348,24 @@ class GameEvent:
 class Node:
     node_id: str
     description: str = ""
-    edges: List[Edge] = field(default_factory=list)     # from_here —— 出边（可去往的地点）
-    to_here: List[Edge] = field(default_factory=list)   # 入边（从哪些地点可来此）
-    interactions: List[Interaction] = field(default_factory=list)
+    edges: List[Edge] = field(default_factory=list)     # from_here
+    to_here: List[Edge] = field(default_factory=list)
+    interactions: List[Entity] = field(default_factory=list)
+    auto_triggers: List[Entity] = field(default_factory=list)
+    encounters: list = field(default_factory=list)
+    scene_weapons: list = field(default_factory=list)
+    extra: dict = field(default_factory=dict)
 
-    def get_interaction(self, name: str) -> Optional[Interaction]:
-        for inter in self.interactions:
-            if inter.name == name:
-                return inter
+    def get_interaction(self, name: str) -> Optional[Entity]:
+        for e in self.interactions:
+            if e.name == name:
+                return e
+        return None
+
+    def get_auto_trigger(self, name: str) -> Optional[Entity]:
+        for e in self.auto_triggers:
+            if e.name == name:
+                return e
         return None
 
 
@@ -372,7 +382,7 @@ class DirectedGraph:
         events: res_event_revised.json 格式的列表
         """
         self.nodes: Dict[str, Node] = {}
-        self.events: Dict[str, GameEvent] = {}
+        self.events: Dict[str, Entity] = {}
         if scenes:
             self.load_scenes(scenes)
         if events:
@@ -381,22 +391,34 @@ class DirectedGraph:
     # ── 加载 ──
 
     def load_scenes(self, data: dict):
-        """从 scene_output_resolved_revised.json 格式的字典加载场景"""
         for node_id, node_info in data.items():
-            interactions = [
-                Interaction(
-                    type=inter["type"],
-                    name=inter["name"],
+            interactions = []
+            for inter in node_info.get("interactions", []):
+                interactions.append(Entity(
+                    id=inter["id"], entity_type="interaction",
+                    name=inter["name"], scene=inter.get("scene", node_id),
+                    type=inter.get("type", ""),
+                    requirement=inter.get("requirement", ""),
                     trigger=inter.get("trigger", ""),
                     result=inter.get("result", ""),
-                    requirements=[
-                        _normalize_requirement(req)
-                        for req in inter.get("requirement", [])
-                    ],
-                    side_effects=_parse_side_effects(inter.get("side_effects", [])),
-                )
-                for inter in node_info.get("interactions", [])
-            ]
+                    side_effects=inter.get("side_effects", []),
+                    graded_result=inter.get("graded_result"),
+                    difficulty=inter.get("difficulty", ""),
+                ))
+
+            auto_triggers = []
+            for at in node_info.get("auto_triggers", []):
+                auto_triggers.append(Entity(
+                    id=at["id"], entity_type="auto_trigger",
+                    name=at["name"], scene=at.get("scene", node_id),
+                    type=at.get("type", ""),
+                    requirement=at.get("requirement", ""),
+                    trigger=at.get("trigger", ""),
+                    result=at.get("result", ""),
+                    side_effects=at.get("side_effects", []),
+                    graded_result=at.get("graded_result"),
+                    difficulty=at.get("difficulty", ""),
+                ))
 
             from_edges = [
                 Edge(target=conn["target"], method=conn["method"],
@@ -404,7 +426,8 @@ class DirectedGraph:
                 for conn in node_info.get("from_here", [])
             ]
             to_edges = [
-                Edge(target=conn["source"], method=conn["method"],
+                Edge(target=conn.get("source", conn.get("target", "")),
+                     method=conn["method"],
                      requirement=conn.get("requirement", ""))
                 for conn in node_info.get("to_here", [])
             ]
@@ -415,21 +438,25 @@ class DirectedGraph:
                 edges=from_edges,
                 to_here=to_edges,
                 interactions=interactions,
+                auto_triggers=auto_triggers,
+                encounters=node_info.get("encounters", []),
+                scene_weapons=node_info.get("scene_weapons", []),
+                extra=node_info.get("extra", {}),
             )
 
     def load_events(self, data: list):
-        """从 res_event_resolved_revised.json 格式的列表加载全局事件"""
         for item in data:
             eid = item["id"]
-            self.events[eid] = GameEvent(
-                event_id=eid,
+            self.events[eid] = Entity(
+                id=eid, entity_type="event",
                 name=item["name"],
+                type=item.get("type", ""),
+                requirement=item.get("requirement", ""),
                 trigger=item.get("trigger", ""),
-                impact=item.get("irreversible_impact", item.get("impact", "")),
-                requirements=[
-                    _normalize_requirement(req)
-                    for req in item.get("requirement", [])
-                ],
+                result=item.get("result", ""),
+                side_effects=item.get("side_effects", []),
+                graded_result=item.get("graded_result"),
+                difficulty=item.get("difficulty", ""),
             )
 
     # ── 查询 ──
@@ -439,12 +466,12 @@ class DirectedGraph:
             return self.nodes[node_id].edges
         return []
 
-    def get_interactions(self, node_id: str) -> List[Interaction]:
+    def get_interactions(self, node_id: str) -> List[Entity]:
         if node_id in self.nodes:
             return self.nodes[node_id].interactions
         return []
 
-    def get_event(self, event_id: str) -> Optional[GameEvent]:
+    def get_event(self, event_id: str) -> Optional[Entity]:
         return self.events.get(event_id)
 
     def get_all_event_ids(self) -> List[str]:
@@ -478,7 +505,6 @@ class DirectedGraph:
         return result
 
     def to_dict(self) -> dict:
-        """序列化为 dict（含 nodes 和 events）"""
         nodes_dict = {}
         for nid, node in self.nodes.items():
             nodes_dict[nid] = {
@@ -488,29 +514,41 @@ class DirectedGraph:
                 "to_here": [{"target": e.target, "method": e.method, "requirement": e.requirement} for e in node.to_here],
                 "interactions": [
                     {
-                        "type": i.type,
-                        "name": i.name,
-                        "trigger": i.trigger,
-                        "result": i.result,
-                        "requirements": [
-                            {"ref_type": r.ref_type, "ref_scene": r.ref_scene, "ref_name": r.ref_name}
-                            for r in i.requirements
-                        ],
-                        "side_effects": [_side_effect_to_dict(se) for se in i.side_effects],
+                        "id": e.id, "entity_type": e.entity_type,
+                        "name": e.name, "scene": e.scene, "type": e.type,
+                        "requirement": e.requirement, "trigger": e.trigger,
+                        "result": e.result,
+                        "side_effects": e.side_effects,
+                        "graded_result": e.graded_result,
+                        "difficulty": e.difficulty,
                     }
-                    for i in node.interactions
+                    for e in node.interactions
                 ],
+                "auto_triggers": [
+                    {
+                        "id": e.id, "entity_type": e.entity_type,
+                        "name": e.name, "scene": e.scene, "type": e.type,
+                        "requirement": e.requirement, "trigger": e.trigger,
+                        "result": e.result,
+                        "side_effects": e.side_effects,
+                        "graded_result": e.graded_result,
+                        "difficulty": e.difficulty,
+                    }
+                    for e in node.auto_triggers
+                ],
+                "encounters": node.encounters,
+                "scene_weapons": node.scene_weapons,
+                "extra": node.extra,
             }
         events_list = [
             {
-                "event_id": e.event_id,
-                "name": e.name,
-                "trigger": e.trigger,
-                "impact": e.impact,
-                "requirements": [
-                    {"ref_type": r.ref_type, "ref_scene": r.ref_scene, "ref_name": r.ref_name}
-                    for r in e.requirements
-                ],
+                "id": e.id, "entity_type": e.entity_type,
+                "name": e.name, "type": e.type,
+                "requirement": e.requirement, "trigger": e.trigger,
+                "result": e.result,
+                "side_effects": e.side_effects,
+                "graded_result": e.graded_result,
+                "difficulty": e.difficulty,
             }
             for e in self.events.values()
         ]
@@ -523,18 +561,36 @@ class DirectedGraph:
         nodes_data = data.get("nodes", {})
         for nid, node_data in nodes_data.items():
             interactions = [
-                Interaction(
-                    type=inter["type"],
+                Entity(
+                    id=inter["id"],
+                    entity_type=inter.get("entity_type", ""),
                     name=inter["name"],
+                    scene=inter.get("scene", ""),
+                    type=inter.get("type", ""),
+                    requirement=inter.get("requirement", ""),
                     trigger=inter.get("trigger", ""),
                     result=inter.get("result", ""),
-                    requirements=[
-                        _normalize_requirement(req)
-                        for req in inter.get("requirements", [])
-                    ],
-                    side_effects=_parse_side_effects(inter.get("side_effects", [])),
+                    side_effects=inter.get("side_effects", []),
+                    graded_result=inter.get("graded_result"),
+                    difficulty=inter.get("difficulty", ""),
                 )
                 for inter in node_data.get("interactions", [])
+            ]
+            auto_triggers = [
+                Entity(
+                    id=at["id"],
+                    entity_type=at.get("entity_type", ""),
+                    name=at["name"],
+                    scene=at.get("scene", ""),
+                    type=at.get("type", ""),
+                    requirement=at.get("requirement", ""),
+                    trigger=at.get("trigger", ""),
+                    result=at.get("result", ""),
+                    side_effects=at.get("side_effects", []),
+                    graded_result=at.get("graded_result"),
+                    difficulty=at.get("difficulty", ""),
+                )
+                for at in node_data.get("auto_triggers", [])
             ]
             graph.nodes[nid] = Node(
                 node_id=node_data["node_id"],
@@ -544,18 +600,24 @@ class DirectedGraph:
                 to_here=[Edge(target=e["target"], method=e["method"],
                               requirement=e.get("requirement", "")) for e in node_data.get("to_here", [])],
                 interactions=interactions,
+                auto_triggers=auto_triggers,
+                encounters=node_data.get("encounters", []),
+                scene_weapons=node_data.get("scene_weapons", []),
+                extra=node_data.get("extra", {}),
             )
         events_data = data.get("events", [])
         for ev_data in events_data:
-            graph.events[ev_data["event_id"]] = GameEvent(
-                event_id=ev_data["event_id"],
+            graph.events[ev_data["id"]] = Entity(
+                id=ev_data["id"],
+                entity_type=ev_data.get("entity_type", ""),
                 name=ev_data["name"],
+                type=ev_data.get("type", ""),
+                requirement=ev_data.get("requirement", ""),
                 trigger=ev_data.get("trigger", ""),
-                impact=ev_data.get("impact", ""),
-                requirements=[
-                    _normalize_requirement(req)
-                    for req in ev_data.get("requirements", [])
-                ],
+                result=ev_data.get("result", ""),
+                side_effects=ev_data.get("side_effects", []),
+                graded_result=ev_data.get("graded_result"),
+                difficulty=ev_data.get("difficulty", ""),
             )
         return graph
 
@@ -961,6 +1023,28 @@ class ScenarioWorld:
             f"flags={len(self.flags)}, "
             f"background={'set' if self.background_story else 'none'})"
         )
+
+
+def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
+    """Apply side effect dataclass instances to the world. Returns human-readable summaries."""
+    msgs = []
+    for effect in side_effects:
+        if isinstance(effect, ItemGain):
+            world.memory.note_item(effect.item_name)
+            msgs.append(f"[获得物品] {effect.item_name}")
+        elif isinstance(effect, SpawnEnemy):
+            target_scene = effect.scene or world.current_location
+            msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
+        elif isinstance(effect, GrantWeapon):
+            world.memory.note_item(effect.weapon_ref)
+            msgs.append(f"[授予武器] {effect.weapon_ref} x{effect.quantity}")
+        elif isinstance(effect, NPCStateChange):
+            world.set_npc_state(effect.npc_name, effect.new_state)
+            msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
+        elif isinstance(effect, StatChange):
+            sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
+            msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（未自动应用）")
+    return msgs
 
 
 # ═══════════════════════════════════════════════════════════════
