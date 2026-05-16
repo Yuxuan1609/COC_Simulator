@@ -194,7 +194,7 @@ def cross_validate_layers(
     return report
 
 
-def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data) -> dict:
+def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=None) -> dict:
     """将 Step 3a 后的实体按场景分组组装为 L2 结构."""
     scenes: dict[str, dict] = {}
     for inter in interactions:
@@ -223,7 +223,7 @@ def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data) 
     return {
         "scenes": scenes,
         "events": events,
-        "npc_profiles": {},
+        "npc_profiles": npc_profiles if npc_profiles is not None else {},
     }
 
 
@@ -281,7 +281,7 @@ def run_pipeline(
         parse_step2a, parse_step2b_events, parse_step2b_at,
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
-        parse_step35, parse_phase1,
+        parse_step35, parse_phase1, parse_step25,
         _merge_phase2_fields, _slim_entity,
     )
     from concurrent.futures import ThreadPoolExecutor
@@ -366,7 +366,8 @@ def run_pipeline(
     def _do_l1():
         return parse_step2c_l1(chapters, scenes, characters, llm_json)
     def _do_l3():
-        return parse_step2c_l3(chapters, scenes, characters, llm_json)
+        step1_meta = step1a.get("module_meta", {})
+        return parse_step2c_l3(chapters, scenes, characters, llm_json, step1_meta=step1_meta)
 
     with ThreadPoolExecutor(max_workers=4) as ex:
         f_ev = ex.submit(lambda: _with_fallback(
@@ -427,30 +428,50 @@ def run_pipeline(
         print(f"  Step 2b 完成: {len(events)} events, {len(auto_triggers)} auto_triggers")
         print(f"  Step 2c 完成: {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
 
-    # ── Step 3a ──────────────────────────────────────────────
+    # ── Step 3a ∥ Step 2.5 (并行) ──────────────────────────────
     if verbose:
         print("═" * 50)
-        print("[Step 3a] L2 依赖解析...")
+        print("[Step 3a + Step 2.5] L2 依赖解析 ∥ NPC 行为描述 (并行)...")
 
     def _do_step3a():
         ending_conditions = l3_data.get("ending_conditions", [])
         return parse_step3a(chapters, interactions, events, auto_triggers, ending_conditions, llm_json)
-    step3a = _with_fallback(
-        _do_step3a, ["interactions"],
-        {"interactions": interactions, "events": events, "auto_triggers": auto_triggers},
-        max_retries, verbose, "Step 3a",
-    )
+
+    def _do_step25():
+        l3_characters = l3_data.get("characters", [])
+        if not l3_characters:
+            return {"npc_profiles": {}}
+        return parse_step25(l3_characters, l1_data, interactions, auto_triggers, llm_json)
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f3a = ex.submit(lambda: _with_fallback(
+            _do_step3a, ["interactions"],
+            {"interactions": interactions, "events": events, "auto_triggers": auto_triggers},
+            max_retries, verbose, "Step 3a",
+        ))
+        f25 = ex.submit(lambda: _with_fallback(
+            _do_step25, ["npc_profiles"],
+            {"npc_profiles": {}},
+            max_retries, verbose, "Step 2.5",
+        ))
+        step3a = f3a.result()
+        step25 = f25.result()
+
     interactions = step3a.get("interactions", interactions)
     events = step3a.get("events", events)
     auto_triggers = step3a.get("auto_triggers", auto_triggers)
+    npc_profiles = step25.get("npc_profiles", {})
     if step3a.get("_fallback"):
         result.fallbacks.append("Step 3a")
+    if step25.get("_fallback"):
+        result.fallbacks.append("Step 2.5")
 
     if verbose:
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
+        print(f"  Step 2.5 完成: {len(npc_profiles)} NPC profiles")
 
     # ── 组装 L2 结构 ──
-    l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data)
+    l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles)
     result.l2_data = l2_assembled
 
     # Extract flat lists from assembled L2 for Step 3.5/4
@@ -627,7 +648,7 @@ def run_pipeline(
 
     # Re-assemble L2 with Phase 2 standardized entities
     l2_assembled.clear()
-    l2_assembled.update(_assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data))
+    l2_assembled.update(_assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles))
     if dep_graph:
         l2_assembled["dependency_graph"] = dep_graph.to_dict()
     l2_assembled["_phase1"] = {"enemies": phase1_result.get("enemies", []),

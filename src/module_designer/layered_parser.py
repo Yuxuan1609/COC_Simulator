@@ -188,7 +188,7 @@ def build_step1a_prompt(content: str) -> str:
 
 输出格式:
 {{
-  "module_meta": {{"title": "模组标题", "era": "年代（如1920s）", "theme": "核心主题"}},
+  "module_meta": {{"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数"}},
   "scenes": ["场景中文名", ...],
   "characters": [
     {{"name": "角色中文名", "id": "NPC_1"}},
@@ -306,6 +306,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - type 涉及技能鉴定时，填入 graded_result（分级检定后果），此时 result 填 "##GRADED##"（占位标记），side_effects 留空。所有结果描述写入 graded_result 各等级中；type 为"无"时不填 graded_result
 - based_on 始终为 null（Step 2b 会给派生实体填值）
 - 通行路径记录每个场景的出边（from_here）和入边（to_here），包含通行方式和前置条件
+- entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -388,6 +389,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 - result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
+- entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -471,6 +473,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - 只生成被动触发的事件，不要生成玩家主动互动
+- entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -612,8 +615,9 @@ STEP2C_L3_SYSTEM = """你是一个优秀的 TRPG 模组设计师，专门提取�
 """
 
 
-def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
+def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict], step1_meta: dict = None) -> str:
     template = _load_template("l3_template.json")
+    meta_ref = json.dumps(step1_meta, ensure_ascii=False, indent=2) if step1_meta else "（无）"
     scene_list = "\n".join(f"- {s}" for s in scenes)
     char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
     return f"""从精修模组文本中提取「设计者层」信息（L3 层）。
@@ -627,8 +631,11 @@ def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], charact
 输出格式参考：
 {template}
 
+## Step 1a 已提取的元信息（优先使用，仅补充缺失字段）
+{meta_ref}
+
 要求：
-1. module_meta：模组元信息
+1. module_meta：模组元信息。优先使用 Step 1a 已提取的值（title/era/theme），仅补充 Step 1a 中为空的字段（author/expected_duration/player_count）
 2. world_rules：描述世界运行规则列表，每个含 id (WR1, WR2...), name, rule, scope, is_absolute
     - 例如: 当前模组基于梦境展开，所以使用现代科技对抗是不可能的
 3. scene_intents：每个场景的设计意图，key 为已知场景列表，value 含 purpose / key_threat (可选) / notes (可选)
@@ -650,9 +657,93 @@ def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], charact
 \"\"\""""
 
 
-def parse_step2c_l3(chapters: dict[str, str], scenes: list[dict], characters: list[dict], llm_call) -> dict:
-    prompt = build_step2c_l3_prompt(chapters, scenes, characters)
+def parse_step2c_l3(chapters: dict[str, str], scenes: list[dict], characters: list[dict], llm_call, step1_meta: dict = None) -> dict:
+    prompt = build_step2c_l3_prompt(chapters, scenes, characters, step1_meta)
     return llm_call(prompt, system=STEP2C_L3_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2.5: NPC 行为描述
+# ═══════════════════════════════════════════════════════════════
+
+STEP25_SYSTEM = """你是一个 TRPG NPC 行为描述助手。
+你的任务是：基于 L3 角色设计意图、L1 外貌描述和 L2 entity 互动信息，为每个 NPC 生成行为描述档案。
+
+核心问题：这个 NPC 能/会干什么？在什么情况下会触发什么互动？
+
+重要原则：
+- 只使用提供的信息，不要编造新角色或新能力
+- 描述侧重于 NPC 的能力和行动（what they can/will do），而非静态属性
+- 如果某个 NPC 在 L2 entity 中没有对应互动，只基于 L3/L1 信息描述
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step25_prompt(
+    l3_characters: list[dict],
+    l1_data: dict,
+    interactions: list[dict],
+    auto_triggers: list[dict],
+) -> str:
+    # Collect NPC-related entities from L2
+    npc_entities = []
+    for e in interactions + auto_triggers:
+        name = e.get("name", "")
+        result = e.get("result", "")[:100]
+        trigger = e.get("trigger", "")[:100]
+        npc_entities.append({"name": name, "result": result, "trigger": trigger})
+
+    # Extract NPC appearances from L1
+    npc_appearances = []
+    for scene_name, sdata in l1_data.items():
+        for npc in sdata.get("npc_appearances", []):
+            npc_appearances.append({
+                "name": npc.get("name", ""),
+                "brief": npc.get("brief", ""),
+                "demeanor": npc.get("demeanor", ""),
+                "scene": scene_name,
+            })
+
+    return f"""为以下 NPC 生成行为描述档案。
+
+## L3 角色设计意图（NPC 为什么会这样做）
+{json.dumps(l3_characters, ensure_ascii=False, indent=2)}
+
+## L1 NPC 外貌（玩家第一印象）
+{json.dumps(npc_appearances, ensure_ascii=False, indent=2)}
+
+## L2 Entity 互动（NPC 参与的动作）
+{json.dumps(npc_entities, ensure_ascii=False, indent=2)}
+
+输出格式:
+{{
+  "npc_profiles": {{
+    "NPC名称": {{
+      "name": "NPC名称",
+      "role": "一句话角色定位",
+      "what_they_can_do": "NPC能做什么、在什么条件下会做什么（核心字段）",
+      "interaction_triggers": ["什么情况下玩家可以与NPC互动"],
+      "personality_notes": "性格和说话风格",
+      "appearance": "外貌描述（来自L1）"
+    }}
+  }}
+}}
+
+要求：
+1. 必须覆盖 L3 characters 中的所有角色
+2. what_they_can_do 是核心字段，描述 NPC 的能力和行动模式
+3. interaction_triggers 基于 L2 entity 信息，列出 NPC 参与的互动触发条件
+4. 仅输出 JSON"""
+
+
+def parse_step25(
+    l3_characters: list[dict],
+    l1_data: dict,
+    interactions: list[dict],
+    auto_triggers: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step25_prompt(l3_characters, l1_data, interactions, auto_triggers)
+    return llm_call(prompt, system=STEP25_SYSTEM)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -897,7 +988,6 @@ PHASE1_SYSTEM = """你是一个 TRPG 模组风格分析助手。
 你的任务是：根据模组精修文本，判断敌人和武器的风格方向和数量范围，用于后续约束生成。
 
 重要原则：
-- enemy_ref / weapon_ref 必须从提供的库列表中选择，不允许自创名称
 - 约束宽松，只需符合模组背景设定，允许随机性
 - 不做场景绑定——跑团中任何场景都可能出现
 - min_count 可为 0（表示可能不出现），max_count 为最多出现次数

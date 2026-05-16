@@ -53,7 +53,7 @@ from module_designer.layered_parser import (
     STEP2A_SYSTEM, STEP2B_EVENTS_SYSTEM, STEP2B_AT_SYSTEM,
     STEP2C_L1_SYSTEM, STEP2C_L3_SYSTEM,
     STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM,
-    PHASE1_SYSTEM, STEP4_SYSTEM,
+    STEP25_SYSTEM, PHASE1_SYSTEM, STEP4_SYSTEM,
 )
 from library import WeaponLibrary, EnemyLibrary
 
@@ -267,7 +267,7 @@ with ThreadPoolExecutor(max_workers=4) as ex:
     )
     f_l3 = ex.submit(do_json_call,
         "step_2", "2c_l3",
-        build_step2c_l3_prompt, chapters, scenes, characters,
+        build_step2c_l3_prompt, chapters, scenes, characters, step1a.get("module_meta", {}),
         system_prompt=STEP2C_L3_SYSTEM
     )
     events_data = f_ev.result()
@@ -331,9 +331,24 @@ auto_triggers = step3a.get("auto_triggers", auto_triggers)
 print(f"Step 3a 完成: 去重 + 冲突 + 结局")
 print(f"  Interactions: {len(interactions)}, Events: {len(events)}, Auto-triggers: {len(auto_triggers)}")
 
+# ═══ Step 2.5: NPC 行为描述 ═══
+l3_characters = l3_data.get("characters", [])
+if l3_characters:
+    step25 = do_json_call(
+        "step_25", "25_npc_profiles",
+        build_step25_prompt,
+        l3_characters, l1_data, interactions, auto_triggers,
+        system_prompt=STEP25_SYSTEM
+    )
+    npc_profiles = step25.get("npc_profiles", {})
+    print(f"Step 2.5 完成: {len(npc_profiles)} NPC profiles")
+else:
+    npc_profiles = {}
+    print("Step 2.5 跳过: 无 NPC 角色")
+
 # ═══ 组装 L2 结构 ═══
 from module_designer.layered_pipeline import _assemble_l2
-l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data)
+l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles)
 print(f"L2 组装完成: {len(l2_assembled.get('scenes',{}))} 场景")
 
 # 从组装后的 L2 提取平面列表供 Step 3.5/4 使用
@@ -476,7 +491,7 @@ for e in events:
     e.pop("based_on", None)
 
 # ═══ 用 Phase 2 标准化后的实体重新组装 L2 ═══
-l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data)
+l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles)
 print(f"L2 重新组装完成: {len(l2_assembled.get('scenes',{}))} 场景")
 if dep_graph:
     l2_assembled["dependency_graph"] = dep_graph.to_dict()
@@ -545,14 +560,15 @@ print("四步渐进式解析完成")
 print("=" * 60)
 print(f"Step 1: {len(scenes)} 场景, {len(characters)} 角色, {len(condensed_text)} 字 condensed_text")
 print(f"Step 2: {len(interactions)} interactions, {len(events)} events, {len(auto_triggers)} auto_triggers")
-print(f"        {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
+print(f"        {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则, {len(npc_profiles)} NPC profiles")
 print(f"Step 3: 去重+冲突+结局 → 交叉核对 → 依赖图 (3.5)")
 print(f"Step 4: Phase 1 风格预判 + Phase 2 标准化")
 print(f"")
-print(f"总 LLM 调用: 12 (Step 1:2 + Step 2:5 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)")
+print(f"总 LLM 调用: 13 (Step 1:2 + Step 2:5 + Step 2.5:1 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)")
 print(f"调试产物: {DEBUG_ROOT}/")
 print(f"├── step_1/   (1a_structured_extraction, 1b_condensed_text)")
 print(f"├── step_2/   (2a_interactions, 2b_events, 2b_auto_triggers, 2c_l1, 2c_l3)")
+print(f"├── step_25/  (25_npc_profiles)")
 print(f"├── step_3/   (3a_dedup_conflict, 3b_cross_check)")
 print(f"├── step_35/  (35_dependency_graph)")
 print(f"├── phase_1/  (phase1_style_preview)")
