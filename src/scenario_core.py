@@ -7,6 +7,7 @@ TRPG 场景核心模块 —— 数据类、有向图、玩家、运行时世界�
 from __future__ import annotations
 
 import json
+import re
 from typing import Dict, List, Optional, Tuple, Set, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from investigator.models import Investigator as InvestigatorType
@@ -52,34 +53,24 @@ class Interaction:
     trigger: str         # 触发条件描述
     result: str          # 执行结果（含线索信息）
     requirements: List[Requirement] = field(default_factory=list)   # 前置条件
-    side_effects: list = field(default_factory=list)   # FlagSet | ItemGain | StatChange
+    side_effects: list = field(default_factory=list)   # ItemGain | StatChange | SpawnEnemy | GrantWeapon | NPCStateChange
 
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
 
 
 @dataclass
-class FlagSet:
-    """设置世界标记"""
-    key: str
-    value: bool = True
-
-
-@dataclass
 class ItemGain:
-    """获得关键物品"""
+    """获得关键物品 —— 纯文本描述，不做库匹配"""
     item_name: str
 
 
 @dataclass
 class StatChange:
-    """
-    属性变化（预留）
-    - COC 规则下的 SAN/HP 变化涉及检定与鉴定大成功/失败规则
-    - 当前仅做结构化记录，不自动修改 Investigator 状态
-    """
+    """属性/状态变化。delta 为数值变化，narrative 描述难以量化的影响（恐惧、幻觉等）."""
     stat_name: str
-    delta: int       # 正=回复，负=损失
+    delta: int = 0
+    narrative: str = ""
 
 
 @dataclass
@@ -87,24 +78,15 @@ class SpawnEnemy:
     """生成敌人遭遇 —— 从 library 中实例化敌人"""
     enemy_ref: str       # 引用 library/enemies 中的敌人名
     scene: str           # 目标场景
-    trigger_condition: str = ""
     quantity: int = 1
 
 
 @dataclass
-class GrantItem:
-    """授予物品 —— 从 library 中实例化武器/物品"""
-    item_ref: str        # 引用 library/weapons 中的武器名（常规物品为自由文本）
+class GrantWeapon:
+    """授予武器 —— 从 library/weapons 中选取标准化武器"""
+    weapon_ref: str      # 引用 library/weapons 中的武器名
     scene: str = ""      # 目标场景（空=当前场景）
-
-
-@dataclass
-class EncounterAnchor:
-    """遭遇锚点 —— 标记场景中存在可能触发遭遇的区域"""
-    scene: str
-    enemy_ref: str
-    trigger_condition: str = ""
-    is_active: bool = True
+    quantity: int = 1
 
 
 @dataclass
@@ -123,6 +105,129 @@ class ActionResult:
     suggested_flags: list = field(default_factory=list)   # LLM 建议（预留，本轮不实现）
 
 
+@dataclass
+class Entity:
+    """Unified entity — interaction, auto_trigger, or event."""
+    id: str                        # I1, AT1, E1
+    entity_type: str               # "interaction" | "auto_trigger" | "event"
+    name: str
+    scene: str = ""                # empty for events
+    type: str = ""                 # COC 45 skill name, "" = no check
+    requirement: str = ""          # natural language
+    trigger: str = ""              # when this fires
+    result: str = ""               # may contain ##GRADED##, ##END_*, @markup
+    side_effects: list[str] = field(default_factory=list)  # @markup strings
+    graded_result: dict | None = None
+    difficulty: str = ""           # None/regular/hard/extreme
+
+
+# ═══════════════════════════════════════════════════════════════
+#  @markup 解析器
+# ═══════════════════════════════════════════════════════════════
+
+_MARKUP_PATTERN = re.compile(
+    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|npc_state_change)'
+    r'\(([^)]*)\)'
+)
+
+
+def _parse_kwargs(kwargs_str: str) -> dict:
+    """Parse key=value pairs from @markup arg string. Values may be quoted."""
+    result = {}
+    if not kwargs_str.strip():
+        return result
+    # Match key=value pairs, value can be quoted (single/double) or unquoted
+    for match in re.findall(r'(\w+)\s*=\s*(?:"""([^"]*)"""|"([^"]*)"|\'([^\']*)\'|([^,)]+))', kwargs_str):
+        key = match[0]
+        value = match[1] or match[2] or match[3] or match[4]
+        value = value.strip().rstrip(',')
+        result[key] = value
+    return result
+
+
+def parse_markup(text: str):
+    """Parse a single @function(args) markup string into a side effect dataclass."""
+    match = _MARKUP_PATTERN.search(text)
+    if not match:
+        return None
+    func_name = match.group(1)
+    kwargs_str = match.group(2)
+    kwargs = _parse_kwargs(kwargs_str)
+
+    if func_name == "spawn_enemy":
+        return SpawnEnemy(
+            enemy_ref=kwargs.get("enemy_ref", ""),
+            scene=kwargs.get("scene", ""),
+            quantity=int(kwargs.get("quantity", 1)),
+        )
+    elif func_name == "grant_weapon":
+        return GrantWeapon(
+            weapon_ref=kwargs.get("weapon_ref", ""),
+            scene=kwargs.get("scene", ""),
+            quantity=int(kwargs.get("quantity", 1)),
+        )
+    elif func_name == "stat_change":
+        delta_str = kwargs.get("delta", "0")
+        try:
+            delta = int(delta_str)
+        except ValueError:
+            delta = delta_str  # keep as string if it's a dice formula like "-1d4"
+        return StatChange(
+            stat_name=kwargs.get("stat_name", ""),
+            delta=delta,
+            narrative=kwargs.get("narrative", ""),
+        )
+    elif func_name == "item_gain":
+        return ItemGain(item_name=kwargs.get("item_name", ""))
+    elif func_name == "npc_state_change":
+        return NPCStateChange(
+            npc_name=kwargs.get("npc_name", ""),
+            new_state=kwargs.get("new_state", ""),
+        )
+    return None
+
+
+def parse_markup_all(text: str) -> list:
+    """Parse all @markup occurrences in a string."""
+    results = []
+    for match in _MARKUP_PATTERN.finditer(text):
+        func_name = match.group(1)
+        kwargs_str = match.group(2)
+        kwargs = _parse_kwargs(kwargs_str)
+
+        if func_name == "spawn_enemy":
+            results.append(SpawnEnemy(
+                enemy_ref=kwargs.get("enemy_ref", ""),
+                scene=kwargs.get("scene", ""),
+                quantity=int(kwargs.get("quantity", 1)),
+            ))
+        elif func_name == "grant_weapon":
+            results.append(GrantWeapon(
+                weapon_ref=kwargs.get("weapon_ref", ""),
+                scene=kwargs.get("scene", ""),
+                quantity=int(kwargs.get("quantity", 1)),
+            ))
+        elif func_name == "stat_change":
+            delta_str = kwargs.get("delta", "0")
+            try:
+                delta = int(delta_str)
+            except ValueError:
+                delta = delta_str
+            results.append(StatChange(
+                stat_name=kwargs.get("stat_name", ""),
+                delta=delta,
+                narrative=kwargs.get("narrative", ""),
+            ))
+        elif func_name == "item_gain":
+            results.append(ItemGain(item_name=kwargs.get("item_name", "")))
+        elif func_name == "npc_state_change":
+            results.append(NPCStateChange(
+                npc_name=kwargs.get("npc_name", ""),
+                new_state=kwargs.get("new_state", ""),
+            ))
+    return results
+
+
 def _parse_side_effect(data):
     """从 dict 解析单个 side effect；字符串则原样保留供 LLM 解析."""
     if isinstance(data, str):
@@ -130,21 +235,20 @@ def _parse_side_effect(data):
     if not isinstance(data, dict):
         return None
     type_ = data.get("type", "")
-    if type_ == "flag_set":
-        return FlagSet(key=data["key"], value=data.get("value", True))
-    elif type_ == "item_gain":
+    if type_ == "item_gain":
         return ItemGain(item_name=data["item_name"])
     elif type_ == "stat_change":
-        return StatChange(stat_name=data["stat_name"], delta=data.get("delta", 0))
+        return StatChange(stat_name=data["stat_name"], delta=data.get("delta", 0),
+                          narrative=data.get("narrative", ""))
     elif type_ == "spawn_enemy":
         return SpawnEnemy(
             enemy_ref=data["enemy_ref"],
             scene=data.get("scene", ""),
-            trigger_condition=data.get("trigger_condition", ""),
             quantity=data.get("quantity", 1),
         )
-    elif type_ == "grant_item":
-        return GrantItem(item_ref=data["item_ref"], scene=data.get("scene", ""))
+    elif type_ == "grant_weapon":
+        return GrantWeapon(weapon_ref=data["weapon_ref"], scene=data.get("scene", ""),
+                           quantity=data.get("quantity", 1))
     elif type_ == "npc_state_change":
         return NPCStateChange(npc_name=data["npc_name"], new_state=data["new_state"])
     return None
@@ -177,22 +281,19 @@ def _normalize_requirement(req):
 
 def _side_effect_to_dict(effect) -> dict:
     """将 side effect 实例序列化为 dict"""
-    if isinstance(effect, FlagSet):
-        return {"type": "flag_set", "key": effect.key, "value": effect.value}
-    elif isinstance(effect, ItemGain):
+    if isinstance(effect, ItemGain):
         return {"type": "item_gain", "item_name": effect.item_name}
     elif isinstance(effect, StatChange):
-        return {"type": "stat_change", "stat_name": effect.stat_name, "delta": effect.delta}
+        return {"type": "stat_change", "stat_name": effect.stat_name, "delta": effect.delta, "narrative": effect.narrative}
     elif isinstance(effect, SpawnEnemy):
         return {
             "type": "spawn_enemy",
             "enemy_ref": effect.enemy_ref,
             "scene": effect.scene,
-            "trigger_condition": effect.trigger_condition,
             "quantity": effect.quantity,
         }
-    elif isinstance(effect, GrantItem):
-        return {"type": "grant_item", "item_ref": effect.item_ref, "scene": effect.scene}
+    elif isinstance(effect, GrantWeapon):
+        return {"type": "grant_weapon", "weapon_ref": effect.weapon_ref, "scene": effect.scene, "quantity": effect.quantity}
     elif isinstance(effect, NPCStateChange):
         return {"type": "npc_state_change", "npc_name": effect.npc_name, "new_state": effect.new_state}
     return {}
