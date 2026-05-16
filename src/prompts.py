@@ -580,12 +580,17 @@ def _build_l1l3_context(
                 parts.append(f"  目标情绪：{intent.emotion}")
     if l1_scene:
         parts.append("【场景感知信息】")
-        if l1_scene.atmosphere:
-            parts.append(f"  氛围：{l1_scene.atmosphere}")
-        if l1_scene.mood:
-            parts.append(f"  情绪基调：{l1_scene.mood}")
-        if l1_scene.ambient_hints:
-            parts.append(f"  环境暗示：{', '.join(l1_scene.ambient_hints)}")
+        # L1 may be dict (from JSON) or dataclass — accept both
+        _get = lambda obj, key, default="": obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+        atm = _get(l1_scene, "atmosphere", "")
+        mood = _get(l1_scene, "mood", "")
+        hints = _get(l1_scene, "ambient_hints", [])
+        if atm:
+            parts.append(f"  氛围：{atm}")
+        if mood:
+            parts.append(f"  情绪基调：{mood}")
+        if hints:
+            parts.append(f"  环境暗示：{', '.join(hints)}")
     return "\n".join(parts) if parts else ""
 
 
