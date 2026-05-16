@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 
 from scenario_core import parse_markup_all, resolve_graded_result
 from .messages import ActionIntent, ActionOutcome
+from prompts import log_skill_result
 
 
 class Judge:
@@ -98,6 +99,7 @@ class Judge:
         if entity.type and entity.type not in ("无", "None", ""):
             if self.world.player and intent and intent.skill_checks:
                 all_pass, skill_result = self.world.player.check_skills(intent.skill_checks)
+                log_skill_result(skill_result)
                 skill_passed = all_pass
                 skill_message = skill_result
             elif self.world.player is not None:

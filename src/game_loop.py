@@ -165,7 +165,8 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     }
 
 
-def run_turn(game: dict, user_input: str) -> dict:
+def run_turn(game: dict, user_input: str,
+             weapon_lib=None, enemy_lib=None, injector=None) -> dict:
     """Execute one turn. Returns {"brief": str, "narrative": str, "full": str}."""
     keeper = game["keeper"]
     narrator = game["narrator"]
@@ -175,7 +176,7 @@ def run_turn(game: dict, user_input: str) -> dict:
 
     # Handle debug commands
     if user_input.strip().startswith("/"):
-        cmd_result = _handle_spawn_command(user_input, world)
+        cmd_result = _handle_spawn_command(user_input, world, weapon_lib, enemy_lib, injector)
         if cmd_result:
             return cmd_result
 
