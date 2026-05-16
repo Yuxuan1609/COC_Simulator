@@ -109,9 +109,12 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
 
 def init_game(l2_path: str, l1_path: str, l3_path: str,
               escalation_config_path: str,
-              start_node: str = "6号车厢",
-              background_path: str | None = None) -> dict[str, Any]:
-    """Initialize all agents and world state from JSON files."""
+              start_node: str = "6号车厢") -> dict[str, Any]:
+    """Initialize all agents and world state from JSON files.
+
+    Returns dict with keys: keeper, narrator, author, l3_data.
+    Access world via keeper.world.
+    """
     # Load L2
     with open(l2_path, "r", encoding="utf-8") as f:
         l2 = json.load(f)
@@ -132,18 +135,9 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     except (FileNotFoundError, json.JSONDecodeError):
         escalation_policy = EscalationPolicy()
 
-    # Load background story (optional)
-    background = ""
-    if background_path:
-        try:
-            with open(background_path, "r", encoding="utf-8") as f:
-                background = f.read()
-        except FileNotFoundError:
-            pass
-
-    # Build world
+    # Build world (background story lives in L3.driving_force)
     graph = DirectedGraph(scenes=l2["scenes"], events=l2.get("events", []))
-    world = ScenarioWorld(graph, start_node=start_node, background_story=background)
+    world = ScenarioWorld(graph, start_node=start_node)
 
     # Init agents
     narrator = Narrator(l1)
@@ -160,7 +154,6 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         "keeper": keeper,
         "narrator": narrator,
         "author": author,
-        "world": world,
         "l3_data": author.l3_data,
     }
 
@@ -171,7 +164,7 @@ def run_turn(game: dict, user_input: str,
     keeper = game["keeper"]
     narrator = game["narrator"]
     author = game["author"]
-    world = game["world"]
+    world = keeper.world
     l3_data = game["l3_data"]
 
     # Handle debug commands
