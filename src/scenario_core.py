@@ -227,6 +227,41 @@ def parse_markup_all(text: str) -> list:
             ))
     return results
 
+_GRADED_PATTERN = re.compile(r'^##GRADED##$')
+_END_PATTERN = re.compile(r'^##END_([^:]+):(.+)##$')
+
+
+def resolve_graded_result(entity: Entity, tier: str) -> str:
+    """Resolve ##GRADED## result based on skill check tier.
+
+    tier: "failure" | "regular" | "hard" | "extreme"
+    """
+    if not _GRADED_PATTERN.match(entity.result):
+        return entity.result
+    if not entity.graded_result:
+        return entity.result
+    key = f"on_{tier}"
+    if key in entity.graded_result:
+        return entity.graded_result[key]
+    fallback_order = {
+        "extreme": ["on_extreme", "on_hard", "on_regular", "on_failure"],
+        "hard": ["on_hard", "on_regular", "on_failure", "on_extreme"],
+        "regular": ["on_regular", "on_failure", "on_hard", "on_extreme"],
+        "failure": ["on_failure", "on_regular", "on_hard", "on_extreme"],
+    }
+    for fb_key in fallback_order.get(tier, ["on_regular", "on_failure"]):
+        if fb_key in entity.graded_result:
+            return entity.graded_result[fb_key]
+    return entity.result
+
+
+def has_ending(text: str) -> tuple[str | None, str | None]:
+    """Check if text contains an ending marker. Returns (ending_name, description) or (None, None)."""
+    match = _END_PATTERN.match(text)
+    if match:
+        return match.group(1), match.group(2)
+    return None, None
+
 
 def _parse_side_effect(data):
     """从 dict 解析单个 side effect；字符串则原样保留供 LLM 解析."""
