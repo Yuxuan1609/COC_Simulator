@@ -20,6 +20,7 @@ Step 2b: Events + Auto-triggers (并行, based_on 指向派生的 interaction，
 Step 2c: L1 + L3 (并行, L1 用 characters 指导 NPC, L3 含 characters 行为设计)
     ↓
 Step 3a: 去重 + 冲突 + 结局验证 (轻量 LLM)
+Step 2.5: NPC 行为描述 (与 Step 3a 并行, 轻量 LLM)
     ↓
 组装 L2 结构 (_assemble_l2)
     ↓
@@ -34,7 +35,7 @@ Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
 最终验证 + 保存 L1/L2/L3 JSON
 ```
 
-总 LLM 调用: **12 次** (Step 1:2 + Step 2:5 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)
+总 LLM 调用: **13 次** (Step 1:2 + Step 2:5 + Step 2.5:1 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)
 
 ---
 
@@ -74,6 +75,31 @@ Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
 | `@npc_state_change` | npc_name, new_state | NPC 状态变化 |
 
 数量约束：spawn_enemy / grant_weapon 的 enemy_ref / weapon_ref 必须在 Phase 1 约束列表内，总调用次数不超过 max_count。
+
+---
+
+## Step 2.5：NPC 行为描述
+
+**职责**：与 Step 3a 并行执行。基于 L3 characters（设计意图）、L1 npc_appearances（外貌/神态）和 L2 entity（NPC 参与的互动），为每个 NPC 生成行为描述档案。用于叙事增强。
+
+**输出**：写入 L2 的 `npc_profiles` 字段。
+
+```json
+{
+  "npc_profiles": {
+    "京山人吉": {
+      "name": "京山人吉",
+      "role": "关键情报源 — 昏迷的乘务员",
+      "what_they_can_do": "苏醒后提供驾驶室位置和Clicker弱点情报；若被巨口吞噬则触发乘务员牺牲事件",
+      "interaction_triggers": ["调查员急救成功时苏醒", "调查员询问电车情况时提供情报"],
+      "personality_notes": "冷静尽责但内心恐惧，声音微微颤抖",
+      "appearance": "穿着制服的乘务员，面色苍白，昏迷不醒"
+    }
+  }
+}
+```
+
+核心字段 `what_they_can_do` 回答"这个 NPC 能/会干什么"，让 KP 在运行时快速了解 NPC 的行为模式和触发条件。
 
 ---
 
@@ -166,7 +192,16 @@ Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
       "side_effects": []
     }
   ],
-  "npc_profiles": {},
+  "npc_profiles": {
+    "京山人吉": {
+      "name": "京山人吉",
+      "role": "关键情报源",
+      "what_they_can_do": "苏醒后提供情报",
+      "interaction_triggers": ["急救成功时苏醒"],
+      "personality_notes": "冷静尽责",
+      "appearance": "穿着制服的乘务员，面色苍白"
+    }
+  },
   "dependency_graph": {
     "nodes": {"I1": {"entity_id": "I1", "entity_type": "interaction", "name": "阅读车门便签"}},
     "edges": [{"source": "I3", "target": "I1", "dep_type": "interaction", "condition": "completed"}],
@@ -203,7 +238,7 @@ Phase 2: 精简标准化 (技能/属性/side_effect @标记化 + Phase 1 约束)
 **L2 顶层字段**：
 - `scenes`: 按场景中文名分组的 entity + 通行路径 + 描述
 - `events`: 全局不可逆事件列表（不绑定特定场景）
-- `npc_profiles`: NPC 完整信息（待填充）
+- `npc_profiles`: Step 2.5 生成的 NPC 行为描述档案（用于叙事增强）
 - `dependency_graph`: Step 3.5 生成的依赖有向图（nodes + edges + 循环标记）
 - `_phase1`: Phase 1 产出的武器/敌人约束
 
