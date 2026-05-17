@@ -1,0 +1,8 @@
+{
+  "actions": [
+    {
+      "type": "auto_trigger",
+      "id": "AT1"
+    }
+  ]
+}

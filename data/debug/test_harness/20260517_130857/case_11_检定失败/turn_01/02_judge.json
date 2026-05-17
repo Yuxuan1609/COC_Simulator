@@ -1,0 +1,11 @@
+{
+  "action_outcomes": [
+    {
+      "entity_id": "",
+      "entity_type": "",
+      "success": true,
+      "message": "（仔细观察电车示意地图）",
+      "side_effects": "[]"
+    }
+  ]
+}

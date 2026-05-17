@@ -1,0 +1,8 @@
+{
+  "actions": [
+    {
+      "type": "move",
+      "target": "7号车厢"
+    }
+  ]
+}

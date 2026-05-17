@@ -1,0 +1,4 @@
+Case: case_12_偏离行为
+Turns: 1
+  Turn 1: 完全偏离模组预期的行为，应触发 other
+    Input: 我想砸碎车窗玻璃跳出去

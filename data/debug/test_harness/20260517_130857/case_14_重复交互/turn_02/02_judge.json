@@ -1,0 +1,11 @@
+{
+  "action_outcomes": [
+    {
+      "entity_id": "",
+      "entity_type": "",
+      "success": true,
+      "message": "（感知电车异常）",
+      "side_effects": "[]"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+Case: case_10_事件链
+Turns: 3
+  Turn 1: 交互 I1：尝试侦查检定感知异常
+    Input: 感知电车异常
+  Turn 2: 交互 I2：检查物品
+    Input: 检查随身物品留存
+  Turn 3: 交互 I3：阅读便签获取信息
+    Input: 阅读门扉上的便签

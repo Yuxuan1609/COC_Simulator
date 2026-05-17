@@ -1,0 +1,4 @@
+Case: case_15_结局路径
+Turns: 1
+  Turn 1: 手动触发结局事件，验证 ##END_ 标记被检测
+    Input: /trigger E1

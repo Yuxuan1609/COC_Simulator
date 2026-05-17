@@ -1,0 +1,11 @@
+{
+  "action_outcomes": [
+    {
+      "entity_id": "",
+      "entity_type": "",
+      "success": true,
+      "message": "（阅读门扉上的便签）",
+      "side_effects": "[]"
+    }
+  ]
+}

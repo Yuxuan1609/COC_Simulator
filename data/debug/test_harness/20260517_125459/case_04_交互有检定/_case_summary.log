@@ -1,0 +1,4 @@
+Case: case_04_交互有检定
+Turns: 1
+  Turn 1: interact 需侦查检定，应显示检定结果和分级叙事
+    Input: 仔细观察电车示意地图

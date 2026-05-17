@@ -1,0 +1,11 @@
+{
+  "action_outcomes": [
+    {
+      "entity_id": "",
+      "entity_type": "",
+      "success": true,
+      "message": "（检查随身物品）",
+      "side_effects": "[]"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "action_outcomes": [
+    {
+      "entity_id": "",
+      "entity_type": "",
+      "success": true,
+      "message": "（砸碎车窗玻璃跳出去）",
+      "side_effects": "[]"
+    }
+  ]
+}

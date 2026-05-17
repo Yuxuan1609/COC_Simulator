@@ -1,0 +1,4 @@
+Case: case_05_移动被拒
+Turns: 1
+  Turn 1: move 到不存在路径的目标，应返回失败提示
+    Input: 去驾驶室
