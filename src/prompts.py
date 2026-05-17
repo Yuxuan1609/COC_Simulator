@@ -328,48 +328,102 @@ def parse_narrative_output(text: str) -> tuple[str, str]:
 
 # ── Keeper: Parse (Step 1) ──
 
+_SHOW_NON_TRIGGERABLE = True  # 设为 False 则不展示不可触发项
+
+def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Build triggerable / non-triggerable entity lists for current scene + events.
+
+    Returns (triggerable_scene, non_triggerable_scene, triggerable_events, non_triggerable_events).
+    """
+    node = world._current_node()
+
+    trig_scene = []
+    nontrig_scene = []
+
+    def _requirements_met(entity) -> bool:
+        req = getattr(entity, 'requirement', '') or ''
+        if not req.strip():
+            return True
+        if req.startswith("flag:"):
+            return world.flags.get(req[5:], False)
+        # entity ID reference — check completion
+        return world._are_requirements_met(entity)
+
+    def _fmt(entity, prefix: str, req_met: bool) -> str:
+        done = world.completed_interactions.get(world.current_location, set())
+        status = "（已完成）" if entity.name in done else ""
+        attrs = []
+        req = getattr(entity, 'requirement', '') or ''
+        if req:
+            attrs.append(f"需要：{req}" if req_met else f"缺少：{req}")
+        return (
+            f"  [{prefix}] id={entity.id} name=\"{entity.name}\" type={entity.type} "
+            f"trigger=\"{entity.trigger}\" {status} {' '.join(attrs)}"
+        )
+
+    if node:
+        for at in node.auto_triggers:
+            met = _requirements_met(at)
+            line = _fmt(at, "AT", met)
+            if met:
+                trig_scene.append(line)
+            else:
+                nontrig_scene.append(line)
+        for inter in node.interactions:
+            met = _requirements_met(inter)
+            line = _fmt(inter, "INTER", met)
+            if met:
+                trig_scene.append(line)
+            else:
+                nontrig_scene.append(line)
+
+    trig_events = []
+    nontrig_events = []
+    for ev in world.graph.events.values():
+        triggered = world.is_event_triggered(ev.id)
+        status = "（已触发）" if triggered else ""
+        req = getattr(ev, 'requirement', '') or ''
+        met = _requirements_met(ev) if req else True
+        attrs = []
+        if req:
+            attrs.append(f"硬性条件：{'满足' if met else '未满足'}")
+        line = (
+            f"  [EVENT] id={ev.id} name=\"{ev.name}\" "
+            f"trigger=\"{ev.trigger}\" {status} {' '.join(attrs)}"
+        )
+        if triggered:
+            continue  # skip already-triggered events
+        if met:
+            trig_events.append(line)
+        else:
+            nontrig_events.append(line)
+
+    return trig_scene, nontrig_scene, trig_events, nontrig_events
+
+
 def build_keeper_parse_prompt(world, user_input: str) -> str:
     """Keeper step 1: match player input against ALL entities, evaluate NL requirements."""
-    node = world._current_node()
     scene_ctx = _build_scene_context(world)
     state = _build_world_state(world)
     context = world.memory.get_context()
 
-    # Build all-entities list for the current scene
-    entities_lines = []
-    if node:
-        for at in node.auto_triggers:
-            attrs = []
-            if at.requirement:
-                attrs.append(f"需要：{at.requirement}")
-            entities_lines.append(
-                f"  [AT] id={at.id} name=\"{at.name}\" type={at.type} "
-                f"trigger=\"{at.trigger}\" {' '.join(attrs)}"
-            )
-        for inter in node.interactions:
-            done = world.completed_interactions.get(world.current_location, set())
-            status = "（已完成）" if inter.name in done else ""
-            attrs = []
-            if inter.requirement:
-                attrs.append(f"需要：{inter.requirement}")
-            entities_lines.append(
-                f"  [INTER] id={inter.id} name=\"{inter.name}\" type={inter.type} "
-                f"trigger=\"{inter.trigger}\" {status} {' '.join(attrs)}"
-            )
+    trig_scene, nontrig_scene, trig_events, nontrig_events = _build_entity_lines(world)
 
-    # Build all-events list
-    events_lines = []
-    for ev in world.graph.events.values():
-        triggered = world.is_event_triggered(ev.id)
-        status = "（已触发）" if triggered else ""
-        attrs = []
-        if ev.requirement:
-            met = world._are_requirements_met(ev)
-            attrs.append(f"硬性条件：{'满足' if met else '未满足'}")
-        events_lines.append(
-            f"  [EVENT] id={ev.id} name=\"{ev.name}\" "
-            f"trigger=\"{ev.trigger}\" {status} {' '.join(attrs)}"
-        )
+    # Scene entities section
+    scene_entity_parts = []
+    if trig_scene:
+        scene_entity_parts.append("【可触发场景实体】\n" + "\n".join(trig_scene))
+    if _SHOW_NON_TRIGGERABLE and nontrig_scene:
+        scene_entity_parts.append("【暂不可触发场景实体】\n" + "\n".join(nontrig_scene))
+    scene_entity_text = "\n\n".join(scene_entity_parts) if scene_entity_parts else "（无）"
+
+    # Events section
+    event_parts = []
+    if trig_events:
+        event_parts.append("【可触发事件】\n" + "\n".join(trig_events))
+    if _SHOW_NON_TRIGGERABLE and nontrig_events:
+        event_parts.append("【暂不可触发事件】\n" + "\n".join(nontrig_events))
+    event_text = "\n\n".join(event_parts) if event_parts else "（无）"
 
     prompt = f"""【玩家历史行动】
 {context or '（游戏刚开始）'}
@@ -379,11 +433,10 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 
 {scene_ctx}
 
-【当前场景实体】
-{chr(10).join(entities_lines) if entities_lines else '（无）'}
+{scene_entity_text}
 
 【所有事件】
-{chr(10).join(events_lines) if events_lines else '（无）'}
+{event_text}
 
 【玩家输入】
 {user_input}

@@ -81,9 +81,8 @@ class Judge:
         skill_tier = None
         skill_passed = True
         skill_message = ""
-        if entity.type and entity.type not in ("无", "None", ""):
-            # Use entity.type as the skill to roll (Parse no longer provides skill_checks)
-        if self.world.player:
+        # Use entity.type as the skill to roll (Parse no longer provides skill_checks)
+        if self.world.player and entity.type and entity.type not in ("无", "None", ""):
             skill_name = entity.type
             if skill_name and skill_name not in ("无", "None", ""):
                 intent_skill = intent.skill_checks[0] if (intent and intent.skill_checks) else skill_name
