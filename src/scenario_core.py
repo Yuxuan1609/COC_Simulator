@@ -228,7 +228,7 @@ def parse_markup_all(text: str) -> list:
     return results
 
 _GRADED_PATTERN = re.compile(r'^##GRADED##$')
-_END_PATTERN = re.compile(r'^##END_([^:]+):(.+)##$')
+_END_PATTERN = re.compile(r'^##END_([^:]+):(.+?)##')
 
 
 def resolve_graded_result(entity: Entity, tier: str) -> str:
@@ -748,12 +748,22 @@ class ScenarioWorld:
         done = self.completed_interactions.get(self.current_location, set())
         return interaction_name in done
 
-    def _are_requirements_met(self, interaction: Interaction) -> bool:
-        """检查指定交互的所有前置条件是否已满足"""
-        if not interaction.requirements:
-            return True
-        ok, _ = self.requirement_resolver.check(interaction.requirements)
-        return ok
+    def _are_requirements_met(self, entity) -> bool:
+        """Check if entity prerequisites are satisfied.
+        Handles both Entity (requirement: str) and Interaction (requirements: List[Requirement])."""
+        if hasattr(entity, 'requirement'):
+            req = entity.requirement
+            if not req or not req.strip():
+                return True
+            if req.startswith("flag:"):
+                return self.flags.get(req[5:], False)
+            return False
+        if hasattr(entity, 'requirements'):
+            if not entity.requirements:
+                return True
+            ok, _ = self.requirement_resolver.check(entity.requirements)
+            return ok
+        return True
 
     # ── 场景摘要（确定性、泛用格式化）──
 

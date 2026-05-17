@@ -71,17 +71,16 @@ def _categorize_interactions(world: ScenarioWorld) -> dict:
         if world._are_requirements_met(i):
             triggerable.append(entry)
         else:
-            unmet = world.requirement_resolver.get_unmet(i.requirements)
+            # Build unmet reason from Entity's string requirement
+            req_str = getattr(i, 'requirement', '') or ''
             reasons = []
-            for req in unmet:
-                if req.ref_type == "interaction":
-                    reasons.append(f"需要先完成「{req.ref_scene}」的「{req.ref_name}」")
-                elif req.ref_type == "event":
-                    event = world.graph.get_event(req.ref_scene)
-                    event_name = event.name if event else req.ref_scene
-                    reasons.append(f"需要先触发事件「{event_name}」")
-                elif req.ref_type == "flag":
-                    reasons.append(f"需要世界标记「{req.ref_name}」")
+            if req_str.strip():
+                if req_str.startswith("flag:"):
+                    reasons.append(f"需要世界标记「{req_str[5:]}」")
+                else:
+                    reasons.append(f"需要先完成「{req_str}」")
+            if not reasons:
+                reasons.append("前置条件未满足")
             entry["unmet_reasons"] = reasons
             non_triggerable.append(entry)
 

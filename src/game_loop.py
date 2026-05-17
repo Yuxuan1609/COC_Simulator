@@ -135,8 +135,40 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     except (FileNotFoundError, json.JSONDecodeError):
         escalation_policy = EscalationPolicy()
 
-    # Build world (background story lives in L3.driving_force)
-    graph = DirectedGraph(scenes=l2["scenes"], events=l2.get("events", []))
+    # Resolve scene naming: L2 uses internal IDs (S1-S7) but game loop expects
+    # Chinese names. _scene_names map (injected by pipeline Phase 2) provides
+    # the mapping. In its absence, fall back to the old behaviour (S-keys).
+    scene_map = l2.get("_scene_names", {})
+    l2_scenes = l2.get("scenes", {})
+
+    if scene_map:
+        remapped_scenes = {}
+        for sid, scene_data in l2_scenes.items():
+            cn_name = scene_map.get(sid, sid)
+            for lst in ("interactions", "auto_triggers"):
+                for ent in scene_data.get(lst, []):
+                    if ent.get("scene") in scene_map:
+                        ent["scene"] = scene_map[ent["scene"]]
+            for edge in scene_data.get("from_here", []):
+                if edge.get("target") in scene_map:
+                    edge["target"] = scene_map[edge["target"]]
+            for edge in scene_data.get("to_here", []):
+                for field in ("source", "target"):
+                    if edge.get(field) in scene_map:
+                        edge[field] = scene_map[edge[field]]
+            if not scene_data.get("description"):
+                l1_scene = l1.get(cn_name, {})
+                if isinstance(l1_scene, dict) and l1_scene.get("description"):
+                    scene_data["description"] = l1_scene["description"]
+            remapped_scenes[cn_name] = scene_data
+        for ev in l2.get("events", []):
+            if ev.get("scene") in scene_map:
+                ev["scene"] = scene_map[ev["scene"]]
+        start_node = scene_map.get(start_node, start_node)
+        graph = DirectedGraph(scenes=remapped_scenes, events=l2.get("events", []))
+    else:
+        graph = DirectedGraph(scenes=l2_scenes, events=l2.get("events", []))
+
     world = ScenarioWorld(graph, start_node=start_node)
 
     # Init agents

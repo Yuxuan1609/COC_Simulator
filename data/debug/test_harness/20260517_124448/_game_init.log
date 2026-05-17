@@ -1,0 +1,12 @@
+Timestamp: 20260517_124448
+Scenes: 7
+Events: 26
+Start node: 6号车厢
+Player: 亚楠
+  Scene: S1 — 5 interactions, 1 auto_triggers, 2 exits
+  Scene: S2 — 4 interactions, 0 auto_triggers, 1 exits
+  Scene: S3 — 4 interactions, 2 auto_triggers, 2 exits
+  Scene: S4 — 4 interactions, 1 auto_triggers, 2 exits
+  Scene: S5 — 7 interactions, 1 auto_triggers, 2 exits
+  Scene: S6 — 7 interactions, 1 auto_triggers, 2 exits
+  Scene: S7 — 8 interactions, 2 auto_triggers, 1 exits

@@ -1,0 +1,4 @@
+Case: case_06_前置不满足
+Turns: 1
+  Turn 1: interact 但 requirement 不满足，应提示缺少前置
+    Input: 打开通往驾驶室的门
