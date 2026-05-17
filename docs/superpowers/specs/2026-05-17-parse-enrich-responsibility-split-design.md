@@ -22,9 +22,9 @@ The current parse/enrich split blurs responsibilities:
 
 | Step | Who | What |
 |------|-----|------|
-| **Parse** | LLM | Match player input against ALL scene entities (interactions + ATs) + ALL events. Return matched entity IDs + generic actions (move/search/other). ATs sorted first in the output list. |
-| **Judge** | Deterministic | Hard gate: world flag checks + dependency graph consultation + skill checks + `##GRADED##` resolution. |
-| **Enrich** | LLM | For entities that passed Judge: describe AT results, enrich interaction/event result text, set new world flags, provide `emphasis_hint`. No trigger-condition evaluation. |
+| **Parse** | LLM | Match player input against ALL scene entities (interactions + ATs) + ALL events. Evaluate non-structured (natural language) requirements. Return only entities whose NL conditions are met. ATs sorted first. |
+| **Judge** | Deterministic | Structured gate: world flag checks + dependency graph consultation + skill checks + `##GRADED##` resolution. Update world flags on entity completion. |
+| **Enrich** | LLM | Pure integration + description. Describe AT results, enrich interaction/event result text, provide `emphasis_hint`. No requirement checking. No flag updates. |
 | **Curate** | Deterministic | Assemble NarratorBrief. |
 | **Narrate** | LLM | Generate immersive narrative. |
 
@@ -55,16 +55,21 @@ Rules:
 Keeper processes parse results sequentially:
 
 ```
-For each entry in parse_result.actions (ATs already first):
+Parse (LLM): evaluate input against ALL entities + ALL events
+  → NL requirement evaluation — exclude unmet entities
+  → Return matched entity IDs + generic actions (ATs first)
+
+For each entry in parse_result.actions:
 
   ┌─ ANY entity (AT / interaction / event) ──┐
-  │ → Judge: check requirement string        │
+  │ → Judge: check structured requirement    │
   │   (world flags are canonical;             │
   │    dependency graph consulted for         │
   │    guidance message on failure)           │
   │ → Judge: skill check + ##GRADED## resolve │
-  │ → Execute if all gates pass              │
+  │ → Execute if gates pass                  │
   │ → Apply side effects                     │
+  │ → Judge: set completion flag for entity  │
   │ → Mark for enrich: describe/enrich result │
   └──────────────────────────────────────────┘
 
@@ -74,7 +79,7 @@ For each entry in parse_result.actions (ATs already first):
   └──────────────────────────────────────────┘
 ```
 
-All entity types (AT, interaction, event) go through the same Judge gate: requirement check → skill check → execute.
+All entity types (AT, interaction, event) go through the same gate. NL requirements handled by Parse (LLM), structured requirements and flag updates by Judge (deterministic).
 
 ### World Flags & Dependency Graph
 
@@ -96,18 +101,37 @@ Happens deterministically in Judge after skill check:
 3. `resolve_graded_result(entity, tier)` picks the tier-appropriate text
 4. Clean result text flows into Enrich (for polish) and Curate (for assembly)
 
+### Parse Prompt Changes
+
+Parse prompt now includes:
+- All scene entities (interactions + ATs) with their non-structured requirement strings
+- All events with their trigger descriptions and requirement strings
+- Current world state so the LLM can evaluate NL conditions
+
+Parse evaluates non-structured (natural language) requirements itself — entities whose NL conditions are not met are excluded from the returned list. Only entities that pass NL evaluation reach Judge.
+
+### Judge Responsibilities
+
+Judge handles all deterministic and structured work:
+1. World flag checks (canonical requirement check)
+2. Dependency graph consultation for error messages on flag failure
+3. Skill checks (COC 7th D100)
+4. `##GRADED##` resolution after skill check
+5. **Update world flags** on entity completion (e.g., `flag:I1_done=true`)
+
+Flags are set immediately after entity execution, not deferred to Enrich.
+
 ### Enrich Prompt Changes
 
-Old prompt asked LLM to evaluate which ATs/events should fire. New prompt:
+Old prompt asked LLM to evaluate which ATs/events should fire AND set flags. New prompt:
 
 - **Input**: list of entities that passed Judge (id, type, name, resolved result text, skill check tier)
 - **LLM tasks**:
   1. Describe triggered AT results in narrative form
   2. Enrich interaction/event result text (tone, atmosphere, detail)
-  3. Set new world flags where appropriate
-  4. Provide `emphasis_hint` for narrator
+  3. Provide `emphasis_hint` for narrator
 
-No trigger-condition evaluation — Parse already decided which entities fire.
+No requirement checking. No flag updates. No trigger evaluation — Parse already decided which entities fire, Judge already gated and flagged them. Enrich is pure narrative integration.
 
 ### Parse Prompt Expansion
 
@@ -120,10 +144,12 @@ Current parse prompt shows only current-scene context. New prompt adds:
 | Item | Old | New |
 |------|-----|-----|
 | `judge.filter_pending_events()` | Scans graph for deterministically-qualified events | Removed — Parse feeds entities |
-| `judge.get_deferred_auto_triggers()` | Returns ATs with NL requirements | Removed — all ATs go through Parse |
+| `judge.get_deferred_auto_triggers()` | Returns ATs with NL requirements | Removed — NL requirements evaluated in Parse |
 | `_categorize_pending_events` | Separates events by requirement status | Removed |
 | Enrich trigger evaluation | LLM decides which events fire | Removed — Parse decided |
+| Enrich world flag updates | LLM sets `new_flags` | Moved to Judge — flags set on entity completion |
 | `##GRADED##` resolution | LLM in Enrich (unused) | Deterministic in Judge |
+| NL requirement checking | Deferred to Enrich LLM | Moved to Parse LLM |
 | Dependency graph check | Separate step | Absorbed into requirement check as guidance |
 
 ### Files Affected
