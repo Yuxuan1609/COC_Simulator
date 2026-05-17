@@ -152,11 +152,23 @@ Current parse prompt shows only current-scene context. New prompt adds:
 | NL requirement checking | Deferred to Enrich LLM | Moved to Parse LLM |
 | Dependency graph check | Separate step | Absorbed into requirement check as guidance |
 
+### Parse Fallback Strategy
+
+Parse is the single LLM entry point — if it misses an entity, Enrich cannot recover. Mitigations:
+
+1. **Prompt design**: entities are listed with id, name, trigger description, and current status (already triggered / unmet requirements). The LLM is instructed to match conservatively — better to ignore a borderline entity and let `other` catch it than force a false match.
+
+2. **Escalation safety net**: if the player attempts an action that has no matching entity and the escalation threshold is reached, Author can create a new entity on-the-fly. This covers the case where a genuinely new player intent has no pre-authored match.
+
+3. **Search fallback**: unmatched player input that the LLM classifies as exploration returns the scene's perceptible elements and available interactions, giving the player the information needed to re-attempt with a recognized entity name.
+
+4. **Future — Parse retry with `other` context**: if all parse results are `other` and the same or similar input repeats across turns, the second occurrence could be re-prompted with extra context. Not implemented in this iteration.
+
 ### Files Affected
 
 | File | Change |
 |------|--------|
 | `src/prompts.py` | `build_keeper_parse_prompt` expanded with all events; `build_keeper_enrich_prompt` rewritten for describe-only; `_categorize_pending_events` removed |
-| `src/game/judge.py` | `resolve_graded_result` called after skill check; `filter_pending_events` removed; `get_deferred_auto_triggers` removed; dependency graph consulted for error messages |
-| `src/game/agents/keeper.py` | `process_turn` simplified: parse feeds entities, judge gates, enrich describes |
+| `src/game/judge.py` | `resolve_graded_result` called after skill check; `filter_pending_events` removed; `get_deferred_auto_triggers` removed; dependency graph consulted for error messages; world flags set on entity completion |
+| `src/game/agents/keeper.py` | `process_turn` simplified: parse feeds entities, judge gates + sets flags, enrich describes |
 | `tests/game_loop_harness.py` | `run_turn_with_log` updated to match new flow |
