@@ -564,26 +564,19 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 
 # ── Keeper: Enrich (Step 3) ──
 
-def build_keeper_enrich_prompt(world, action_outcomes, at_results, pending_events,
-                                deferred_ats, user_input) -> str:
-    """Keeper step 3: LLM enriches results, matches events, resolves NL ATs."""
+def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
+    """Keeper step 3: describe and enrich entity results. No trigger evaluation."""
     state = _build_world_state(world)
 
-    outcomes_text = ""
-    for o in action_outcomes:
-        outcomes_text += f"  [{o.entity_type}] {o.entity_id}: {o.message} (success={o.success})\n"
-
-    at_text = ""
-    for a in at_results:
-        at_text += f"  [AT] {a.entity_id}: {a.message}\n"
-
-    deferred_at_text = ""
-    for dat in deferred_ats:
-        deferred_at_text += f"  [{dat.id}] {dat.name}: requirement=\"{dat.requirement}\" trigger=\"{dat.trigger}\"\n"
-
-    events_text = ""
-    for ev in pending_events:
-        events_text += f"  [{ev.id}] {ev.name}: trigger=\"{ev.trigger}\"\n"
+    entities_text = ""
+    for e in judged_entities:
+        entities_text += (
+            f"  [{e['entity_type']}] id={e['id']} name=\"{e['name']}\" "
+            f"result=\"{e['result']}\" success={e['success']}"
+        )
+        if e.get('skill_tier'):
+            entities_text += f" skill_tier={e['skill_tier']}"
+        entities_text += "\n"
 
     prompt = f"""【世界状态】
 {state}
@@ -593,30 +586,18 @@ def build_keeper_enrich_prompt(world, action_outcomes, at_results, pending_event
 
 【玩家输入】{user_input}
 
-【已执行动作结果】
-{outcomes_text or '（无）'}
+【本轮已触发实体】
+{entities_text or '（无）'}
 
-【已触发Auto-trigger】
-{at_text or '（无）'}
-
-【待判定Auto-trigger（自然语言前置条件）】
-{deferred_at_text or '（无）'}
-
-【待判定Event】
-{events_text or '（无）'}
-
-请判断：
-1. 哪些待判定AT应触发（其自然语言前置条件是否满足）
-2. 哪些待判定Event的触发条件被满足
-3. 为所有已触发的entity丰富结果描述
-4. 设置新的world flags
+请为以上已触发实体做叙事整合：
+1. 为 auto_trigger 实体生成简短描述（它们是无条件触发的环境变化）
+2. 为 interaction/event 实体的结果文本润色，增加氛围和细节
+3. 提供 emphasis_hint：本轮叙事的强调方向
 
 返回 JSON：
 {{
-  "triggered_ats": ["AT2"],
-  "triggered_events": ["E1"],
-  "enriched_results": {{"I1": "丰富后的结果描述"}},
-  "new_flags": {{"flag_name": true}},
+  "at_descriptions": {{"AT1": "环境变化描述"}},
+  "enriched_results": {{"I3": "润色后的结果"}},
   "emphasis_hint": "叙事强调方向"
 }}
 
