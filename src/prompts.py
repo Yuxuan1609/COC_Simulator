@@ -178,64 +178,6 @@ def _build_world_state(world: ScenarioWorld) -> str:
     return f"""已触发事件：{triggered or '（无）'}
 世界标记：{flags_str}"""
 
-# ── 第一阶段：动作解析 ──
-
-def build_action_prompt(world: ScenarioWorld, user_input: str,
-                        show_non_triggerable: bool | None = None) -> str:
-    """基于当前场景 JSON 信息，让 LLM 判断玩家意图，支持多动作识别"""
-    if show_non_triggerable is None:
-        show_non_triggerable = _SHOW_NON_TRIGGERABLE
-    scene_ctx = _build_scene_context(world, show_non_triggerable=show_non_triggerable)
-    state = _build_world_state(world)
-    context = world.memory.get_context()
-    skills = _build_player_skills(world)
-
-    prompt = f"""【玩家历史行动】
-{context or '（游戏刚开始）'}
-
-【世界状态】
-{state}
-
-{scene_ctx}
-
-【玩家输入】
-{user_input}
-
-请判断玩家意图。玩家输入可能包含单个或多个连续意图（如"先检查桌子然后去7号车厢"），请按先后顺序拆分为多个动作。返回 JSON：
-{{
-  "actions": [
-    {{
-      "action": "move" | "interact" | "search" | "other",
-      "target": "目标地点（仅 move 时填写）",
-      "interaction": "动作名称（仅 interact 时填写，务必从上述「名称（请原样复制）」中精确复制）",
-      "skill_checks": ["技能名"],
-      "reasoning": "简要推理",
-      "condition":"缺少前置"
-    }}
-  ]
-}}
-整体规则：
--你是一个TRPG意图识别助手，请帮助识别玩家是否触发了了潜在事件（包括当前可触发的事件和暂时不可触发的事件）
--如果玩家试图进行不可触发事件则使用condition字段对其进行指引
--直接输出 JSON，不要额外文字
-action字段份分类规则：
-- move：玩家明确想前往某方向/地点 → target 填「可移动方向」中列出的目标 注意 查看/聆听/询问/非直接前往的方式 了解另外一个场景不适用move
-- interact：玩家意图匹配某个可执行动作 → interaction 务必精确复制名称
-- search：玩家想探索、调查当前场景
-- other：其他动作类型（不产生实际影响）
-其他规则：
-- skill_checks：根据动作的触发条件，列出需要鉴定的技能名称（如 侦查、灵感、急救 等。
-- 无需鉴定时返回空数组 []，仅对 move 和 interact 生效
-- 如果玩家输入只有单一意图，actions 数组仍包含 1 个元素
-- actions 按玩家输入中的先后顺序排列
-其他规则：
-- condition:平时为空值，当玩家试图进行【暂不可执行动作】时以描述性语言列出缺少的前置条件
-
-"""
-    _show_prompt("Step 1/3 — 动作解析", prompt)
-    return prompt
-
-
 # ── 世界更新 ──
 
 def build_action_world_update(world: ScenarioWorld, action_result: str, user_input: str) -> str:

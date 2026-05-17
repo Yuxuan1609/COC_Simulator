@@ -335,16 +335,6 @@ def _side_effect_to_dict(effect) -> dict:
 
 
 @dataclass
-class GameEvent:
-    """全局不可逆事件（来自 res_event_revised.json）"""
-    event_id: str        # E1, E2, ...
-    name: str            # 事件名称
-    trigger: str         # 触发条件
-    impact: str          # 不可逆影响（从 irreversible_impact 或 impact 键读取）
-    requirements: List[Requirement] = field(default_factory=list)   # 前置条件
-
-
-@dataclass
 class Node:
     node_id: str
     description: str = ""
@@ -849,55 +839,6 @@ class ScenarioWorld:
             return ActionResult(False, f"无法从{self.current_location}前往{target}。可前往：{available or '无'}")
         self.current_location = target
         return ActionResult(True, f"你来到了{target}。{self.get_current_description()}")
-
-    # ── 交互 ──
-
-    def execute_interaction(self, name: str) -> ActionResult:
-        """
-        执行当前场景的指定动作。检查前置条件，标记完成并返回结果文本。
-        不检查事件 —— 事件触发由外部 LLM 调用链独立处理。
-        """
-        node = self._current_node()
-        if not node:
-            return ActionResult(False, "当前场景不存在。")
-        interaction = node.get_interaction(name)
-        if not interaction:
-            available = ', '.join(i.name for i in node.interactions)
-            return ActionResult(False, f"当前场景没有动作「{name}」。可用动作：{available or '无'}")
-
-        # 检查前置条件
-        if interaction.requirements:
-            ok, msg = self.requirement_resolver.check(interaction.requirements)
-            if not ok:
-                return ActionResult(False, msg)
-
-        loc = self.current_location
-        if loc not in self.completed_interactions:
-            self.completed_interactions[loc] = set()
-        self.completed_interactions[loc].add(name)
-        return ActionResult(
-            True,
-            f"【{interaction.type}】{interaction.name}：{interaction.result}",
-            side_effects=list(interaction.side_effects),
-        )
-
-    # ── 事件（纯泛用）──
-
-    def trigger_event(self, event_id: str) -> ActionResult:
-        event = self.graph.get_event(event_id)
-        if not event:
-            return ActionResult(False, f"未知事件：{event_id}")
-        if self.triggered_events.get(event_id, False):
-            return ActionResult(False, f"事件「{event.name}」已经触发过。")
-
-        # 检查前置条件
-        if event.requirements:
-            ok, msg = self.requirement_resolver.check(event.requirements)
-            if not ok:
-                return ActionResult(False, msg)
-
-        self.triggered_events[event_id] = True
-        return ActionResult(True, f"【事件触发】{event.name}\n{event.impact}")
 
     def is_event_triggered(self, event_id: str) -> bool:
         return self.triggered_events.get(event_id, False)
