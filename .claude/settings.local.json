@@ -15,7 +15,9 @@
       "Bash(pip install *)",
       "Bash(git merge-base *)",
       "Bash(git show *)",
-      "Bash(rm notebooks/_parser_layered_export.ipynb.tmp)"
+      "Bash(rm notebooks/_parser_layered_export.ipynb.tmp)",
+      "Bash(echo \"data/debug/\")",
+      "Bash(git rm *)"
     ]
   }
 }

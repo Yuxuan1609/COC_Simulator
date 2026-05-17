@@ -133,45 +133,64 @@ class Investigator:
         """
         COC 7th 技能检定：投掷 D100，结果 ≤ 技能值则为成功。
 
-        difficulty（预留，当前仅实现 regular）:
+        difficulty:
           - "regular": 阈值 = 技能值
           - "hard":    阈值 = floor(技能值 / 2)
           - "extreme": 阈值 = floor(技能值 / 5)
 
         若调查员未拥有该技能，默认判定成功（避免缺少冷门技能卡关）。
-        返回 (是否成功, 结果描述文本)。
+        返回 (是否成功, 结果描述文本, 实际达成等级)。
+        等级: "fumble" | "failure" | "regular" | "hard" | "extreme"
         """
         skill = self.get_skill(skill_name)
         if skill is None:
-            return True, f"{skill_name}（未掌握，默认判定成功）"
+            return True, f"{skill_name}（未掌握，默认判定成功）", "regular"
 
         roll = random.randint(1, 100)
 
-        # 难度修正（模板代码，hard/extreme 待后续实装）
-        threshold = skill.value
-        if difficulty == "hard":
-            threshold = skill.value // 2
-        elif difficulty == "extreme":
-            threshold = skill.value // 5
+        # 大失败 (fumble): 96-100
+        if roll >= 96:
+            detail = f"{skill_name}检定：D100={roll}/{skill.value} ≥96 大失败！"
+            return False, detail, "fumble"
+        # 大成功 (critical): 1
+        if roll == 1:
+            detail = f"{skill_name}检定：D100=1/{skill.value} 大成功！"
+            return True, detail, "extreme"
 
-        success = roll <= threshold
-        op = "≤" if success else ">"
-        detail = f"{skill_name}检定：D100={roll}/{threshold} {op} {'成功' if success else '失败'}"
-        return success, detail
+        # 按阈值确定等级
+        extreme_threshold = max(1, skill.value // 5)
+        hard_threshold = max(1, skill.value // 2)
 
-    def check_skills(self, skill_names: list[str]) -> tuple[bool, str]:
+        if roll <= extreme_threshold:
+            tier = "extreme"
+        elif roll <= hard_threshold:
+            tier = "hard"
+        elif roll <= skill.value:
+            tier = "regular"
+        else:
+            detail = f"{skill_name}检定：D100={roll}/{skill.value} > 失败"
+            return False, detail, "failure"
+
+        detail = f"{skill_name}检定：D100={roll}/{skill.value} ≤ {skill.value} 成功（{tier}级）"
+        return True, detail, tier
+
+    def check_skills(self, skill_names: list[str]) -> tuple[bool, str, str]:
         """
-        批量技能检定（AND 逻辑）。全部通过返回 (True, 合并结果文本)；
-        任一失败返回 (False, 合并结果文本)。
+        批量技能检定（AND 逻辑）。全部通过返回 (True, 合并结果文本, 最低达成等级)；
+        任一失败返回 (False, 合并结果文本, "failure")。
         """
         results = []
         all_pass = True
+        min_tier = "extreme"
+        tier_rank = {"fumble": 0, "failure": 1, "regular": 2, "hard": 3, "extreme": 4}
         for name in skill_names:
-            ok, msg = self.check_skill(name)
+            ok, msg, tier = self.check_skill(name)
             results.append(msg)
             if not ok:
                 all_pass = False
-        return all_pass, "；".join(results)
+            if tier_rank.get(tier, 99) < tier_rank.get(min_tier, 99):
+                min_tier = tier
+        return all_pass, "；".join(results), min_tier
 
     # ── 修改（供未来游戏循环使用）──
 

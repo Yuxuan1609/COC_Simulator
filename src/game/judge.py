@@ -107,24 +107,14 @@ class Judge:
         if self.world.player and entity.type and entity.type not in ("无", "None", ""):
             skill_name = entity.type
             intent_skill = intent.skill_checks[0] if (intent and intent.skill_checks) else skill_name
-            all_pass, skill_result = self.world.player.check_skills([intent_skill])
-
-            if all_pass:
-                result_text = str(skill_result)
-                if "极限" in result_text or "大成功" in result_text:
-                    skill_tier = "extreme"
-                elif "困难" in result_text or "极难" in result_text:
-                    skill_tier = "hard"
-                else:
-                    skill_tier = "regular"
-            else:
-                skill_tier = "failure"
+            difficulty = entity.difficulty if entity.difficulty not in ("None", "", None) else "regular"
+            all_pass, skill_result, skill_tier = self.world.player.check_skill(intent_skill, difficulty)
 
             skill_passed = all_pass
             skill_message = skill_result
             skill_detail = (
                 f"[{entity.id}] {entity.name} | 技能={skill_name} | "
-                f"等级={skill_tier} | {'成功' if all_pass else '失败'}\n"
+                f"难度={difficulty} | 骰子等级={skill_tier} | {'成功' if all_pass else '失败'}\n"
                 f"  {skill_result}"
             )
             log_skill_result(skill_detail)
