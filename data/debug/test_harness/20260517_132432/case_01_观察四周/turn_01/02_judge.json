@@ -1,0 +1,25 @@
+{
+  "action_outcomes": [
+    {
+      "entity_id": "I1",
+      "entity_type": "interaction",
+      "success": true,
+      "message": "便签正面写着“只管前进吧 已经没有退路了”。",
+      "side_effects": "[]"
+    },
+    {
+      "entity_id": "I3",
+      "entity_type": "interaction",
+      "success": true,
+      "message": "##GRADED##",
+      "side_effects": "[]"
+    },
+    {
+      "entity_id": "I4",
+      "entity_type": "interaction",
+      "success": true,
+      "message": "##GRADED##",
+      "side_effects": "[]"
+    }
+  ]
+}

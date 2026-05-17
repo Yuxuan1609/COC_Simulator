@@ -1,0 +1,16 @@
+{
+  "actions": [
+    {
+      "type": "interaction",
+      "id": "I1"
+    },
+    {
+      "type": "interaction",
+      "id": "I3"
+    },
+    {
+      "type": "interaction",
+      "id": "I4"
+    }
+  ]
+}

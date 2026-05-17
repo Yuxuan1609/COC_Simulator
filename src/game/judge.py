@@ -82,15 +82,18 @@ class Judge:
         skill_passed = True
         skill_message = ""
         if entity.type and entity.type not in ("无", "None", ""):
-            if self.world.player and intent and intent.skill_checks:
-                all_pass, skill_result = self.world.player.check_skills(intent.skill_checks)
+            # Use entity.type as the skill to roll (Parse no longer provides skill_checks)
+        if self.world.player:
+            skill_name = entity.type
+            if skill_name and skill_name not in ("无", "None", ""):
+                intent_skill = intent.skill_checks[0] if (intent and intent.skill_checks) else skill_name
+                all_pass, skill_result = self.world.player.check_skills([intent_skill])
                 log_skill_result(skill_result)
                 skill_passed = all_pass
                 skill_message = skill_result
-                # Determine tier for ##GRADED##
                 if all_pass:
                     result_text = str(skill_result)
-                    if "极限" in result_text:
+                    if "极限" in result_text or "大成功" in result_text:
                         skill_tier = "extreme"
                     elif "困难" in result_text or "极难" in result_text:
                         skill_tier = "hard"
@@ -98,10 +101,11 @@ class Judge:
                         skill_tier = "regular"
                 else:
                     skill_tier = "failure"
-            elif self.world.player is not None:
-                skill_passed = False
-                skill_message = f"需要进行{entity.type}检定但无可用技能数据"
-                skill_tier = "failure"
+            else:
+                skill_passed = True
+        else:
+            # No player — skip skill check (entity still executes)
+            skill_passed = True
 
         # Resolve result text (handle ##GRADED##)
         result_text = entity.result
