@@ -15,10 +15,11 @@ class Judge:
 
     No LLM dependencies. Handles:
     - Auto-trigger condition checking
-    - Interaction requirement + skill check gating
-    - Event requirement filtering
+    - Flag-based requirement gating
+    - Skill check gating
+    - ##GRADED## result resolution (inline, after skill check)
+    - Completion flag setting
     - @markup side effect resolution
-    - ##GRADED## result resolution (called later, after skill roll)
     """
 
     def __init__(self, world: ScenarioWorld):
@@ -40,17 +41,6 @@ class Judge:
             results.append(outcome)
         return results
 
-    def get_deferred_auto_triggers(self) -> list[Entity]:
-        """Return ATs with natural-language requirements that need LLM judgment."""
-        node = self.world._current_node()
-        if not node:
-            return []
-        deferred = []
-        for at in node.auto_triggers:
-            if not self._is_simple_requirement(at.requirement):
-                deferred.append(at)
-        return deferred
-
     # ── Interactions ──
 
     def execute_interaction(self, intent: ActionIntent) -> ActionOutcome:
@@ -68,23 +58,16 @@ class Judge:
 
         return self._execute_entity(entity, intent=intent)
 
-    # ── Events ──
-
-    def filter_pending_events(self) -> list[Entity]:
-        """Return pending events whose deterministic requirements are met."""
-        pending = []
-        for ev in self.world.graph.events.values():
-            if self.world.is_event_triggered(ev.id):
-                continue
-            if not self._check_simple_requirement(ev):
-                continue
-            pending.append(ev)
-        return pending
-
     # ── Internal ──
+
+    def _set_completion_flag(self, entity: Entity):
+        """Set world flag when entity completes."""
+        flag_key = f"{entity.id}_done"
+        self.world.set_flag(flag_key, True)
 
     def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None) -> ActionOutcome:
         """Run entity through gate and execute."""
+        # Check structured requirements (world flags)
         if entity.requirement and self._is_simple_requirement(entity.requirement):
             met, msg = self._evaluate_simple_requirement(entity.requirement)
             if not met:
@@ -94,6 +77,8 @@ class Judge:
                     entity_id=entity.id, entity_type=entity.entity_type
                 )
 
+        # Skill check + ##GRADED## resolution
+        skill_tier = None
         skill_passed = True
         skill_message = ""
         if entity.type and entity.type not in ("无", "None", ""):
@@ -102,10 +87,26 @@ class Judge:
                 log_skill_result(skill_result)
                 skill_passed = all_pass
                 skill_message = skill_result
+                # Determine tier for ##GRADED##
+                if all_pass:
+                    result_text = str(skill_result)
+                    if "极限" in result_text:
+                        skill_tier = "extreme"
+                    elif "困难" in result_text or "极难" in result_text:
+                        skill_tier = "hard"
+                    else:
+                        skill_tier = "regular"
+                else:
+                    skill_tier = "failure"
             elif self.world.player is not None:
-                # Player exists but no skill checks provided — fail
                 skill_passed = False
                 skill_message = f"需要进行{entity.type}检定但无可用技能数据"
+                skill_tier = "failure"
+
+        # Resolve result text (handle ##GRADED##)
+        result_text = entity.result
+        if skill_tier:
+            result_text = resolve_graded_result(entity, skill_tier)
 
         if not skill_passed:
             return ActionOutcome(
@@ -114,15 +115,17 @@ class Judge:
                 entity_id=entity.id, entity_type=entity.entity_type
             )
 
-        # Execute
+        # Execute — mark completion
         if entity.entity_type == "interaction":
             loc = self.world.current_location
             if loc not in self.world.completed_interactions:
                 self.world.completed_interactions[loc] = set()
             self.world.completed_interactions[loc].add(entity.name)
-
         elif entity.entity_type == "event":
             self.world.triggered_events[entity.id] = True
+
+        # Set completion flag
+        self._set_completion_flag(entity)
 
         # Resolve side effects
         side_effects = []
@@ -133,7 +136,7 @@ class Judge:
         return ActionOutcome(
             intent=intent or ActionIntent(action="other"),
             success=True,
-            message=f"【{entity.type or '无'}】{entity.name}：{entity.result}",
+            message=result_text,
             entity_id=entity.id,
             entity_type=entity.entity_type,
             side_effects=side_effects,

@@ -80,14 +80,3 @@ def test_judge_blocks_unmet_requirement():
     assert "has_key" in outcome.message.lower()
 
 
-def test_judge_filters_unmet_events():
-    from game.judge import Judge
-    world, graph = _make_world()
-    # Add an event with unmet requirement
-    ev = Entity(id="E1", entity_type="event", name="test_event",
-                type="无", requirement="flag:something_unmet",
-                trigger="test", result="test", side_effects=[])
-    graph.events["E1"] = ev
-    judge = Judge(world)
-    pending = judge.filter_pending_events()
-    assert len(pending) == 0  # E1's requirement is unmet
