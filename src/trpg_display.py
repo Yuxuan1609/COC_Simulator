@@ -199,7 +199,7 @@ def render_scene_to_html(world: ScenarioWorld) -> str:
     if available:
         for i, inter in enumerate(available, 1):
             parts.append(
-                f'<div class="item">{i}. <b>{_esc(inter.summary())}</b>'
+                f'<div class="item">{i}. <b>[{_esc(inter.type)}] {_esc(inter.name)}</b>'
                 f'<br><span style="color:#667a88;font-size:11px;">{_esc(inter.trigger)}</span></div>'
             )
     else:

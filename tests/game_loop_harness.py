@@ -156,17 +156,33 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
             ))
             apply_se(world, result.side_effects)
         elif entry_type == "search":
-            interactions = world.get_available_interactions()
-            done = world.completed_interactions.get(world.current_location, set())
-            available = [i for i in interactions if i.name not in done]
-            if available:
-                lines = ["（环顾四周，注意到可以做的事：）"]
-                for inter in available:
-                    lines.append(f"  [{inter.type}] {inter.name} —— {inter.trigger}")
-                msg = "\n".join(lines)
+            # Search always performs a 侦查 (Spot Hidden) check.
+            tier = ""
+            if world.player:
+                ok, skill_msg, tier = world.player.check_skill("侦查", "regular")
+                skill_detail = (
+                    f"[SEARCH] 侦查检定 | 等级={tier} | {'成功' if ok else '失败'}\n"
+                    f"  {skill_msg}"
+                )
+                from prompts import log_skill_result
+                log_skill_result(skill_detail)
+                if ok:
+                    interactions = world.get_available_interactions()
+                    done = world.completed_interactions.get(world.current_location, set())
+                    available = [i for i in interactions if i.name not in done]
+                    if available:
+                        lines = ["（环顾四周，注意到可以做的事：）"]
+                        for inter in available:
+                            lines.append(f"  [{inter.type}] {inter.name} —— {inter.trigger}")
+                        msg = "\n".join(lines)
+                    else:
+                        msg = "（仔细查看四周，没有特别的发现）"
+                else:
+                    msg = "（你环顾四周，但昏暗的光线让你无法看清任何有用的东西）"
             else:
                 msg = "（仔细查看四周，没有特别的发现）"
-            all_outcomes.append(ActionOutcome(intent=ActionIntent(action="search"), success=True, message=msg))
+            all_outcomes.append(ActionOutcome(intent=ActionIntent(action="search"), success=True, message=msg,
+                                              skill_tier=tier))
         else:
             all_outcomes.append(ActionOutcome(
                 intent=ActionIntent(action="other"), success=True,
