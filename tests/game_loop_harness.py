@@ -86,54 +86,75 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
         build_narrator_prompt, parse_narrative_output,
     )
     from game.messages import ActionIntent, ActionOutcome
-    from game.judge import Judge
-    from game.curator import Curator
-    from scenario_core import parse_markup_all, apply_side_effects as apply_se
+    from scenario_core import (
+        parse_markup_all, apply_side_effects as apply_se, has_ending,
+    )
+    from llm import call_deepseek
 
     raw = user_input
 
-    # ── Step 1: Parse ──
+    # ── Pre-parse: /trigger debug command ──
+    direct_trigger_event = None
+    if raw.strip().startswith("/trigger "):
+        eid = raw.strip().split()[1] if len(raw.strip().split()) > 1 else ""
+        ev = world.graph.events.get(eid)
+        if ev:
+            world.triggered_events[ev.id] = True
+            direct_trigger_event = ev
+            raw = f"（KP命令：手动触发事件 {eid}）"
+
+    # ── Step 1: Parse (new unified format) ──
     parse_prompt = build_keeper_parse_prompt(world, raw)
     parse_response = call_deepseek(parse_prompt, json_mode=True, model="deepseek-v4-flash")
     parse_data = json.loads(parse_response) if isinstance(parse_response, str) else parse_response
-    actions = parse_data.get("actions", [])
-    if not actions:
-        actions = [{"action": "other"}]
+    parse_actions = parse_data.get("actions", [])
+    if not parse_actions:
+        parse_actions = [{"type": "other", "text": raw}]
 
     with open(os.path.join(turn_dir, "01_parse_prompt.txt"), "w", encoding="utf-8") as f:
         f.write(parse_prompt)
     with open(os.path.join(turn_dir, "01_parse_response.json"), "w", encoding="utf-8") as f:
         json.dump(parse_data, f, ensure_ascii=False, indent=2)
 
-    parsed = [
-        ActionIntent(
-            action=a.get("action", "other"),
-            target=a.get("target", ""),
-            skill_checks=a.get("skill_checks", []),
-            reasoning=a.get("reasoning", ""),
-            condition=a.get("condition", ""),
-        )
-        for a in actions
-    ]
-
-    # ── Step 2: Judge ──
+    # ── Step 2: Judge (deterministic) ──
+    from game.judge import Judge
     judge = Judge(world)
-    at_results = judge.check_auto_triggers()
-    action_outcomes = []
-    for intent in parsed:
-        if intent.action == "interact":
-            outcome = judge.execute_interaction(intent)
+    all_outcomes = []
+    judged_entities = []
+    for entry in parse_actions:
+        entry_type = entry.get("type", "")
+        if entry_type in ("auto_trigger", "interaction", "event"):
+            eid = entry.get("id", "")
+            entity = keeper._find_entity_by_id(eid)
+            if not entity:
+                all_outcomes.append(ActionOutcome(
+                    intent=ActionIntent(action="other"), success=False,
+                    message=f"未找到实体「{eid}」"))
+                continue
+            intent = ActionIntent(
+                action=entry_type if entry_type != "auto_trigger" else "other",
+                target=entity.name if entry_type == "interaction" else "",
+            )
+            outcome = judge._execute_entity(entity, intent=intent)
             apply_se(world, outcome.side_effects)
-            action_outcomes.append(outcome)
-        elif intent.action == "move":
-            result = world.move(intent.target)
-            action_outcomes.append(ActionOutcome(
-                intent=intent, success=result.success,
-                message=result.message,
+            all_outcomes.append(outcome)
+            if outcome.success:
+                judged_entities.append({
+                    "entity_type": entity.entity_type,
+                    "id": entity.id,
+                    "name": entity.name,
+                    "result": outcome.message,
+                    "success": True,
+                })
+        elif entry_type == "move":
+            result = world.move(entry.get("target", ""))
+            all_outcomes.append(ActionOutcome(
+                intent=ActionIntent(action="move", target=entry.get("target", "")),
+                success=result.success, message=result.message,
                 side_effects=result.side_effects,
             ))
             apply_se(world, result.side_effects)
-        elif intent.action == "search":
+        elif entry_type == "search":
             interactions = world.get_available_interactions()
             done = world.completed_interactions.get(world.current_location, set())
             available = [i for i in interactions if i.name not in done]
@@ -144,36 +165,41 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
                 msg = "\n".join(lines)
             else:
                 msg = "（仔细查看四周，没有特别的发现）"
-            action_outcomes.append(ActionOutcome(intent=intent, success=True, message=msg))
+            all_outcomes.append(ActionOutcome(intent=ActionIntent(action="search"), success=True, message=msg))
         else:
-            action_outcomes.append(ActionOutcome(intent=intent, success=True,
-                                                  message="（没有特别的事情发生）"))
+            all_outcomes.append(ActionOutcome(
+                intent=ActionIntent(action="other"), success=True,
+                message=f"（{entry.get('text', '没有特别的事情发生')}）"))
 
-    judge_data = {
-        "at_results": [{"entity_id": a.entity_id, "entity_type": a.entity_type,
-                         "success": a.success, "message": a.message} for a in at_results],
-        "action_outcomes": [{"entity_id": o.entity_id, "entity_type": o.entity_type,
-                              "success": o.success, "message": o.message,
-                              "side_effects": str(o.side_effects)} for o in action_outcomes],
-    }
+    # Inject direct trigger event if /trigger was used
+    if direct_trigger_event:
+        se = []
+        for se_text in direct_trigger_event.side_effects:
+            se.extend(parse_markup_all(se_text))
+        apply_se(world, se)
+        all_outcomes.append(ActionOutcome(
+            intent=ActionIntent(action="other"), success=True,
+            message=direct_trigger_event.result,
+            entity_id=direct_trigger_event.id, entity_type="event",
+            side_effects=se,
+        ))
+        judged_entities.append({
+            "entity_type": "event", "id": direct_trigger_event.id,
+            "name": direct_trigger_event.name,
+            "result": direct_trigger_event.result, "success": True,
+        })
+
     with open(os.path.join(turn_dir, "02_judge.json"), "w", encoding="utf-8") as f:
-        json.dump(judge_data, f, ensure_ascii=False, indent=2)
+        json.dump({
+            "action_outcomes": [{"entity_id": o.entity_id, "entity_type": o.entity_type,
+                                  "success": o.success, "message": o.message,
+                                  "side_effects": str(o.side_effects)} for o in all_outcomes],
+        }, f, ensure_ascii=False, indent=2)
 
     # ── Step 3: Enrich ──
-    deferred_ats = judge.get_deferred_auto_triggers()
-    pending_events = judge.filter_pending_events()
-    needs_enrich = deferred_ats or pending_events or any(
-        "##GRADED##" in o.message for o in action_outcomes
-    )
-
-    enriched_ats = []
-    enriched_events = []
     emphasis = ""
-    if needs_enrich:
-        enrich_prompt = build_keeper_enrich_prompt(
-            world, action_outcomes, list(at_results),
-            pending_events, deferred_ats, raw
-        )
+    if judged_entities:
+        enrich_prompt = build_keeper_enrich_prompt(world, judged_entities, raw)
         enrich_response = call_deepseek(enrich_prompt, json_mode=True, model="deepseek-v4-flash")
         enrichment = json.loads(enrich_response) if isinstance(enrich_response, str) else enrich_response
 
@@ -183,75 +209,62 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
             json.dump(enrichment, f, ensure_ascii=False, indent=2)
 
         emphasis = enrichment.get("emphasis_hint", "")
-        for at_id in enrichment.get("triggered_ats", []):
-            node = world._current_node()
-            if node:
-                for at in node.auto_triggers:
-                    if at.id == at_id:
-                        side_effects = []
-                        for se_text in at.side_effects:
-                            side_effects.extend(parse_markup_all(se_text))
-                        apply_se(world, side_effects)
-                        enriched_ats.append(at)
-                        break
-        for ev_id in enrichment.get("triggered_events", []):
-            ev = world.graph.events.get(ev_id)
-            if ev:
-                world.triggered_events[ev.id] = True
-                side_effects = []
-                for se_text in ev.side_effects:
-                    side_effects.extend(parse_markup_all(se_text))
-                apply_se(world, side_effects)
-                enriched_events.append(ev)
-        for flag_key, flag_val in enrichment.get("new_flags", {}).items():
-            world.set_flag(flag_key, flag_val)
+        at_descs = enrichment.get("at_descriptions", {})
+        enriched = enrichment.get("enriched_results", {})
+        for o in all_outcomes:
+            eid = o.entity_id
+            if o.entity_type == "auto_trigger" and eid in at_descs:
+                o.message = at_descs[eid]
+            elif eid in enriched:
+                o.message = enriched[eid]
     else:
         with open(os.path.join(turn_dir, "03_enrich_prompt.txt"), "w", encoding="utf-8") as f:
-            f.write("(no pending ATs, events, or graded results — enrich skipped)\n")
+            f.write("(no judged entities — enrich skipped)\n")
         with open(os.path.join(turn_dir, "03_enrich_response.json"), "w", encoding="utf-8") as f:
             json.dump({"skipped": True}, f)
 
+    # ── Ending detection ──
+    ending_name = None; ending_narrative = None
+    for o in all_outcomes:
+        en, ed = has_ending(o.message)
+        if en:
+            ending_name = en; ending_narrative = ed; break
+    if not ending_name and direct_trigger_event:
+        en, ed = has_ending(direct_trigger_event.result)
+        if en:
+            ending_name = en; ending_narrative = ed
+    with open(os.path.join(turn_dir, "05_ending.json"), "w", encoding="utf-8") as f:
+        json.dump({"ending_triggered": ending_name is not None,
+                    "ending_name": ending_name, "ending_narrative": ending_narrative}, f, ensure_ascii=False, indent=2)
+
     # ── Step 4: Narrate ──
+    from game.curator import Curator
     curator = Curator(world)
-    all_outcomes = action_outcomes + list(at_results) + [
-        ActionOutcome(intent=ActionIntent(action="other"), success=True,
-                       message=at.result, entity_id=at.id, entity_type="auto_trigger")
-        for at in enriched_ats
-    ] + [
-        ActionOutcome(intent=ActionIntent(action="other"), success=True,
-                       message=ev.result, entity_id=ev.id, entity_type="event")
-        for ev in enriched_events
-    ]
-    ambient = [a.message for a in list(at_results)] + [at.result for at in enriched_ats]
+    ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
     brief = curator.assemble(all_outcomes, ambient, emphasis)
 
-    l1_data = narrator.l1_data
-    l1_scene = l1_data.get(world.current_location) if l1_data else None
+    l1_scene = narrator.l1_data.get(world.current_location) if narrator.l1_data else None
     narrator_prompt = build_narrator_prompt(brief, l1_scene=l1_scene)
-
     with open(os.path.join(turn_dir, "04_narrator_prompt.txt"), "w", encoding="utf-8") as f:
         f.write(narrator_prompt)
 
     narrative_response = call_deepseek(narrator_prompt, json_mode=False, model="deepseek-v4-flash")
     narrative_brief, narrative = parse_narrative_output(narrative_response)
-
     with open(os.path.join(turn_dir, "04_narrative.txt"), "w", encoding="utf-8") as f:
-        f.write(f"=== PLAYER INPUT ===\n{raw}\n\n")
-        f.write(f"=== BRIEF ===\n{narrative_brief}\n\n")
-        f.write(f"=== NARRATIVE ===\n{narrative}\n")
+        f.write(f"=== PLAYER INPUT ===\n{raw}\n\n=== BRIEF ===\n{narrative_brief}\n\n=== NARRATIVE ===\n{narrative}\n")
 
     # ── Memory ──
-    first_intent = parsed[0] if parsed else ActionIntent(action="other")
+    first_entry = parse_actions[0] if parse_actions else {"type": "other"}
     brief_text = "\n".join(o.message for o in all_outcomes)
     world.memory.add_record(
-        raw, first_intent.action, first_intent.target,
+        raw, first_entry.get("type", "other"), first_entry.get("target", ""),
         brief_text, location=world.current_location,
-        success=any(o.success for o in action_outcomes)
-    )
+        success=any(o.success for o in all_outcomes))
     if world.memory.should_compress():
         world.memory.compress(lambda p: call_deepseek(p, json_mode=False, model="deepseek-v4-flash"))
 
-    return {"brief": narrative_brief, "narrative": narrative}
+    return {"brief": narrative_brief, "narrative": narrative,
+            "ending_name": ending_name, "ending_narrative": ending_narrative}
 
 
 # ═══════════════════════════════════════════════════════════════
