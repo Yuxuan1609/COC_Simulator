@@ -19,10 +19,11 @@ class ActionOutcome:
     """Result of executing one action."""
     intent: ActionIntent
     success: bool
-    message: str                     # human-readable result
+    message: str                     # human-readable result (resolved ##GRADED## if applicable)
     entity_id: str = ""              # which entity was executed ("I1", "AT3", etc.)
     entity_type: str = ""            # "interaction" | "auto_trigger" | "event"
     side_effects: list[Any] = field(default_factory=list)
+    skill_tier: str = ""             # COC 7th tier: "" | "failure" | "regular" | "hard" | "extreme"
 
 
 @dataclass

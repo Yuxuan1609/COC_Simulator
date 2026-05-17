@@ -145,6 +145,7 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
                     "name": entity.name,
                     "result": outcome.message,
                     "success": True,
+                    "skill_tier": outcome.skill_tier,
                 })
         elif entry_type == "move":
             result = world.move(entry.get("target", ""))
@@ -193,7 +194,8 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
         json.dump({
             "action_outcomes": [{"entity_id": o.entity_id, "entity_type": o.entity_type,
                                   "success": o.success, "message": o.message,
-                                  "side_effects": str(o.side_effects)} for o in all_outcomes],
+                                  "side_effects": str(o.side_effects),
+                                  "skill_tier": o.skill_tier} for o in all_outcomes],
         }, f, ensure_ascii=False, indent=2)
 
     # ── Step 3: Enrich ──

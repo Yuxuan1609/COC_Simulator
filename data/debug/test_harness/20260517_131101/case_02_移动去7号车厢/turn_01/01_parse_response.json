@@ -1,0 +1,10 @@
+{
+  "actions": [
+    {
+      "action": "move",
+      "target": "7号车厢",
+      "skill_checks": [],
+      "reasoning": "玩家输入'去7号车厢'，意图移动至7号车厢。"
+    }
+  ]
+}

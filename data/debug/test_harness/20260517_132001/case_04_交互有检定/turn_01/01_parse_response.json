@@ -1,0 +1,10 @@
+{
+  "actions": [
+    {
+      "action": "interact",
+      "target": "查看电车示意地图",
+      "skill_checks": [],
+      "reasoning": "玩家输入与可执行动作中的「查看电车示意地图」匹配，意图为查看地图。"
+    }
+  ]
+}

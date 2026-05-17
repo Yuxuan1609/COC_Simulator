@@ -4,3 +4,4 @@ logs/
 .ipynb_checkpoints/
 .env
 data/saves/*.json
+.claude/worktrees/

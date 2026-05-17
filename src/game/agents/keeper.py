@@ -77,6 +77,7 @@ class Keeper:
                         "name": entity.name,
                         "result": outcome.message,
                         "success": True,
+                        "skill_tier": outcome.skill_tier,
                     })
             elif entry_type == "move":
                 result = self.world.move(entry.get("target", ""))

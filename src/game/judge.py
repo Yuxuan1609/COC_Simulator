@@ -1,6 +1,7 @@
 """Deterministic gate — requirement check, skill check, @markup resolution."""
 from __future__ import annotations
 from typing import TYPE_CHECKING
+import re as _re
 
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld, Entity, ActionResult
@@ -9,14 +10,16 @@ from scenario_core import parse_markup_all, resolve_graded_result
 from .messages import ActionIntent, ActionOutcome
 from prompts import log_skill_result
 
+_ENTITY_ID_RE = _re.compile(r'^([IEA]+\d+)$')  # e.g. I1, AT2, E3
+
 
 class Judge:
     """Deterministic gate for entity execution.
 
     No LLM dependencies. Handles:
     - Auto-trigger condition checking
-    - Flag-based requirement gating
-    - Skill check gating
+    - Flag-based + entity-ID-based requirement gating
+    - Skill check gating + tier determination
     - ##GRADED## result resolution (inline, after skill check)
     - Completion flag setting
     - @markup side effect resolution
@@ -65,11 +68,29 @@ class Judge:
         flag_key = f"{entity.id}_done"
         self.world.set_flag(flag_key, True)
 
+    def _find_entity_by_id(self, entity_id: str):
+        """Find an entity by ID across graph (scenes + events)."""
+        if entity_id in self.world.graph.events:
+            return self.world.graph.events[entity_id]
+        for node in self.world.graph.nodes.values():
+            for e in node.interactions + node.auto_triggers:
+                if e.id == entity_id:
+                    return e
+        return None
+
+    def _is_entity_completed(self, entity) -> bool:
+        """Check if an entity has been completed/triggered."""
+        if entity.entity_type == "event":
+            return self.world.is_event_triggered(entity.id)
+        scene = entity.scene or ""
+        done = self.world.completed_interactions.get(scene, set())
+        return entity.name in done
+
     def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None) -> ActionOutcome:
         """Run entity through gate and execute."""
-        # Check structured requirements (world flags)
-        if entity.requirement and self._is_simple_requirement(entity.requirement):
-            met, msg = self._evaluate_simple_requirement(entity.requirement)
+        # Check structured requirements (world flags + entity IDs)
+        if entity.requirement and entity.requirement.strip():
+            met, msg = self._evaluate_requirement(entity.requirement)
             if not met:
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
@@ -78,36 +99,39 @@ class Judge:
                 )
 
         # Skill check + ##GRADED## resolution
-        skill_tier = None
+        skill_tier = ""
         skill_passed = True
         skill_message = ""
-        # Use entity.type as the skill to roll (Parse no longer provides skill_checks)
+        skill_detail = ""
+
         if self.world.player and entity.type and entity.type not in ("无", "None", ""):
             skill_name = entity.type
-            if skill_name and skill_name not in ("无", "None", ""):
-                intent_skill = intent.skill_checks[0] if (intent and intent.skill_checks) else skill_name
-                all_pass, skill_result = self.world.player.check_skills([intent_skill])
-                log_skill_result(skill_result)
-                skill_passed = all_pass
-                skill_message = skill_result
-                if all_pass:
-                    result_text = str(skill_result)
-                    if "极限" in result_text or "大成功" in result_text:
-                        skill_tier = "extreme"
-                    elif "困难" in result_text or "极难" in result_text:
-                        skill_tier = "hard"
-                    else:
-                        skill_tier = "regular"
+            intent_skill = intent.skill_checks[0] if (intent and intent.skill_checks) else skill_name
+            all_pass, skill_result = self.world.player.check_skills([intent_skill])
+
+            if all_pass:
+                result_text = str(skill_result)
+                if "极限" in result_text or "大成功" in result_text:
+                    skill_tier = "extreme"
+                elif "困难" in result_text or "极难" in result_text:
+                    skill_tier = "hard"
                 else:
-                    skill_tier = "failure"
+                    skill_tier = "regular"
             else:
-                skill_passed = True
-        else:
-            # No player — skip skill check (entity still executes)
-            skill_passed = True
+                skill_tier = "failure"
+
+            skill_passed = all_pass
+            skill_message = skill_result
+            skill_detail = (
+                f"[{entity.id}] {entity.name} | 技能={skill_name} | "
+                f"等级={skill_tier} | {'成功' if all_pass else '失败'}\n"
+                f"  {skill_result}"
+            )
+            log_skill_result(skill_detail)
 
         # Resolve result text (handle ##GRADED##)
         result_text = entity.result
+        has_graded = "##GRADED##" in result_text
         if skill_tier:
             result_text = resolve_graded_result(entity, skill_tier)
 
@@ -115,7 +139,8 @@ class Judge:
             return ActionOutcome(
                 intent=intent or ActionIntent(action="other"),
                 success=False, message=skill_message,
-                entity_id=entity.id, entity_type=entity.entity_type
+                entity_id=entity.id, entity_type=entity.entity_type,
+                skill_tier=skill_tier,
             )
 
         # Execute — mark completion
@@ -143,28 +168,82 @@ class Judge:
             entity_id=entity.id,
             entity_type=entity.entity_type,
             side_effects=side_effects,
+            skill_tier=skill_tier,
         )
 
+    # ── Requirement checking ──
+
     def _is_simple_requirement(self, req: str) -> bool:
-        """Check if requirement can be resolved deterministically."""
         if not req or not req.strip():
             return True
-        return req.startswith("flag:") or "需要先完成" in req
+        if req.startswith("flag:"):
+            return True
+        if "需要先完成" in req:
+            return True
+        if _ENTITY_ID_RE.match(req.strip()):
+            return True
+        parts = req.strip().split(None, 1)
+        if len(parts) == 2 and _ENTITY_ID_RE.match(parts[0]):
+            return True
+        if "," in req:
+            return all(
+                self._is_simple_requirement(c.strip())
+                for c in req.split(",")
+            )
+        return False
 
     def _check_simple_requirement(self, entity: Entity) -> bool:
-        """Check if entity's requirement is met deterministically."""
         if not entity.requirement or not entity.requirement.strip():
             return True
         if self._is_simple_requirement(entity.requirement):
-            met, _ = self._evaluate_simple_requirement(entity.requirement)
+            met, _ = self._evaluate_requirement(entity.requirement)
             return met
         return False
 
-    def _evaluate_simple_requirement(self, req: str) -> tuple[bool, str]:
-        """Evaluate a simple (deterministic) requirement string."""
+    def _evaluate_requirement(self, req: str) -> tuple[bool, str]:
+        """Evaluate requirement string: flag:, entity IDs, compound, NL."""
+        req = req.strip()
+        if not req:
+            return True, ""
+
         if req.startswith("flag:"):
             flag_name = req[5:]
             if self.world.flags.get(flag_name, False):
                 return True, ""
-            return False, f"行动失败！需要满足条件「{flag_name}」"
+            return False, f"需要满足条件「{flag_name}」"
+
+        # Compound: comma-separated
+        if "," in req:
+            for clause in req.split(","):
+                met, msg = self._evaluate_requirement(clause.strip())
+                if not met:
+                    return False, msg
+            return True, ""
+
+        # Entity ID patterns
+        parts = req.split(None, 1)
+        eid = parts[0]
+        if not _ENTITY_ID_RE.match(eid):
+            return True, ""  # natural language, defer to LLM
+
+        entity = self._find_entity_by_id(eid)
+        if not entity:
+            return True, ""
+
+        is_completed = self._is_entity_completed(entity)
+        if len(parts) == 1:
+            if is_completed:
+                return True, ""
+            return False, f"需要先完成「{entity.name}」"
+
+        status_word = parts[1]
+        if status_word in ("成功", "完成"):
+            if is_completed:
+                return True, ""
+            return False, f"需要成功完成「{entity.name}」"
+        elif status_word in ("失败", "未成功"):
+            if not is_completed:
+                return True, ""
+            return False, f"需要「{entity.name}」未完成"
+
         return True, ""

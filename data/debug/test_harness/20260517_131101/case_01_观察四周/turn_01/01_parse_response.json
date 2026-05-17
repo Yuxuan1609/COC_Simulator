@@ -1,0 +1,10 @@
+{
+  "actions": [
+    {
+      "action": "search",
+      "target": "6号车厢",
+      "skill_checks": [],
+      "reasoning": "玩家环顾四周寻找异常，属于对当前场景的全面搜索。"
+    }
+  ]
+}

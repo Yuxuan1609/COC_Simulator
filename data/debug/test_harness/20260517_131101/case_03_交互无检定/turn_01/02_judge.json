@@ -1,0 +1,12 @@
+{
+  "at_results": [],
+  "action_outcomes": [
+    {
+      "entity_id": "",
+      "entity_type": "",
+      "success": true,
+      "message": "（没有特别的事情发生）",
+      "side_effects": "[]"
+    }
+  ]
+}
