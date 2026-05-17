@@ -119,8 +119,8 @@ def _format_non_triggerable_interactions(interactions: list) -> str:
     return f"【暂不可执行动作】（需满足前置条件）\n{text}"
 # ── 场景上下文（确定性，不依赖 LLM）──
 
-def _build_scene_context(world: ScenarioWorld, show_non_triggerable: bool = True) -> str:
-    """从 graph 获取当前场景的稳定上下文（不含世界状态）"""
+def _build_scene_context(world: ScenarioWorld) -> str:
+    """Get current scene position, description, and exits. Entities are listed separately."""
     node = world._current_node()
     if not node:
         return "未知地点"
@@ -130,27 +130,11 @@ def _build_scene_context(world: ScenarioWorld, show_non_triggerable: bool = True
         f"  → {e.target}：{e.method}" for e in exits
     ]) or "（无）"
 
-    categorized = _categorize_interactions(world)
-
-    interaction_parts = []
-    triggerable_text = _format_triggerable_interactions(categorized["triggerable"])
-    if triggerable_text:
-        interaction_parts.append(triggerable_text)
-
-    if show_non_triggerable:
-        non_trig_text = _format_non_triggerable_interactions(categorized["non_triggerable"])
-        if non_trig_text:
-            interaction_parts.append(non_trig_text)
-
-    interaction_text = "\n\n".join(interaction_parts) if interaction_parts else "（当前场景无可执行动作）"
-
     return f"""【当前位置】{world.current_location}
 【场景描述】{node.description}
 
 【可移动方向】
-{exit_list}
-
-{interaction_text}"""
+{exit_list}"""
 
 def _build_player_skills(world: ScenarioWorld) -> str:
     """构建玩家技能列表（从 Investigator.skills）"""
