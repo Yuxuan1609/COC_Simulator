@@ -87,46 +87,6 @@ def _categorize_interactions(world: ScenarioWorld) -> dict:
 
     return {"triggerable": triggerable, "non_triggerable": non_triggerable}
 
-
-def _categorize_pending_events(world: ScenarioWorld) -> dict:
-    """Split pending (not yet triggered) events into triggerable / non-triggerable."""
-    pending = [e for e in world.graph.events.values()
-               if not world.is_event_triggered(e.event_id)]
-
-    triggerable = []
-    non_triggerable = []
-
-    for ev in pending:
-        entry = {
-            "event_id": ev.event_id,
-            "name": ev.name,
-            "trigger": ev.trigger,
-            "impact": ev.impact[:150],
-        }
-        if ev.requirements:
-            met, _ = world.requirement_resolver.check(ev.requirements)
-            if met:
-                triggerable.append(entry)
-            else:
-                unmet = world.requirement_resolver.get_unmet(ev.requirements)
-                reasons = []
-                for req in unmet:
-                    if req.ref_type == "interaction":
-                        reasons.append(f"需要先完成「{req.ref_scene}」的「{req.ref_name}」")
-                    elif req.ref_type == "event":
-                        event = world.graph.get_event(req.ref_scene)
-                        event_name = event.name if event else req.ref_scene
-                        reasons.append(f"需要先触发事件「{event_name}」")
-                    elif req.ref_type == "flag":
-                        reasons.append(f"需要世界标记「{req.ref_name}」")
-                entry["unmet_reasons"] = reasons
-                non_triggerable.append(entry)
-        else:
-            triggerable.append(entry)
-
-    return {"triggerable": triggerable, "non_triggerable": non_triggerable}
-
-
 def _format_triggerable_interactions(interactions: list) -> str:
     """Format triggerable interactions for prompt display."""
     if not interactions:
@@ -158,40 +118,6 @@ def _format_non_triggerable_interactions(interactions: list) -> str:
         )
     text = "\n\n".join(lines_list)
     return f"【暂不可执行动作】（需满足前置条件）\n{text}"
-
-
-def _format_triggerable_events(events: list) -> str:
-    """Format triggerable events for prompt display."""
-    if not events:
-        return ""
-    lines_list = []
-    for ev in events:
-        lines_list.append(
-            f"  ◇ [{ev['event_id']}] {ev['name']}\n"
-            f"    触发条件：{ev['trigger']}\n"
-            f"    预期影响：{ev['impact']}"
-        )
-    text = "\n\n".join(lines_list)
-    return f"【可触发事件】\n{text}"
-
-
-def _format_non_triggerable_events(events: list) -> str:
-    """Format non-triggerable events with unmet reasons."""
-    if not events:
-        return ""
-    lines_list = []
-    for ev in events:
-        reasons = "\n".join(f"    - {r}" for r in ev["unmet_reasons"])
-        lines_list.append(
-            f"  ◇ [{ev['event_id']}] {ev['name']}\n"
-            f"    触发条件：{ev['trigger']}\n"
-            f"    预期影响：{ev['impact']}\n"
-            f"    缺少前置：\n{reasons}"
-        )
-    text = "\n\n".join(lines_list)
-    return f"【暂不可触发事件】（需满足前置条件）\n{text}"
-
-
 # ── 场景上下文（确定性，不依赖 LLM）──
 
 def _build_scene_context(world: ScenarioWorld, show_non_triggerable: bool = True) -> str:
@@ -227,15 +153,6 @@ def _build_scene_context(world: ScenarioWorld, show_non_triggerable: bool = True
 
 {interaction_text}"""
 
-def _build_scene_context_event(world: ScenarioWorld) -> str:
-    """从 graph 获取当前场景的稳定上下文（不含世界状态）"""
-    node = world._current_node()
-    if not node:
-        return "未知地点"
-    return f"""【当前位置】{world.current_location}
-【场景描述】{node.description}
-"""
-
 def _build_player_skills(world: ScenarioWorld) -> str:
     """构建玩家技能列表（从 Investigator.skills）"""
     if not world.player or not world.player.skills:
@@ -260,22 +177,6 @@ def _build_world_state(world: ScenarioWorld) -> str:
     flags_str = ", ".join(f"{k}={v}" for k, v in world.flags.items()) or "（无）"
     return f"""已触发事件：{triggered or '（无）'}
 世界标记：{flags_str}"""
-
-
-def _build_triggerable_events(world: ScenarioWorld) -> str:
-    """从 world 确定性提取：条件已满足、可触发但尚未触发的全局事件"""
-    lines = []
-    for ev in world.graph.events.values():
-        if not world.is_event_triggered(ev.event_id):
-            met, _ = world.requirement_resolver.check(ev.requirements)
-            if met:
-                lines.append(
-                    f"  ◇ [{ev.event_id}] {ev.name}\n"
-                    f"    触发条件：{ev.trigger}\n"
-                    f"    预期影响：{ev.impact[:150]}"
-                )
-    return "\n\n".join(lines) if lines else "（暂无可触发事件）"
-
 
 # ── 第一阶段：动作解析 ──
 
@@ -332,66 +233,6 @@ action字段份分类规则：
 
 """
     _show_prompt("Step 1/3 — 动作解析", prompt)
-    return prompt
-
-
-# ── 第二阶段：事件触发判定 ──
-
-def build_event_prompt(world: ScenarioWorld, user_input: str,
-                       show_non_triggerable: bool | None = None) -> str:
-    """基于 user_input + 全部未触发事件，让 LLM 独立判断哪些事件应在此刻触发"""
-    if show_non_triggerable is None:
-        show_non_triggerable = _SHOW_NON_TRIGGERABLE
-
-    context = world.memory.get_context()
-    state = _build_world_state(world)
-    scene_ctx = _build_scene_context_event(world)
-    categorized = _categorize_pending_events(world)
-
-    event_parts = []
-    triggerable_text = _format_triggerable_events(categorized["triggerable"])
-    if triggerable_text:
-        event_parts.append(triggerable_text)
-
-    if show_non_triggerable:
-        non_trig_text = _format_non_triggerable_events(categorized["non_triggerable"])
-        if non_trig_text:
-            event_parts.append(non_trig_text)
-
-    event_text = "\n\n".join(event_parts) if event_parts else "（所有事件均已触发）"
-
-    prompt = f"""【玩家历史行动】
-{context or '（无）'}
-
-{scene_ctx}
-【世界状态】
-{state}
-
-【玩家输入】
-{user_input}
-
-【待检查事件（仅以下未触发事件需判断）】
-{event_text}
-
-请逐一判断上述「待检查事件」的触发条件是否被玩家当前输入所描述的行动满足。返回 JSON：
-{{
-  "triggered_events": ["E1"],
-  "condition_events": {{"E2": "需要先完成..."}},
-  "new_flags": {{"flag_name": true}},
-  "reasoning": "逐事件推理"
-}}
-
-规则：
-- 仅当玩家输入中描述的行动确实满足事件的触发条件时才列入 triggered_events
-- 已触发的事件不要重复触发
-- condition_events：当玩家试图触发【暂不可触发事件】时列出对应的事件ID和缺少的前置条件，未尝试触发则返回 {{}}
-- new_flags 可选，用于设置新的世界标记
-- 不满足任何条件时 triggered_events 返回 []
-- 严格比对触发条件，不要过度联想
-
-直接输出 JSON，不要额外文字。
-"""
-    _show_prompt("Step 2/3 — 事件触发判定", prompt)
     return prompt
 
 
@@ -633,10 +474,47 @@ def parse_narrative_output(text: str) -> tuple[str, str]:
 # ── Keeper: Parse (Step 1) ──
 
 def build_keeper_parse_prompt(world, user_input: str) -> str:
-    """Keeper step 1: parse raw player input into structured ActionIntent[]."""
+    """Keeper step 1: match player input against ALL entities, evaluate NL requirements."""
+    node = world._current_node()
     scene_ctx = _build_scene_context(world)
     state = _build_world_state(world)
     context = world.memory.get_context()
+
+    # Build all-entities list for the current scene
+    entities_lines = []
+    if node:
+        for at in node.auto_triggers:
+            attrs = []
+            if at.requirement:
+                attrs.append(f"需要：{at.requirement}")
+            entities_lines.append(
+                f"  [AT] id={at.id} name=\"{at.name}\" type={at.type} "
+                f"trigger=\"{at.trigger}\" {' '.join(attrs)}"
+            )
+        for inter in node.interactions:
+            done = world.completed_interactions.get(world.current_location, set())
+            status = "（已完成）" if inter.name in done else ""
+            attrs = []
+            if inter.requirement:
+                attrs.append(f"需要：{inter.requirement}")
+            entities_lines.append(
+                f"  [INTER] id={inter.id} name=\"{inter.name}\" type={inter.type} "
+                f"trigger=\"{inter.trigger}\" {status} {' '.join(attrs)}"
+            )
+
+    # Build all-events list
+    events_lines = []
+    for ev in world.graph.events.values():
+        triggered = world.is_event_triggered(ev.id)
+        status = "（已触发）" if triggered else ""
+        attrs = []
+        if ev.requirement:
+            met = world._are_requirements_met(ev)
+            attrs.append(f"硬性条件：{'满足' if met else '未满足'}")
+        events_lines.append(
+            f"  [EVENT] id={ev.id} name=\"{ev.name}\" "
+            f"trigger=\"{ev.trigger}\" {status} {' '.join(attrs)}"
+        )
 
     prompt = f"""【玩家历史行动】
 {context or '（游戏刚开始）'}
@@ -646,24 +524,38 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 
 {scene_ctx}
 
+【当前场景实体】
+{chr(10).join(entities_lines) if entities_lines else '（无）'}
+
+【所有事件】
+{chr(10).join(events_lines) if events_lines else '（无）'}
+
 【玩家输入】
 {user_input}
 
-请判断玩家意图。返回 JSON：
+请同时做两件事：
+1. 判断玩家意图匹配了哪些实体（交互/自动触发/事件）。检查每个匹配实体的非结构化前置条件（自然语言描述的），不满足的排除。
+2. 对于不匹配任何实体的输入，归类为 move/search/other。
+
+返回 JSON：
 {{
   "actions": [
-    {{
-      "action": "move" | "interact" | "search" | "other",
-      "target": "目标地点或动作名称",
-      "skill_checks": ["技能名"],
-      "reasoning": "简要推理"
-    }}
+    {{"type": "auto_trigger", "id": "AT1"}},
+    {{"type": "interaction", "id": "I3"}},
+    {{"type": "event", "id": "E22"}},
+    {{"type": "move", "target": "7号车厢"}},
+    {{"type": "search"}},
+    {{"type": "other", "text": "唱了一首歌"}}
   ]
 }}
+
 规则：
+- auto_trigger 必须排在列表最前面
+- id 必须从上述实体列表中精确复制
 - move：target 填可移动方向中列出的目标
-- interact：target 精确复制可执行动作的名称
-- search：探索当前场景
+- other：text 用自然语言简述玩家意图
+- 排除已完成的交互和已触发的事件
+- 如果实体的非结构化前置条件不满足，不要放入列表
 - 直接输出 JSON，不要额外文字
 """
     _show_prompt("Keeper Parse", prompt)
