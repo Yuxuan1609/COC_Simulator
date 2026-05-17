@@ -24,7 +24,12 @@ class Author:
         self.escalation_history.append(request)
 
         prompt = self._build_prompt(request)
-        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash")
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                  fallback_schema={
+                                      "entities": [],
+                                      "scene_descriptions": {},
+                                      "justification": "",
+                                  })
         patch_data = json.loads(response) if isinstance(response, str) else response
 
         return ModulePatch(

@@ -86,6 +86,8 @@ def call_deepseek(
     reasoning_effort: str | None = None,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    max_retries: int = 3,
+    fallback_schema: dict | None = None,
 ) -> dict | str:
     """
     统一 DeepSeek 调用入口。
@@ -96,6 +98,8 @@ def call_deepseek(
     reasoning_effort: 推理强度 ("low"/"medium"/"high")，None 时默认 "high"
     temperature: 温度参数，None 时 json_mode 默认 0.3，非 json_mode 默认 0.7
     max_tokens: 最大输出 token 数，None 时 json_mode 默认 162840，非 json_mode 默认 20000
+    max_retries: JSON 解析失败时最大重试次数（默认 3）
+    fallback_schema: 全部重试失败后，按此 dict 的 key 构造返回（空值填充）
     """
     _model = model if model is not None else "deepseek-v4-pro"
     _reasoning_effort = reasoning_effort if reasoning_effort is not None else "high"
@@ -105,35 +109,50 @@ def call_deepseek(
         _temperature = temperature if temperature is not None else 0.3
         _max_tokens = max_tokens if max_tokens is not None else 162840
         default_system = system or "你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
-        response = client.chat.completions.create(
-            model=_model,
-            messages=[
-                {"role": "system", "content": default_system},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=_temperature,
-            max_tokens=_max_tokens,
-            reasoning_effort=_reasoning_effort,
-            extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
-        )
-        raw = response.choices[0].message.content.strip()
-        if raw.startswith("```json"):
-            raw = raw[7:-3].strip()
-        elif raw.startswith("```"):
-            raw = raw[3:-3].strip()
-        try:
-            result = json.loads(raw)
-            _log_response(json.dumps(result, ensure_ascii=False, indent=2))
-            return result
-        except json.JSONDecodeError:
-            content_text = _extract_json(raw)
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            response = client.chat.completions.create(
+                model=_model,
+                messages=[
+                    {"role": "system", "content": default_system},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=_temperature,
+                max_tokens=_max_tokens,
+                reasoning_effort=_reasoning_effort,
+                extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
+            )
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```json"):
+                raw = raw[7:-3].strip()
+            elif raw.startswith("```"):
+                raw = raw[3:-3].strip()
             try:
-                result = json.loads(content_text)
+                result = json.loads(raw)
                 _log_response(json.dumps(result, ensure_ascii=False, indent=2))
                 return result
-            except json.JSONDecodeError:
-                print(f"[JSON解析失败] 原始返回内容:\n{raw[:2000]}")
-                raise
+            except json.JSONDecodeError as e:
+                last_error = e
+                content_text = _extract_json(raw)
+                try:
+                    result = json.loads(content_text)
+                    _log_response(json.dumps(result, ensure_ascii=False, indent=2))
+                    return result
+                except json.JSONDecodeError:
+                    if attempt < max_retries:
+                        print(f"[JSON解析失败] 第{attempt}/{max_retries}次重试...")
+                        _temperature = max(0.0, _temperature - 0.1)
+                    else:
+                        print(f"[JSON解析失败] {max_retries}次重试均失败\n  原始返回:\n{raw[:500]}")
+
+        if fallback_schema is not None:
+            print(f"[JSON Fallback] 使用 fallback schema 兜底")
+            fallback = {k: (v() if callable(v) else v) for k, v in fallback_schema.items()}
+            _log_response(json.dumps(fallback, ensure_ascii=False, indent=2))
+            return fallback
+
+        raise last_error or RuntimeError("JSON解析失败且无 fallback")
     else:
         _temperature = temperature if temperature is not None else 0.7
         _max_tokens = max_tokens if max_tokens is not None else 20000

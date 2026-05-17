@@ -105,7 +105,8 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
 
     # ── Step 1: Parse (new unified format) ──
     parse_prompt = build_keeper_parse_prompt(world, raw)
-    parse_response = call_deepseek(parse_prompt, json_mode=True, model="deepseek-v4-flash")
+    parse_response = call_deepseek(parse_prompt, json_mode=True, model="deepseek-v4-flash",
+                                    fallback_schema={"actions": []})
     parse_data = json.loads(parse_response) if isinstance(parse_response, str) else parse_response
     parse_actions = parse_data.get("actions", [])
     if not parse_actions:
@@ -218,7 +219,12 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
     emphasis = ""
     if judged_entities:
         enrich_prompt = build_keeper_enrich_prompt(world, judged_entities, raw)
-        enrich_response = call_deepseek(enrich_prompt, json_mode=True, model="deepseek-v4-flash")
+        enrich_response = call_deepseek(enrich_prompt, json_mode=True, model="deepseek-v4-flash",
+                                         fallback_schema={
+                                             "at_descriptions": {},
+                                             "enriched_results": {},
+                                             "emphasis_hint": "",
+                                         })
         enrichment = json.loads(enrich_response) if isinstance(enrich_response, str) else enrich_response
 
         with open(os.path.join(turn_dir, "03_enrich_prompt.txt"), "w", encoding="utf-8") as f:

@@ -177,7 +177,8 @@ class Keeper:
 
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
-        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash")
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                 fallback_schema={"actions": []})
         data = json.loads(response) if isinstance(response, str) else response
         actions = data.get("actions", [])
         if not actions:
@@ -186,7 +187,12 @@ class Keeper:
 
     def _enrich(self, judged_entities, user_input) -> dict:
         prompt = build_keeper_enrich_prompt(self.world, judged_entities, user_input)
-        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash")
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                 fallback_schema={
+                                     "at_descriptions": {},
+                                     "enriched_results": {},
+                                     "emphasis_hint": "",
+                                 })
         return json.loads(response) if isinstance(response, str) else response
 
     def _find_entity_by_id(self, entity_id: str):
@@ -247,7 +253,13 @@ class Keeper:
         )
         # Build LLM eval prompt and call
         eval_prompt = self.escalation_policy._build_eval_prompt(ctx)
-        eval_result = call_deepseek(eval_prompt, json_mode=True, reasoning_effort="low", model="deepseek-v4-flash")
+        eval_result = call_deepseek(eval_prompt, json_mode=True, reasoning_effort="low",
+                                     model="deepseek-v4-flash",
+                                     fallback_schema={
+                                         "severities": {},
+                                         "rules_triggered": [],
+                                         "should_escalate": False,
+                                     })
         eval_data = json.loads(eval_result) if isinstance(eval_result, str) else eval_result
 
         severities = eval_data.get("severities", {})
