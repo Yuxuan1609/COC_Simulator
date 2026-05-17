@@ -5,3 +5,4 @@ logs/
 .env
 data/saves/*.json
 .claude/worktrees/
+data/debug/

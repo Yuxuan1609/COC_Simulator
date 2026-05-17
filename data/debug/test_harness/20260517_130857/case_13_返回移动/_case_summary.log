@@ -1,6 +1,0 @@
-Case: case_13_返回移动
-Turns: 2
-  Turn 1: move 到 5 号车厢
-    Input: 去5号车厢
-  Turn 2: move 返回，验证 to_here 路径可用
-    Input: 返回6号车厢

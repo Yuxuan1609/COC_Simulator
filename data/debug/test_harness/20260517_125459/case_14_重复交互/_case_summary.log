@@ -1,6 +1,0 @@
-Case: case_14_重复交互
-Turns: 2
-  Turn 1: 首次执行 I1
-    Input: 感知电车异常
-  Turn 2: 再次执行同一交互，应显示已完成或拒绝重复
-    Input: 感知电车异常

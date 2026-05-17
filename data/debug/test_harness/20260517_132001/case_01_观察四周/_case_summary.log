@@ -1,4 +1,0 @@
-Case: case_01_观察四周
-Turns: 1
-  Turn 1: search 当前场景，应返回可感知元素列表
-    Input: 环顾四周，看看有没有什么异常

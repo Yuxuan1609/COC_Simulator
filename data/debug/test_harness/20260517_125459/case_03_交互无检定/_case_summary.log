@@ -1,4 +1,0 @@
-Case: case_03_交互无检定
-Turns: 1
-  Turn 1: interact 无技能检定，应直接返回便签内容
-    Input: 阅读门扉上的便签

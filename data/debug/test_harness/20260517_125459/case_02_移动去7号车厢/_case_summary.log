@@ -1,4 +1,0 @@
-Case: case_02_移动去7号车厢
-Turns: 1
-  Turn 1: move 到相邻场景，应成功移动并显示新场景描述
-    Input: 去7号车厢
