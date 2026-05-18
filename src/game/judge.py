@@ -111,6 +111,23 @@ class Judge:
                         entity_id=entity.id, entity_type=entity.entity_type
                     )
 
+        # Soft requirement: LLM evaluation for narrative conditions (after ||)
+        if entity.requirement and entity.requirement.strip():
+            _, soft = self._split_requirement(entity.requirement)
+            if soft and self.world.player:
+                inv_desc = getattr(self.world.player, 'personal_description', '') or \
+                           getattr(self.world.player, 'description', '')
+                scene_desc = self.world.get_current_description()
+                from llm import evaluate_soft_requirement
+                eval_result = evaluate_soft_requirement(soft, inv_desc, scene_desc)
+                if not eval_result.get("met", True):
+                    return ActionOutcome(
+                        intent=intent or ActionIntent(action="other"),
+                        success=False,
+                        message=eval_result.get("reason", f"不满足条件：{soft}"),
+                        entity_id=entity.id, entity_type=entity.entity_type
+                    )
+
         # Skill check + ##GRADED## resolution
         skill_tier = ""
         skill_passed = True

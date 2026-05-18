@@ -262,3 +262,137 @@ def evaluate_trait_enhancement(
     except json.JSONDecodeError:
         return {"tier": current_tier, "detail_override": None,
                 "reason": "JSON解析失败，保持原结果"}
+
+
+def evaluate_failure_penalty(
+    inv_desc: str,
+    entity_name: str,
+    skill_name: str,
+    skill_detail: str,
+    failure_tier: str,
+    scene_context: str,
+    graded_on_failure: str,
+    retry_count: int,
+) -> dict:
+    """失败惩罚 sub-agent：基于场景上下文和调查员特质，创意化生成技能失败后果。
+
+    返回 {"narrative": str, "markup_effects": list[str]}
+    - narrative: 失败叙事（替代 on_failure 默认描述）
+    - markup_effects: @标记 字符串列表，走 parse_markup_all 管道解析执行
+    """
+    prompt = f"""你是 TRPG 规则辅助裁判。根据场景上下文、调查员特质和检定结果，为技能失败生成创意化后果。
+
+【调查员】
+  描述：{inv_desc or '（无）'}
+
+【场景】
+{scene_context}
+
+【当前检定】
+  实体：{entity_name}
+  技能：{skill_name}
+  检定详情：{skill_detail}
+  失败等级：{failure_tier}（fumble=大失败，failure=普通失败）
+  已重试次数：{retry_count}
+
+【模块预设的失败描述】
+  {graded_on_failure or '（无预设）'}
+
+请生成创意化的失败后果。规则：
+- fumble（大失败）后果应明显重于普通 failure
+- 重试次数越多，后果越严重
+- 优先结合场景细节和调查员特质设计后果
+- 可在模块预设失败描述基础上扩展或改写
+
+返回 JSON：
+{{
+  "narrative": "失败叙事描述",
+  "markup_effects": []
+}}
+
+可用 @标记（放入 markup_effects 数组）：
+- @stat_change(stat_name="属性名", delta=-1, narrative="简短原因")
+- @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=1)
+- @npc_state_change(npc_name="NPC名", new_state="新状态")
+- @item_gain(item_name="物品名")
+- @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=1)
+
+无合适标记时 markup_effects 留空。narrative 不可为空。
+直接输出 JSON。"""
+    response = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=[
+            {"role": "system", "content": "你是一个TRPG规则辅助裁判。仅输出JSON。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4,
+        max_tokens=800,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```json"):
+        raw = raw[7:-3].strip()
+    elif raw.startswith("```"):
+        raw = raw[3:-3].strip()
+    try:
+        result = json.loads(raw)
+        return {
+            "narrative": result.get("narrative", ""),
+            "markup_effects": result.get("markup_effects", []),
+        }
+    except json.JSONDecodeError:
+        return {"narrative": graded_on_failure or f"{skill_name}检定失败。",
+                "markup_effects": []}
+
+def evaluate_soft_requirement(expr: str, inv_desc: str, scene_desc: str) -> dict:
+    """LLM fallback for soft requirements (after ||).
+
+    Evaluates narrative conditions like "调查员持有光源" or "已知晓大嘴的存在"
+    that cannot be resolved deterministically.
+
+    Returns {"met": bool, "reason": str}
+    """
+    if not expr or not expr.strip():
+        return {"met": True, "reason": ""}
+
+    prompt = f"""你是 TRPG 规则裁判。判断当前调查员是否满足给定的叙事条件。
+
+【调查员】
+  描述：{inv_desc or '（无）'}
+
+【场景】
+  {scene_desc or '（无）'}
+
+【条件】
+  {expr}
+
+条件仅涉及叙事性判断（物品持有、知识状态、NPC关系等）。
+若条件和调查员的当前状况、已有物品或已知信息相符则判定为满足。
+不确定时倾向于判定为满足（避免过度卡关）。
+
+返回 JSON：
+{{"met": true, "reason": "简短理由"}}
+或
+{{"met": false, "reason": "简短理由"}}
+
+直接输出 JSON。"""
+    response = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=[
+            {"role": "system", "content": "你是一个TRPG规则裁判。仅输出JSON。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2,
+        max_tokens=200,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```json"):
+        raw = raw[7:-3].strip()
+    elif raw.startswith("```"):
+        raw = raw[3:-3].strip()
+    try:
+        result = json.loads(raw)
+        return {"met": result.get("met", True), "reason": result.get("reason", "")}
+    except json.JSONDecodeError:
+        return {"met": True, "reason": "JSON解析失败，默认通过"}
