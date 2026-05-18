@@ -385,13 +385,11 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         return hard, soft, met
 
     def _fmt_inter(entity) -> str:
-        """Format an interaction entity."""
+        """Format an interaction entity. Only show soft condition; hard checked by Judge."""
         done = world.completed_interactions.get(world.current_location, set())
         status = "（已完成）" if entity.name in done else ""
         parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
-        hard, soft, met = _split_req(entity)
-        if hard:
-            parts.append(f"requirement=\"{'✓' if met else '✗'}{hard}\"")
+        _, soft, _ = _split_req(entity)
         if soft:
             parts.append(f"条件=\"{soft}\"")
         if status:
@@ -399,11 +397,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         return "  [INTERACT] " + " ".join(parts)
 
     def _fmt_at(entity, req_met: bool) -> str:
-        """Format an auto-trigger entity."""
+        """Format an auto-trigger entity. Only show soft condition; hard checked by Judge."""
         parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
-        hard, soft, met = _split_req(entity)
-        if hard:
-            parts.append(f"requirement=\"{'✓' if met else '✗'}{hard}\"")
+        _, soft, _ = _split_req(entity)
         if soft:
             parts.append(f"条件=\"{soft}\"")
         if entity.type and entity.type != "无":
@@ -435,14 +431,10 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         parts = [f"id={ev.id}", f"name=\"{ev.name}\"",
                  f"trigger=\"{ev.trigger}\""]
         hard, soft, met = _split_req(ev)
-        if hard:
-            parts.append(f"requirement=\"{'✓' if met else '✗'}{hard}\"")
         if soft:
             parts.append(f"条件=\"{soft}\"")
         line = "  [EVENT] " + " ".join(parts)
-        if hard and soft:
-            overall_met = met  # event is triggerable if hard req met (soft checked by LLM)
-        elif hard:
+        if hard:
             overall_met = met
         else:
             overall_met = True
@@ -496,8 +488,8 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 {user_input}
 
 实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。
-请同时做两件事：
-1. 判断玩家意图匹配了哪些实体。检查每个匹配实体的非结构化前置条件（自然语言描述的），不满足的排除。
+硬性条件（flag/依赖关系）已由系统判定完成。你只需：
+1. 判断玩家意图匹配了哪些实体。如有「条件=」字段（软性条件/自然语言描述），评估是否满足，不满足的排除。
 2. 对于不匹配任何实体的输入，归类为 move/search/other。
 
 返回 JSON：
@@ -518,7 +510,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 - move：target 填可移动方向中列出的目标
 - other：text 用自然语言简述玩家意图
 - 排除已完成的交互和已触发的事件
-- 如果实体的非结构化前置条件不满足，不要放入列表
+- 如有「条件=」字段，评估是否满足，不满足的排除（硬性条件系统已处理）
 - 直接输出 JSON，不要额外文字
 """
     _show_prompt("Keeper Parse", prompt)
