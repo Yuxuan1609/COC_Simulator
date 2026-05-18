@@ -97,16 +97,6 @@ def _build_investigator_info(world: ScenarioWorld) -> str:
     return "【调查员】\n" + "\n".join(parts) + "\n"
 
 
-def _build_skill_results(skill_results: dict) -> str:
-    """构建技能鉴定结果文本"""
-    if not skill_results:
-        return "（本次无技能鉴定）"
-    lines = []
-    for skill_name, (success, msg) in skill_results.items():
-        status = "成功" if success else "失败"
-        lines.append(f"  {skill_name}：{status} — {msg}")
-    return "\n".join(lines)
-
 
 def _build_world_state(world: ScenarioWorld) -> str:
     """从 world 获取当前状态摘要"""
@@ -171,102 +161,6 @@ def build_event_world_update(world: ScenarioWorld, events_result: str) -> str:
   "abstract": "更新后的【当前背景设定】",
 }}"""
     _show_prompt("World Update — Event", prompt)
-    return prompt
-
-
-# ── 第三阶段：叙事生成 ──
-
-def build_narrative_prompt(world: ScenarioWorld, user_input: str,
-                           action_result: str, events_result: str,
-                           l1_scene: "SceneL1 | None" = None,
-                           l3_data: "L3Designer | None" = None) -> str:
-    """基于所有结果 + 已更新世界 + 可触发事件列表，生成沉浸式叙事"""
-    context = world.memory.get_context()
-    scene_desc = world.get_current_description()
-    events_text = events_result if events_result else "（无特殊事件发生）"
-
-    bg_section = ""
-    if world.background_story:
-        bg_section = f"""【模组背景设定】
-{world.background_story}
-
-"""
-
-    l1l3_ctx = _build_l1l3_context(l1_scene=l1_scene, l3_data=l3_data, scene_name=world.current_location)
-
-    prompt = f"""{bg_section}{l1l3_ctx}
-
-【玩家历史行动】
-{context or '（无）'}
-
-【当前场景】{world.current_location}
-{scene_desc}
-
-【玩家输入】{user_input}
-
-【行动结果】{action_result}
-
-【本轮触发事件】{events_text}
-
-
-请以TRPG主持人（KP）的身份，基于【行动结果】对【玩家输入】和【本轮触发事件】给出合理的回应，
-输出格式请遵守 结果："简要描述" \n\n\n 沉浸式叙事："基于结果用沉浸式中文生成不超过100字"
-请遵循这些具体要求：
-- 重要！不要给出前文没有提及的实质性信息
-- 重要！严格遵守输出格式，给出一个结果一个沉浸式叙事
-- 根据行动结果调整叙事：成功则描述顺利进行，失败则描述没有结果或难以进行，没有提及则忽略这条
-- 语气贴合场景氛围，参考【基调约束】中的世界观和氛围基调
-- 遵守【基调约束】中的禁止项和必须包含项
-- 叙事要体现【场景感知信息】中的氛围和情绪基调
-- 直接输出叙事文本，不要额外说明
-- 【模组背景设定】和【玩家历史行动】主要用于理解背景，尽量少重复叙述其中的内容
-- 在满足以上要求的情况下进行合理自由发挥
-"""
-    _show_prompt("Step 3/3 — 叙事生成", prompt)
-    return prompt
-
-
-# ── 第三阶段（备用）：即兴叙事 ──
-
-def build_improvise_prompt(world: ScenarioWorld, user_input: str,
-                           action_result: str,
-                           l1_scene: "SceneL1 | None" = None,
-                           l3_data: "L3Designer | None" = None) -> str:
-    """当动作解析结果为 other 且无事件触发时调用，生成即兴叙事"""
-    context = world.memory.get_context()
-    scene_desc = world.get_current_description()
-
-    bg_section = ""
-    if world.background_story:
-        bg_section = f"""【模组背景设定】
-{world.background_story}
-
-"""
-
-    l1l3_ctx = _build_l1l3_context(l1_scene=l1_scene, l3_data=l3_data, scene_name=world.current_location)
-
-    prompt = f"""{bg_section}{l1l3_ctx}
-
-【玩家历史行动】
-{context or '（无）'}
-
-【当前场景】{world.current_location}
-{scene_desc}
-
-【玩家输入】{user_input}
-
-请以TRPG主持人（KP）的身份，【玩家输入】给出合理的回应，
-输出格式请遵守 结果："简要描述" \n\n\n 沉浸式叙事："基于结果用沉浸式中文生成不超过100字"
-请遵循这些具体要求：
-- 重要！不要给出前文没有提及的实质性信息
-- 重要！当前玩家行动没有产生实际影响，请以符合场景的语言委婉提示玩家这一点
-- 重要！严格遵守输出格式，给出一个结果一个沉浸式叙事
-- 用沉浸式中文生成20-100字
-- 语气贴合场景氛围，参考【基调约束】和【场景感知信息】
-- 遵守【基调约束】中的禁止项
-- 【模组背景设定】和【玩家历史行动】主要用于理解背景，尽量少重复叙述其中的内容
-"""
-    _show_prompt("Step 3b — 即兴叙事", prompt)
     return prompt
 
 
@@ -379,7 +273,8 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             return "", soft, True
         # Check hard condition
         if hard.startswith("flag:"):
-            met = world.flags.get(hard[5:], False)
+            from scenario_core import parse_hard_requirement
+            met = parse_hard_requirement(hard, world.runtime_state)
         else:
             met = world._are_requirements_met(entity)
         return hard, soft, met

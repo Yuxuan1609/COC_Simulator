@@ -644,7 +644,8 @@ class RequirementResolver:
                     event_name = event.name if event else req.ref_scene
                     return False, f"行动失败！！！需要先触发事件「{event_name}」"
             elif req.ref_type == "flag":
-                if not self.world.flags.get(req.ref_name, False):
+                state = self.world.runtime_state.get(req.ref_name)
+                if not state or not state.completed:
                     return False, f"行动失败！！！需要满足条件「{req.ref_name}」"
         return True, ""
 
@@ -660,7 +661,8 @@ class RequirementResolver:
                 if not self.world.triggered_events.get(req.ref_scene, False):
                     unmet.append(req)
             elif req.ref_type == "flag":
-                if not self.world.flags.get(req.ref_name, False):
+                state = self.world.runtime_state.get(req.ref_name)
+                if not state or not state.completed:
                     unmet.append(req)
         return unmet
 
@@ -918,7 +920,8 @@ class ScenarioWorld:
             if not hard:
                 return True
             if hard.startswith("flag:"):
-                return self.flags.get(hard[5:], False)
+                # Legacy: not used in new L2. Treat as unmet for safety.
+                return False
             return False
         if hasattr(entity, 'requirements'):
             if not entity.requirements:
