@@ -670,6 +670,98 @@ class RequirementResolver:
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Requirement string parser (AND/OR logic)
+# ═══════════════════════════════════════════════════════════════
+
+_ENTITY_ID_PATTERN = re.compile(r'^[IEA]+\d+[a-z]?$')
+
+
+def _extract_entity_id(text: str) -> str | None:
+    """Extract entity ID from a cleaned group string. Returns None if no ID found."""
+    match = _ENTITY_ID_PATTERN.match(text)
+    return match.group(0) if match else None
+
+
+def parse_hard_requirement(hard: str, runtime_state: dict) -> bool:
+    """Parse the hard portion of a requirement string.
+
+    Format:
+        and_group ("AND" and_group)*
+        and_group = or_group ("OR" or_group)*
+        or_group  = entity_id (after stripping parens/spaces)
+
+    Returns True if ALL AND groups pass.
+    An AND group passes if ANY of its OR groups passes.
+    An OR group passes if its entity_id is completed in runtime_state.
+    Groups with no recognizable entity ID pass automatically (graceful degradation
+    for LLM-generated natural language that couldn't be fully structured).
+    """
+    if not hard or not hard.strip():
+        return True
+
+    # Step 1: split top-level AND (respecting parenthesized groups)
+    and_parts = _split_top_level(hard, "AND")
+
+    for and_group in and_parts:
+        # Step 2: split secondary OR
+        or_parts = _split_top_level(and_group, "OR")
+
+        or_pass = False
+        for or_group in or_parts:
+            # Step 3: clean and extract entity ID
+            cleaned = _clean_group(or_group)
+            eid = _extract_entity_id(cleaned)
+
+            if eid is None:
+                # No recognizable ID → pass this group (LLM-generator grace)
+                or_pass = True
+                break
+
+            state = runtime_state.get(eid)
+            if state and state.completed:
+                or_pass = True
+                break
+
+        if not or_pass:
+            return False  # This AND group failed entirely
+
+    return True  # All AND groups passed
+
+
+def _split_top_level(text: str, sep: str) -> list[str]:
+    """Split by separator but respect parenthesized groups as atomic units.
+
+    e.g. "(I12a OR I12b) AND I1" split by AND → ["(I12a OR I12b)", "I1"]
+    """
+    # Strip balanced outer parentheses so that "(A OR B)" splits correctly
+    text = text.strip()
+    while text.startswith("(") and text.endswith(")"):
+        inner = text[1:-1]
+        if inner.count("(") == inner.count(")"):
+            text = inner.strip()
+        else:
+            break
+
+    parts = text.split(sep)
+    result = []
+    buf = []
+    for part in parts:
+        buf.append(part)
+        joined = sep.join(buf)
+        if joined.count("(") == joined.count(")"):
+            result.append(joined.strip())
+            buf = []
+    if buf:
+        result.append(sep.join(buf).strip())
+    return [r for r in result if r]
+
+
+def _clean_group(text: str) -> str:
+    """Strip parentheses, spaces, and Chinese punctuation from a group."""
+    return text.strip().strip("()（） \t")
+
+
+# ═══════════════════════════════════════════════════════════════
 #  场景世界（纯泛用运行时状态管理）
 # ═══════════════════════════════════════════════════════════════
 
