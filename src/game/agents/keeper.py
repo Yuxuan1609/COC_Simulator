@@ -258,7 +258,10 @@ class Keeper:
             at_results=list(at_results),
             world_snapshot={
                 "location": self.world.current_location,
-                "flags": dict(self.world.flags),
+                "runtime_state": {
+                    eid: {"completed": s.completed, "tier": s.result_tier}
+                    for eid, s in self.world.runtime_state.items() if s.completed
+                },
                 "triggered_events": [
                     eid for eid, t in self.world.triggered_events.items() if t
                 ],

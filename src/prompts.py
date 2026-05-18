@@ -101,7 +101,8 @@ def _build_investigator_info(world: ScenarioWorld) -> str:
 def _build_world_state(world: ScenarioWorld) -> str:
     """从 world 获取当前状态摘要"""
     triggered = [eid for eid, t in world.triggered_events.items() if t]
-    flags_str = ", ".join(f"{k}={v}" for k, v in world.flags.items()) or "（无）"
+    completed_entities = [eid for eid, s in world.runtime_state.items() if s.completed]
+    flags_str = ", ".join(completed_entities) or "（无）"
     return f"""已触发事件：{triggered or '（无）'}
 世界标记：{flags_str}"""
 
