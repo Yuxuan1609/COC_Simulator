@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Dict, List, Optional, Tuple, Set, Callable, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, Set, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from investigator.models import Investigator as InvestigatorType
 from dataclasses import dataclass, field
@@ -692,9 +692,6 @@ class ScenarioWorld:
         self.current_location = start_node
         self.player: 'InvestigatorType | None' = None
 
-        # 前置条件解析器
-        self.requirement_resolver = RequirementResolver(self)
-
         # 背景故事（模组设定，供叙事阶段参考）
         self.background_story = background_story
 
@@ -706,14 +703,36 @@ class ScenarioWorld:
         # 每个场景已完成动作名
         self.completed_interactions: Dict[str, Set[str]] = {}
 
-        # 任意世界标记
-        self.flags: Dict[str, bool] = {}
+        # L2 dependency graph + per-entity runtime state (replaces flags)
+        self.runtime_state: Dict[str, NodeRuntimeState] = {}
+        self.dependency_graph: Dict[str, Any] = {}
 
         # 记忆管理器
         self.memory = MemoryManager()
 
         # NPC 运行时状态
         self.npc_states: Dict[str, str] = {}
+
+    # ── Dependency graph & runtime state ──
+
+    def load_dependency_graph(self, dep_graph: dict):
+        """Load L2 dependency graph into runtime-ready structures."""
+        self.dependency_graph = dep_graph
+        nodes = dep_graph.get("nodes", {})
+        for eid in nodes:
+            if eid not in self.runtime_state:
+                self.runtime_state[eid] = NodeRuntimeState()
+
+    def get_runtime_state(self, entity_id: str) -> NodeRuntimeState:
+        """Get or create runtime state for an entity."""
+        if entity_id not in self.runtime_state:
+            self.runtime_state[entity_id] = NodeRuntimeState()
+        return self.runtime_state[entity_id]
+
+    def get_incoming_edges(self, entity_id: str) -> list[dict]:
+        """Get all edges where source == entity_id (what entity_id depends on)."""
+        edges = self.dependency_graph.get("edges", [])
+        return [e for e in edges if e.get("source") == entity_id]
 
     # ── 背景故事 ──
 
@@ -880,13 +899,16 @@ class ScenarioWorld:
     # ── 标记（纯泛用）──
 
     def set_flag(self, key: str, value: bool = True):
-        self.flags[key] = value
+        """DEPRECATED: Use runtime_state directly."""
+        pass
 
     def get_flag(self, key: str) -> bool:
-        return self.flags.get(key, False)
+        """DEPRECATED: Use runtime_state directly."""
+        return False
 
     def toggle_flag(self, key: str):
-        self.flags[key] = not self.flags.get(key, False)
+        """DEPRECATED: Use runtime_state directly."""
+        pass
 
     # ── NPC 运行时状态 ──
 
