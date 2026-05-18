@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Set, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from investigator.models import Investigator as InvestigatorType
 from dataclasses import dataclass, field
+from module_designer.dependency_graph import DependencyNode, DependencyEdge
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -357,23 +358,6 @@ class Node:
             if e.name == name:
                 return e
         return None
-
-
-@dataclass
-class DependencyNode:
-    """Static node in the L2 dependency graph."""
-    entity_id: str          # "I1"
-    entity_type: str        # "interaction" | "auto_trigger" | "event"
-    name: str = ""          # optional display name
-
-
-@dataclass
-class DependencyEdge:
-    """Static edge in the L2 dependency graph. source depends on target."""
-    source: str             # "I2" (who depends)
-    target: str             # "I1" (on whom)
-    dep_type: str = "interaction"
-    condition: str = "success"  # "success" | "fail" | "completed" | "Uncompleted"
 
 
 @dataclass
