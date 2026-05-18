@@ -385,10 +385,11 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         return hard, soft, met
 
     def _fmt_inter(entity) -> str:
-        """Format an interaction entity. Only show soft condition; hard checked by Judge."""
+        """Format an interaction entity."""
         done = world.completed_interactions.get(world.current_location, set())
         status = "（已完成）" if entity.name in done else ""
-        parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
+        parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
+                 f"trigger=\"{entity.trigger}\""]
         _, soft, _ = _split_req(entity)
         if soft:
             parts.append(f"条件=\"{soft}\"")
@@ -396,8 +397,8 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             parts.append(status)
         return "  [INTERACT] " + " ".join(parts)
 
-    def _fmt_at(entity, req_met: bool) -> str:
-        """Format an auto-trigger entity. Only show soft condition; hard checked by Judge."""
+    def _fmt_at(entity) -> str:
+        """Format an auto-trigger entity. No trigger field; hard checked by Judge."""
         parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
         _, soft, _ = _split_req(entity)
         if soft:
@@ -409,7 +410,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     if node:
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
-            line = _fmt_at(at, met)
+            line = _fmt_at(at)
             if met:
                 trig_scene.append(line)
             else:
