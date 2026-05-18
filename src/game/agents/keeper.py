@@ -32,6 +32,7 @@ class Keeper:
         npc_profiles: dict[str, Any] | None = None,
     ):
         self.world = world
+        # dependency_graph is now owned by world; keep reference here for backward compat
         self.dependency_graph = dependency_graph or {}
         self.phase1 = phase1 or {}
         self.escalation_policy = escalation_policy or EscalationPolicy()

@@ -172,6 +172,10 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
 
     world = ScenarioWorld(graph, start_node=start_node)
 
+    # Load dependency graph into world for runtime state tracking
+    dep_graph = l2.get("dependency_graph", {})
+    world.load_dependency_graph(dep_graph)
+
     # Init agents
     narrator = Narrator(l1)
     keeper = Keeper(
