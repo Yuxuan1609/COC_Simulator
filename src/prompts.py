@@ -408,14 +408,14 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
 
     if node:
         for at in node.auto_triggers:
-            met = _requirements_met(at)
+            _, _, met = _split_req(at)
             line = _fmt_at(at, met)
             if met:
                 trig_scene.append(line)
             else:
                 nontrig_scene.append(line)
         for inter in node.interactions:
-            met = _requirements_met(inter)
+            _, _, met = _split_req(inter)
             line = _fmt_inter(inter)
             if met:
                 trig_scene.append(line)
