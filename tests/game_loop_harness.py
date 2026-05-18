@@ -208,7 +208,8 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int,
                 ok, skill_msg, tier = world.player.check_skill("侦查", "regular")
                 from prompts import log_skill_result
                 log_skill_result(
-                    f"[SEARCH] 侦查检定 | 等级={tier} | {'成功' if ok else '失败'}\n  {skill_msg}"
+                    f"[SEARCH] 侦查检定 | 等级={tier} | {'成功' if ok else '失败'}\n  {skill_msg}",
+                    log_path=prompt_log,
                 )
                 if ok:
                     interactions = world.get_available_interactions()

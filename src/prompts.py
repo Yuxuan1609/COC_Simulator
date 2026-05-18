@@ -37,14 +37,21 @@ def _show_prompt(label: str, content: str):
         f.write("\n")
 
 
-def log_skill_result(text: str):
-    """将技能检定结果写入日志文件（如已配置）"""
-    if not _log_file:
+def log_skill_result(text: str, log_path: str | None = None):
+    """将技能检定结果写入日志文件（如已配置）。可指定路径避免并行竞态。"""
+    path = log_path or _log_file
+    if not path:
         return
-    with open(_log_file, 'a', encoding='utf-8') as f:
-        f.write(f"--- 技能检定 ---\n")
-        f.write(text)
-        f.write("\n\n")
+    import threading
+    lock = getattr(log_skill_result, '_lock', None)
+    if lock is None:
+        lock = threading.Lock()
+        log_skill_result._lock = lock
+    with lock:
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(f"--- 技能检定 ---\n")
+            f.write(text)
+            f.write("\n\n")
 
 
 # ── 场景上下文（确定性，不依赖 LLM）──
