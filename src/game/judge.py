@@ -8,9 +8,16 @@ if TYPE_CHECKING:
 
 from scenario_core import parse_markup_all, resolve_graded_result
 from .messages import ActionIntent, ActionOutcome
-from prompts import log_skill_result
+from prompts import log_skill_result, _build_scene_context
 
 _ENTITY_ID_RE = _re.compile(r'^([IEA]+\d+)$')  # e.g. I1, AT2, E3
+
+_DIFFICULTY_ORDER = {"regular": "hard", "hard": "extreme"}
+
+
+def _escalate_difficulty(difficulty: str) -> str:
+    """Escalate difficulty by one level: regular→hard→extreme. Already extreme stays."""
+    return _DIFFICULTY_ORDER.get(difficulty, difficulty)
 
 
 class Judge:
@@ -64,9 +71,9 @@ class Judge:
     # ── Internal ──
 
     def _set_completion_flag(self, entity: Entity):
-        """Set world flag when entity completes."""
-        flag_key = f"{entity.id}_done"
-        self.world.set_flag(flag_key, True)
+        """Mark entity completed in runtime_state."""
+        state = self.world.get_runtime_state(entity.id)
+        state.completed = True
 
     def _find_entity_by_id(self, entity_id: str):
         """Find an entity by ID across graph (scenes + events)."""
@@ -79,9 +86,12 @@ class Judge:
         return None
 
     def _is_entity_completed(self, entity) -> bool:
-        """Check if an entity has been completed/triggered."""
+        """Check if an entity has been completed/triggered via runtime_state."""
         if entity.entity_type == "event":
             return self.world.is_event_triggered(entity.id)
+        state = self.world.runtime_state.get(entity.id)
+        if state:
+            return state.completed
         scene = entity.scene or ""
         done = self.world.completed_interactions.get(scene, set())
         return entity.name in done
@@ -110,6 +120,9 @@ class Judge:
             skill_name = entity.type
             intent_skill = intent.skill_checks[0] if (intent and intent.skill_checks) else skill_name
             difficulty = entity.difficulty if entity.difficulty not in ("None", "", None) else "regular"
+            state = self.world.get_runtime_state(entity.id)
+            if state.escalated_difficulty:
+                difficulty = state.escalated_difficulty
             all_pass, skill_result, skill_tier = self.world.player.check_skill(intent_skill, difficulty)
 
             skill_passed = all_pass
@@ -154,11 +167,56 @@ class Judge:
             result_text = resolve_graded_result(entity, skill_tier)
 
         if not skill_passed:
+            # Failure penalty: retry tracking + difficulty escalation via runtime_state
+            state = self.world.get_runtime_state(entity.id)
+            retries = state.retries
+
+            # First failure: escalate difficulty by one level
+            if retries == 0:
+                new_diff = _escalate_difficulty(difficulty)
+                if new_diff != difficulty:
+                    state.escalated_difficulty = new_diff
+                    skill_detail += f"\n  [难度递增] {difficulty} → {new_diff}"
+                    log_skill_result(skill_detail)
+
+            state.retries = retries + 1
+
+            # After difficulty locked (2nd+ failure): LLM creative consequence
+            penalty_side_effects = []
+            if retries >= 2:
+                inv_desc = getattr(self.world.player, 'personal_description', '') or \
+                           getattr(self.world.player, 'description', '')
+                scene_ctx = _build_scene_context(self.world)
+                graded_on_failure = ""
+                if entity.graded_result and isinstance(entity.graded_result, dict):
+                    graded_on_failure = entity.graded_result.get("on_failure", "")
+
+                if inv_desc:
+                    from llm import evaluate_failure_penalty
+                    penalty = evaluate_failure_penalty(
+                        inv_desc=inv_desc,
+                        entity_name=entity.name,
+                        skill_name=skill_name,
+                        skill_detail=skill_result,
+                        failure_tier=skill_tier,
+                        scene_context=scene_ctx,
+                        graded_on_failure=graded_on_failure,
+                        retry_count=retries,
+                    )
+                    if penalty.get("narrative"):
+                        skill_message = penalty["narrative"]
+                    for markup in penalty.get("markup_effects", []):
+                        parsed = parse_markup_all(markup)
+                        penalty_side_effects.extend(parsed)
+                    skill_detail += f"\n  [失败惩罚] {skill_message}"
+                    log_skill_result(skill_detail)
+
             return ActionOutcome(
                 intent=intent or ActionIntent(action="other"),
                 success=False, message=skill_message,
                 entity_id=entity.id, entity_type=entity.entity_type,
                 skill_tier=skill_tier,
+                side_effects=penalty_side_effects,
             )
 
         # Execute — mark completion
@@ -239,10 +297,8 @@ class Judge:
             return True, ""
 
         if req.startswith("flag:"):
-            flag_name = req[5:]
-            if self.world.flags.get(flag_name, False):
-                return True, ""
-            return False, f"需要满足条件「{flag_name}」"
+            # Legacy: flag-based requirements are no longer used in new L2 format.
+            return True, ""
 
         # Compound: comma-separated
         if "," in req:
