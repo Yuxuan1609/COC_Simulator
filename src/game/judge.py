@@ -122,12 +122,10 @@ class Judge:
             # Rule enhancement: trait-based tier correction via LLM sub-agent
             inv_desc = getattr(self.world.player, 'personal_description', '') or \
                        getattr(self.world.player, 'description', '')
-            inv_app = getattr(self.world.player, 'appearance', '')
-            if inv_desc or inv_app:
+            if inv_desc:
                 from llm import evaluate_trait_enhancement
                 enhancement = evaluate_trait_enhancement(
                     inv_desc=inv_desc,
-                    inv_appearance=inv_app,
                     skill_name=skill_name,
                     skill_detail=skill_result,
                     current_tier=skill_tier,

@@ -175,7 +175,6 @@ def call_deepseek(
 
 def evaluate_trait_enhancement(
     inv_desc: str,
-    inv_appearance: str,
     skill_name: str,
     skill_detail: str,
     current_tier: str,
@@ -202,7 +201,6 @@ def evaluate_trait_enhancement(
 
 【调查员】
   描述：{inv_desc or '（无）'}
-  外貌：{inv_appearance or '（无）'}
 
 【当前检定】
   实体：{entity_name}

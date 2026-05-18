@@ -101,12 +101,10 @@ class Keeper:
                     # Trait enhancement for search
                     inv_desc = getattr(self.world.player, 'personal_description', '') or \
                                getattr(self.world.player, 'description', '')
-                    inv_app = getattr(self.world.player, 'appearance', '')
-                    if inv_desc or inv_app:
+                    if inv_desc:
                         from llm import evaluate_trait_enhancement
                         enh = evaluate_trait_enhancement(
-                            inv_desc=inv_desc, inv_appearance=inv_app,
-                            skill_name="侦查", skill_detail=skill_msg,
+                            inv_desc=inv_desc,                             skill_name="侦查", skill_detail=skill_msg,
                             current_tier=tier, entity_name="搜索",
                             search_context=True,
                         )
