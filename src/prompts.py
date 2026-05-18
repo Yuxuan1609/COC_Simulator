@@ -388,23 +388,18 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         """Format an interaction entity."""
         done = world.completed_interactions.get(world.current_location, set())
         status = "（已完成）" if entity.name in done else ""
-        parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
-                 f"trigger=\"{entity.trigger}\""]
         _, soft, _ = _split_req(entity)
-        if soft:
-            parts.append(f"条件=\"{soft}\"")
+        parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
+                 f"trigger=\"{entity.trigger}\"", f"条件=\"{soft}\""]
         if status:
             parts.append(status)
         return "  [INTERACT] " + " ".join(parts)
 
     def _fmt_at(entity) -> str:
-        """Format an auto-trigger entity. No trigger field; hard checked by Judge."""
-        parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
+        """Format an auto-trigger entity. No trigger/skill; condition covers it."""
         _, soft, _ = _split_req(entity)
-        if soft:
-            parts.append(f"条件=\"{soft}\"")
-        if entity.type and entity.type != "无":
-            parts.append(f"skill={entity.type}")
+        parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
+                 f"条件=\"{soft}\""]
         return "  [AUTO_TRIGGER] " + " ".join(parts)
 
     if node:
@@ -432,8 +427,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         parts = [f"id={ev.id}", f"name=\"{ev.name}\"",
                  f"trigger=\"{ev.trigger}\""]
         hard, soft, met = _split_req(ev)
-        if soft:
-            parts.append(f"条件=\"{soft}\"")
+        parts.append(f"条件=\"{soft}\"")
         line = "  [EVENT] " + " ".join(parts)
         if hard:
             overall_met = met
