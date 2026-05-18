@@ -707,6 +707,11 @@ class ScenarioWorld:
         self.runtime_state: Dict[str, NodeRuntimeState] = {}
         self.dependency_graph: Dict[str, Any] = {}
 
+        # Stub kept alive until Task 10 removes it properly (used by RequirementResolver and _are_requirements_met)
+        self.flags: Dict[str, bool] = {}
+        # No-op placeholder until Task 8 replaces RequirementResolver with L2 dependency checks
+        self.requirement_resolver = type('_NoOp', (), {'check': lambda self, reqs: (True, '')})()
+
         # 记忆管理器
         self.memory = MemoryManager()
 
