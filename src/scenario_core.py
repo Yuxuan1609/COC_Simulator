@@ -801,10 +801,6 @@ class ScenarioWorld:
         self.runtime_state: Dict[str, NodeRuntimeState] = {}
         self.dependency_graph: Dict[str, Any] = {}
 
-        # Stub kept alive until Task 10 removes it properly (used by RequirementResolver and _are_requirements_met)
-        self.flags: Dict[str, bool] = {}
-        # No-op placeholder until Task 8 replaces RequirementResolver with L2 dependency checks
-        self.requirement_resolver = type('_NoOp', (), {'check': lambda self, reqs: (True, '')})()
 
         # 记忆管理器
         self.memory = MemoryManager()
@@ -926,8 +922,7 @@ class ScenarioWorld:
         if hasattr(entity, 'requirements'):
             if not entity.requirements:
                 return True
-            ok, _ = self.requirement_resolver.check(entity.requirements)
-            return ok
+            return True
         return True
 
     # ── 场景摘要（确定性、泛用格式化）──
@@ -1000,7 +995,7 @@ class ScenarioWorld:
                 for i in interactions
             ],
             "triggered_events": [eid for eid, t in self.triggered_events.items() if t],
-            "flags": dict(self.flags),
+            "flags": {},
         }
 
     # ── 移动 ──
@@ -1027,19 +1022,6 @@ class ScenarioWorld:
                     results.append((event.name, event.impact))
         return results
 
-    # ── 标记（纯泛用）──
-
-    def set_flag(self, key: str, value: bool = True):
-        """DEPRECATED: Use runtime_state directly."""
-        pass
-
-    def get_flag(self, key: str) -> bool:
-        """DEPRECATED: Use runtime_state directly."""
-        return False
-
-    def toggle_flag(self, key: str):
-        """DEPRECATED: Use runtime_state directly."""
-        pass
 
     # ── NPC 运行时状态 ──
 
@@ -1072,7 +1054,7 @@ class ScenarioWorld:
             "completed_interactions": {
                 k: list(v) for k, v in self.completed_interactions.items()
             },
-            "flags": dict(self.flags),
+            "flags": {},
             "background_story": self.background_story,
             "modified_descriptions": modified_descriptions,
             "npc_states": dict(self.npc_states),
@@ -1086,7 +1068,7 @@ class ScenarioWorld:
         world.completed_interactions = {
             k: set(v) for k, v in data.get("completed_interactions", {}).items()
         }
-        world.flags = data.get("flags", {})
+        # flags are deprecated; runtime_state handles all entity state
         world.background_story = data.get("background_story", "")
         world.npc_states = data.get("npc_states", {})
         # 恢复被修改的 node descriptions
@@ -1139,7 +1121,6 @@ class ScenarioWorld:
             f"ScenarioWorld(location={self.current_location}, "
             f"events={events_on}/{len(self.triggered_events)}, "
             f"interactions_done={interactions_done}, "
-            f"flags={len(self.flags)}, "
             f"background={'set' if self.background_story else 'none'})"
         )
 
