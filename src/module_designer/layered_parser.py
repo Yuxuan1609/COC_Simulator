@@ -325,7 +325,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
       "scene": "6号车厢",
       "type":  关联技能鉴定如“侦察”、“急救”等，不涉及则为“无”,
       "name": "互动名称",
-      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），如：interaction:I3 已完成。无条件填空字符串",
+      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串||软性前置条件，如调查员理智极度崩溃或拥有特定技能等",
       "trigger": "触发场景（描述什么情况下玩家可以执行此互动），如：玩家检查抽屉时",
       "result": "直接结果（互动直接产生的结果），如：抽屉打开了，里面有一把钥匙",
       "side_effects": ["间接后果（与result不重合的附带影响），如：开抽屉的声响吸引了隔壁车厢的怪物。无条件则为空列表"],
@@ -350,7 +350,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 要求：
 1. id 全局唯一 (I1, I2, I3...)
 2. scene 使用场景中文名
-3. requirement 是硬性前置条件：必须已完成的 interaction ID 或持有特定物品。无条件填空字符串。不要和 trigger 混淆
+3. requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件（如调查员理智极度崩溃或拥有特定技能等）用 "||" 分割加在后面。不要和 trigger 混淆
 4. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
 5. result 是直接结果：互动直接产生的可感知结果，不含间接影响。如果此互动会直接触发游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 “##END_真结局:电车冲出梦境##”），后续再写正常结果文本
 6. side_effects 是间接后果：与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
@@ -385,7 +385,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 - 事件使用与 interaction 相同的统一字段模型
 - 事件无 scene 字段（全局事件不绑定特定场景）
 - based_on 指向派生的 interaction ID（非派生事件则留空字符串）
-- requirement 是硬性前置条件（必须已完成的 interaction ID 或持有特定物品）；trigger 是触发场景描述，两者不可混淆
+- requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件用 "||" 分割加在后面；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
@@ -468,7 +468,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - auto_trigger 使用与 interaction 相同的统一字段模型
 - auto_trigger 绑定特定场景（scene 字段必填）
 - based_on 指向派生的 interaction ID（非派生 AT 则留空字符串）
-- requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
+- requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件用 "||" 分割加在后面；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
@@ -503,7 +503,7 @@ def build_step2b_at_prompt(
       "scene": "6号车厢",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "自动触发名称",
-      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串",
+      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串||软性前置条件，如调查员理智极度崩溃或拥有特定技能等",
       "trigger": "触发场景（描述什么情况下此被动事件触发），如：玩家进入场景且 I1 已完成",
       "result": "直接结果（被动触发直接产生的结果）",
       "side_effects": ["间接后果（与result不重合的附带影响），无条件则为空列表"],
@@ -518,7 +518,7 @@ def build_step2b_at_prompt(
 1. id 全局唯一 (AT1, AT2, AT3...)
 2. scene 使用场景中文名
 3. based_on 指向派生的 interaction ID，非派生 AT 则留空字符串
-4. requirement 是硬性前置条件；trigger 是触发场景描述，两者不可混淆
+4. requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件用 "||" 分割加在后面；trigger 是触发场景描述，两者不可混淆
 5. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
 6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
 7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
