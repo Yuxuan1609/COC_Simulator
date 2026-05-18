@@ -98,6 +98,24 @@ class Keeper:
                     )
                     from prompts import log_skill_result
                     log_skill_result(skill_detail)
+                    # Trait enhancement for search
+                    inv_desc = getattr(self.world.player, 'personal_description', '') or \
+                               getattr(self.world.player, 'description', '')
+                    inv_app = getattr(self.world.player, 'appearance', '')
+                    if inv_desc or inv_app:
+                        from llm import evaluate_trait_enhancement
+                        enh = evaluate_trait_enhancement(
+                            inv_desc=inv_desc, inv_appearance=inv_app,
+                            skill_name="侦查", skill_detail=skill_msg,
+                            current_tier=tier, entity_name="搜索",
+                            search_context=True,
+                        )
+                        new_tier = enh.get("tier", tier)
+                        if new_tier != tier:
+                            skill_detail += f"\n  [特质修正] {tier} → {new_tier}：{enh.get('reason', '')}"
+                            log_skill_result(skill_detail)
+                            tier = new_tier
+                            ok = (tier != "failure")
                     if ok:
                         interactions = self.world.get_available_interactions()
                         done = self.world.completed_interactions.get(self.world.current_location, set())

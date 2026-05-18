@@ -211,6 +211,26 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int,
                     f"[SEARCH] 侦查检定 | 等级={tier} | {'成功' if ok else '失败'}\n  {skill_msg}",
                     log_path=prompt_log,
                 )
+                # Trait enhancement for search
+                inv_desc = getattr(world.player, 'personal_description', '') or \
+                           getattr(world.player, 'description', '')
+                inv_app = getattr(world.player, 'appearance', '')
+                if inv_desc or inv_app:
+                    from llm import evaluate_trait_enhancement
+                    enh = evaluate_trait_enhancement(
+                        inv_desc=inv_desc, inv_appearance=inv_app,
+                        skill_name="侦查", skill_detail=skill_msg,
+                        current_tier=tier, entity_name="搜索",
+                        search_context=True,
+                    )
+                    new_tier = enh.get("tier", tier)
+                    if new_tier != tier:
+                        log_skill_result(
+                            f"  [特质修正] {tier} → {new_tier}：{enh.get('reason', '')}",
+                            log_path=prompt_log,
+                        )
+                        tier = new_tier
+                        ok = (tier != "failure")
                 if ok:
                     interactions = world.get_available_interactions()
                     done = world.completed_interactions.get(world.current_location, set())

@@ -119,6 +119,34 @@ class Judge:
             )
             log_skill_result(skill_detail)
 
+            # Rule enhancement: trait-based tier correction via LLM sub-agent
+            inv_desc = getattr(self.world.player, 'personal_description', '') or \
+                       getattr(self.world.player, 'description', '')
+            inv_app = getattr(self.world.player, 'appearance', '')
+            if inv_desc or inv_app:
+                from llm import evaluate_trait_enhancement
+                enhancement = evaluate_trait_enhancement(
+                    inv_desc=inv_desc,
+                    inv_appearance=inv_app,
+                    skill_name=skill_name,
+                    skill_detail=skill_result,
+                    current_tier=skill_tier,
+                    entity_name=entity.name,
+                    graded_tiers=entity.graded_result,
+                )
+                new_tier = enhancement.get("tier", skill_tier)
+                if new_tier != skill_tier:
+                    reason = enhancement.get("reason", "")
+                    detail_override = enhancement.get("detail_override")
+                    skill_detail += (
+                        f"\n  [特质修正] {skill_tier} → {new_tier}：{reason}"
+                    )
+                    if detail_override:
+                        skill_detail += f"\n  修正描述：{detail_override}"
+                    log_skill_result(skill_detail)
+                    skill_tier = new_tier
+                    skill_passed = (skill_tier != "failure")
+
         # Resolve result text (handle ##GRADED##)
         result_text = entity.result
         has_graded = "##GRADED##" in result_text

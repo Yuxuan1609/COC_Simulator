@@ -171,3 +171,95 @@ def call_deepseek(
         result = response.choices[0].message.content.strip()
         _log_response(result)
         return result
+
+
+def evaluate_trait_enhancement(
+    inv_desc: str,
+    inv_appearance: str,
+    skill_name: str,
+    skill_detail: str,
+    current_tier: str,
+    entity_name: str,
+    graded_tiers: dict | None = None,
+    search_context: bool = False,
+) -> dict:
+    """规则增强 sub-agent：基于调查员特质修正技能检定结果。
+
+    返回 {"tier": str, "detail_override": str | None, "reason": str}
+    - tier: 修正后的等级(failure/regular/hard/extreme)，可能不变
+    - detail_override: 若 LLM 给出新的结果描述则使用，否则 None
+    - reason: 修正理由简述
+    """
+    tier_order = ["failure", "regular", "hard", "extreme"]
+    current_idx = tier_order.index(current_tier) if current_tier in tier_order else 1
+
+    graded_text = ""
+    if graded_tiers:
+        for t, text in graded_tiers.items():
+            graded_text += f"  {t}: {text}\n"
+
+    prompt = f"""你是 TRPG 规则辅助裁判。根据调查员的特质，判断是否需要修正本次技能检定结果。
+
+【调查员】
+  描述：{inv_desc or '（无）'}
+  外貌：{inv_appearance or '（无）'}
+
+【当前检定】
+  实体：{entity_name}
+  技能：{skill_name}
+  原始结果：{skill_detail}
+  当前等级：{current_tier}（failure < regular < hard < extreme）
+  检定上下文：{'搜索侦查' if search_context else '实体交互'}
+
+【分级结果参考】
+{graded_text or '（无分级结果）'}
+
+请判断：调查员的特质描述是否暗示此技能应有优势（或劣势）？
+仅在特质明确相关时修正。例如：
+- "观察力极其优秀" → 侦查可提升一级
+- "胆小如鼠" → 涉及勇气的检定可降一级
+- 无关特质则不修正
+
+返回 JSON：
+{{
+  "tier": "{current_tier}",
+  "detail_override": null,
+  "reason": "修正或不修正的理由"
+}}
+
+规则：
+- tier 只能是 failure / regular / hard / extreme 之一
+- 只能升或降一级，不能跨级
+- 若无需修正，tier 保持原值，reason 说明原因
+- detail_override 仅在确实需要新的结果描述时填写，否则填 null
+- 优先修正有明确指向的描述，不要过度解读
+- 直接输出 JSON
+"""
+    response = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=[
+            {"role": "system", "content": "你是一个TRPG规则辅助裁判。仅输出JSON。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2,
+        max_tokens=500,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+    raw = response.choices[0].message.content.strip()
+    if raw.startswith("```json"):
+        raw = raw[7:-3].strip()
+    elif raw.startswith("```"):
+        raw = raw[3:-3].strip()
+    try:
+        result = json.loads(raw)
+        # Validate tier
+        if result.get("tier") not in tier_order:
+            result["tier"] = current_tier
+        # Prevent more than 1 tier shift
+        new_idx = tier_order.index(result["tier"])
+        if abs(new_idx - current_idx) > 1:
+            result["tier"] = tier_order[current_idx + (1 if new_idx > current_idx else -1)]
+        return result
+    except json.JSONDecodeError:
+        return {"tier": current_tier, "detail_override": None,
+                "reason": "JSON解析失败，保持原结果"}
