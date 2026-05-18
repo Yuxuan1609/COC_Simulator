@@ -359,6 +359,32 @@ class Node:
         return None
 
 
+@dataclass
+class DependencyNode:
+    """Static node in the L2 dependency graph."""
+    entity_id: str          # "I1"
+    entity_type: str        # "interaction" | "auto_trigger" | "event"
+    name: str = ""          # optional display name
+
+
+@dataclass
+class DependencyEdge:
+    """Static edge in the L2 dependency graph. source depends on target."""
+    source: str             # "I2" (who depends)
+    target: str             # "I1" (on whom)
+    dep_type: str = "interaction"
+    condition: str = "success"  # "success" | "fail" | "completed" | "Uncompleted"
+
+
+@dataclass
+class NodeRuntimeState:
+    """Dynamic runtime state for each entity. Written by Judge, read by requirement parser."""
+    completed: bool = False
+    result_tier: str = ""          # "" | "fumble" | "failure" | "regular" | "hard" | "extreme"
+    retries: int = 0
+    escalated_difficulty: str = "" # "hard" | "extreme"
+
+
 # ═══════════════════════════════════════════════════════════════
 #  有向图
 # ═══════════════════════════════════════════════════════════════
