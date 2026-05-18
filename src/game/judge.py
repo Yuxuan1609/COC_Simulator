@@ -88,15 +88,17 @@ class Judge:
 
     def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None) -> ActionOutcome:
         """Run entity through gate and execute."""
-        # Check structured requirements (world flags + entity IDs)
+        # Check structured requirements (world flags + entity IDs) — hard part only
         if entity.requirement and entity.requirement.strip():
-            met, msg = self._evaluate_requirement(entity.requirement)
-            if not met:
-                return ActionOutcome(
-                    intent=intent or ActionIntent(action="other"),
-                    success=False, message=msg,
-                    entity_id=entity.id, entity_type=entity.entity_type
-                )
+            hard, _ = self._split_requirement(entity.requirement)
+            if hard:
+                met, msg = self._evaluate_requirement(hard)
+                if not met:
+                    return ActionOutcome(
+                        intent=intent or ActionIntent(action="other"),
+                        success=False, message=msg,
+                        entity_id=entity.id, entity_type=entity.entity_type
+                    )
 
         # Skill check + ##GRADED## resolution
         skill_tier = ""
@@ -187,37 +189,51 @@ class Judge:
             skill_tier=skill_tier,
         )
 
+    @staticmethod
+    def _split_requirement(req: str) -> tuple[str, str]:
+        """Split requirement by '||': hard (before) | soft (after)."""
+        if not req:
+            return "", ""
+        parts = req.split("||", 1)
+        hard = parts[0].strip() if parts[0] else ""
+        soft = parts[1].strip() if len(parts) > 1 else ""
+        return hard, soft
+
     # ── Requirement checking ──
 
     def _is_simple_requirement(self, req: str) -> bool:
-        if not req or not req.strip():
+        hard, _ = self._split_requirement(req)
+        if not hard:
             return True
-        if req.startswith("flag:"):
+        if hard.startswith("flag:"):
             return True
-        if "需要先完成" in req:
+        if "需要先完成" in hard:
             return True
-        if _ENTITY_ID_RE.match(req.strip()):
+        if _ENTITY_ID_RE.match(hard):
             return True
-        parts = req.strip().split(None, 1)
+        parts = hard.split(None, 1)
         if len(parts) == 2 and _ENTITY_ID_RE.match(parts[0]):
             return True
-        if "," in req:
+        if "," in hard:
             return all(
                 self._is_simple_requirement(c.strip())
-                for c in req.split(",")
+                for c in hard.split(",")
             )
         return False
 
     def _check_simple_requirement(self, entity: Entity) -> bool:
         if not entity.requirement or not entity.requirement.strip():
             return True
-        if self._is_simple_requirement(entity.requirement):
-            met, _ = self._evaluate_requirement(entity.requirement)
+        hard, _ = self._split_requirement(entity.requirement)
+        if not hard:
+            return True
+        if self._is_simple_requirement(hard):
+            met, _ = self._evaluate_requirement(hard)
             return met
         return False
 
     def _evaluate_requirement(self, req: str) -> tuple[bool, str]:
-        """Evaluate requirement string: flag:, entity IDs, compound, NL."""
+        """Evaluate hard requirement string (before ||): flag:, entity IDs, compound."""
         req = req.strip()
         if not req:
             return True, ""

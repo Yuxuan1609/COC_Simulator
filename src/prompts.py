@@ -364,23 +364,36 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     trig_scene = []
     nontrig_scene = []
 
-    def _requirements_met(entity) -> bool:
+    def _split_req(entity) -> tuple[str, str, bool]:
+        """Split entity requirement by ||: hard (before) | soft (after).
+        Returns (hard_str, soft_str, hard_met)."""
         req = getattr(entity, 'requirement', '') or ''
         if not req.strip():
-            return True
-        if req.startswith("flag:"):
-            return world.flags.get(req[5:], False)
-        # entity ID reference — check completion
-        return world._are_requirements_met(entity)
+            return "", "", True
+        if "||" in req:
+            hard, soft = req.split("||", 1)
+            hard, soft = hard.strip(), soft.strip()
+        else:
+            hard, soft = req.strip(), ""
+        if not hard:
+            return "", soft, True
+        # Check hard condition
+        if hard.startswith("flag:"):
+            met = world.flags.get(hard[5:], False)
+        else:
+            met = world._are_requirements_met(entity)
+        return hard, soft, met
 
     def _fmt_inter(entity) -> str:
         """Format an interaction entity."""
         done = world.completed_interactions.get(world.current_location, set())
         status = "（已完成）" if entity.name in done else ""
         parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
-        req = getattr(entity, 'requirement', '') or ''
-        if req:
-            parts.append(f"requirement=\"{req}\"")
+        hard, soft, met = _split_req(entity)
+        if hard:
+            parts.append(f"requirement=\"{'✓' if met else '✗'}{hard}\"")
+        if soft:
+            parts.append(f"条件=\"{soft}\"")
         if status:
             parts.append(status)
         return "  [INTERACT] " + " ".join(parts)
@@ -388,9 +401,11 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     def _fmt_at(entity, req_met: bool) -> str:
         """Format an auto-trigger entity."""
         parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
-        req = getattr(entity, 'requirement', '') or ''
-        if req:
-            parts.append(f"requirement=\"{'✓' if req_met else '✗'}{req}\"")
+        hard, soft, met = _split_req(entity)
+        if hard:
+            parts.append(f"requirement=\"{'✓' if met else '✗'}{hard}\"")
+        if soft:
+            parts.append(f"条件=\"{soft}\"")
         if entity.type and entity.type != "无":
             parts.append(f"skill={entity.type}")
         return "  [AUTO_TRIGGER] " + " ".join(parts)
@@ -419,13 +434,19 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             continue
         parts = [f"id={ev.id}", f"name=\"{ev.name}\"",
                  f"trigger=\"{ev.trigger}\""]
-        req = getattr(ev, 'requirement', '') or ''
-        if req:
-            met = _requirements_met(ev)
-            parts.append(f"requirement=\"{'✓' if met else '✗'}{req}\"")
+        hard, soft, met = _split_req(ev)
+        if hard:
+            parts.append(f"requirement=\"{'✓' if met else '✗'}{hard}\"")
+        if soft:
+            parts.append(f"条件=\"{soft}\"")
         line = "  [EVENT] " + " ".join(parts)
-        met = _requirements_met(ev) if req else True
-        if met:
+        if hard and soft:
+            overall_met = met  # event is triggerable if hard req met (soft checked by LLM)
+        elif hard:
+            overall_met = met
+        else:
+            overall_met = True
+        if overall_met:
             trig_events.append(line)
         else:
             nontrig_events.append(line)

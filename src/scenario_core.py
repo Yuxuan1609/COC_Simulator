@@ -750,13 +750,18 @@ class ScenarioWorld:
 
     def _are_requirements_met(self, entity) -> bool:
         """Check if entity prerequisites are satisfied.
-        Handles both Entity (requirement: str) and Interaction (requirements: List[Requirement])."""
+        Handles both Entity (requirement: str) and Interaction (requirements: List[Requirement]).
+        For '||' separated requirements, only checks the hard part (before ||)."""
         if hasattr(entity, 'requirement'):
             req = entity.requirement
             if not req or not req.strip():
                 return True
-            if req.startswith("flag:"):
-                return self.flags.get(req[5:], False)
+            # Split hard | soft — only evaluate hard part
+            hard = req.split("||", 1)[0].strip() if "||" in req else req.strip()
+            if not hard:
+                return True
+            if hard.startswith("flag:"):
+                return self.flags.get(hard[5:], False)
             return False
         if hasattr(entity, 'requirements'):
             if not entity.requirements:
