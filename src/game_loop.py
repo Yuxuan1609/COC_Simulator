@@ -10,6 +10,7 @@ from scenario_core import DirectedGraph, ScenarioWorld, ItemGain, StatChange, Sp
 from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput
 from game.escalation import EscalationPolicy
+from prompts import _build_investigator_info
 
 
 # ── Side effect application ──
@@ -213,7 +214,8 @@ def run_turn(game: dict, user_input: str,
         display_brief = str(brief) if brief else ""
 
     try:
-        narrative_brief, narrative = narrator.narrate(brief)
+        narrative_brief, narrative = narrator.narrate(
+            brief, inv_info=_build_investigator_info(world))
     except Exception as e:
         narrative_brief = display_brief or "（处理中）"
         narrative = f"（叙事生成失败：{e}）"

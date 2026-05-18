@@ -10,7 +10,7 @@
     "gender": "男",
     "occupation": {
       "name": "学生",
-      "description": "",
+      "description": "在读大学生，专攻文献研究和图书馆学",
       "occupation_skills": [
         "图书馆使用",
         "外语",
@@ -23,8 +23,8 @@
       "credit_rating_min": 5,
       "credit_rating_max": 10
     },
-    "description": "",
-    "appearance": ""
+    "description": "安静内敛的大学生，说话轻声细语但观察力敏锐",
+    "appearance": "瘦高个子，戴黑框眼镜，穿深蓝色连帽卫衣和洗得发白的牛仔裤"
   },
   "stats": {
     "STR": 55,

@@ -309,7 +309,9 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int,
     brief = curator.assemble(all_outcomes, ambient, emphasis)
 
     l1_scene = narrator.l1_data.get(world.current_location) if narrator.l1_data else None
-    narrator_prompt = build_narrator_prompt(brief, l1_scene=l1_scene)
+    from prompts import _build_investigator_info
+    inv_info = _build_investigator_info(world)
+    narrator_prompt = build_narrator_prompt(brief, l1_scene=l1_scene, inv_info=inv_info)
     with open(os.path.join(turn_dir, "04_narrator_prompt.txt"), "w", encoding="utf-8") as f:
         f.write(narrator_prompt)
 

@@ -80,6 +80,23 @@ def _build_player_skills(world: ScenarioWorld) -> str:
     return ", ".join(f"{s.name}={s.value}" for s in world.player.skills)
 
 
+def _build_investigator_info(world: ScenarioWorld) -> str:
+    """构建调查员信息（description + appearance）"""
+    p = world.player
+    if not p:
+        return ""
+    parts = []
+    desc = getattr(p, 'personal_description', '') or getattr(p, 'description', '')
+    app = getattr(p, 'appearance', '')
+    if desc:
+        parts.append(f"  描述：{desc}")
+    if app:
+        parts.append(f"  外貌：{app}")
+    if not parts:
+        return ""
+    return "【调查员】\n" + "\n".join(parts) + "\n"
+
+
 def _build_skill_results(skill_results: dict) -> str:
     """构建技能鉴定结果文本"""
     if not skill_results:
@@ -413,6 +430,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     scene_ctx = _build_scene_context(world)
     state = _build_world_state(world)
     context = world.memory.get_context()
+    inv_info = _build_investigator_info(world)
 
     trig_scene, nontrig_scene, trig_events, nontrig_events = _build_entity_lines(world)
 
@@ -438,6 +456,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 【世界状态】
 {state}
 
+{inv_info}
 {scene_ctx}
 
 {scene_entity_text}
@@ -524,7 +543,7 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 
 # ── Narrator prompt ──
 
-def build_narrator_prompt(brief, l1_scene=None) -> str:
+def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "") -> str:
     """Narrator: converts NarratorBrief + L1 context into immersive narrative."""
     outcomes_text = ""
     for o in brief.action_outcomes:
@@ -537,6 +556,7 @@ def build_narrator_prompt(brief, l1_scene=None) -> str:
 
     prompt = f"""{l1_ctx}
 
+{inv_info}
 【当前场景】{brief.scene_snapshot.location}
 {brief.scene_snapshot.description}
 
