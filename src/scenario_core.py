@@ -831,6 +831,37 @@ class ScenarioWorld:
         edges = self.dependency_graph.get("edges", [])
         return [e for e in edges if e.get("source") == entity_id]
 
+    def check_edge_requirements(self, entity_id: str) -> tuple[bool, str]:
+        """Check if all incoming dependency edges for entity_id are satisfied.
+
+        Returns (met: bool, reason: str).
+        Each edge is an AND condition: ALL edges must pass.
+        OR logic is handled by requirement string parsing (parse_hard_requirement).
+        """
+        edges = self.get_incoming_edges(entity_id)
+        if not edges:
+            return True, ""
+
+        for edge in edges:
+            target_id = edge.get("target", "")
+            condition = edge.get("condition", "completed")
+            target_state = self.get_runtime_state(target_id)
+
+            if condition == "success":
+                if target_state.result_tier not in ("regular", "hard", "extreme"):
+                    return False, f"需要成功完成「{target_id}」"
+            elif condition == "completed":
+                if not target_state.completed:
+                    return False, f"需要先完成「{target_id}」"
+            elif condition == "fail":
+                if target_state.result_tier not in ("failure", "fumble"):
+                    return False, f"需要「{target_id}」结果为失败"
+            elif condition == "Uncompleted":
+                if target_state.completed:
+                    return False, f"需要「{target_id}」未完成"
+
+        return True, ""
+
     # ── 背景故事 ──
 
     def set_background(self, text: str):
