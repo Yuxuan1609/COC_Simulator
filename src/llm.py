@@ -228,11 +228,10 @@ def evaluate_trait_enhancement(
 }}
 
 规则：
-- tier 只能是 failure / regular / hard / extreme 之一
-- 只能升或降一级，不能跨级
+- tier 是修正后的等级，只能是 failure / regular / hard / extreme 之一
 - 若无需修正，tier 保持原值，reason 说明原因
-- detail_override 仅在确实需要新的结果描述时填写，否则填 null
-- 优先修正有明确指向的描述，不要过度解读
+- detail_override 仅在确实需要新的结果描述时填写，根据【分级结果参考】新的鉴定等级和【调查员】
+  描述生成，必要的话可以在【分级结果参考】基础上2次加工
 - 直接输出 JSON
 """
     response = client.chat.completions.create(
