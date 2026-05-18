@@ -100,6 +100,7 @@ class Judge:
         """Run entity through gate and execute."""
         # Check structured requirements (world flags + entity IDs) — hard part only
         if entity.requirement and entity.requirement.strip():
+            self._current_entity_id = entity.id
             hard, _ = self._split_requirement(entity.requirement)
             if hard:
                 met, msg = self._evaluate_requirement(hard)
@@ -263,20 +264,11 @@ class Judge:
         hard, _ = self._split_requirement(req)
         if not hard:
             return True
-        if hard.startswith("flag:"):
+        # Any hard string with recognizable IDs or logical operators can be parsed
+        if "OR" in hard or "AND" in hard:
             return True
-        if "需要先完成" in hard:
+        if _ENTITY_ID_RE.match(hard.strip().strip("()（）")):
             return True
-        if _ENTITY_ID_RE.match(hard):
-            return True
-        parts = hard.split(None, 1)
-        if len(parts) == 2 and _ENTITY_ID_RE.match(parts[0]):
-            return True
-        if "," in hard:
-            return all(
-                self._is_simple_requirement(c.strip())
-                for c in hard.split(",")
-            )
         return False
 
     def _check_simple_requirement(self, entity: Entity) -> bool:
@@ -291,47 +283,30 @@ class Judge:
         return False
 
     def _evaluate_requirement(self, req: str) -> tuple[bool, str]:
-        """Evaluate hard requirement string (before ||): flag:, entity IDs, compound."""
+        """Evaluate hard requirement string using AND/OR parser + edge graph.
+
+        Order:
+        1. String-based AND/OR parsing FIRST (handles OR semantics)
+           Must come before edge check because edges are AND-only; requirement strings
+           may use OR to relax edge constraints.
+        2. Edge-based dependency check SECOND (structural AND, secondary)
+        3. No ID found → pass (graceful degradation for LLM-generated text)
+        """
         req = req.strip()
         if not req:
             return True, ""
 
-        if req.startswith("flag:"):
-            # Legacy: flag-based requirements are no longer used in new L2 format.
+        # Step 1: string-based AND/OR parsing FIRST (handles OR semantics)
+        from scenario_core import parse_hard_requirement
+        met = parse_hard_requirement(req, self.world.runtime_state)
+        if met:
             return True, ""
 
-        # Compound: comma-separated
-        if "," in req:
-            for clause in req.split(","):
-                met, msg = self._evaluate_requirement(clause.strip())
-                if not met:
-                    return False, msg
-            return True, ""
-
-        # Entity ID patterns
-        parts = req.split(None, 1)
-        eid = parts[0]
-        if not _ENTITY_ID_RE.match(eid):
-            return True, ""  # natural language, defer to LLM
-
-        entity = self._find_entity_by_id(eid)
-        if not entity:
-            return True, ""
-
-        is_completed = self._is_entity_completed(entity)
-        if len(parts) == 1:
-            if is_completed:
-                return True, ""
-            return False, f"需要先完成「{entity.name}」"
-
-        status_word = parts[1]
-        if status_word in ("成功", "完成"):
-            if is_completed:
-                return True, ""
-            return False, f"需要成功完成「{entity.name}」"
-        elif status_word in ("失败", "未成功"):
-            if not is_completed:
-                return True, ""
-            return False, f"需要「{entity.name}」未完成"
+        # Step 2: edge-based dependency check (structural AND, secondary)
+        entity_id = getattr(self, '_current_entity_id', '')
+        if entity_id:
+            met, msg = self.world.check_edge_requirements(entity_id)
+            if not met:
+                return False, msg
 
         return True, ""
