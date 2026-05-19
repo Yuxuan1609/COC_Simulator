@@ -5,6 +5,23 @@ from typing import Any
 
 
 @dataclass
+class IntentResult:
+    """Detector output — does the player's 'other' action carry narrative intent?"""
+    needs_author: bool
+    intent: str = ""          # one-line: what the player wants to accomplish
+    reasoning: str = ""       # why this warrants escalation
+
+
+@dataclass
+class AuthorRequest:
+    """Detector -> Author: player intent worth acting on."""
+    other_texts: list[str] = field(default_factory=list)  # original "other" entry text(s)
+    intent: str = ""            # Detector output
+    reasoning: str = ""         # Detector output
+    scene_context: dict = field(default_factory=dict)  # Keeper extracts from world
+
+
+@dataclass
 class ActionIntent:
     """Parsed player intent from step 1 (LLM parse)."""
     action: str                      # "move" | "interact" | "search" | "other"
@@ -47,17 +64,6 @@ class NarratorBrief:
 
 
 @dataclass
-class EscalationRequest:
-    """KP -> Author: escalation with context."""
-    trigger: str                     # which dimension fired
-    severity: float                  # 0.0-1.0
-    player_input: str
-    world_context: dict              # relevant subset of world state
-    unmatched_intent: str | None = None
-    reason: str = ""
-
-
-@dataclass
 class ModulePatch:
     """Author -> KP: persistent entity additions."""
     entities: list[dict]             # new entities in L2 dict format
@@ -67,11 +73,11 @@ class ModulePatch:
 
 @dataclass
 class StructuralEdit:
-    """Author -> KP + Author: heavy module rewrite. WR0 applies. Reserved for future."""
-    new_scenes: dict[str, dict]
-    new_ending_conditions: list[dict]
-    l3_adjustments: dict
-    dependency_edges: list[dict]
+    """Author -> Keeper: structural expansion needed. Triggers supplement pipeline."""
+    supplement_path: str = ""       # supplements/<timestamp>/
+    l3_updates: dict = field(default_factory=dict)
+    entry_scene: str = ""
+    exit_scene: str = ""
     justification: str = ""
 
 
