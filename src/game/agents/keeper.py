@@ -178,14 +178,20 @@ class Keeper:
 
         # Step 4: IntentDetector decision point (was Escalation check)
         if detect_future:
-            intent_result = detect_future.result()
-            executor.shutdown(wait=False)
+            try:
+                intent_result = detect_future.result()
+            except Exception:
+                intent_result = None
+                self._warnings.append("意图检测失败，流程无中断。")
+            finally:
+                executor.shutdown(wait=False)
 
-            if intent_result.needs_author and author:
+            if intent_result and intent_result.needs_author and author:
                 # Suppress duplicate intents within cooldown window
                 intent_key = intent_result.intent.strip().lower()
-                if intent_key not in [i.lower() for i in self._recent_intents[-3:]]:
+                if intent_key not in [i.lower() for i in self._recent_intents[-self._intent_cooldown:]]:
                     self._recent_intents.append(intent_key)
+                    self._recent_intents = self._recent_intents[-self._intent_cooldown:]
                     request = AuthorRequest(
                         other_texts=[e.get("text", "") for e in other_entries],
                         intent=intent_result.intent,
