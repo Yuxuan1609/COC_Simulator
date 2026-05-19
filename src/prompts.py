@@ -534,45 +534,84 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
 # ── Author prompt ──
 
 def build_author_prompt(request, l3_data) -> str:
-    """Author: generates ModulePatch from EscalationRequest + L3 context."""
-    l3_ctx = _build_l1l3_context(l3_data=l3_data, scene_name=request.world_context.get("location", ""))
+    """Author: judges patch/structural level, generates content."""
+    l3_ctx = _build_l1l3_context(
+        l3_data=l3_data,
+        scene_name=request.scene_context.get("location", ""),
+    )
+
+    wr0_enabled = request.scene_context.get("wr0_enabled", False)
+    wr0_line = (
+        "【WR0 创作者豁免】开启 — 你拥有完全创作自由，可突破任何世界规则。"
+        if wr0_enabled else
+        "【WR0 状态】关闭 — 扩展内容必须与既有世界规则、基调、L3设计意图保持一致。"
+    )
 
     prompt = f"""{l3_ctx}
 
-【玩家输入】{request.player_input}
-【触发维度】{request.trigger} (severity={request.severity})
-【原因】{request.reason}
-【未匹配意图】{request.unmatched_intent or '无'}
-【世界上下文】
-{json.dumps(request.world_context, ensure_ascii=False, indent=2)}
+【当前场景】
+  位置：{request.scene_context.get('location', '')}
+  描述：{request.scene_context.get('description', '')}
+  可用场景：{', '.join(request.scene_context.get('available_scenes', []))}
+  NPC状态：{json.dumps(request.scene_context.get('npc_states', {}), ensure_ascii=False)}
 
-你拥有WR0创作者豁免权。请基于L3设计意图，为KP创建新的entity（interaction/auto_trigger/event）来处理这个超出KP能力的情况。
+【玩家意图】
+  玩家想做什么：{request.intent}
+  升级原因：{request.reasoning}
+  玩家原话：{'; '.join(request.other_texts)}
 
-返回 JSON：
-{{
-  "entities": [
-    {{
-      "id": "NEW_1",
-      "entity_type": "interaction",
-      "scene": "场景名",
-      "name": "entity名称",
-      "type": "关联技能名或留空",
-      "requirement": "",
-      "trigger": "触发描述",
-      "result": "结果描述",
-      "side_effects": ["@stat_change(stat_name=SAN, delta=-1, narrative=xxx)"],
-      "graded_result": null,
-      "difficulty": "regular"
-    }}
-  ],
-  "scene_descriptions": {{}},
-  "justification": "L3层面理由"
-}}
+{wr0_line}
+
+请评估此意图的范围并生成响应：
+
+1. 判断级别：
+   - patch：行为合理但模组未覆盖 → 在当前可用场景中添加 entity
+   - structural：行为完全超出模组范围，需要结构性扩展（新场景、新结局）
+
+2. 如果 patch：
+   {{
+     "level": "patch",
+     "entities": [
+       {{
+         "id": "SI1",
+         "entity_type": "interaction",
+         "scene": "场景名",
+         "name": "entity名称",
+         "type": "关联技能名或留空",
+         "requirement": "",
+         "trigger": "触发描述",
+         "result": "结果描述",
+         "side_effects": [],
+         "graded_result": null,
+         "difficulty": "regular"
+       }}
+     ],
+     "scene_descriptions": {{}},
+     "justification": "L3层面理由"
+   }}
+
+3. 如果 structural（触发补充管线）：
+   {{
+     "level": "structural",
+     "entry_scene": "玩家当前场景",
+     "exit_scene": "出口场景名或空",
+     "justification": "为什么需要结构性扩展，引用L3设计意图"
+   }}
+
+4. 如果玩家意图违反世界规则且 WR0 关闭 → 打回：
+   {{
+     "level": "patch",
+     "entities": [],
+     "scene_descriptions": {{}},
+     "justification": "为什么拒绝。格式: REJECTED: 具体原因"
+   }}
 
 规则：
 - 只添加必要的entity，不要过度扩充
+- structural 仅在玩家行为确实需要时才使用
 - side_effects 使用 @function(param=value) 语法
 - justification 必须引用L3设计意图
+- entity ID 使用 S_ 前缀（SI1, SAT1, SE1 等）
 - 直接输出 JSON
 """
     _show_prompt("Author", prompt)
