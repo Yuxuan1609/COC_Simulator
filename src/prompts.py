@@ -186,8 +186,8 @@ def _build_l1l3_context(
             parts.append(f"  叙事风格：{tc.narrative_style}")
         if tc.forbidden:
             parts.append(f"  禁止：{', '.join(tc.forbidden)}")
-        if tc.required:
-            parts.append(f"  必须包含：{', '.join(tc.required)}")
+        if tc.recommended:
+            parts.append(f"  必须包含：{', '.join(tc.recommended)}")
         if l3_data.driving_force:
             parts.append(f"  核心驱动力：{l3_data.driving_force}")
         intent = l3_data.scene_intents.get(scene_name) if scene_name else None
