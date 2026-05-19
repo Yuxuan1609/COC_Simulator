@@ -16,8 +16,7 @@
 # **流程**：
 # 1. Step 1：名称固化 + 精修模组（2 calls 并行）
 # 2. Step 2：内容生成 — interactions 先跑 → events + auto_triggers + L1 + L3 并行
-# 3. Step 3：依赖解析 + 交叉核对（2 calls 串行）
-# 4. Step 4：Library 匹配
+# 3. Step 3a ∥ 2.5 → 3b → 3.5 ∥ Phase 1 → Phase 2（7 calls）
 #
 # **产物**：`data/debug/<timestamp>/` 下每步一个子文件夹，每个 LLM 调用 `prompt.txt` + `response.json`
 
@@ -309,42 +308,42 @@ print(f"L3: {len(l3_data.get('world_rules',[]))} 世界规则, {len(l3_data.get(
 # CELL 10 (markdown)
 # ============================================================
 # ---
-# ## Step 3：依赖解析 + 交叉核对（2 calls 串行）
+# ## Step 3：依赖解析 + NPC 行为描述 + 交叉核对
 #
-# **3a** 统一 flag 名称 + 补全 requirement 引用 → **3b** L1 ↔ L2 校对（依赖 3a 输出）
+# **3a** 去重冲突 ∥ **2.5** NPC 行为描述 (并行) → 组装 L2 → **3b** L1 ↔ L2 校对
 
 
 # ============================================================
 # CELL 11 (code)
 # ============================================================
-# ═══ Step 3a: L2 去重 + 冲突解决 + 结局验证 ═══
+# ═══ Step 3a ∥ Step 2.5 (并行) ═══
 ending_conditions = l3_data.get("ending_conditions", [])
-step3a = do_json_call(
-    "step_3", "3a_dedup_conflict",
-    build_step3a_prompt,
-    chapters, interactions, events, auto_triggers, ending_conditions,
-    system_prompt=STEP3A_SYSTEM
-)
+
+l3_characters = l3_data.get("characters", [])
+with ThreadPoolExecutor(max_workers=2) as ex:
+    f3a = ex.submit(do_json_call,
+        "step_3", "3a_dedup_conflict",
+        build_step3a_prompt,
+        chapters, interactions, events, auto_triggers, ending_conditions,
+        system_prompt=STEP3A_SYSTEM
+    )
+    if l3_characters:
+        f25 = ex.submit(do_json_call,
+            "step_25", "25_npc_profiles",
+            build_step25_prompt,
+            l3_characters, l1_data, interactions, auto_triggers,
+            system_prompt=STEP25_SYSTEM
+        )
+    step3a = f3a.result()
+    step25 = f25.result() if l3_characters else {"npc_profiles": {}}
+
 interactions = step3a.get("interactions", interactions)
 events = step3a.get("events", events)
 auto_triggers = step3a.get("auto_triggers", auto_triggers)
+npc_profiles = step25.get("npc_profiles", {})
 print(f"Step 3a 完成: 去重 + 冲突 + 结局")
 print(f"  Interactions: {len(interactions)}, Events: {len(events)}, Auto-triggers: {len(auto_triggers)}")
-
-# ═══ Step 2.5: NPC 行为描述 ═══
-l3_characters = l3_data.get("characters", [])
-if l3_characters:
-    step25 = do_json_call(
-        "step_25", "25_npc_profiles",
-        build_step25_prompt,
-        l3_characters, l1_data, interactions, auto_triggers,
-        system_prompt=STEP25_SYSTEM
-    )
-    npc_profiles = step25.get("npc_profiles", {})
-    print(f"Step 2.5 完成: {len(npc_profiles)} NPC profiles")
-else:
-    npc_profiles = {}
-    print("Step 2.5 跳过: 无 NPC 角色")
+print(f"Step 2.5 完成: {len(npc_profiles)} NPC profiles")
 
 # ═══ 组装 L2 结构 ═══
 from module_designer.layered_pipeline import _assemble_l2
@@ -394,15 +393,15 @@ print(f"  L3 scene_intents: {list(l3_data.get('scene_intents', {}).keys())}")
 # CELL 13 (markdown)
 # ============================================================
 # ---
-# ## Step 3.5 + Step 4：依赖图 + Library 匹配
+# ## Step 3.5 + Phase 1 + Phase 2：依赖图 ∥ 风格预判 → 精简标准化
 #
-# Step 3.5 构建依赖图 → Step 4 匹配武器/敌人/技能/属性库。
+# Step 3.5 从 requirement 提取 entity 依赖 ∥ Phase 1 风格预判 → Phase 2 精简标准化
 
 
 # ============================================================
 # CELL 14 (code)
 # ============================================================
-# ═══ Step 3.5 + Step 4: 依赖图 + Library 匹配 (并行) ═══
+# ═══ Step 3.5 ∥ Phase 1: 依赖图 + 风格预判 (并行) ═══
 weapon_names = [f"{w.name} — {w.description}" if w.description else w.name for w in wl.list_all()]
 enemy_names = [f"{e.name} — {e.description}" if e.description else e.name for e in el.list_all()]
 stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
@@ -423,55 +422,60 @@ for name, sdata in l1_data.items():
     if desc:
         l2_descriptions[name] = desc
 
-scene_intents_for_s4 = l3_data.get("scene_intents", {})
-
 from module_designer.dependency_graph import DependencyGraph
 from module_designer.layered_parser import _merge_phase2_fields
 
-# ── Step 3.5: 依赖图 ──
-MAX_TRIES = 3
-dep_graph = None
-for attempt in range(1, MAX_TRIES + 1):
-    step35 = do_json_call(
-        "step_35", "35_dependency_graph",
-        build_step35_prompt,
-        chapters, step35_interactions, step35_events, step35_at,
-        system_prompt=STEP35_SYSTEM
-    )
-    deps = step35.get("dependencies", [])
-    if not deps:
-        print(f"  [Step 3.5] 第 {attempt} 次解析为空，重试...")
-        continue
-    dep_graph = DependencyGraph()
-    dep_graph.build(deps)
-    cycles = dep_graph.detect_cycles()
-    if not cycles:
-        print(f"  [Step 3.5] 依赖图: {len(dep_graph.nodes)} 节点, {len(dep_graph.edges)} 边, 无循环")
-        break
-    if attempt < MAX_TRIES:
-        print(f"  [Step 3.5] 第 {attempt} 次检测到 {len(cycles)} 个循环，重试...")
-    else:
-        dep_graph.cut_random_edge_in_cycles()
-        print(f"  [Step 3.5] 重调用尽，随机切断循环边")
+# Step 3.5: 依赖图（含重试逻辑）
+def _run_step35():
+    MAX_TRIES = 3
+    for attempt in range(1, MAX_TRIES + 1):
+        step35 = do_json_call(
+            "step_35", "35_dependency_graph",
+            build_step35_prompt,
+            chapters, step35_interactions, step35_events, step35_at,
+            system_prompt=STEP35_SYSTEM
+        )
+        deps = step35.get("dependencies", [])
+        if not deps:
+            print(f"  [Step 3.5] 第 {attempt} 次解析为空，重试...")
+            continue
+        dep_graph = DependencyGraph()
+        dep_graph.build(deps)
+        cycles = dep_graph.detect_cycles()
+        if not cycles:
+            print(f"  [Step 3.5] 依赖图: {len(dep_graph.nodes)} 节点, {len(dep_graph.edges)} 边, 无循环")
+            return dep_graph
+        if attempt < MAX_TRIES:
+            print(f"  [Step 3.5] 第 {attempt} 次检测到 {len(cycles)} 个循环，重试...")
+        else:
+            dep_graph.cut_random_edge_in_cycles()
+            print(f"  [Step 3.5] 重调用尽，随机切断循环边")
+            return dep_graph
+    return None
 
-# ── Phase 1: 风格预判 (与 Step 3.5 并行) ──
-scene_intents_for_p1 = l3_data.get("scene_intents", {})
-phase1 = do_json_call(
-    "phase_1", "phase1_style_preview",
-    build_phase1_prompt,
-    chapters, scene_intents_for_p1, weapon_names, enemy_names,
-    system_prompt=PHASE1_SYSTEM
-)
+scene_intents_p1 = l3_data.get("scene_intents", {})
+with ThreadPoolExecutor(max_workers=2) as ex:
+    f35 = ex.submit(_run_step35)
+    f_p1 = ex.submit(do_json_call,
+        "phase_1", "phase1_style_preview",
+        build_phase1_prompt,
+        chapters, scene_intents_p1, weapon_names, enemy_names,
+        system_prompt=PHASE1_SYSTEM
+    )
+    dep_graph = f35.result()
+    phase1 = f_p1.result()
+
 phase1_clean = {"enemies": phase1.get("enemies", []),
                 "weapons": phase1.get("weapons", [])}
 print(f"Phase 1 完成: {len(phase1_clean['enemies'])} 敌人类型, {len(phase1_clean['weapons'])} 武器类型")
 
 # ── Phase 2: 精简标准化 (依赖 Phase 1 约束) ──
+scene_intents_s4 = l3_data.get("scene_intents", {})
 step4 = do_json_call(
     "phase_2", "phase2_standardization",
     build_step4_prompt,
     step35_interactions, step35_at, l2_descriptions,
-    scene_intents_for_s4, chapters,
+    scene_intents_s4, chapters,
     phase1_clean, skill_names, stat_names,
     system_prompt=STEP4_SYSTEM
 )
@@ -561,10 +565,13 @@ print("=" * 60)
 print(f"Step 1: {len(scenes)} 场景, {len(characters)} 角色, {len(condensed_text)} 字 condensed_text")
 print(f"Step 2: {len(interactions)} interactions, {len(events)} events, {len(auto_triggers)} auto_triggers")
 print(f"        {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则, {len(npc_profiles)} NPC profiles")
-print(f"Step 3: 去重+冲突+结局 → 交叉核对 → 依赖图 (3.5)")
-print(f"Step 4: Phase 1 风格预判 + Phase 2 标准化")
+print(f"Step 3a+2.5: 去重+冲突+结局 ∥ NPC 行为描述 (并行)")
+print(f"Step 3b: L1 ↔ L2 交叉核对")
+print(f"Step 3.5+Phase 1: 依赖图 ∥ 风格预判 (并行)")
+print(f"Phase 2: 精简标准化")
 print(f"")
 print(f"总 LLM 调用: 13 (Step 1:2 + Step 2:5 + Step 2.5:1 + Step 3:2 + 3.5+Phase 1:2 + Phase 2:1)")
+print(f"其中并行组: Step 1a∥1b, Step 2b∥2c, Step 3a∥2.5, Step 3.5∥Phase 1")
 print(f"调试产物: {DEBUG_ROOT}/")
 print(f"├── step_1/   (1a_structured_extraction, 1b_condensed_text)")
 print(f"├── step_2/   (2a_interactions, 2b_events, 2b_auto_triggers, 2c_l1, 2c_l3)")

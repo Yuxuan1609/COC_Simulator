@@ -298,7 +298,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 你的任务是：从精修模组文本中提取每个场景的全部互动选项，以及场景间的通行路径。
 
 重要原则：
-- requirement 是硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串。软性前置条件（如调查员理智极度崩溃或拥有特定技能等）用 "||" 分割加在后面
+- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成（检定通过或无检定完成）。无条件填空字符串。需要特殊条件（如某实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述
 - trigger 是触发场景描述：什么情况下玩家可以执行此互动。如 "玩家检查抽屉时"、"玩家进入此场景时"
 - result 是直接结果：互动直接产生的结果。如 "抽屉打开了，里面有一把钥匙"。如果此互动会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头，如 "##END_真结局:电车冲出梦境## 调查员们成功..."
 - side_effects 是间接后果：与 result 不重合的附带影响。如 "开抽屉的声响吸引了隔壁车厢的怪物"。自然语言字符串列表
@@ -325,7 +325,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
       "scene": "6号车厢",
       "type":  关联技能鉴定如“侦察”、“急救”等，不涉及则为“无”,
       "name": "互动名称",
-      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串||软性前置条件，如调查员理智极度崩溃或拥有特定技能等",
+      "requirement": "硬性前置条件（entity ID + AND/OR/() 表达复合关系，裸 ID 默认指成功完成）||软性前置条件（特殊状态如实体检定失败、调查员理智极度崩溃等，无条件填空字符串）",
       "trigger": "触发场景（描述什么情况下玩家可以执行此互动），如：玩家检查抽屉时",
       "result": "直接结果（互动直接产生的结果），如：抽屉打开了，里面有一把钥匙",
       "side_effects": ["间接后果（与result不重合的附带影响），如：开抽屉的声响吸引了隔壁车厢的怪物。无条件则为空列表"],
@@ -350,7 +350,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 要求：
 1. id 全局唯一 (I1, I2, I3...)
 2. scene 使用场景中文名
-3. requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件（如调查员理智极度崩溃或拥有特定技能等）用 "||" 分割加在后面。不要和 trigger 混淆
+3. requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述。不要和 trigger 混淆
 4. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
 5. result 是直接结果：互动直接产生的可感知结果，不含间接影响。如果此互动会直接触发游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 “##END_真结局:电车冲出梦境##”），后续再写正常结果文本
 6. side_effects 是间接后果：与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
@@ -376,16 +376,15 @@ def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call) -> dict
 #  Step 2b: Events
 # ═══════════════════════════════════════════════════════════════
 
-STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全局不可逆事件。
-你的任务是：从精修模组文本和已知互动中派生全局事件。事件是跨场景的、不可逆的世界级变化。
+STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全局事件。
+你的任务是：从精修模组文本和已知互动中派生全局事件。事件是跨场景的的世界级变化。
 
 术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
 
 重要原则：
-- 事件使用与 interaction 相同的统一字段模型
-- 事件无 scene 字段（全局事件不绑定特定场景）
+- 事件使用与 interaction 相同的统一字段模型，除了事件无 scene 字段（全局事件不绑定特定场景）
 - based_on 指向派生的 interaction ID（非派生事件则留空字符串）
-- requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件用 "||" 分割加在后面；trigger 是触发场景描述，两者不可混淆
+- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
@@ -403,7 +402,7 @@ def build_step2b_events_prompt(
         f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
         for i in interactions
     )
-    return f"""从精修模组文本中提取所有全局不可逆事件。
+    return f"""从精修模组文本中提取所有全局事件。
 
 已知场景:
 {scene_list}
@@ -418,8 +417,8 @@ def build_step2b_events_prompt(
       "id": "E1",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "事件名称",
-      “requirement”: “硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串||软性前置条件，如调查员理智极度崩溃或拥有特定技能等”,
-      “trigger”: “触发场景（描述什么情况下此事件触发），如：I5 完成后此事件触发”,
+      “requirement”: “硬性前置条件（entity ID + AND/OR/() 表达复合关系，裸 ID 默认指成功完成）||软性前置条件（特殊状态如实体检定失败等，无条件填空字符串）”,
+      “trigger”: “触发场景（描述什么情况下此事件触发），如：调查员试图折返会之前的一个场景时”,
       “result”: “直接结果（事件直接产生的结果，含不可逆标注）”,
       “side_effects”: [“间接后果（与result不重合的附带影响），无条件则为空列表”],
       “graded_result”: {{“on_failure”: “...”, “on_regular”: “...”, “on_hard”: “...”, “on_extreme”: “...”}},
@@ -442,7 +441,9 @@ def build_step2b_events_prompt(
 精修模组：
 \"\"\"
 {"\n\n".join(chapters.values())}
-\"\"\""""
+\"\"\"
+
+"""
 
 
 def parse_step2b_events(
@@ -468,7 +469,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - auto_trigger 使用与 interaction 相同的统一字段模型
 - auto_trigger 绑定特定场景（scene 字段必填）
 - based_on 指向派生的 interaction ID（非派生 AT 则留空字符串）
-- requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件用 "||" 分割加在后面；trigger 是触发场景描述，两者不可混淆
+- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
@@ -503,7 +504,7 @@ def build_step2b_at_prompt(
       "scene": "6号车厢",
       "type": "关联技能名，不涉及填\"无\"",
       "name": "自动触发名称",
-      "requirement": "硬性前置条件（必须已完成的 interaction ID 或持有特定物品），无条件填空字符串||软性前置条件，如调查员理智极度崩溃或拥有特定技能等",
+      "requirement": "硬性前置条件（entity ID + AND/OR/() 表达复合关系，裸 ID 默认指成功完成）||软性前置条件（特殊状态如实体检定失败、调查员理智极度崩溃等，无条件填空字符串）",
       "trigger": "触发场景（描述什么情况下此被动事件触发），如：玩家进入场景且 I1 已完成",
       "result": "直接结果（被动触发直接产生的结果）",
       "side_effects": ["间接后果（与result不重合的附带影响），无条件则为空列表"],
@@ -518,7 +519,7 @@ def build_step2b_at_prompt(
 1. id 全局唯一 (AT1, AT2, AT3...)
 2. scene 使用场景中文名
 3. based_on 指向派生的 interaction ID，非派生 AT 则留空字符串
-4. requirement: 硬性前置条件（必须已完成的 interaction ID 或持有特定物品）无条件填空字符串，软性前置条件用 "||" 分割加在后面；trigger 是触发场景描述，两者不可混淆
+4. requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
 5. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
 6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
 7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
@@ -579,6 +580,7 @@ def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], charact
 4. perceptible：玩家无需检定即可感知的元素列表
 5. ambient_hints：微妙的环境线索列表
 6. npc_appearances：当前场景 NPC 的外貌描述，NPC 名称必须使用已知角色列表中的名称
+7. l1层的信息必须是玩家在不做任何鉴定的尝试下就可见的，你可以基于这一原则做合理的推测
 
 重要：
 - 仅输出 JSON，不要任何解释性文字
@@ -756,11 +758,11 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 重要原则：
 - interaction/event/auto_trigger统称为entity
 - based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个entity和其based_on指向的entity
-    语义重复（name/result 高度相似），合并为一个。
+  如果语义重复（name/trigger/result 高度相似），合并为一个。
 - 合并时优先保留auto_trigger和interaction
-- graded_result 在 type != "无" 时建议填写但不强制；type == "无" 时删除空 graded_result
+- graded_result 在 type != "无" 时强制填写至少1条；type == "无" 时删除空 graded_result
 - result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
-- requirement/trigger 冲突以 condensed_text 为准修正
+- requirement/trigger 冲突以 精修模组（参考上下文） 为准修正
 - ##END_## 标记与 L3 ending_conditions 相互补齐
 - 不删改实质信息，只修正名称和引用
 - 互动完成即代表状态变更，不需要单独的 flag
@@ -794,11 +796,12 @@ def build_step3a_prompt(
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. **Based_on 去重**: based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个 entity 和其 based_on 指向的 entity 语义重复（name/result 高度相似），合并为一个。合并时优先保留 auto_trigger 和 interaction（即优先合并 event）。
-2. **Graded_result 检查**: type != "无" 时建议填写 graded_result 但不强制；type == "无" 时删除空 graded_result。
-3. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
-4. **冲突解决**: requirement/trigger 矛盾以 condensed_text 为准修正。
-5. **结局标记验证**: 扫描 ##END_## 标记与 L3 ending_conditions 做语义匹配。标记缺失则相互补齐。
+1. **Based_on 去重**: based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个 entity 和其 based_on 指向的 entity 语义重复（name/trigger/result 高度相似），合并为一个。
+2. **合并时优先保留 auto_trigger 和 interaction（即优先合并 event）。
+3. **Graded_result 检查**: type != "无" 时填写 graded_result 中至少一条；type == "无" 时删除空 graded_result。
+4. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
+5. **冲突解决**: requirement/trigger 矛盾以 精修模组（参考上下文） 为准修正。
+6. **结局标记验证**: 扫描 ##END_## 标记与 L3 ending_conditions 做语义匹配。标记缺失则基于L3信息补齐。
 
 输出格式:
 {{
@@ -903,12 +906,14 @@ STEP35_SYSTEM = """你是一个 TRPG 依赖关系解析助手。
 
 重要原则：
 - interaction/event/auto_trigger统称为entity
-- 从 requirement 中提取依赖关系
-- requirement 中的 "interaction:I3 已完成" → {{"type": "interaction", "id": "I3", "condition": "completed"}}
+- 从 requirement 中提取依赖关系。requirement 格式：硬性条件（entity ID + AND/OR/()）|| 软性条件（自然语言）
+- 硬性条件中裸 entity ID（如 I3）默认指该实体成功完成 → {{"type": "interaction", "id": "I3", "condition": "success"}}
+- 硬性条件中 AND/OR 连接的每个 entity ID 各提取为一条依赖
+- 软性条件（|| 之后）中如提到 "I3 失败" → {{"type": "interaction", "id": "I3", "condition": "fail"}}
 - trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "completed"}}
 - 每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
-- condition 只涉及entity不涉及其他要求
-- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定失败/entity已经鉴定成功
+- condition 只涉及entity不涉及其他要求（物品持有/技能/flag 等不提取为 entity 依赖）
+- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定成功/entity已经鉴定失败
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -938,12 +943,15 @@ def build_step35_prompt(
 {at_list}
 
 任务:
-1. 扫描每个 entity 的 requirement 字段
+1. 扫描每个 entity 的 requirement 字段。格式为：硬性条件（entity ID + AND/OR/()）|| 软性条件（自然语言）
 2. 提取其中描述的依赖关系，标准化为:
-   - entity 依赖: {{"type": "interaction", "id": "I3", "condition": "completed"}} 
-    每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
-- condition 只涉及entity不涉及其他要求
-- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定失败/entity已经鉴定成功
+   - 硬性条件中裸 entity ID（如 I3）默认指该实体成功完成 → {{"type": "interaction", "id": "I3", "condition": "success"}}
+     AND/OR 连接的每个 entity ID 各提取为一条独立依赖
+   - 软性条件（|| 之后）中如提到实体失败时提取，如 "I3 失败" → {{"type": "interaction", "id": "I3", "condition": "fail"}}
+   - trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "completed"}}
+     每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
+- condition 只涉及entity不涉及其他要求（物品持有/技能/flag 等不提取为 entity 依赖）
+- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定成功/entity已经鉴定失败
 
 3. 每条 entity 必须在输出中列出，requires 为空列表表示无依赖
 4. 实体 ID 必须精确匹配（如 I3 不能写成 I03）
@@ -958,7 +966,14 @@ def build_step35_prompt(
     {{
       "entity_id": "I3",
       "requires": [
-        {{"type": "interaction", "id": "I1", "condition": "completed"}}
+        {{"type": "interaction", "id": "I1", "condition": "success"}}
+      ]
+    }},
+    {{
+      "entity_id": "I5",
+      "requires": [
+        {{"type": "interaction", "id": "I3", "condition": "success"}},
+        {{"type": "interaction", "id": "I4", "condition": "fail"}}
       ]
     }}
   ]

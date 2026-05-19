@@ -121,6 +121,9 @@ class Entity:
     graded_result: dict | None = None
     difficulty: str = ""           # None/regular/hard/extreme
 
+    def summary(self) -> str:
+        return f"[{self.type}] {self.name}"
+
 
 # ═══════════════════════════════════════════════════════════════
 #  @markup 解析器
@@ -263,41 +266,6 @@ def has_ending(text: str) -> tuple[str | None, str | None]:
         return match.group(1), match.group(2)
     return None, None
 
-
-def _parse_side_effect(data):
-    """从 dict 解析单个 side effect；字符串则原样保留供 LLM 解析."""
-    if isinstance(data, str):
-        return data
-    if not isinstance(data, dict):
-        return None
-    type_ = data.get("type", "")
-    if type_ == "item_gain":
-        return ItemGain(item_name=data["item_name"])
-    elif type_ == "stat_change":
-        return StatChange(stat_name=data["stat_name"], delta=data.get("delta", 0),
-                          narrative=data.get("narrative", ""))
-    elif type_ == "spawn_enemy":
-        return SpawnEnemy(
-            enemy_ref=data["enemy_ref"],
-            scene=data.get("scene", ""),
-            quantity=data.get("quantity", 1),
-        )
-    elif type_ == "grant_weapon":
-        return GrantWeapon(weapon_ref=data["weapon_ref"], scene=data.get("scene", ""),
-                           quantity=data.get("quantity", 1))
-    elif type_ == "npc_state_change":
-        return NPCStateChange(npc_name=data["npc_name"], new_state=data["new_state"])
-    return None
-
-
-def _parse_side_effects(data: list) -> list:
-    """从 list[dict] 解析 side effects"""
-    result = []
-    for d in data:
-        parsed = _parse_side_effect(d)
-        if parsed is not None:
-            result.append(parsed)
-    return result
 
 
 def _normalize_requirement(req):
@@ -889,7 +857,7 @@ class ScenarioWorld:
     def get_possible_exits(self) -> List[Edge]:
         return self.graph.get_edges_from(self.current_location)
 
-    def get_available_interactions(self) -> List[Interaction]:
+    def get_available_interactions(self) -> list[Entity]:
         """未完成的在前，已完成的在后"""
         node = self._current_node()
         if not node:
@@ -904,25 +872,16 @@ class ScenarioWorld:
         return interaction_name in done
 
     def _are_requirements_met(self, entity) -> bool:
-        """Check if entity prerequisites are satisfied.
-        Handles both Entity (requirement: str) and Interaction (requirements: List[Requirement]).
+        """Check if entity prerequisites are satisfied via runtime_state.
         For '||' separated requirements, only checks the hard part (before ||)."""
         if hasattr(entity, 'requirement'):
             req = entity.requirement
             if not req or not req.strip():
                 return True
-            # Split hard | soft — only evaluate hard part
             hard = req.split("||", 1)[0].strip() if "||" in req else req.strip()
             if not hard:
                 return True
-            if hard.startswith("flag:"):
-                # Legacy: not used in new L2. Treat as unmet for safety.
-                return False
-            return False
-        if hasattr(entity, 'requirements'):
-            if not entity.requirements:
-                return True
-            return True
+            return parse_hard_requirement(hard, self.runtime_state)
         return True
 
     # ── 场景摘要（确定性、泛用格式化）──
@@ -995,7 +954,6 @@ class ScenarioWorld:
                 for i in interactions
             ],
             "triggered_events": [eid for eid, t in self.triggered_events.items() if t],
-            "flags": {},
         }
 
     # ── 移动 ──
@@ -1048,13 +1006,23 @@ class ScenarioWorld:
         for nid, node in self.graph.nodes.items():
             modified_descriptions[nid] = node.description
 
+        runtime_state_serialized = {}
+        for eid, s in self.runtime_state.items():
+            runtime_state_serialized[eid] = {
+                "completed": s.completed,
+                "result_tier": s.result_tier,
+                "retries": s.retries,
+                "escalated_difficulty": s.escalated_difficulty,
+            }
+
         return {
             "current_location": self.current_location,
             "triggered_events": dict(self.triggered_events),
             "completed_interactions": {
                 k: list(v) for k, v in self.completed_interactions.items()
             },
-            "flags": {},
+            "runtime_state": runtime_state_serialized,
+            "dependency_graph": self.dependency_graph,
             "background_story": self.background_story,
             "modified_descriptions": modified_descriptions,
             "npc_states": dict(self.npc_states),
@@ -1068,9 +1036,17 @@ class ScenarioWorld:
         world.completed_interactions = {
             k: set(v) for k, v in data.get("completed_interactions", {}).items()
         }
-        # flags are deprecated; runtime_state handles all entity state
         world.background_story = data.get("background_story", "")
         world.npc_states = data.get("npc_states", {})
+        world.dependency_graph = data.get("dependency_graph", {})
+        # 恢复 runtime_state
+        for eid, sdata in data.get("runtime_state", {}).items():
+            world.runtime_state[eid] = NodeRuntimeState(
+                completed=sdata.get("completed", False),
+                result_tier=sdata.get("result_tier", ""),
+                retries=sdata.get("retries", 0),
+                escalated_difficulty=sdata.get("escalated_difficulty", ""),
+            )
         # 恢复被修改的 node descriptions
         for nid, desc in data.get("modified_descriptions", {}).items():
             if nid in graph.nodes:

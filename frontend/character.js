@@ -93,6 +93,78 @@ window.prevStep = function() {
 };
 
 // ═══════════════════════════════════════════
+//  LLM 描述生成
+// ═══════════════════════════════════════════
+
+const API_BASE = 'http://localhost:8080';
+const LLM_TRIGGER = '/llm';
+
+/**
+ * 检测 textarea 输入是否以 /llm 结尾，若是则触发 LLM 生成。
+ * 绑定到 input 事件，每次按键后检查。
+ */
+function onLlmTextareaInput(e) {
+    const textarea = e.target;
+    const value = textarea.value.trim();
+
+    // 清除上一次的触发标记（允许重复触发）
+    if (textarea.dataset.llmFired === 'true' && !value.endsWith(LLM_TRIGGER)) {
+        textarea.dataset.llmFired = 'false';
+    }
+
+    // 检测触发条件
+    if (!value.endsWith(LLM_TRIGGER)) return;
+    if (textarea.dataset.llmFired === 'true') return;
+
+    textarea.dataset.llmFired = 'true';
+
+    // 提取用户提示词（去掉末尾 /llm）
+    const userPrompt = value.slice(0, -LLM_TRIGGER.length).trim();
+    if (!userPrompt) return;
+
+    // 根据 textarea id 确定字段类型
+    const fieldType = textarea.id === 'char-appearance' ? 'appearance' : 'description';
+
+    generateDescription(textarea, fieldType, userPrompt);
+}
+
+/**
+ * 调用后端 API 生成描述。
+ */
+function generateDescription(textarea, fieldType, userPrompt) {
+    // 显示加载状态
+    textarea.classList.add('llm-loading');
+    textarea.placeholder = '生成中...';
+    textarea.disabled = true;
+
+    fetch(API_BASE + '/api/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: fieldType, prompt: userPrompt }),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            console.error('LLM 生成失败:', data.error);
+            textarea.value = userPrompt + ' [生成失败: ' + data.error + ']';
+        } else {
+            textarea.value = data.text || '';
+        }
+    })
+    .catch(function(err) {
+        console.error('API 调用失败:', err);
+        textarea.value = userPrompt + ' [API 不可用，请确认服务器已启动: python frontend/server.py]';
+    })
+    .finally(function() {
+        textarea.classList.remove('llm-loading');
+        textarea.placeholder = '简要描述外貌特征...';
+        textarea.disabled = false;
+        textarea.dataset.llmFired = 'false';
+        textarea.focus();
+    });
+}
+
+// ═══════════════════════════════════════════
 //  Step 1: Personal info
 // ═══════════════════════════════════════════
 
@@ -356,6 +428,16 @@ document.addEventListener('DOMContentLoaded', function() {
             renderSkills();
         });
     }
+    // LLM 描述生成：绑定 /llm 触发器
+    var appearanceTextarea = document.getElementById('char-appearance');
+    var descriptionTextarea = document.getElementById('char-description');
+    if (appearanceTextarea) {
+        appearanceTextarea.addEventListener('input', onLlmTextareaInput);
+    }
+    if (descriptionTextarea) {
+        descriptionTextarea.addEventListener('input', onLlmTextareaInput);
+    }
+
     // Init
     loadOccupations();
     renderStatsCards();

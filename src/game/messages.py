@@ -24,6 +24,7 @@ class ActionOutcome:
     entity_type: str = ""            # "interaction" | "auto_trigger" | "event"
     side_effects: list[Any] = field(default_factory=list)
     skill_tier: str = ""             # COC 7th tier: "" | "failure" | "regular" | "hard" | "extreme"
+    skill_detail: str = ""           # raw dice result e.g. "侦查检定：D100=45/50"
 
 
 @dataclass

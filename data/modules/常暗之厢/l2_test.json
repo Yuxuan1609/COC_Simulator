@@ -1,5 +1,98 @@
 {
   "scenes": {
+    "测试房间": {
+      "interactions": [
+        {
+          "id": "IT1",
+          "scene": "测试房间",
+          "type": "侦查",
+          "name": "仔细检查桌子上的物品",
+          "requirement": "",
+          "trigger": "调查员走近金属桌子，仔细翻看上面的每样东西",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你翻看了桌上的物品，但灯泡闪烁得让你眼花，没能发现什么特别之处。",
+            "on_regular": "你注意到日志的最后几页被撕掉了，但剩下的内容提到了一间'永远不会天亮的房间'。钥匙上刻着一个编号：42。",
+            "on_hard": "日志记载了一位名叫霍桑的研究员的实验记录，他试图用镜子'捕捉黑暗中的东西'。钥匙的编号42对应着铁门外的某个储物柜。",
+            "on_extreme": "你迅速理清了线索：霍桑在日志中警告'不要直视镜子超过五秒'，钥匙42号可以打开铁门外的通道，但镜子本身似乎就是某种观测装置——你从裂痕中看到了与自己动作不一致的倒影。"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "IT2",
+          "scene": "测试房间",
+          "type": "图书馆使用",
+          "name": "翻阅霍桑的研究日志",
+          "requirement": "IT1",
+          "trigger": "调查员坐下来仔细阅读日志的全部内容",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "日志的笔迹潦草凌乱，你无法从中理出有用的信息。",
+            "on_regular": "霍桑在日志中记录了三个阶段的实验：第一阶段——观测；第二阶段——接触；第三阶段——'他们回应了'。日志在这里戛然而止。",
+            "on_hard": "你发现日志并非真正的日记，而是一份实验报告。'观测者效应'在报告中反复出现——霍桑相信，只要被观察，黑暗中的存在就会变得更强。镜子是'反向观测装置'。",
+            "on_extreme": "你完全理解了霍桑的理论：他试图用镜子作为'屏障'来阻挡黑暗中的东西，但实验失控了。日志最后一页有一行被划掉的字，你勉强辨认出：'不要让光熄灭，它们在等待黑暗'。同时你发现钥匙编号42对应的储物柜位置标注在日志附录的地图中。"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "IT3",
+          "scene": "测试房间",
+          "type": "无",
+          "name": "拿起裂痕镜子观察",
+          "requirement": "",
+          "trigger": "调查员拿起桌上的裂痕镜子，透过裂痕仔细观察",
+          "result": "你透过裂痕看到了镜中的自己——但镜中的你动作慢了半拍。当你的手指触碰到镜面时，镜中的你的手指却停住了。一瞬间，镜中的你嘴角微微上扬，但镜子里的背景中似乎多了一个模糊的黑影。你猛地放下镜子，心跳加速。",
+          "side_effects": [],
+          "difficulty": "None"
+        },
+        {
+          "id": "IT4",
+          "scene": "测试房间",
+          "type": "力量",
+          "name": "尝试推开铁门",
+          "requirement": "",
+          "trigger": "调查员用肩膀用力撞击铁门，试图打开它",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "铁门纹丝不动，你的肩膀反而撞得生疼。门似乎从另一侧被什么沉重的东西抵住了。",
+            "on_regular": "你咬牙用力推了好几次，铁门终于发出一声刺耳的尖叫，被推开了一条勉强可以通过的缝隙。",
+            "on_hard": "你找准了铁门的薄弱处，用力撞了几次后门被撞开。一股阴冷的空气从外面涌入，带着一种无法描述的陈腐气味。",
+            "on_extreme": "你一脚踹开铁门，门后的黑暗似乎被你的气势逼退了一瞬。通道另一头隐约传来一声惊讶的、非人的轻叹。"
+          },
+          "difficulty": "hard"
+        }
+      ],
+      "auto_triggers": [
+        {
+          "id": "AT_TEST_AUTO",
+          "scene": "测试房间",
+          "type": "无",
+          "name": "灯泡闪烁",
+          "requirement": "",
+          "trigger": "调查员进入测试房间",
+          "result": "头顶的白炽灯剧烈闪烁了几下，发出令人牙酸的滋滋声，然后恢复了微弱的光亮。在闪烁的瞬间，你似乎看到铁门的观察窗外有一张脸一闪而过——但那只是漆黑一片。",
+          "side_effects": [
+            "调查员可能注意到了铁门外的异常"
+          ],
+          "difficulty": "None"
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "6号车厢",
+          "method": "穿过铁门后的通道（需要先推开铁门）",
+          "requirement": "IT4"
+        }
+      ],
+      "to_here": [],
+      "extra": {},
+      "description": "安静得令人不安，只有灯泡偶尔发出的滋滋声打破沉默。"
+    },
     "6号车厢": {
       "interactions": [
         {
@@ -542,6 +635,16 @@
   },
   "events": [
     {
+      "id": "E_TEST_END",
+      "type": "无",
+      "name": "镜中的回应",
+      "requirement": "",
+      "trigger": "IT3 完成",
+      "result": "##END_测试结局:镜中觉醒## 当你再次看向镜子时，镜中的你不再模仿你的动作。它转过身去，走向镜中世界的深处，消失在一片黑暗中。你的意识开始模糊，仿佛被一股不可抗拒的力量拉向镜面。你最后看到的是自己的倒影——它回来了，取代了你的位置。你被困在了镜子里面，而'它'自由了。",
+      "side_effects": [],
+      "difficulty": "None"
+    },
+    {
       "id": "E2",
       "type": "无",
       "name": "乘务员被怪物吞噬",
@@ -585,6 +688,12 @@
   },
   "dependency_graph": {
     "nodes": {
+      "IT1": {"entity_id": "IT1", "entity_type": "interaction", "name": ""},
+      "IT2": {"entity_id": "IT2", "entity_type": "interaction", "name": ""},
+      "IT3": {"entity_id": "IT3", "entity_type": "interaction", "name": ""},
+      "IT4": {"entity_id": "IT4", "entity_type": "interaction", "name": ""},
+      "AT_TEST_AUTO": {"entity_id": "AT_TEST_AUTO", "entity_type": "auto_trigger", "name": ""},
+      "E_TEST_END": {"entity_id": "E_TEST_END", "entity_type": "event", "name": ""},
       "I1": {
         "entity_id": "I1",
         "entity_type": "interaction",
@@ -727,6 +836,8 @@
       }
     },
     "edges": [
+      {"source": "IT2", "target": "IT1", "dep_type": "interaction", "condition": "success"},
+      {"source": "E_TEST_END", "target": "IT3", "dep_type": "interaction", "condition": "completed"},
       {
         "source": "I2",
         "target": "I1",

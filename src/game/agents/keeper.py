@@ -291,68 +291,8 @@ class Keeper:
         return {"brief": brief, "escalation": None,
                 "ending_name": None, "ending_narrative": None}
 
-    def _check_escalation(self, raw, parsed, outcomes, at_results) -> EscalationRequest | None:
-        ctx = EscalationContext(
-            severities={},
-            player_input=raw,
-            parsed_intents=parsed,
-            action_outcomes=outcomes,
-            at_results=list(at_results),
-            world_snapshot={
-                "location": self.world.current_location,
-                "runtime_state": {
-                    eid: {"completed": s.completed, "tier": s.result_tier}
-                    for eid, s in self.world.runtime_state.items() if s.completed
-                },
-                "triggered_events": [
-                    eid for eid, t in self.world.triggered_events.items() if t
-                ],
-                "npc_states": dict(self.world.npc_states),
-            },
-            dimension_configs=self.escalation_policy.dimensions,
-            recent_escalations=self.escalation_history[-5:],
-            turn_number=self.turn_number,
-        )
-        # Build LLM eval prompt and call
-        eval_prompt = self.escalation_policy._build_eval_prompt(ctx)
-        eval_result = call_deepseek(eval_prompt, json_mode=True, reasoning_effort="low",
-                                     model="deepseek-v4-flash",
-                                     system="你是一个TRPG游戏状态监控者。请客观评估当前游戏是否需要创作者介入，"
-                                            "仅在有明确的规则违规、叙事僵局或玩家明显受挫时标记。避免不必要的干预。",
-                                     fallback_schema={
-                                         "severities": {},
-                                         "rules_triggered": [],
-                                         "should_escalate": False,
-                                     })
-        eval_data = json.loads(eval_result) if isinstance(eval_result, str) else eval_result
-
-        severities = eval_data.get("severities", {})
-        rules_triggered = eval_data.get("rules_triggered", [])
-
-        # Check thresholds + rules
-        for dim_name, sev in severities.items():
-            if self.escalation_policy._check_dimension(dim_name, sev):
-                cfg = self.escalation_policy.dimensions.get(dim_name)
-                if cfg and cfg.can_trigger(self.turn_number):
-                    cfg.last_triggered_turn = self.turn_number
-                    cfg.trigger_count += 1
-                    self.escalation_history.append(dim_name)
-                    return EscalationRequest(
-                        trigger=dim_name, severity=sev,
-                        player_input=raw,
-                        world_context=ctx.world_snapshot,
-                        reason=f"Severity {sev:.2f} >= threshold {cfg.threshold}"
-                    )
-
-        if rules_triggered:
-            dim_name = rules_triggered[0]
-            self.escalation_history.append(dim_name)
-            return EscalationRequest(
-                trigger=f"rule:{dim_name}", severity=1.0,
-                player_input=raw, world_context=ctx.world_snapshot,
-                reason=f"Rule triggered: {dim_name}"
-            )
-
+    def _check_escalation(self, raw, parsed, outcomes, at_results):
+        # (no-op until Task 7: IntentDetector refactor)
         return None
 
     def _execute_entity_direct(self, entity: Entity) -> ActionOutcome:

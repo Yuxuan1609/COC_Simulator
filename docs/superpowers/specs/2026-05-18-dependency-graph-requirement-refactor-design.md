@@ -96,9 +96,9 @@ def check_entity_requirements(entity_id: str, graph, runtime_state) -> bool:
 ### 格式规范（新 L2 为准）
 
 hard requirement 仅涉及 **entity ID + `OR` 逻辑符**。AND 语义由 dependency_graph edges 表达。
-
+考虑一下符合逻辑下AND语义的情况：比如 （A OR B）AND C
 ```
-requirement = hard ("||" soft)?
+requirement = hard "||" soft?
 
 hard = group ("OR" group)*
 group = 经过 strip 后的 entity ID (I/E/AT + 数字 + 可选小写字母)

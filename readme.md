@@ -61,9 +61,11 @@
 │       ├── rules.py                         # COC 7th 规则引擎（纯函数）
 │       └── serialization.py                 # JSON 序列化 / 反序列化
 ├── frontend/                                # 车卡前端页面
+│   ├── server.py                            # 本地服务器 + LLM 描述生成 API
 │   ├── character.html                       # 5 步车卡向导
 │   ├── character.css                        # COC 1920s 美学风格
-│   └── character.js                         # 车卡交互逻辑
+│   └── character.js                         # 车卡交互逻辑（含 /llm 触发）
+├── run_pipeline.py                          # 管线 CLI 入口（配置向导 + 手动/自动模式）
 ├── notebooks/
 │   ├── notebook_simplified.ipynb            # 主游戏循环（导入 src/ 模块）
 │   └── parser_test.ipynb                    # 管线驱动与测试
@@ -175,39 +177,98 @@ DEEPSEEK_API_KEY=your-key
 
 | Agent | 层 | 职责 | 文件 |
 |-------|----|------|------|
-| Keeper | L2 | 回合编配：parse → judge → enrich → escalate → curate | `src/game/agents/keeper.py` |
+| Keeper | L2 | 回合编配：parse → judge → enrich ∥ intent detect → curate | `src/game/agents/keeper.py` |
 | Narrator | L1 | 唯一面向玩家，生成沉浸式叙事 | `src/game/agents/narrator.py` |
-| Author | L3 | 仅 KP 调用，按 L3 设计意图生成 ModulePatch | `src/game/agents/author.py` |
+| Author | L3 | 两级响应：Patch（填缺口）/ StructuralEdit（触发补充管线），WR0 独立可配 | `src/game/agents/author.py` |
+| IntentDetector | — | Parse 命中 other 时并行检测是否存在实际叙事意图 | `src/game/intent_detector.py` |
 
 入口：`init_game()` 加载所有 JSON + 初始化三 Agent，`run_turn()` 驱动每回合。
 仅 `keeper.world` 暴露 ScenarioWorld，L3 数据内聚在 Author。
 
 设计文档：`docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
-测试 Harness：`tests/game_loop_harness.py`（15 案例，日志输出到 `data/debug/test_harness/`）
+测试 Harness：`tests/game_loop_harness.py`（串行多轮，测试房间内容，日志输出到 `data/debug/test_harness/`）
+
+> **注意**：当前开发和测试使用 `data/modules/常暗之厢/l*_test.json`，`frontend/game_server.py` 和 `run_game.py` 的 `start_node` 已切到「测试房间」。正式使用需切回 `l*_keeper/player/designer.json`。
 
 ### 已知缺口
 
 | # | 问题 | 状态 |
 |---|------|------|
-| G1 | Judge 需求检查仅支持 `flag:` 前缀，不支持 interaction/event 前置 | TODO |
-| G2 | `DirectedGraph.from_dict` 未更新 Entity 格式 | TODO |
-| G3 | Escalation 递归无深度保护 | TODO |
-| G4 | `run_turn` 输出格式（`hasattr` 基本可用） | FIXED |
-| G5 | `has_ending()` 已实现但入口点不检查 `##END_*` | TODO |
-| G6 | Keeper.process_turn 无单元测试 | TODO |
+| G1 | Judge 需求检查仅支持 `flag:` 前缀 | FIXED — dependency_graph + runtime_state + parse_hard_requirement |
+| G2 | `DirectedGraph.from_dict` 未更新 Entity 格式 | FIXED — _are_requirements_met 使用 parse_hard_requirement；runtime_state/dependency_graph 纳入 save/load；dead code 移除；Entity 添加 summary() |
+| G3 | Escalation 递归无深度保护 | FIXED — MAX_ESCALATION_DEPTH=3 + _process_deterministic_only fallback |
+| G4 | `run_turn` 输出格式 | FIXED |
+| G5 | `has_ending()` 入口点集成 | FIXED — process_turn 中已检查所有 outcomes |
+| G6 | Keeper 无单元测试 | DONE — game_loop_harness.py 覆盖 7 轮完整流程，每轮输出详细 prompt/response 日志 |
+
+### 待优化
+
+| # | 问题 | 说明 |
+|---|------|------|
+| O1 | Step 4 Escalation 每回合 LLM 调用 | 设计中 — 改为 Parse other → IntentDetect 按需触发。设计文档：`docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
+| O2 | Step 6 Memory 压缩阻塞 LLM 调用 | 见 `keeper.py:176` TODO 注释 |
+| O3 | Move 限制条件未强制执行 | 见 `keeper.py:83-90` TODO 注释 |
 
 ## 待实现
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 战斗系统 | TODO | COC 7th 回合制战斗 |
-| 同伴机制 | TODO | 复数调查员/同伴 NPC 的行动协同与 AI 行为 |
+| 作者介入机制 (Escalation) | 设计完成 | Parse other → IntentDetect → Author (Patch/StructuralEdit) → 补充管线。设计文档：`docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
+| 战斗系统 | TODO | COC 7th 回合制战斗。需实现：进入战斗判定、先攻→行动→伤害流程、敌人 AI。skill check 已有 D100 能力 |
+| NPC / 同伴系统 | TODO | NPC 主动行为、对话系统、同伴跟随。当前仅被动响应 interaction。L2 已有 npc_profiles 预留 |
+| 时间系统 | 设计完成 | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent)。待实现 |
+
+## Web 前端
+
+```bash
+python frontend/game_server.py                    # 启动游戏 Web 服务器
+python frontend/game_server.py --port 9000        # 自定义端口
+```
+
+浏览器打开 `http://localhost:8080/game.html`。左侧面板显示调查员状态和场景信息，右侧显示结果/叙事。支持全部调试命令（`/scene` `/char` `/flags` `/do` `/trigger` `/spawn` `/save` `/load` 等）。
+
+也可以通过 CLI 运行：`python run_game.py`（需要 IPython 环境）。
 
 ## 运行
 
-管道测试：在 Jupyter 中打开 `notebooks/parser_test.ipynb`，按顺序执行所有 Cell。
+### 管线 CLI（模组解析）
 
-主游戏循环：`notebooks/notebook_simplified.ipynb`。
+将 `.docx`/`.pdf`/`.txt` 模组文档转换为 L1/L2/L3 JSON，替代 Jupyter notebook 手动执行。
+
+```bash
+# 交互式向导（手动步进，每步可暂停/重试/编辑中间结果/改模型配置）
+python run_pipeline.py
+
+# 自动全流程
+python run_pipeline.py --auto --docx "常暗之厢.docx" --module 常暗之厢
+
+# 从配置文件运行
+python run_pipeline.py --config config.json
+
+# 断点续跑
+python run_pipeline.py --config config.json --start-from step_3a
+```
+
+详细配置见 `run_pipeline.py` 顶部的 `PipelineConfig` dataclass（18 个可配置字段，含合法值注释）。
+
+### 前端车卡（调查员创建）
+
+一键启动（Windows 用户双击 `.bat` 文件即可）：
+
+```bash
+# 方式 1：一键启动（自动打开浏览器）
+启动角色卡.bat
+
+# 方式 2：手动启动服务器
+python frontend/server.py
+# → 浏览器打开 http://localhost:8080/character.html
+```
+
+车卡页面内置 LLM 辅助功能：在"外貌描述"或"个人描述"输入关键词后加 `/llm` 即可自动生成 150 字以内的描述。
+
+### 游戏循环
+
+Jupyter 交互：`notebooks/notebook_simplified.ipynb`。
 测试 Harness：`cd tests && python game_loop_harness.py`（需 API Key，约 40-50 次 LLM 调用）。
 
 ### 调试命令
@@ -280,5 +341,55 @@ Entity（interaction / auto_trigger / event）统一保留字段：`name`, `scen
 
 - `model`: 模型名称（默认 `deepseek-v4-pro`）
 - `thinking`: 思考模式开关（默认 True）
-- `reasoning_effort`: 推理强度 `"low"/"medium"/"high"`（默认 `"high"`）
+- `reasoning_effort`: 推理强度 `"low"/"medium"/"high"/"max"`（默认 `"high"`）
 - `json_mode=True`：结构化判定（temperature=0.2）；`json_mode=False`：叙事生成（temperature=0.7）
+
+## 公开发行打包
+
+面向非程序员最终用户的 `.exe` 分发方案。统一入口 Web 界面，集成所有功能。
+
+### 架构
+
+```
+单一 exe (launcher.py)
+  → 启动本地 HTTP Server (localhost:8080)
+  → 自动打开浏览器到入口页面
+  → 提供所有子功能:
+      ├─ /game.html         游戏循环
+      ├─ /character.html    调查员创建 (5步车卡向导)
+      ├─ /json-editor.html  JSON 编辑器
+      ├─ 未来: /pipeline    模组解析
+      └─ 未来: /library     武器/敌人库管理
+```
+
+### 推荐方案：PyInstaller
+
+生态最成熟，一条命令出包，无需 C 编译器。
+
+```bash
+pip install pyinstaller
+
+pyinstaller -F --noconsole --name "TRPG助手" \
+  --add-data "frontend;frontend" \
+  --add-data "data;data" \
+  --add-data "src;src" \
+  --add-data "investigator;investigator" \
+  --add-data "logs;logs" \
+  --hidden-import openai \
+  --hidden-import IPython \
+  frontend/launcher.py
+```
+
+### 素材文件
+
+图片/视频/音频放 `frontend/assets/` 下，PyInstaller `--add-data` 打包整个目录。前端用相对路径引用。
+
+大素材（视频）建议用 `--onedir` 模式（文件夹分发），方便替换素材无需重新打包。
+
+### 注意事项
+
+- **API Key**：`.env` 不打包，首次启动引导用户在 Web 界面配置
+- **杀软误报**：`--onedir`（文件夹分发）误报率低于 `--onefile`
+- **体积**：纯代码 ~60 MB，含视频素材可能更大
+- **跨平台**：Windows/macOS/Linux 分别需在对应系统打包
+- **Nuitka**：反编译难度更高但编译慢（几十分钟）、需 MSVC/GCC。当前阶段 PyInstaller 更实用

@@ -25,6 +25,9 @@ class Author:
 
         prompt = self._build_prompt(request)
         response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                  system="你是一个优秀的TRPG模组创作者，擅长根据游戏中突发情况动态扩展模组内容。"
+                                         "你的创作应与既有风格保持一致，确保新增的实体和场景描述自然融入，"
+                                         "为玩家提供更丰富、更沉浸的体验。",
                                   fallback_schema={
                                       "entities": [],
                                       "scene_descriptions": {},

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRPG 调查员助手</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --panel: #141414;
+    --border: #262626;
+    --text: #c8c0b8;
+    --dim: #6b635a;
+    --accent: #8b5a3c;
+    --gold: #c9a060;
+    --red: #8b3a3a;
+    --green: #3a6b3a;
+    --narrative-bg: #1a1410;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Serif SC', 'SimSun', 'Songti SC', serif;
+    background: var(--bg); color: var(--text);
+    display: flex; height: 100vh; overflow: hidden;
+  }
+
+  /* Left panel */
+  .sidebar {
+    width: 280px; min-width: 280px;
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 16px;
+    overflow-y: auto;
+  }
+  .sidebar h2 {
+    font-size: 16px; color: var(--accent); margin-bottom: 12px;
+    letter-spacing: 2px; border-bottom: 1px solid #2a1a10; padding-bottom: 8px;
+  }
+  .stat-row {
+    display: flex; justify-content: space-between;
+    padding: 4px 0; font-size: 13px;
+  }
+  .stat-row .label { color: var(--dim); }
+  .stat-row .val { color: var(--gold); }
+  .scene-info { margin-top: 16px; }
+  .scene-info .loc {
+    font-size: 15px; color: var(--accent); font-weight: bold; margin-bottom: 8px;
+  }
+  .scene-info .desc { font-size: 13px; color: var(--dim); line-height: 1.6; }
+  .exits { margin-top: 10px; }
+  .exits .exit {
+    font-size: 12px; color: var(--dim); padding: 2px 0;
+  }
+  .exits .exit::before { content: "→ "; color: var(--accent); }
+
+  /* Main area */
+  .main {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .output-area {
+    flex: 1; overflow-y: auto; padding: 20px 24px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* Message types */
+  .msg { padding: 12px 16px; border-radius: 4px; font-size: 14px; }
+  .msg-brief {
+    background: var(--panel); border-left: 2px solid #555;
+    color: var(--dim); font-size: 13px; line-height: 1.6;
+  }
+  .msg-narrative {
+    background: var(--narrative-bg); border-left: 3px solid var(--accent);
+    color: #d4c5a0; line-height: 1.8; font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  .msg-skill {
+    background: #0f0f0f; border: 1px solid #222;
+    font-size: 12px; color: var(--dim); font-family: monospace;
+  }
+  .msg-skill.success { border-color: var(--green); }
+  .msg-skill.fail { border-color: var(--red); }
+  .msg-info {
+    background: #0f0f0f; border: 1px solid #222;
+    font-size: 12px; color: #555; text-align: center;
+  }
+  .msg-ending {
+    background: #1a0a0a; border: 2px solid var(--red);
+    color: var(--red); font-size: 14px; font-weight: bold; text-align: center;
+  }
+  .msg-cmd {
+    background: #0a0a1a; border: 1px solid #1a1a3a;
+    font-size: 12px; color: #5a5a8a; white-space: pre-wrap;
+  }
+  .timestamp {
+    text-align: center; font-size: 11px; color: #3a3a3a; margin: -6px 0;
+  }
+
+  /* Input area */
+  .input-area {
+    padding: 12px 24px 16px; border-top: 1px solid var(--border);
+    background: var(--panel); display: flex; gap: 8px;
+  }
+  .input-area input {
+    flex: 1; padding: 10px 14px;
+    background: #0d0d0d; border: 1px solid var(--border);
+    color: var(--text); font-size: 14px; border-radius: 4px;
+    font-family: inherit;
+  }
+  .input-area input:focus { outline: none; border-color: var(--accent); }
+  .input-area button {
+    padding: 10px 20px; cursor: pointer; border: none;
+    background: var(--accent); color: #d4c5a0; font-size: 14px;
+    border-radius: 4px; font-family: inherit;
+  }
+  .input-area button:hover { background: #7a4a2c; }
+  .input-area button:disabled { background: #333; color: #555; cursor: default; }
+
+  .loading { color: var(--accent); text-align: center; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="sidebar" id="sidebar">
+  <h2>调查员</h2>
+  <div id="player-info">加载中...</div>
+  <div class="scene-info" id="scene-info"></div>
+</div>
+
+<div class="main">
+  <div class="output-area" id="output"></div>
+  <div class="input-area">
+    <input type="text" id="user-input" placeholder="输入你的行动..."
+           autocomplete="off" autofocus>
+    <button id="send-btn" onclick="sendTurn()">行动</button>
+  </div>
+</div>
+
+<script>
+const output = document.getElementById('output');
+const input = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+let loading = false;
+
+function append(msg) {
+  output.appendChild(msg);
+  output.scrollTop = output.scrollHeight;
+}
+
+function addBrief(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-brief';
+  el.textContent = text;
+  append(el);
+}
+
+function addNarrative(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-narrative';
+  el.textContent = text;
+  append(el);
+}
+
+function addSkill(results) {
+  const tierMap = {extreme:'大成功', hard:'困难成功', regular:'成功', failure:'失败', fumble:'大失败'};
+  for (const sr of results) {
+    const el = document.createElement('div');
+    const label = tierMap[sr.tier] || sr.tier;
+    const ok = sr.success;
+    el.className = 'msg msg-skill ' + (ok ? 'success' : 'fail');
+    el.textContent = (ok ? '✓' : '✗') + ' [' + sr.entity_id + '] ' + label;
+    if (sr.detail) {
+      const lines = sr.detail.split('\n');
+      if (lines[1]) el.textContent += ' | ' + lines[1].trim();
+    }
+    append(el);
+  }
+}
+
+function addTimestamp(ts) {
+  const el = document.createElement('div');
+  el.className = 'timestamp';
+  el.textContent = ts;
+  append(el);
+}
+
+function addInfo(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-info';
+  el.textContent = text;
+  append(el);
+}
+
+function addCmd(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-cmd';
+  el.textContent = text;
+  append(el);
+}
+
+function addEnding(text) {
+  const el = document.createElement('div');
+  el.className = 'msg msg-ending';
+  el.textContent = text;
+  append(el);
+}
+
+function addLoading() {
+  const el = document.createElement('div');
+  el.className = 'loading';
+  el.textContent = '...';
+  el.id = 'loading-msg';
+  append(el);
+}
+
+function removeLoading() {
+  const el = document.getElementById('loading-msg');
+  if (el) el.remove();
+}
+
+async function sendTurn() {
+  const text = input.value.trim();
+  if (!text || loading) return;
+  loading = true;
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+  addLoading();
+
+  try {
+    const res = await fetch('/api/turn', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({input: text})
+    });
+    const data = await res.json();
+    removeLoading();
+
+    let ended = false;
+    if (data.error) {
+      addInfo('⚠ ' + data.error);
+    } else if (data.command) {
+      handleCommand(data);
+    } else {
+      if (data.timestamp) addTimestamp(data.timestamp);
+      if (data.skill_results && data.skill_results.length) addSkill(data.skill_results);
+      if (data.brief) addBrief(data.brief);
+      if (data.narrative) addNarrative(data.narrative);
+      if (data.ending) {
+        addEnding('【' + data.ending.name + '】' + data.ending.narrative);
+        ended = true;
+      }
+    }
+    updateState();
+    input.disabled = ended;
+    sendBtn.disabled = ended;
+  } catch (e) {
+    removeLoading();
+    addInfo('⚠ 网络错误: ' + e.message);
+    input.disabled = false;
+    sendBtn.disabled = false;
+  }
+  loading = false;
+  input.focus();
+}
+
+function handleCommand(data) {
+  if (data.command === 'scene') {
+    // render scene HTML into a special card
+    if (data.html) {
+      const el = document.createElement('div');
+      el.style.cssText = 'font-size:13px;color:#bcc8d0;line-height:1.8;padding:8px 0;';
+      el.innerHTML = data.html;
+      append(el);
+    }
+    updateState(); return;
+  }
+  if (data.command === 'reset') {
+    output.innerHTML = '';
+    addInfo('游戏已重置');
+    updateState();
+    input.disabled = false; sendBtn.disabled = false;
+    return;
+  }
+  if (data.command === 'load') {
+    output.innerHTML = '';
+    addInfo(data.text || '读档完成');
+    updateState();
+    return;
+  }
+  if (data.command === 'do' || data.command === 'trigger') {
+    // show skill result if present
+    if (data.skill && data.skill.tier) {
+      const tierMap = {extreme:'大成功', hard:'困难成功', regular:'成功', failure:'失败', fumble:'大失败'};
+      addSkill([{entity_id: data.skill.entity_id, tier: data.skill.tier, success: data.skill.success, detail: ''}]);
+    }
+    addCmd(data.text || '');
+    updateState();
+    return;
+  }
+  if (data.text) addCmd(data.text);
+  updateState();
+}
+
+async function updateState() {
+  try {
+    const res = await fetch('/api/state');
+    const data = await res.json();
+    if (data.player) {
+      document.getElementById('player-info').innerHTML =
+        '<div class="stat-row"><span class="label">姓名</span><span class="val">' + data.player.name + '</span></div>' +
+        '<div class="stat-row"><span class="label">HP</span><span class="val">' + data.player.hp + '</span></div>' +
+        '<div class="stat-row"><span class="label">SAN</span><span class="val">' + data.player.san + '</span></div>';
+    }
+    if (data.location) {
+      let html = '<div class="loc">' + data.location + '</div>';
+      html += '<div class="desc">' + (data.description || '') + '</div>';
+      if (data.exits && data.exits.length) {
+        html += '<div class="exits">';
+        for (const e of data.exits) {
+          html += '<div class="exit">' + e.target + '：' + e.method + '</div>';
+        }
+        html += '</div>';
+      }
+      document.getElementById('scene-info').innerHTML = html;
+    }
+  } catch (e) {}
+}
+
+input.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') sendTurn();
+});
+
+// Init
+updateState();
+addInfo('游戏就绪。输入 /help 查看命令。');
+</script>
+</body>
+</html>

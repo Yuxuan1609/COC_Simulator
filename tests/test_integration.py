@@ -6,9 +6,6 @@ from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents.keeper import Keeper
 from game.agents.narrator import Narrator
 from game.agents.author import Author
-from game.escalation import EscalationPolicy
-
-
 def test_full_init_chain():
     """Verify the entire init chain works with real L2 data."""
     with open("data/modules/常暗之厢/l2_keeper.json", "r", encoding="utf-8") as f:
@@ -43,16 +40,15 @@ def test_full_init_chain():
         assert len(ev.name) > 0
 
 
-def test_keeper_init_with_policy():
+def test_keeper_init():
     with open("data/modules/常暗之厢/l2_keeper.json", "r", encoding="utf-8") as f:
         l2 = json.load(f)
 
     graph = DirectedGraph(scenes=l2["scenes"], events=l2.get("events", []))
     start_node = list(graph.nodes.keys())[0]
     world = ScenarioWorld(graph, start_node=start_node)
-    policy = EscalationPolicy()
 
-    keeper = Keeper(world, escalation_policy=policy)
+    keeper = Keeper(world)
     assert keeper.turn_number == 0
     assert keeper.judge is not None
     assert keeper.curator is not None

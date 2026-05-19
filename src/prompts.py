@@ -81,15 +81,18 @@ def _build_player_skills(world: ScenarioWorld) -> str:
 
 
 def _build_investigator_info(world: ScenarioWorld) -> str:
-    """构建调查员信息（description + appearance）"""
+    """构建调查员信息（name + description + appearance）"""
     p = world.player
     if not p:
         return ""
     parts = []
+    name = getattr(p, 'name', '') or getattr(p, 'character_name', '')
+    if name:
+        parts.append(f"  姓名：{name}")
     desc = getattr(p, 'personal_description', '') or getattr(p, 'description', '')
-    app = getattr(p, 'appearance', '')
     if desc:
         parts.append(f"  描述：{desc}")
+    app = getattr(p, 'appearance', '')
     if app:
         parts.append(f"  外貌：{app}")
     if not parts:
@@ -197,9 +200,12 @@ def _build_l1l3_context(
         parts.append("【场景感知信息】")
         # L1 may be dict (from JSON) or dataclass — accept both
         _get = lambda obj, key, default="": obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+        desc = _get(l1_scene, "description", "")
         atm = _get(l1_scene, "atmosphere", "")
         mood = _get(l1_scene, "mood", "")
         hints = _get(l1_scene, "ambient_hints", [])
+        if desc:
+            parts.append(f"  描述：{desc}")
         if atm:
             parts.append(f"  氛围：{atm}")
         if mood:
@@ -211,12 +217,22 @@ def _build_l1l3_context(
 
 def parse_narrative_output(text: str) -> tuple[str, str]:
     """
-    解析 LLM 叙事输出，按 \n\n\n 分割为 (简要结果, 沉浸式叙事)。
-    解析失败时 fallback 到原文。
+    解析 LLM 叙事输出，按 ### 结果 / ### 沉浸式叙事 分割。
+    兼容旧格式（\\n\\n\\n 分割 + 结果：/沉浸式叙事：前缀）。
     """
+    # Try new format: ### 结果 ... ### 沉浸式叙事 ...
+    if "### 结果" in text and "### 沉浸式叙事" in text:
+        # Split on the markers
+        before_result, rest = text.split("### 结果", 1)
+        result_part, narrative_part = rest.split("### 沉浸式叙事", 1)
+        brief = result_part.strip().strip('"').strip("'").strip("“").strip("”")
+        narrative = narrative_part.strip().strip('"').strip("'").strip("“").strip("”")
+        if brief and narrative:
+            return brief, narrative
+
+    # Fallback to old format: \n\n\n split
     parts = text.split("\n\n\n", 1)
     if len(parts) != 2:
-        # 尝试其他分隔
         parts = text.split("\n\n", 1)
 
     if len(parts) == 2:
@@ -224,18 +240,16 @@ def parse_narrative_output(text: str) -> tuple[str, str]:
         brief = first
         narrative = second
 
-        # 提取 "结果：" 或 "结果:" 后的内容
         for sep in ["结果：", "结果:"]:
             if sep in first:
                 brief = first.split(sep, 1)[1].strip()
-                brief = brief.strip('"').strip("'").strip(""").strip(""")
+                brief = brief.strip('"').strip("'").strip("“").strip("”")
                 break
 
-        # 提取 "沉浸式叙事：" 后的内容
         for sep in ["沉浸式叙事：", "沉浸式叙事:"]:
             if sep in second:
                 narrative = second.split(sep, 1)[1].strip()
-                narrative = narrative.strip('"').strip("'").strip(""").strip(""")
+                narrative = narrative.strip('"').strip("'").strip("“").strip("”")
                 break
 
         return brief, narrative
@@ -380,8 +394,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 
 实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。
 硬性条件（flag/依赖关系）已由系统判定完成。你只需：
-1. 判断玩家意图匹配了哪些实体。如有「条件=」字段（软性条件/自然语言描述），评估是否满足，不满足的排除。
-2. 对于不匹配任何实体的输入，归类为 move/search/other。
+1. 判断玩家意图匹配了哪些可触发实体或者其他行为包括(move/search/other)。如有「条件=」字段（软性条件/自然语言描述），评估是否满足，不满足的排除。
 
 返回 JSON：
 {{
@@ -396,6 +409,10 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 }}
 
 规则：
+- 玩家输入有明确对应的entity优先返回entity结果，之后再考虑search/move/other
+- 没有明确指定对象的索、探查、感知行为属于search不触发entity
+- 一般来讲玩家一个动作（注意不是一轮输入）只匹配一个结果，但也允许同时匹配多个结果的特殊情况，你可以基于具体文字发挥
+- move指移动到别的场景，other泛指所有其他行为
 - auto_trigger 必须排在列表最前面
 - id 必须从上述实体列表中精确复制
 - move：target 填可移动方向中列出的目标
@@ -436,14 +453,16 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 {entities_text or '（无）'}
 
 请为以上已触发实体做叙事整合：
-1. 为 auto_trigger 实体生成简短描述（它们是无条件触发的环境变化）
-2. 为 interaction/event 实体的结果文本润色，增加氛围和细节
-3. 提供 emphasis_hint：本轮叙事的强调方向
+1. 将所有实体（auto_trigger / interaction / event）的结果合并润色，统一为流畅连贯的叙事
+2. 根据 success 调整叙事：
+   - success=true → 结果被清晰、明确地描述并整合进叙事，玩家能确切感知到发生了什么
+   - success=false → 结果晦涩、模糊、没有实际影响，仿佛是错觉或微不足道的细节，玩家难以确定是否真的发生了什么
+3. 提供 reasoning：简短说明本轮整合的逻辑（为什么这样合并/改写）
 
 返回 JSON：
 {{
-  "at_descriptions": {{"AT1": "环境变化描述"}},
-  "enriched_results": {{"I3": "润色后的结果"}},
+  "results": {{"AT1": "环境变化描述", "I3": "润色后的结果", "E22": "事件叙事"}},
+  "reasoning": "简短说明整合逻辑",
   "emphasis_hint": "叙事强调方向"
 }}
 
@@ -455,11 +474,15 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 
 # ── Narrator prompt ──
 
-def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "") -> str:
+def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: str = "") -> str:
     """Narrator: converts NarratorBrief + L1 context into immersive narrative."""
-    outcomes_text = ""
+    entity_outcomes = ""
+    flavor_outcomes = ""
     for o in brief.action_outcomes:
-        outcomes_text += f"  {'✓' if o.success else '✗'} {o.message}\n"
+        if o.intent.action == "other":
+            flavor_outcomes += f"  · {o.message}\n"
+        else:
+            entity_outcomes += f"  {'✓' if o.success else '✗'} {o.message}\n"
 
     ambient_text = "\n".join(f"  · {a}" for a in brief.ambient_changes) or "（无）"
 
@@ -469,26 +492,40 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "") -> str:
     prompt = f"""{l1_ctx}
 
 {inv_info}
+【玩家输入】{user_input or '（无）'}
+
 【当前场景】{brief.scene_snapshot.location}
 {brief.scene_snapshot.description}
 
 【可通行方向】{', '.join(f"{e['target']}({e['method']})" for e in brief.scene_snapshot.exits)}
 
-【行动结果】
-{outcomes_text}
+【实体行动结果】
+{entity_outcomes or '（无）'}
 
+【即兴行为】{f'{chr(10)}{flavor_outcomes}' if flavor_outcomes else '（无）'}
 【环境变化】
 {ambient_text}
 
 【叙事强调】{brief.suggested_emphasis}
 
-请以TRPG主持人身份生成沉浸式叙事。
-输出格式：结果："简要描述" \n\n\n 沉浸式叙事："沉浸式中文不超过100字"
+请以TRPG主持人身份生成沉浸式叙事。严格按以下格式输出：
+
+### 结果
+用简单、平淡、客观的描述性语言概括本轮发生了什么。
+仅陈述事实，不含情绪色彩，不含修饰。
+
+### 沉浸式叙事
+基于结果进行文学性展开，用丰富且带有情感的语言描述。
+融入场景氛围，让玩家身临其境。中文不超过100字。
 
 规则：
+- 结果与沉浸式叙事必须严格分离，结果不说故事，叙事不重复事实
 - 不要给出前文没有的实质性信息
 - 以上下文语境和场景氛围为准
 - 叙事强调指明了本轮的叙事方向
+- 「即兴行为」仅为叙述性描写，不对世界产生任何实际影响——场景状态、物品位置、
+  NPC状态等均不因其改变。描述时作为短暂的、无后果的角色动作自然融入叙事，
+  一带而过即可，不做展开
 """
     _show_prompt("Narrator", prompt)
     return prompt

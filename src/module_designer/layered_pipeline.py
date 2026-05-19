@@ -5,8 +5,9 @@
   Step 1a + 1b  并行 (meta+scenes+characters | condensed_text)
   Step 2a       先跑 (interactions)
   Step 2b + 2c  并行 (events + auto_triggers | L1 + L3)
-  Step 3a → 3b  串行 (L2 依赖解析 → L1-L2 交叉核对)
-  Step 4        library 匹配 (enemies/weapons)
+  Step 3a ∥ 2.5 并行 (L2 去重冲突 ∥ NPC 行为描述) → 组装 L2
+  Step 3b       L1-L2 交叉核对
+  Step 3.5 ∥ Phase 1 并行 (依赖图 ∥ 风格预判) → Phase 2 精简标准化
 
 每步含 retry + fallback 保底策略。
 管线完成后运行确定性 cross_validate 做最终验证。
@@ -194,6 +195,32 @@ def cross_validate_layers(
     return report
 
 
+def _get_pipeline_version() -> str:
+    """返回管线版本标识（git HEAD commit hash），用于追溯生成模块的 prompt 版本。
+
+    非 git 仓库时回退到文件修改时间的 MD5。
+    """
+    import hashlib
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return f"git:{result.stdout.strip()[:8]}"
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    # Fallback: hash of the prompt source file modification time
+    parser_path = os.path.join(os.path.dirname(__file__), "layered_parser.py")
+    try:
+        mtime = str(os.path.getmtime(parser_path))
+        return f"mtime:{hashlib.md5(mtime.encode()).hexdigest()[:8]}"
+    except OSError:
+        return "unknown"
+
+
 def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=None) -> dict:
     """将 Step 3a 后的实体按场景分组组装为 L2 结构."""
     scenes: dict[str, dict] = {}
@@ -224,6 +251,7 @@ def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, 
         "scenes": scenes,
         "events": events,
         "npc_profiles": npc_profiles if npc_profiles is not None else {},
+        "_pipeline_version": _get_pipeline_version(),
     }
 
 

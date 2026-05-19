@@ -111,22 +111,8 @@ class Judge:
                         entity_id=entity.id, entity_type=entity.entity_type
                     )
 
-        # Soft requirement: LLM evaluation for narrative conditions (after ||)
-        if entity.requirement and entity.requirement.strip():
-            _, soft = self._split_requirement(entity.requirement)
-            if soft and self.world.player:
-                inv_desc = getattr(self.world.player, 'personal_description', '') or \
-                           getattr(self.world.player, 'description', '')
-                scene_desc = self.world.get_current_description()
-                from llm import evaluate_soft_requirement
-                eval_result = evaluate_soft_requirement(soft, inv_desc, scene_desc)
-                if not eval_result.get("met", True):
-                    return ActionOutcome(
-                        intent=intent or ActionIntent(action="other"),
-                        success=False,
-                        message=eval_result.get("reason", f"不满足条件：{soft}"),
-                        entity_id=entity.id, entity_type=entity.entity_type
-                    )
+        # Note: soft requirements (after ||) are evaluated by Parse (LLM) step,
+        # not duplicated here. See build_keeper_parse_prompt for soft condition handling.
 
         # Skill check + ##GRADED## resolution
         skill_tier = ""
@@ -234,6 +220,7 @@ class Judge:
                 success=False, message=skill_message,
                 entity_id=entity.id, entity_type=entity.entity_type,
                 skill_tier=skill_tier,
+                skill_detail=skill_detail,
                 side_effects=penalty_side_effects,
             )
 
@@ -263,6 +250,7 @@ class Judge:
             entity_type=entity.entity_type,
             side_effects=side_effects,
             skill_tier=skill_tier,
+            skill_detail=skill_detail,
         )
 
     @staticmethod

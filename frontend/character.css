@@ -108,6 +108,35 @@ h3 {
   box-shadow: 0 0 6px rgba(201,168,76,0.2);
 }
 
+.form-group textarea.llm-loading {
+  border-color: #8a6820;
+  box-shadow: 0 0 8px rgba(201,168,76,0.4);
+  animation: llm-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes llm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.llm-hint {
+  display: block;
+  font-size: 0.72rem;
+  color: #6a5840;
+  margin-top: 0.2rem;
+  font-style: italic;
+}
+
+.llm-hint code {
+  background: #1a150c;
+  border: 1px solid #3a2810;
+  border-radius: 2px;
+  padding: 0.05rem 0.35rem;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 0.72rem;
+  color: #c9a84c;
+}
+
 .buttons {
   margin-top: 1.5rem;
   display: flex;

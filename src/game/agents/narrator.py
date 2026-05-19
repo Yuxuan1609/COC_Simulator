@@ -16,7 +16,8 @@ class Narrator:
     def __init__(self, l1_data: dict[str, Any]):
         self.l1_data = l1_data
 
-    def narrate(self, brief: NarratorBrief, inv_info: str = "") -> tuple[str, str]:
+    def narrate(self, brief: NarratorBrief, inv_info: str = "",
+                user_input: str = "") -> tuple[str, str]:
         """Generate immersive narrative from KP's curated brief.
 
         Returns (brief_summary, immersive_narrative).
@@ -24,10 +25,15 @@ class Narrator:
         scene_name = brief.scene_snapshot.location
         l1_scene = self.l1_data.get(scene_name) if self.l1_data else None
 
-        prompt = self._build_prompt(brief, l1_scene=l1_scene, inv_info=inv_info)
-        response = call_deepseek(prompt, json_mode=False, model="deepseek-v4-flash")
+        prompt = self._build_prompt(brief, l1_scene=l1_scene, inv_info=inv_info,
+                                    user_input=user_input)
+        response = call_deepseek(prompt, json_mode=False, model="deepseek-v4-flash",
+                                 system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。"
+                                        "你将系统裁定结果转化为富有氛围感的描述，融入克苏鲁式的压抑与未知，"
+                                        "让玩家仿佛身临其境地感受每一刻的紧张与恐惧。")
         return parse_narrative_output(response)
 
     def _build_prompt(self, brief: NarratorBrief, l1_scene: Any = None,
-                      inv_info: str = "") -> str:
-        return build_narrator_prompt(brief, l1_scene=l1_scene, inv_info=inv_info)
+                      inv_info: str = "", user_input: str = "") -> str:
+        return build_narrator_prompt(brief, l1_scene=l1_scene, inv_info=inv_info,
+                                      user_input=user_input)

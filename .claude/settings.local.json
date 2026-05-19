@@ -17,7 +17,13 @@
       "Bash(git show *)",
       "Bash(rm notebooks/_parser_layered_export.ipynb.tmp)",
       "Bash(echo \"data/debug/\")",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "WebSearch",
+      "Bash(mv \"notebooks/base_snapshot.ipynb\" \"data/output/archive/\")",
+      "Bash(mv data/output/res_event.json \"data/output/archive/\")",
+      "Bash(mv data/output/res_event_resolved_revised.json \"data/output/archive/\")",
+      "Bash(mv data/output/res_event_revised.json \"data/output/archive/\")",
+      "Bash(mv data/output/scene_output.json \"data/output/archive/\")"
     ]
   }
 }
