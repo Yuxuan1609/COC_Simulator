@@ -749,13 +749,15 @@ class ScenarioWorld:
     """
 
     def __init__(self, graph: DirectedGraph, start_node: str,
-                 background_story: str = ""):
+                 background_story: str = "",
+                 wr0_enabled: bool = False):
         self.graph = graph
         self.current_location = start_node
         self.player: 'InvestigatorType | None' = None
 
         # 背景故事（模组设定，供叙事阶段参考）
         self.background_story = background_story
+        self.wr0_enabled = wr0_enabled
 
         # 事件追踪
         self.triggered_events: Dict[str, bool] = {
@@ -1026,6 +1028,7 @@ class ScenarioWorld:
             "background_story": self.background_story,
             "modified_descriptions": modified_descriptions,
             "npc_states": dict(self.npc_states),
+            "wr0_enabled": self.wr0_enabled,
         }
 
     @classmethod
@@ -1038,6 +1041,7 @@ class ScenarioWorld:
         }
         world.background_story = data.get("background_story", "")
         world.npc_states = data.get("npc_states", {})
+        world.wr0_enabled = data.get("wr0_enabled", False)
         world.dependency_graph = data.get("dependency_graph", {})
         # 恢复 runtime_state
         for eid, sdata in data.get("runtime_state", {}).items():
