@@ -23,7 +23,10 @@
       "Bash(mv data/output/res_event.json \"data/output/archive/\")",
       "Bash(mv data/output/res_event_resolved_revised.json \"data/output/archive/\")",
       "Bash(mv data/output/res_event_revised.json \"data/output/archive/\")",
-      "Bash(mv data/output/scene_output.json \"data/output/archive/\")"
+      "Bash(mv data/output/scene_output.json \"data/output/archive/\")",
+      "Bash(PYTHONIOENCODING=utf-8 python -m pytest test_intent_detector.py::test_detector_meaningful_intent -v -s)",
+      "Bash(ls tests/conftest.py)",
+      "Bash(ls tests/*.py)"
     ]
   }
 }

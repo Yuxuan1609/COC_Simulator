@@ -3,14 +3,7 @@ from __future__ import annotations
 import json
 
 from llm import call_deepseek
-
-
-class IntentResult:
-    """Detector output."""
-    def __init__(self, needs_author: bool = False, intent: str = "", reasoning: str = ""):
-        self.needs_author = needs_author
-        self.intent = intent
-        self.reasoning = reasoning
+from .messages import IntentResult
 
 
 class IntentDetector:
