@@ -110,7 +110,8 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
 
 def init_game(l2_path: str, l1_path: str, l3_path: str,
               escalation_config_path: str,  # deprecated, kept for backward compat
-              start_node: str = "6号车厢") -> dict[str, Any]:
+              start_node: str = "6号车厢",
+              wr0_enabled: bool = False) -> dict[str, Any]:
     """Initialize all agents and world state from JSON files.
 
     Returns dict with keys: keeper, narrator, author, l3_data.
@@ -162,7 +163,7 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     else:
         graph = DirectedGraph(scenes=l2_scenes, events=l2.get("events", []))
 
-    world = ScenarioWorld(graph, start_node=start_node)
+    world = ScenarioWorld(graph, start_node=start_node, wr0_enabled=wr0_enabled)
 
     # Load dependency graph into world for runtime state tracking
     dep_graph = l2.get("dependency_graph", {})
@@ -177,6 +178,7 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         npc_profiles=l2.get("npc_profiles"),
     )
     author = Author(l3)
+    keeper.narrator_l1 = l1  # Keeper holds reference for supplement merging
 
     return {
         "keeper": keeper,
