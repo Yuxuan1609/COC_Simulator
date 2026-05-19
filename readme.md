@@ -185,10 +185,16 @@ DEEPSEEK_API_KEY=your-key
 入口：`init_game()` 加载所有 JSON + 初始化三 Agent，`run_turn()` 驱动每回合。
 仅 `keeper.world` 暴露 ScenarioWorld，L3 数据内聚在 Author。
 
-设计文档：`docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
-测试 Harness：`tests/game_loop_harness.py`（串行多轮，测试房间内容，日志输出到 `data/debug/test_harness/`）
+设计文档：
+- Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
+- Escalation 重设计: `docs/superpowers/specs/2026-05-19-escalation-redesign.md`
 
-> **注意**：当前开发和测试使用 `data/modules/常暗之厢/l*_test.json`，`frontend/game_server.py` 和 `run_game.py` 的 `start_node` 已切到「测试房间」。正式使用需切回 `l*_keeper/player/designer.json`。
+测试：
+- `tests/game_loop_harness.py` — 7 轮真实 LLM，日志到 `data/debug/test_harness/`
+- `tests/test_author_flow.py` + `tests/test_intent_detector.py` — 11 个单元测试（全 mock）
+- `tests/test_escalation_harness.py` — 4 个 case（正常/flavor/Patch/Reject），Author 日志到 `data/debug/test_escalation/`
+
+> **注意**：当前使用 `data/modules/常暗之厢/l*_test.json`，`start_node` 已切到「测试房间」。正式需切回正式 JSON。
 
 ### 已知缺口
 
@@ -213,7 +219,7 @@ DEEPSEEK_API_KEY=your-key
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 作者介入机制 (Escalation) | 设计完成 | Parse other → IntentDetect → Author (Patch/StructuralEdit) → 补充管线。设计文档：`docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
+| 作者介入机制 (Escalation) | 实现完成 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。O1 已解决。设计文档：`docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
 | 战斗系统 | TODO | COC 7th 回合制战斗。需实现：进入战斗判定、先攻→行动→伤害流程、敌人 AI。skill check 已有 D100 能力 |
 | NPC / 同伴系统 | TODO | NPC 主动行为、对话系统、同伴跟随。当前仅被动响应 interaction。L2 已有 npc_profiles 预留 |
 | 时间系统 | 设计完成 | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent)。待实现 |

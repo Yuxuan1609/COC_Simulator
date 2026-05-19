@@ -1,0 +1,13 @@
+{
+  "case": "D: other + Author reject",
+  "input": "punch through the train wall",
+  "parse_result": "type=other",
+  "detector_called": true,
+  "detector_result": "needs_author=True",
+  "author_called": false,
+  "author_level": "patch (reject)",
+  "author_entities": [],
+  "author_justification": "REJECTED: wall is solid",
+  "integration": "rejection msg injected into outcomes",
+  "verdict": "PASS"
+}

@@ -2,23 +2,29 @@
 
 **日期**: 2026-05-19
 **分支**: main
-**状态**: Game Loop 多 Agent 架构完整 | dependency_graph + runtime_state 已统一 | 前端 Web 界面可用 | 测试文件就绪
+**状态**: Escalation/Author 机制重设计完成 | O1 已解决 | 补充管线就绪 | WR0 可配置 | 19 个测试覆盖全链路
 
 ---
 
 ## 当前架构
 
 ```
-玩家输入 → Parse(LLM) → Judge(确定) → Enrich(LLM) → Escalate?(LLM) → Curate → Narrate(LLM) → 输出
+玩家输入 → Parse(LLM) → Judge(确定) → Enrich(LLM) ∥ IntentDetect(LLM) → Curate → Narrate(LLM) → 输出
+                                                                         ↓ (other+有意义)
+                                                                   Author(LLM)
+                                                                   ├─ Patch → integrate → 递归
+                                                                   ├─ Structural → 补充管线 → integrate → 递归
+                                                                   └─ Reject → 注入提示 → 正常流程
 ```
 
 ### Agent
 
 | Agent | 数据 | 职责 |
 |-------|------|------|
-| Keeper | L2 + ScenarioWorld | 回合编配: parse→judge→enrich→curate |
+| Keeper | L2 + ScenarioWorld | 回合编配: parse→judge→enrich∥detect→curate |
 | Narrator | L1 | 唯一面向玩家，沉浸式叙事 |
-| Author | L3 | 按 L3 设计意图生成 ModulePatch（仅 escalation 时触发） |
+| Author | L3 | 两级响应: Patch(填缺口) / StructuralEdit(触发补充管线)，WR0 独立可配 |
+| IntentDetector | — | Parse 命中 other 时并行检测是否存在实际叙事意图 |
 
 ### 关键机制
 - **dependency_graph + runtime_state**: 替代 world.flags，静态依赖 + 动态状态两层
@@ -81,12 +87,15 @@
 
 ### 5. 测试文件说明
 
-当前开发和调试使用 `data/modules/常暗之厢/l*_test.json`：
-- **l1_test.json**: 含「测试房间」场景（描述、氛围、感知项）
-- **l2_test.json**: 含测试房间的 4 个 interaction (IT1-IT4)、1 个 AT、1 个结局 event (E_TEST_END)，外加原模组完整内容
-- **l3_test.json**: 含测试场景 intent + 测试结局条件 + 原模组完整内容
+当前有三套测试：
 
-`game_server.py` 和 `run_game.py` 的 `start_node` 已改为「测试房间」。正式发布时切回 `l*_player/keeper/designer.json` + `start_node="6号车厢"`。
+**Game Loop Harness** (`tests/game_loop_harness.py`) — 7 轮真实 LLM 调用，/scene /char /save /load 等。完整 prompt/response 日志，输出到 `data/debug/test_harness/<ts>/`
+
+**Author Flow 单元测试** (`tests/test_author_flow.py` + `tests/test_intent_detector.py`) — 11 个测试，全部 LLM mock，覆盖：Detector (flavor/有意义/空输入)、Author flow (零开销 / flavor不触发 / Patch集成 / Reject注入 / 重复抑制 / 字段完整性 / Supplement集成 / Scene context)
+
+**Escalation Harness** (`tests/test_escalation_harness.py`) — 4 个 case (正常匹配 / flavor / Patch / Reject)，基于常暗之厢场景，Author prompt+response 日志输出到 `data/debug/test_escalation/<ts>/`
+
+测试数据：`data/modules/常暗之厢/l*_test.json`（测试房间 + 原模组内容）。`start_node` 已切到「测试房间」。
 
 ---
 
