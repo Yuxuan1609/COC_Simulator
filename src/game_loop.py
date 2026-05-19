@@ -4,12 +4,12 @@ Keeper (KP) / Narrator (叙事者) / Author (作者)
 """
 from __future__ import annotations
 from typing import Any
+from datetime import datetime
 import json
 
 from scenario_core import DirectedGraph, ScenarioWorld, ItemGain, StatChange, SpawnEnemy, GrantWeapon, NPCStateChange
 from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput
-from game.escalation import EscalationPolicy
 from prompts import _build_investigator_info
 
 
@@ -128,14 +128,6 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     with open(l3_path, "r", encoding="utf-8") as f:
         l3 = json.load(f)
 
-    # Load escalation config (optional)
-    escalation_policy = None
-    try:
-        with open(escalation_config_path, "r", encoding="utf-8") as f:
-            escalation_policy = EscalationPolicy.from_dict(json.load(f))
-    except (FileNotFoundError, json.JSONDecodeError):
-        escalation_policy = EscalationPolicy()
-
     # Resolve scene naming: L2 uses internal IDs (S1-S7) but game loop expects
     # Chinese names. _scene_names map (injected by pipeline Phase 2) provides
     # the mapping. In its absence, fall back to the old behaviour (S-keys).
@@ -182,7 +174,6 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         world,
         dependency_graph=l2.get("dependency_graph"),
         phase1=l2.get("_phase1"),
-        escalation_policy=escalation_policy,
         npc_profiles=l2.get("npc_profiles"),
     )
     author = Author(l3)
@@ -217,15 +208,32 @@ def run_turn(game: dict, user_input: str,
     else:
         display_brief = str(brief) if brief else ""
 
+    # Extract skill check results from outcomes for player display
+    skill_results = []
+    if hasattr(brief, 'action_outcomes'):
+        for o in brief.action_outcomes:
+            if o.skill_tier and o.entity_id:
+                skill_results.append({
+                    "entity_id": o.entity_id,
+                    "entity_type": o.entity_type,
+                    "tier": o.skill_tier,
+                    "success": o.success,
+                    "detail": o.skill_detail,
+                })
+
     try:
         narrative_brief, narrative = narrator.narrate(
-            brief, inv_info=_build_investigator_info(world))
+            brief, inv_info=_build_investigator_info(world), user_input=user_input)
     except Exception as e:
         narrative_brief = display_brief or "（处理中）"
-        narrative = f"（叙事生成失败：{e}）"
+        narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
 
+    ending = result.get("ending_name")
     return {
         "brief": narrative_brief,
         "narrative": narrative,
         "full": f"{narrative_brief}\n\n\n{narrative}",
+        "skill_results": skill_results,
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "ending": {"name": ending, "narrative": result.get("ending_narrative", "")} if ending else None,
     }

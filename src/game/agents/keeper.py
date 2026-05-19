@@ -10,7 +10,6 @@ from ..messages import (
 )
 from ..judge import Judge
 from ..curator import Curator
-from ..escalation import EscalationPolicy, EscalationContext
 from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt
 from llm import call_deepseek
 
@@ -28,20 +27,18 @@ class Keeper:
         world: ScenarioWorld,
         dependency_graph: dict | None = None,
         phase1: dict | None = None,
-        escalation_policy: EscalationPolicy | None = None,
         npc_profiles: dict[str, Any] | None = None,
     ):
         self.world = world
         # dependency_graph is now owned by world; keep reference here for backward compat
         self.dependency_graph = dependency_graph or {}
         self.phase1 = phase1 or {}
-        self.escalation_policy = escalation_policy or EscalationPolicy()
         self.npc_profiles = npc_profiles or {}
 
         self.judge = Judge(world)
         self.curator = Curator(world)
         self.turn_number = 0
-        self.escalation_history: list[str] = []  # recent escalation dimension names
+        self._warnings: list[str] = []  # per-turn LLM error warnings surfaced to player
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
         """Execute full turn: parse → judge → enrich → curate."""
@@ -50,6 +47,7 @@ class Keeper:
             return self._process_deterministic_only(turn_input)
         self.turn_number += 1
         raw = turn_input.raw_text
+        self._warnings.clear()
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
         parse_result = self._parse(raw)
@@ -81,9 +79,16 @@ class Keeper:
                         "skill_tier": outcome.skill_tier,
                     })
             elif entry_type == "move":
-                result = self.world.move(entry.get("target", ""))
+                # TODO: Move restriction check — from_here edges may carry requirement
+                # conditions (e.g. "6号车厢未被完全吞噬"). Currently only checks if
+                # target is in possible_exits. Future: evaluate edge.requirement via
+                # the same parse_hard_requirement + edge gating pipeline.
+                target = entry.get("target", "")
+                # --- future restriction check point ---
+                result = self.world.move(target)
+                # --- future restriction check point ---
                 all_outcomes.append(ActionOutcome(
-                    intent=ActionIntent(action="move", target=entry.get("target", "")),
+                    intent=ActionIntent(action="move", target=target),
                     success=result.success, message=result.message,
                     side_effects=result.side_effects,
                 ))
@@ -132,7 +137,9 @@ class Keeper:
                     msg = "（仔细查看四周，没有特别的发现）"
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="search"), success=True, message=msg,
-                    skill_tier=tier if self.world.player else ""))
+                    entity_id="SEARCH", entity_type="search",
+                    skill_tier=tier if self.world.player else "",
+                    skill_detail=skill_detail if self.world.player else ""))
             else:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
@@ -143,17 +150,22 @@ class Keeper:
         if judged_entities:
             enrichment = self._enrich(judged_entities, raw)
             emphasis = enrichment.get("emphasis_hint", "")
-            # Apply enriched AT descriptions to outcomes
-            at_descs = enrichment.get("at_descriptions", {})
-            enriched = enrichment.get("enriched_results", {})
+            reasoning = enrichment.get("reasoning", "")
+            # Apply enriched results to outcomes (unified results field)
+            results = enrichment.get("results", {})
             for o in all_outcomes:
                 eid = o.entity_id
-                if o.entity_type == "auto_trigger" and eid in at_descs:
-                    o.message = at_descs[eid]
-                elif eid in enriched:
-                    o.message = enriched[eid]
+                if eid in results:
+                    o.message = results[eid]
 
         # Step 4: Escalation check
+        # TODO(optimize): Escalation currently fires an LLM call every turn to evaluate
+        # whether game state requires author intervention. This is expensive and rarely
+        # triggers. Planned optimizations:
+        #   - Heuristic pre-filter: skip LLM if no rules have preconditions met
+        #   - Sample-based: evaluate every N turns instead of every turn
+        #   - Lazy: only evaluate when parse returns "other" or no entity matched
+        # See readme.md §待优化 for details.
         escalation_req = self._check_escalation(raw, parse_result, all_outcomes, [])
         if escalation_req and author:
             patch = author.handle_escalation(escalation_req)
@@ -171,11 +183,25 @@ class Keeper:
                 ending_narrative = ed
                 break
 
+        # Inject LLM error warnings as player-visible outcomes
+        for w in self._warnings:
+            all_outcomes.append(ActionOutcome(
+                intent=ActionIntent(action="other"), success=True,
+                message=f"⚠ {w}"))
+
         # Step 5: Curate
         ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
         brief = self.curator.assemble(all_outcomes, ambient, emphasis)
 
-        # Memory
+        # Step 6: Memory
+        # TODO(optimize): Memory compression currently uses LLM summarization via
+        # call_deepseek when the context buffer exceeds threshold. This is a blocking
+        # LLM call during turn processing. Planned optimizations:
+        #   - Async/background: fire compression in a separate thread, use stale
+        #     summary until ready
+        #   - Rule-based truncation: drop oldest entries before calling LLM
+        #   - Token-count trigger: use actual token count instead of record count
+        # See readme.md §待优化 for details.
         first_entry = parse_result[0] if parse_result else {"type": "other"}
         brief_text = "\n".join(o.message for o in all_outcomes)
         self.world.memory.add_record(
@@ -185,7 +211,9 @@ class Keeper:
         )
         if self.world.memory.should_compress():
             self.world.memory.compress(
-                lambda p: call_deepseek(p, json_mode=False, model="deepseek-v4-flash"))
+                lambda p: call_deepseek(p, json_mode=False, model="deepseek-v4-flash",
+                                        system="你是一个擅长总结和提炼信息的助手。请将游戏历史压缩为简洁摘要，"
+                                               "保留关键事件、重要细节和当前状态，去除冗余对话。"))
 
         return {"brief": brief, "escalation": escalation_req,
                 "ending_name": ending_name, "ending_narrative": ending_narrative}
@@ -194,9 +222,16 @@ class Keeper:
 
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
-        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                                 fallback_schema={"actions": []})
-        data = json.loads(response) if isinstance(response, str) else response
+        try:
+            response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                     system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
+                                            "你可以根据经验和对COC规则的理解，判断玩家输入触发了哪些交互、"
+                                            "自动事件或移动行为，并评估软性叙事条件是否满足。",
+                                     fallback_schema={"actions": []})
+            data = json.loads(response) if isinstance(response, str) else response
+        except Exception as e:
+            self._warnings.append(f"意图解析失败（{e}），将你的输入作为即兴行为处理。")
+            return [{"type": "other", "text": raw}]
         actions = data.get("actions", [])
         if not actions:
             return [{"type": "other", "text": raw}]
@@ -204,13 +239,20 @@ class Keeper:
 
     def _enrich(self, judged_entities, user_input) -> dict:
         prompt = build_keeper_enrich_prompt(self.world, judged_entities, user_input)
-        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                                 fallback_schema={
-                                     "at_descriptions": {},
-                                     "enriched_results": {},
-                                     "emphasis_hint": "",
-                                 })
-        return json.loads(response) if isinstance(response, str) else response
+        try:
+            response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                     system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
+                                            "你可以根据检定结果和场景上下文，将零散的实体触发结果转化为流畅沉浸的叙事，"
+                                            "依据成功或失败调整描述的清晰度和影响力。",
+                                     fallback_schema={
+                                         "results": {},
+                                         "reasoning": "",
+                                         "emphasis_hint": "",
+                                     })
+            return json.loads(response) if isinstance(response, str) else response
+        except Exception as e:
+            self._warnings.append(f"叙事润色失败（{e}），结果将以原始形式呈现。")
+            return {"results": {}, "reasoning": "", "emphasis_hint": ""}
 
     def _find_entity_by_id(self, entity_id: str):
         """Find entity by ID across graph (scenes + events)."""
@@ -275,6 +317,8 @@ class Keeper:
         eval_prompt = self.escalation_policy._build_eval_prompt(ctx)
         eval_result = call_deepseek(eval_prompt, json_mode=True, reasoning_effort="low",
                                      model="deepseek-v4-flash",
+                                     system="你是一个TRPG游戏状态监控者。请客观评估当前游戏是否需要创作者介入，"
+                                            "仅在有明确的规则违规、叙事僵局或玩家明显受挫时标记。避免不必要的干预。",
                                      fallback_schema={
                                          "severities": {},
                                          "rules_triggered": [],
