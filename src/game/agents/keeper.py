@@ -201,7 +201,10 @@ class Keeper:
                     response = author.handle_request(request, self.turn_number)
 
                     if isinstance(response, StructuralEdit):
-                        response = self._integrate_supplement(response, author)
+                        response = self._integrate_supplement(
+                            response, author,
+                            intent=request.intent, reasoning=request.reasoning,
+                        )
                         if response.supplement_path:
                             return self.process_turn(turn_input, author, _depth + 1)
                     elif isinstance(response, ModulePatch):
@@ -361,13 +364,13 @@ class Keeper:
             "wr0_enabled": self.world.wr0_enabled,
         }
 
-    def _integrate_supplement(self, structural_edit: StructuralEdit, author) -> StructuralEdit:
+    def _integrate_supplement(self, structural_edit: StructuralEdit, author, intent: str = "", reasoning: str = "") -> StructuralEdit:
         """Run supplement pipeline and integrate results into world graph."""
         try:
             from module_designer.supplement_pipeline import run_supplement_pipeline
             result = run_supplement_pipeline(
-                player_intent="",
-                reasoning="",
+                player_intent=intent,
+                reasoning=reasoning,
                 base_l3=author.l3_data,
                 entry_scene=structural_edit.entry_scene,
                 exit_scene=structural_edit.exit_scene,

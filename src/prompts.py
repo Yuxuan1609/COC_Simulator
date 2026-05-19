@@ -179,23 +179,36 @@ def _build_l1l3_context(
     parts = []
     if l3_data:
         parts.append("【基调约束】")
-        tc = l3_data.tone_constraints
-        if tc.genre:
-            parts.append(f"  类型：{tc.genre}")
-        if tc.narrative_style:
-            parts.append(f"  叙事风格：{tc.narrative_style}")
-        if tc.forbidden:
-            parts.append(f"  禁止：{', '.join(tc.forbidden)}")
-        if tc.recommended:
-            parts.append(f"  必须包含：{', '.join(tc.recommended)}")
-        if l3_data.driving_force:
-            parts.append(f"  核心驱动力：{l3_data.driving_force}")
-        intent = l3_data.scene_intents.get(scene_name) if scene_name else None
+        # Normalize dict/dataclass access (L3 may be raw dict from JSON)
+        _l3_get = lambda obj, key, default="": obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+        tc = _l3_get(l3_data, "tone_constraints", {})
+        if tc:
+            tc_genre = _l3_get(tc, "genre", "")
+            if tc_genre:
+                parts.append(f"  类型：{tc_genre}")
+            tc_style = _l3_get(tc, "narrative_style", "")
+            if tc_style:
+                parts.append(f"  叙事风格：{tc_style}")
+            tc_forbidden = _l3_get(tc, "forbidden", [])
+            if tc_forbidden:
+                parts.append(f"  禁止：{', '.join(tc_forbidden)}")
+            tc_recommended = _l3_get(tc, "recommended", [])
+            if tc_recommended:
+                parts.append(f"  必须包含：{', '.join(tc_recommended)}")
+        driving_force = _l3_get(l3_data, "driving_force", "")
+        if driving_force:
+            parts.append(f"  核心驱动力：{driving_force}")
+        scene_intents = _l3_get(l3_data, "scene_intents", {})
+        intent = None
+        if scene_name and scene_intents:
+            if isinstance(scene_intents, dict):
+                intent = scene_intents.get(scene_name)
+            else:
+                intent = getattr(scene_intents, scene_name, None)
         if intent:
-            if intent.purpose:
-                parts.append(f"  本场景设计意图：{intent.purpose}")
-            if intent.emotion:
-                parts.append(f"  目标情绪：{intent.emotion}")
+            intent_purpose = _l3_get(intent, "purpose", "")
+            if intent_purpose:
+                parts.append(f"  本场景设计意图：{intent_purpose}")
     if l1_scene:
         parts.append("【场景感知信息】")
         # L1 may be dict (from JSON) or dataclass — accept both
