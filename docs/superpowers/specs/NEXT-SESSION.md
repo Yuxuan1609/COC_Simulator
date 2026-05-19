@@ -128,7 +128,74 @@
 
 ---
 
-## Pipeline 总览 (参考)
+## 修改指南 — 功能 → 代码对应
+
+### 游戏循环主流程
+
+| 功能 | 文件 | 关键位置 |
+|------|------|----------|
+| 回合入口 + 三 Agent 初始化 | `src/game_loop.py` | `init_game():111` / `run_turn():198` |
+| Keeper 回合编配主逻辑 | `src/game/agents/keeper.py` | `process_turn():51` |
+| Parse — LLM 意图解析 | `src/game/agents/keeper.py` | `_parse():227` → `prompts.py:build_keeper_parse_prompt()` |
+| Judge — 确定性闸门 | `src/game/judge.py` | `_execute_entity():99` |
+| Enrich — LLM 叙事润色 | `src/game/agents/keeper.py` | `_enrich():244` → `prompts.py:build_keeper_enrich_prompt()` |
+| Curate — 组装 NarratorBrief | `src/game/curator.py` | `assemble():17` |
+| Narrator — 最终叙事 | `src/game/agents/narrator.py` | `narrate():19` → `prompts.py:build_narrator_prompt()` |
+| Memory 记录 + 压缩 | `src/game/agents/keeper.py` | `process_turn()` 末尾 + `src/scenario_core.py:MemoryManager` |
+
+### Author 介入全链路（新）
+
+| 功能 | 文件 | 关键位置 |
+|------|------|----------|
+| IntentDetector — other 意图检测 | `src/game/intent_detector.py` | `IntentDetector.detect()` |
+| AuthorRequest 数据载体 | `src/game/messages.py` | `AuthorRequest:16` / `IntentResult:8` |
+| Author — 两级响应 (Patch/Structural/Reject) | `src/game/agents/author.py` | `handle_request():26` |
+| Author prompt | `src/prompts.py` | `build_author_prompt()` |
+| Keeper — 并行调度 IntentDetector | `src/game/agents/keeper.py` | `process_turn()` 中 `detect_future` 逻辑 |
+| Keeper — Author 请求构建 | `src/game/agents/keeper.py` | `_build_scene_context_for_author():342` |
+| Patch 集成 | `src/game/agents/keeper.py` | `_integrate_patch():388` |
+| StructuralEdit 集成 | `src/game/agents/keeper.py` | `_integrate_supplement():358` |
+| StructuralEdit 数据载体 | `src/game/messages.py` | `StructuralEdit:75` |
+| Reject 处理 + 玩家提示注入 | `src/game/agents/keeper.py` | `process_turn()` 中 entities=[] 分支 |
+| 重复意图抑制 | `src/game/agents/keeper.py` | `_recent_intents` / `_intent_cooldown` |
+| WR0 开关 | `src/scenario_core.py` | `ScenarioWorld.wr0_enabled:760` |
+| 补充管线 | `src/module_designer/supplement_pipeline.py` | `run_supplement_pipeline()` |
+
+### 数据结构
+
+| 功能 | 文件 | 关键位置 |
+|------|------|----------|
+| Entity 统一数据类 | `src/scenario_core.py` | `Entity:110` |
+| Node / Edge / DirectedGraph | `src/scenario_core.py` | `Node:339` / `Edge:32` / `DirectedGraph:376` |
+| ScenarioWorld 运行时状态 | `src/scenario_core.py` | `ScenarioWorld:770` |
+| runtime_state + dependency_graph | `src/scenario_core.py` | `runtime_state:801` / `dependency_graph:802` |
+| hard requirement 解析 (AND/OR) | `src/scenario_core.py` | `parse_hard_requirement():687` |
+| dependency_graph 数据结构 | `src/module_designer/dependency_graph.py` | `DependencyEdge:24` / `DependencyGraph:40` |
+| @markup 副作用解析 | `src/scenario_core.py` | `parse_markup_all():194` |
+| ##GRADED## 分级结果 | `src/scenario_core.py` | `resolve_graded_result():235` |
+| ##END_ 结局检测 | `src/scenario_core.py` | `has_ending():259` |
+| 消息类型 (dataclass) | `src/game/messages.py` | 全部 |
+
+### 离线管线
+
+| 功能 | 文件 | 关键位置 |
+|------|------|----------|
+| 管线编排 (13 步) | `src/module_designer/layered_pipeline.py` | `run_pipeline()` |
+| 各步 prompt + 解析 | `src/module_designer/layered_parser.py` | 各 `_step_*` 函数 |
+| L1/L2/L3 数据模型 | `src/module_designer/l1_player.py` / `l2_keeper.py` / `l3_designer.py` | — |
+| Schema 验证 | `src/module_designer/layered_schema.py` | `validate_all()` |
+| 管线 CLI 入口 | `run_pipeline.py` | — |
+
+### 测试
+
+| 功能 | 文件 | 覆盖范围 |
+|------|------|----------|
+| 真实 LLM 集成测试 | `tests/game_loop_harness.py` | 7 轮，parse→judge→enrich→narrate |
+| Author 流程单元测试 | `tests/test_author_flow.py` | 8 case，Detector → Author → Keeper 全链路 mock |
+| Detector 单元测试 | `tests/test_intent_detector.py` | 3 case，flavor/有意义/空输入 mock |
+| Escalation 集成 harness | `tests/test_escalation_harness.py` | 4 case，正常/flavor/Patch/Reject，Author 日志 |
+
+---
 
 ```
 模组文档 (.docx)
