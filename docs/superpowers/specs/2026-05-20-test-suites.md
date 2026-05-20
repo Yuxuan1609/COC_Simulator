@@ -85,7 +85,7 @@ cd tests && python -m pytest test_author_flow.py test_intent_detector.py -v
 
 ## 3. Escalation Harness (`tests/test_escalation_harness.py`)
 
-基于《常暗之厢》测试房间 + 6号车厢场景的 4 个集成 case。LLM 全 mock，但使用与生产一致的实体结构。
+基于《常暗之厢》测试房间 + 6号车厢场景的 5个集成 case。LLM 全 mock，但使用与生产一致的实体结构。
 
 | Case | 场景 | 输入 | 流程 |
 |------|------|------|------|

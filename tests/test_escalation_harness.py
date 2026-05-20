@@ -1,16 +1,17 @@
 """
-Escalation Flow Test Harness — 基于《常暗之厢》模组场景，5 个针对性 case。
-所有 LLM 调用通过 monkeypatch 注入预定义响应，输出 Author 相关日志到 debug 目录。
+Escalation Flow Test Harness — based on test room + car 6 from the module.
+5 cases with all LLM calls mocked. Author prompt/response logged to debug dir.
 
-模拟场景（使用测试房间 + 6号车厢）:
-  Case A: 正常交互 — Parse 命中 I1，Detector 不触发，零 overhead
-  Case B: flavor 行为 — Parse 返回 other，Detector 判定无意义，Author 不触发
-  Case C: other → Author Patch — 玩家尝试模组未覆盖的搜索点，Author 返回新 entity
-  Case D: other → Author Reject — 玩家做出违反世界规则的行为，Author 打回
-  Case E: other → Author StructuralEdit — 玩家开辟全新叙事线，触发补充管线
+Cases:
+  A: normal entity match — Parse hits IT1, Detector not triggered, zero overhead
+  B: other + flavor — Detector says no, Author not triggered
+  C: other + Author Patch — new entity integrated, recursive process_turn
+  D: other + Author Reject — entities=[], rejection msg injected
+  E: other + Author StructuralEdit — supplement pipeline triggered, new scene injected
 """
 import sys, os, json
 from datetime import datetime
+from unittest.mock import patch as _upatch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -30,208 +31,226 @@ from game.agents.author import Author
 
 
 # =====================================================================
-#  Shared world — 基于常暗之厢测试房间 + 6号车厢
+#  Shared world
 # =====================================================================
 
 def _make_world():
     scenes = {
-        "测试房间": {
+        "test_room": {
             "interactions": [
                 {
                     "id": "IT1", "entity_type": "interaction",
-                    "name": "仔细检查桌子上的物品", "scene": "测试房间",
-                    "type": "侦查", "requirement": "", "trigger": "调查员走近金属桌子，仔细翻看上面的每样东西",
+                    "name": "inspect items on table", "scene": "test_room",
+                    "type": "Spot Hidden", "requirement": "", "trigger": "inspect the metal table",
                     "result": "##GRADED##",
                     "side_effects": [],
                     "graded_result": {
-                        "on_failure": "你翻看了桌上的物品，但灯泡闪烁得让你眼花，没能发现什么特别之处。",
-                        "on_regular": "你注意到日志的最后几页被撕掉了，但剩下的内容提到了一间'永远不会天亮的房间'。钥匙上刻着一个编号：42。",
-                        "on_hard": "日志记载了一位名叫霍桑的研究员的实验记录，他试图用镜子'捕捉黑暗中的东西'。钥匙的编号42对应着铁门外的某个储物柜。",
-                        "on_extreme": "你迅速理清了线索：霍桑在日志中警告'不要直视镜子超过五秒'，钥匙42号可以打开铁门外的通道，但镜子本身似乎就是某种观测装置——你从裂痕中看到了与自己动作不一致的倒影。"
+                        "on_failure": "The flickering bulb blinds you — you find nothing special.",
+                        "on_regular": "You notice the last pages of the log are torn out. A key with number 42.",
+                        "on_hard": "The log records experiments by a researcher named Hawthorne. Key 42 opens a locker.",
+                        "on_extreme": "Hawthorne warned: do not stare into the mirror for more than five seconds.",
                     },
                     "difficulty": "regular",
                 },
                 {
                     "id": "IT2", "entity_type": "interaction",
-                    "name": "翻阅霍桑的研究日志", "scene": "测试房间",
-                    "type": "图书馆使用", "requirement": "IT1",
-                    "trigger": "调查员坐下来仔细阅读日志的全部内容",
+                    "name": "read Hawthorne's research log", "scene": "test_room",
+                    "type": "Library Use", "requirement": "IT1",
+                    "trigger": "sit down and read the log in detail",
                     "result": "##GRADED##",
                     "side_effects": [],
                     "graded_result": {
-                        "on_failure": "日志的笔迹潦草凌乱，你无法从中理出有用的信息。",
-                        "on_regular": "霍桑在日志中记录了三个阶段的实验：第一阶段——观测；第二阶段——接触；第三阶段——'他们回应了'。",
-                        "on_hard": "你发现日志并非真正的日记，而是一份实验报告。'观测者效应'在报告中反复出现。",
-                        "on_extreme": "你完全理解了霍桑的理论：他试图用镜子作为'屏障'来阻挡黑暗中的东西，但实验失控了。"
+                        "on_failure": "The handwriting is too messy to decipher.",
+                        "on_regular": "Three phases: Observation, Contact, 'They responded'.",
+                        "on_hard": "The log is an experiment report. The observer effect is mentioned repeatedly.",
+                        "on_extreme": "Hawthorne tried to use the mirror as a barrier — but the experiment went wrong.",
                     },
                     "difficulty": "regular",
                 },
             ],
             "auto_triggers": [
                 {
-                    "id": "AT_TEST_AUTO", "entity_type": "auto_trigger",
-                    "name": "灯泡闪烁", "scene": "测试房间",
-                    "type": "无", "requirement": "", "trigger": "调查员进入测试房间",
-                    "result": "头顶的白炽灯剧烈闪烁了几下，发出令人牙酸的滋滋声，然后恢复了微弱的光亮。在闪烁的瞬间，你似乎看到铁门的观察窗外有一张脸一闪而过——但那只是漆黑一片。",
-                    "side_effects": ["调查员可能注意到了铁门外的异常"],
-                    "difficulty": "None",
+                    "id": "AT_AMBIENT", "entity_type": "auto_trigger",
+                    "name": "flickering light", "scene": "test_room",
+                    "type": "None", "requirement": "", "trigger": "entering the room",
+                    "result": "The bulb flickers violently with a buzzing sound.",
+                    "side_effects": [], "difficulty": "None",
                 }
             ],
             "from_here": [
-                {"target": "6号车厢", "method": "穿过铁门后的通道（需要先推开铁门）", "requirement": "IT4"}
+                {"target": "car_6", "method": "through the iron door passage", "requirement": "IT4"}
             ],
             "to_here": [],
             "encounters": [], "scene_weapons": [], "extra": {},
-            "description": "安静得令人不安，只有灯泡偶尔发出的滋滋声打破沉默。",
+            "description": "Unnervingly quiet. Only the occasional buzz of the bulb breaks the silence.",
         },
-        "6号车厢": {
+        "car_6": {
             "interactions": [
                 {
                     "id": "I1", "entity_type": "interaction",
-                    "name": "查看门上的便签正面", "scene": "6号车厢",
-                    "type": "无", "requirement": "", "trigger": "调查员醒来后，注意到内侧门扉上贴着一张醒目的便签",
-                    "result": "便签正面写着「只管前进吧 已经没有退路了」",
-                    "side_effects": [], "difficulty": "None",
-                },
-                {
-                    "id": "I2", "entity_type": "interaction",
-                    "name": "撕下便签查看背面", "scene": "6号车厢",
-                    "type": "无", "requirement": "I1",
-                    "trigger": "调查员撕下门扉上的便签，翻看背面",
-                    "result": "便签背面写着「第三个箱子里有藏着钥匙」",
+                    "name": "read the note on the door", "scene": "car_6",
+                    "type": "None", "requirement": "", "trigger": "notice the note on the inner door",
+                    "result": "The note says: Just keep moving forward. There is no way back.",
                     "side_effects": [], "difficulty": "None",
                 },
             ],
             "auto_triggers": [], "encounters": [], "scene_weapons": [],
             "from_here": [
-                {"target": "5号车厢", "method": "步行穿过车厢连接门", "requirement": ""},
-                {"target": "测试房间", "method": "步行返回测试房间", "requirement": ""},
+                {"target": "car_5", "method": "walk through the connecting door", "requirement": ""},
+                {"target": "test_room", "method": "walk back to test room", "requirement": ""},
             ],
             "to_here": [
-                {"source": "测试房间", "method": "穿过铁门后的通道进入", "requirement": "IT4"}
+                {"source": "test_room", "method": "through the iron door passage", "requirement": "IT4"}
             ],
             "extra": {},
-            "description": "迷惘而压抑，黑暗中透着一丝诡异的不安。",
+            "description": "Lost and oppressive. A strange unease in the darkness.",
         },
     }
     graph = DirectedGraph(scenes=scenes, events=[])
-    world = ScenarioWorld(graph, start_node="测试房间")
+    world = ScenarioWorld(graph, start_node="test_room")
     world.load_dependency_graph({"nodes": {
-        "IT1": {"entity_id": "IT1", "entity_type": "interaction", "name": "仔细检查桌子上的物品"},
-        "IT2": {"entity_id": "IT2", "entity_type": "interaction", "name": "翻阅霍桑的研究日志"},
-        "AT_TEST_AUTO": {"entity_id": "AT_TEST_AUTO", "entity_type": "auto_trigger", "name": "灯泡闪烁"},
-        "I1": {"entity_id": "I1", "entity_type": "interaction", "name": "查看门上的便签正面"},
-        "I2": {"entity_id": "I2", "entity_type": "interaction", "name": "撕下便签查看背面"},
+        "IT1": {"entity_id": "IT1", "entity_type": "interaction", "name": "inspect items on table"},
+        "IT2": {"entity_id": "IT2", "entity_type": "interaction", "name": "read Hawthorne's research log"},
+        "AT_AMBIENT": {"entity_id": "AT_AMBIENT", "entity_type": "auto_trigger", "name": "flickering light"},
+        "I1": {"entity_id": "I1", "entity_type": "interaction", "name": "read the note on the door"},
     }, "edges": [
         {"source": "IT2", "target": "IT1", "dep_type": "interaction", "condition": "success"},
-        {"source": "I2", "target": "I1", "dep_type": "interaction", "condition": "success"},
     ]})
     return world
 
 
 def _make_author():
-    """基于常暗之厢 L3 的 Author 实例。"""
     l3 = {
-        "module_meta": {"name": "常暗之厢"},
-        "world_rules": {
-            "description": "一辆在黑暗中永无止境行驶的电车，后方被不可名状的吞噬之口追赶"
-        },
+        "module_meta": {"name": "test_module"},
+        "world_rules": {"description": "A train endlessly running in darkness, chased by an unnameable devouring maw."},
         "scene_intents": {
-            "测试房间": {
-                "purpose": "作为游戏的调试和扩展入口，承载动态生成的新内容",
-                "emotion": "诡异与好奇交织",
-            },
+            "test_room": {"purpose": "Debug and expansion entry point", "emotion": "Unease and curiosity"},
         },
         "ending_conditions": [],
         "tone_constraints": {
-            "genre": "克苏鲁恐怖",
-            "narrative_style": "压抑、绝望中透出微弱希望",
-            "forbidden": ["超能力", "热武器", "现代通讯设备发挥作用"],
-            "recommended": ["压抑感", "未知恐惧", "道德抉择"],
+            "genre": "Lovecraftian horror",
+            "narrative_style": "Oppressive, with faint hope in despair",
+            "forbidden": ["superpowers", "firearms", "modern communication devices working"],
+            "recommended": ["tension", "unknown fear", "moral dilemma"],
         },
-        "characters": {
-            "京山人吉": "受伤的电车乘务员，关键信息提供者"
-        },
-        "driving_force": "在黑暗中不断向前，逃离吞噬之口，寻找仅存的希望",
+        "characters": {"conductor": "Injured train conductor, key info provider"},
+        "driving_force": "Keep moving forward in darkness, escape the devouring maw, find hope",
     }
     return Author(l3)
 
 
 # =====================================================================
-#  Mock factory with Author call logging
+#  Mock factory + logging
 # =====================================================================
 
-def _patch_all(monkeypatch, parse_actions, detector_result, author_result,
-               log_dir=""):
-    """注入 LLM mock。用 prompt 内容匹配（非序号），保证递归时正确。"""
+def _setup_mocks(parse_actions, detector_result, author_result, log_dir=""):
+    """Set up LLM mocks with unittest.mock.patch. Returns (detector_called, author_called, stop_fn).
 
+    parse_actions:
+      - list[dict]: same actions for all Parse calls
+      - list[list[dict]]: parse_actions[N-1] for Nth Parse call (for recursion)
+
+    Log files written to log_dir:
+      01_parse_response.json (always)
+      02_detector_prompt.txt + 02_detector_response.json (when detector called)
+      03_author_prompt.txt + 03_author_response.json (when author called)
+    """
     detector_called = [False]
     author_called = [False]
+    parse_count = [0]
+
+    def _log(filename, content):
+        if not log_dir: return
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, filename), "w", encoding="utf-8") as f:
+            f.write(content)
+
+    def _log_json(filename, data):
+        if not log_dir: return
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, filename), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _get_parse_actions():
+        if parse_actions and isinstance(parse_actions[0], list):
+            idx = min(parse_count[0], len(parse_actions) - 1)
+            return parse_actions[idx]
+        return parse_actions
 
     def _mock_llm(prompt, json_mode=True, model="", system="", reasoning_effort="",
                    fallback_schema=None):
 
-        # Detector prompt — 纯角色扮演判断
+        # Parse
+        if "【世界状态】" in prompt or "【玩家历史行动】" in prompt:
+            actions = _get_parse_actions()
+            if parse_count[0] == 0:
+                _log_json("01_parse_response.json", {"actions": actions})
+            parse_count[0] += 1
+            return json.dumps({"actions": actions})
+
+        # Detector
         if "纯角色扮演的例子" in prompt or "【玩家行为】" in prompt:
-            # The detector prompt from IntentDetector._build_prompt
-            if "唱" in prompt and "小曲" in prompt:
-                # Flavor detection
-                pass
             detector_called[0] = True
             resp = detector_result
-            if isinstance(resp, IntentResult):
-                return json.dumps({
-                    "has_intent": resp.needs_author,
-                    "intent": resp.intent,
-                    "reasoning": resp.reasoning,
-                })
-            return json.dumps(resp)
+            resp_dict = resp if isinstance(resp, dict) else {
+                "has_intent": resp.needs_author,
+                "intent": resp.intent,
+                "reasoning": resp.reasoning,
+            }
+            _log("02_detector_prompt.txt", prompt)
+            _log_json("02_detector_response.json", resp_dict)
+            return json.dumps(resp_dict)
 
-        # Author prompt — 评估意图范围
-        if "请评估此意图的范围" in prompt or ("WR0" in prompt and "玩家意图" in prompt and "玩家原话" in prompt):
+        # Author
+        if "WR0" in prompt or "请评估此意图的范围" in prompt:
             author_called[0] = True
-            if log_dir:
-                os.makedirs(log_dir, exist_ok=True)
-                with open(os.path.join(log_dir, "author_prompt.txt"), "w", encoding="utf-8") as f:
-                    f.write(prompt)
-                with open(os.path.join(log_dir, "author_response.json"), "w", encoding="utf-8") as f:
-                    json.dump(author_result, f, ensure_ascii=False, indent=2)
+            _log("03_author_prompt.txt", prompt)
+            _log_json("03_author_response.json", author_result)
             return json.dumps(author_result)
-
-        # Parse prompt — 包含世界状态和实体列表
-        if "【世界状态】" in prompt or "【玩家历史行动】" in prompt:
-            return json.dumps({"actions": parse_actions})
 
         # Enrich / fallback
         return json.dumps({"results": {}, "reasoning": "", "emphasis_hint": ""})
 
-    monkeypatch.setattr("game.agents.keeper.call_deepseek", _mock_llm)
-    monkeypatch.setattr("game.intent_detector.call_deepseek", _mock_llm)
-    return detector_called, author_called
+    # Patch all module-level call_deepseek references.
+    # Each module does `from llm import call_deepseek` at import time,
+    # creating its own local reference. All must be patched individually.
+    p1 = _upatch("game.agents.keeper.call_deepseek", _mock_llm)
+    p2 = _upatch("game.intent_detector.call_deepseek", _mock_llm)
+    p3 = _upatch("game.agents.author.call_deepseek", _mock_llm)
+    p4 = _upatch("llm.call_deepseek", _mock_llm)  # evaluate_trait_enhancement etc.
+    p1.start()
+    p2.start()
+    p3.start()
+    p4.start()
+
+    def stop():
+        p1.stop()
+        p2.stop()
+        p3.stop()
+        p4.stop()
+
+    return detector_called, author_called, stop
 
 
-# =====================================================================
-#  Case logger
-# =====================================================================
-
-def _write_case_log(log_dir: str, summary: dict):
-    if not log_dir:
-        return
+def _write_case_log(log_dir, summary):
+    if not log_dir: return
     os.makedirs(log_dir, exist_ok=True)
-    path = os.path.join(log_dir, "_case_log.json")
-    with open(path, "w", encoding="utf-8") as f:
+    with open(os.path.join(log_dir, "_case_log.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
 
+def _write_author_request_log(log_dir, data):
+    if not log_dir: return
+    os.makedirs(log_dir, exist_ok=True)
+    with open(os.path.join(log_dir, "03_author_request.json"), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 # =====================================================================
-#  Case A: 正常 entity 匹配 — zero overhead
+#  Case A: normal entity match — zero overhead
 # =====================================================================
 
-def test_case_a_normal_entity(monkeypatch, log_dir=""):
-    """
-    玩家输入 "仔细检查桌子上的每样东西" → Parse 返回 interaction IT1
-    → 无 other → Detector 不触发 → Author 不触发 → 正常流程完成
-    """
+def test_case_a_normal_entity(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
     author = _make_author()
@@ -243,414 +262,405 @@ def test_case_a_normal_entity(monkeypatch, log_dir=""):
         return orig(*a, **kw)
     keeper.intent_detector.detect = _track
 
-    _patch_all(monkeypatch,
+    detector_called, _, stop = _setup_mocks(
         parse_actions=[{"type": "interaction", "id": "IT1"}],
         detector_result=IntentResult(needs_author=False),
         author_result={},
         log_dir=log_dir,
     )
 
-    turn = TurnInput(raw_text="仔细检查桌子上的每样东西")
-    result = keeper.process_turn(turn, author=author)
+    try:
+        turn = TurnInput(raw_text="inspect every item on the table carefully")
+        result = keeper.process_turn(turn, author=author)
 
-    assert not detector_hit[0], "Case A: Detector 不应被调用"
-    assert "escalation" not in result
-    assert world.runtime_state["IT1"].completed, "IT1 应标记为已完成"
+        assert not detector_hit[0], "Case A: Detector should NOT be called"
+        assert "escalation" not in result
+        assert world.runtime_state["IT1"].completed, "IT1 should be marked completed"
 
-    _write_case_log(log_dir, {
-        "case": "A — 正常 entity 匹配",
-        "input": "仔细检查桌子上的每样东西",
-        "parse_result": "interaction IT1",
-        "detector_called": False,
-        "author_called": False,
-        "flow": "Parse → Judge → Enrich → Curate → Narrator",
-        "verdict": "PASS",
-    })
+        _write_case_log(log_dir, {
+            "case": "A - normal entity match",
+            "input": "inspect every item on the table carefully",
+            "parse_result": "interaction IT1",
+            "detector_called": False,
+            "author_called": False,
+            "flow": "Parse -> Judge -> Enrich -> Curate -> Narrator",
+            "verdict": "PASS",
+        })
+    finally:
+        stop()
 
 
 # =====================================================================
-#  Case B: other + flavor — Detector 判定无意义
+#  Case B: other + flavor
 # =====================================================================
 
-def test_case_b_other_flavor(monkeypatch, log_dir=""):
-    """
-    玩家输入 "唱了一首快乐的小曲" → Parse 返回 other
-    → Detector 判定 needs_author=False (纯角色扮演)
-    → Author 不触发 → 正常流程
-    """
+def test_case_b_other_flavor(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
     author = _make_author()
 
-    detector_called, author_called = _patch_all(monkeypatch,
-        parse_actions=[{"type": "other", "text": "唱了一首快乐的小曲"}],
-        detector_result={
-            "has_intent": False,
-            "intent": "",
-            "reasoning": "唱歌属于纯角色扮演行为，不对游戏世界产生实际影响",
-        },
+    detector_called, author_called, stop = _setup_mocks(
+        parse_actions=[{"type": "other", "text": "sang a cheerful song"}],
+        detector_result={"has_intent": False, "intent": "", "reasoning": "pure roleplay behavior"},
         author_result={},
         log_dir=log_dir,
     )
 
-    turn = TurnInput(raw_text="唱了一首快乐的小曲")
-    result = keeper.process_turn(turn, author=author)
+    try:
+        turn = TurnInput(raw_text="sang a cheerful song")
+        result = keeper.process_turn(turn, author=author)
 
-    assert "escalation" not in result
-    node = world.graph.nodes["测试房间"]
-    assert len(node.interactions) == 2, \
-        f"Case B: 只有原始 IT1+IT2，不应有新 entity。实际: {len(node.interactions)}"
+        assert "escalation" not in result
+        node = world.graph.nodes["test_room"]
+        assert len(node.interactions) == 2, \
+            f"Case B: expected 2 interactions (IT1+IT2), got {len(node.interactions)}"
 
-    _write_case_log(log_dir, {
-        "case": "B — other + 无意义 (flavor)",
-        "input": "唱了一首快乐的小曲",
-        "parse_result": "type=other",
-        "detector_called": detector_called[0],
-        "detector_result": "needs_author=False (纯角色扮演)",
-        "author_called": author_called[0],
-        "flow": "Parse(other) → Detector(no) → Judge → Enrich → Curate",
-        "verdict": "PASS",
-    })
+        _write_case_log(log_dir, {
+            "case": "B - other + flavor (no intent)",
+            "input": "sang a cheerful song",
+            "parse_result": "type=other",
+            "detector_called": detector_called[0],
+            "detector_result": "needs_author=False (pure roleplay)",
+            "author_called": author_called[0],
+            "flow": "Parse(other) -> Detector(no) -> Judge -> Enrich -> Curate",
+            "verdict": "PASS",
+        })
+    finally:
+        stop()
 
 
 # =====================================================================
-#  Case C: other → Author Patch — 玩家做模组未覆盖的合理搜索
+#  Case C: other + Author Patch
 # =====================================================================
 
-def test_case_c_author_patch(monkeypatch, log_dir=""):
-    """
-    玩家输入 "检查桌子底下有没有暗格或隐藏的抽屉"
-    → Parse 返回 other → Detector 判定有意义（合理搜索，模组未覆盖）
-    → Author 返回 patch entity (SI1: 检查桌子底部暗格)
-    → _integrate_patch → 递归 process_turn → entity 出现在场景中
-    """
+def test_case_c_author_patch(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
     author = _make_author()
 
-    detector_called, author_called = _patch_all(monkeypatch,
-        parse_actions=[{
-            "type": "other",
-            "text": "弯下腰仔细检查桌子底下，看看有没有暗格或者隐藏的抽屉"
-        }],
+    detector_called, author_called, stop = _setup_mocks(
+        parse_actions=[
+            [{"type": "other", "text": "bend down and check under the table for hidden compartments"}],
+            [{"type": "interaction", "id": "SI1"}],  # recursive parse matches patched entity
+        ],
         detector_result={
             "has_intent": True,
-            "intent": "玩家想检查桌子底部的隐蔽空间，寻找可能被遗漏的线索",
-            "reasoning": "模组中桌子是核心物品但只描述了桌面，桌子底部是合理的延伸搜索点，需要 Author 创建对应的交互。",
+            "intent": "Player wants to search the underside of the table for hidden spaces",
+            "reasoning": "The module describes the tabletop but not the underside — a reasonable search extension.",
         },
         author_result={
             "level": "patch",
             "entities": [{
-                "id": "SI1",
-                "entity_type": "interaction",
-                "scene": "测试房间",
-                "name": "检查桌子底部的暗格",
-                "type": "侦查",
-                "requirement": "IT1",
-                "trigger": "调查员蹲下身，用手摸索桌子底部的边缘和角落",
+                "id": "SI1", "entity_type": "interaction",
+                "scene": "test_room", "name": "search under the table",
+                "type": "Spot Hidden", "requirement": "IT1",
+                "trigger": "crouch down and feel along the table's underside",
                 "result": "##GRADED##",
                 "side_effects": [],
                 "graded_result": {
-                    "on_failure": "桌子底部一片光滑，你没有摸到任何异常。",
-                    "on_regular": "你的手指碰到了一个细微的凹陷——桌子底部有一个被巧妙隐藏的暗格。里面塞着一张皱巴巴的纸条，上面用颤抖的笔迹写着：'它能看到你，当你看到它的时候。'",
-                    "on_hard": "暗格里除了纸条，还有一把小钥匙，标记着'储物柜47号'。",
-                    "on_extreme": "你不仅找到了暗格中的纸条和钥匙，还发现暗格的做工与车厢内的其他木工完全不同——这暗格是后来加装的，很可能是霍桑亲手打造的。纸条背面还有一组模糊的数字：也许是某种密码。"
+                    "on_failure": "The underside is smooth — you find nothing.",
+                    "on_regular": "Your fingers find a subtle depression — a hidden compartment. Inside: a crumpled note.",
+                    "on_hard": "The compartment also contains a small key marked 'Locker 47'.",
+                    "on_extreme": "The compartment was clearly added later — likely by Hawthorne himself. A cipher is scrawled on the note's back.",
                 },
                 "difficulty": "regular",
             }],
             "scene_descriptions": {},
-            "justification": "桌子底部的暗格是合理的搜索延伸，丰富了核心物品的互动深度，与霍桑研究员的叙事线索一致。",
+            "justification": "The table underside is a reasonable search extension, consistent with Hawthorne's narrative.",
         },
         log_dir=log_dir,
     )
 
-    turn = TurnInput(raw_text="弯下腰仔细检查桌子底下，看看有没有暗格或者隐藏的抽屉")
-    result = keeper.process_turn(turn, author=author)
+    try:
+        turn = TurnInput(raw_text="bend down and check under the table for hidden compartments")
+        result = keeper.process_turn(turn, author=author)
 
-    node = world.graph.nodes["测试房间"]
-    assert len(node.interactions) >= 3, \
-        f"Case C: 应有 3+ entity (IT1+IT2+SI1)。实际: {len(node.interactions)}"
-    assert "escalation" not in result
+        _write_author_request_log(log_dir, {
+            "other_texts": ["bend down and check under the table for hidden compartments"],
+            "intent": "Player wants to search the underside of the table for hidden spaces",
+            "reasoning": "The module describes the tabletop but not the underside.",
+            "scene_context_note": "Built by Keeper._build_scene_context_for_author()",
+        })
 
-    _write_case_log(log_dir, {
-        "case": "C — other → Author Patch",
-        "input": "检查桌子底下有没有暗格",
-        "parse_result": "type=other",
-        "detector_called": detector_called[0],
-        "detector_result": "needs_author=True — 合理搜索延伸",
-        "author_called": author_called[0],
-        "author_level": "patch",
-        "author_entity": "SI1: 检查桌子底部的暗格 (侦查, regular, 依赖IT1)",
-        "author_justification": "桌子底部暗格是核心物品的合理延伸",
-        "integration": "recursive process_turn → entity 注入场景",
-        "verdict": "PASS",
-    })
+        node = world.graph.nodes["test_room"]
+        assert len(node.interactions) >= 3, \
+            f"Case C: expected 3+ entities (IT1+IT2+SI1), got {len(node.interactions)}"
+        assert "escalation" not in result
+
+        _write_case_log(log_dir, {
+            "case": "C - other + Author Patch",
+            "input": "check under the table",
+            "parse_result": "type=other (round 1), interaction SI1 (round 2)",
+            "detector_called": detector_called[0],
+            "detector_result": "needs_author=True",
+            "author_called": author_called[0],
+            "author_level": "patch",
+            "author_entity": "SI1: search under the table",
+            "author_justification": "reasonable search extension",
+            "integration": "recursive process_turn -> entity integrated",
+            "verdict": "PASS",
+        })
+    finally:
+        stop()
 
 
 # =====================================================================
-#  Case D: other → Author Reject — 违反世界规则
+#  Case D: other + Author Reject
 # =====================================================================
 
-def test_case_d_author_reject(monkeypatch, log_dir=""):
-    """
-    玩家输入 "我拿出手机打开闪光灯照向铁门外的黑暗"
-    → Detector 判定有意义（利用现代设备）
-    → WR0=off → Author 检查 L3 tone_constraints.forbidden
-    → forbidden 含"现代通讯设备发挥作用" → Author 打回 (entities=[])
-    → Keeper 注入 rejection 消息到 outcomes
-    """
+def test_case_d_author_reject(monkeypatch=None, log_dir=""):
     world = _make_world()
-    world.wr0_enabled = False  # WR0 关闭 — 必须遵守世界规则
+    world.wr0_enabled = False
     keeper = Keeper(world)
     author = _make_author()
 
-    detector_called, author_called = _patch_all(monkeypatch,
-        parse_actions=[{
-            "type": "other",
-            "text": "拿出手机打开闪光灯，照向铁门观察窗外的黑暗"
-        }],
+    detector_called, author_called, stop = _setup_mocks(
+        parse_actions=[
+            [{"type": "other", "text": "take out phone and shine flashlight into the dark beyond the iron door"}],
+        ],
         detector_result={
             "has_intent": True,
-            "intent": "玩家想用手机闪光灯照射铁门外的黑暗区域，试图看清外面有什么",
-            "reasoning": "使用现代设备探索未知区域是一种主动的调查行为，但手机作为光源可能违反模组的克苏鲁恐怖基调。",
+            "intent": "Player wants to use phone flashlight to illuminate the darkness beyond the iron door",
+            "reasoning": "Using modern device for exploration is active investigation, but violates tone constraints.",
         },
         author_result={
             "level": "patch",
             "entities": [],
             "scene_descriptions": {},
-            "justification": "REJECTED: 根据L3 tone_constraints.forbidden，'现代通讯设备发挥作用'是被禁止的。手机闪光灯在模组的黑暗氛围中不应成为有效工具——车内的黑暗是超自然性质的，普通光源无法穿透。玩家的手机只能照亮自己周围几厘米，无法探知铁门外的任何东西。请引导玩家使用模组内已有的观察方式（如裂痕镜子）。",
+            "justification": "REJECTED: Per L3 tone_constraints.forbidden, 'modern communication devices working' is banned. "
+                           "Phone flashlight cannot penetrate the supernatural darkness of the train. "
+                           "Guide the player to use existing observation methods (e.g., the cracked mirror).",
         },
         log_dir=log_dir,
     )
 
-    turn = TurnInput(raw_text="拿出手机打开闪光灯，照向铁门观察窗外的黑暗")
-    result = keeper.process_turn(turn, author=author)
+    try:
+        turn = TurnInput(raw_text="take out phone and shine flashlight into the dark beyond the iron door")
+        result = keeper.process_turn(turn, author=author)
 
-    # 确认无新 entity
-    node = world.graph.nodes["测试房间"]
-    assert len(node.interactions) == 2, \
-        f"Case D: 应只有 IT1+IT2，无新 entity。实际: {len(node.interactions)}"
+        _write_author_request_log(log_dir, {
+            "other_texts": ["take out phone and shine flashlight into the dark beyond the iron door"],
+            "intent": "Player wants to use phone flashlight to illuminate the darkness",
+            "reasoning": "Using modern device for exploration violates tone constraints.",
+            "scene_context": {"wr0_enabled": False, "note": "WR0 off, Author must respect L3 tone_constraints.forbidden"},
+        })
 
-    # 确认 rejection 消息出现在 outcomes 中
-    all_messages = [o.message for o in result["brief"].action_outcomes]
-    rejection_keywords = ["你尝试了", "REJECTED", "无法", "没有效果", "不起作用"]
-    rejection_found = any(
-        any(kw in m for kw in rejection_keywords)
-        for m in all_messages
-    )
-    # 宽限：如果上面没有匹配到，至少确认有 outcome 输出（防止静默失败）
-    assert rejection_found or len(all_messages) > 0, \
-        f"Case D: 打回消息未出现在 outcomes 中。Got: {all_messages}"
+        node = world.graph.nodes["test_room"]
+        assert len(node.interactions) == 2, \
+            f"Case D: expected 2 interactions (IT1+IT2), got {len(node.interactions)}"
 
-    _write_case_log(log_dir, {
-        "case": "D — other → Author 打回 (违反世界规则)",
-        "input": "拿出手机打开闪光灯照向黑暗",
-        "parse_result": "type=other",
-        "detector_called": detector_called[0],
-        "detector_result": "needs_author=True — 用手机当光源探索",
-        "author_called": author_called[0],
-        "author_level": "patch (reject)",
-        "author_entities": [],
-        "author_justification": "REJECTED: 现代通讯设备发挥作用 违反 L3 forbidden 约束",
-        "integration": "rejection 消息注入 outcomes，无 entity 增删",
-        "verdict": "PASS",
-    })
+        all_messages = [o.message for o in result["brief"].action_outcomes]
+        rejection_found = any("REJECTED" in m.upper() or "cannot" in m.lower() for m in all_messages)
+        assert rejection_found or len(all_messages) > 0, \
+            f"Case D: rejection message not found in outcomes: {all_messages}"
+
+        _write_case_log(log_dir, {
+            "case": "D - other + Author Reject",
+            "input": "shine phone flashlight into darkness",
+            "parse_result": "type=other",
+            "detector_called": detector_called[0],
+            "detector_result": "needs_author=True",
+            "author_called": author_called[0],
+            "author_level": "patch (reject)",
+            "author_entities": [],
+            "author_justification": "REJECTED: violates L3 forbidden constraint",
+            "integration": "rejection msg injected into outcomes, no entity changes",
+            "verdict": "PASS",
+        })
+    finally:
+        stop()
 
 
 # =====================================================================
-#  Case E: other → Author StructuralEdit — 触发补充管线
+#  Case E: other + Author StructuralEdit
 # =====================================================================
 
-def test_case_e_author_structural(monkeypatch, log_dir=""):
-    """
-    玩家输入 "我透过裂痕镜子凝视黑暗中的存在，试图与它沟通"
-    → Detector 判定有意义（开辟全新叙事线）
-    → Author 判定 structural（模组完全未覆盖的存在沟通场景）
-    → _integrate_supplement 调用补充管线
-    → 新场景 + 新 entity 注入 graph，entry scene 连接建立
-    """
+def test_case_e_author_structural(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
     author = _make_author()
 
-    # 模拟补充管线的产出
+    # Mock supplement pipeline
     def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
                        entry_scene="", exit_scene="", output_dir="", module_name=""):
         return {
             "l1": {
-                "镜中世界": {
-                    "description": "镜面如水波般荡漾，你踏入了一个颠倒的领域",
-                    "atmosphere": "超现实的静谧中透出不可名状的恐惧",
-                    "mood": "不安与好奇交织",
-                    "perceptible": ["无限延伸的镜面长廊", "远处扭曲的人影"],
-                    "ambient_hints": ["镜中的星空与实际季节不符"],
+                "mirror_world": {
+                    "description": "The mirror surface ripples like water. You step into an inverted realm.",
+                    "atmosphere": "Surreal stillness hiding unspeakable dread",
+                    "mood": "Unease and curiosity intertwined",
+                    "perceptible": ["endless mirrored corridors", "a distorted human silhouette in the distance"],
+                    "ambient_hints": ["the reflected stars show the wrong season"],
                     "npc_appearances": {},
                 }
             },
             "l2": {
                 "scenes": {
-                    "镜中世界": {
-                        "description": "一个由镜面构成的异空间，光线在这里以不可能的角度折射。远处隐约可见一个人形轮廓，正缓慢地向你走来。",
-                        "interactions": [
-                            {
-                                "id": "SI2", "entity_type": "interaction",
-                                "name": "与镜中倒影对话", "scene": "镜中世界",
-                                "type": "话术", "requirement": "",
-                                "trigger": "调查员向远处的人形轮廓发问",
-                                "result": "##GRADED##",
-                                "side_effects": [],
-                                "graded_result": {
-                                    "on_failure": "人形没有回应，只是继续缓慢接近。你感到一阵刺骨的寒意。",
-                                    "on_regular": "那个声音在你的脑海中直接响起：'你终于来了。我们等你很久了。'它停下脚步，与你保持着十米的距离。",
-                                    "on_hard": "倒影承认它一直在通过镜子观察你。它提出一个交易：让它附身于你，换取逃离这个永远黑暗的电车。",
-                                    "on_extreme": "你洞察到它的本质——它不是敌人，而是上一批被困在这里的调查员之一，灵魂被镜子捕获。它告诉你霍桑就是第一个被捕获的，镜子是唯一的出口。"
-                                },
-                                "difficulty": "hard",
-                            }
-                        ],
-                        "auto_triggers": [
-                            {
-                                "id": "SAT1", "entity_type": "auto_trigger",
-                                "name": "镜面入口关闭", "scene": "镜中世界",
-                                "type": "无", "requirement": "",
-                                "trigger": "调查员完全踏入镜中世界",
-                                "result": "身后的镜面如水银般合拢，测试房间的景象扭曲消失。你无法从这里原路返回。",
-                                "side_effects": ["进入镜中世界后需要寻找新的出路"],
-                                "difficulty": "None",
-                            }
-                        ],
+                    "mirror_world": {
+                        "description": "A space built from mirrors, where light bends at impossible angles. "
+                                       "A humanoid figure approaches slowly from the distance.",
+                        "interactions": [{
+                            "id": "SI2", "entity_type": "interaction",
+                            "name": "speak with the mirrored reflection", "scene": "mirror_world",
+                            "type": "Persuade", "requirement": "",
+                            "trigger": "call out to the approaching figure",
+                            "result": "##GRADED##",
+                            "side_effects": [],
+                            "graded_result": {
+                                "on_failure": "The figure does not respond, only continues its slow approach.",
+                                "on_regular": "A voice echoes in your mind: 'You finally came. We've been waiting.'",
+                                "on_hard": "The reflection admits it has been watching through the mirror. "
+                                           "It offers a deal: let it possess you, in exchange for escape.",
+                                "on_extreme": "It is not an enemy — it's a previous investigator, soul trapped in the mirror. "
+                                              "Hawthorne was the first one captured. The mirror is the only way out.",
+                            },
+                            "difficulty": "hard",
+                        }],
+                        "auto_triggers": [{
+                            "id": "SAT1", "entity_type": "auto_trigger",
+                            "name": "mirror entrance seals", "scene": "mirror_world",
+                            "type": "None", "requirement": "",
+                            "trigger": "fully step into the mirror world",
+                            "result": "The mirror surface seals behind you like quicksilver. "
+                                      "The test room vanishes. There is no way back.",
+                            "side_effects": [],
+                            "difficulty": "None",
+                        }],
                         "from_here": [
-                            {"target": "镜渊", "method": "追随人形轮廓走向长廊深处",
-                             "requirement": "SI2"}
+                            {"target": "mirror_abyss", "method": "follow the figure deeper", "requirement": "SI2"}
                         ],
                         "to_here": [
-                            {"source": "测试房间", "method": "全身穿过裂痕镜子",
+                            {"source": "test_room", "method": "step through the cracked mirror",
                              "requirement": "IT3"}
                         ],
                         "encounters": [], "scene_weapons": [], "extra": {},
                     }
                 },
-                "events": [
-                    {
-                        "id": "SE1", "entity_type": "event",
-                        "name": "镜中世界的真相",
-                        "type": "无", "requirement": "SI2",
-                        "trigger": "调查员通过对话获悉霍桑的命运",
-                        "result": "你意识到这辆电车上的镜子并非普通的反射面——它们是灵魂的牢笼。霍桑并非失踪，而是被困在镜子的另一侧。每一条裂痕都是他试图逃脱时留下的。",
-                        "side_effects": [],
-                        "difficulty": "None",
-                    }
-                ],
+                "events": [{
+                    "id": "SE1", "entity_type": "event",
+                    "name": "truth of the mirror world", "type": "None", "requirement": "SI2",
+                    "trigger": "learn Hawthorne's fate through conversation",
+                    "result": "The mirrors on this train are not ordinary — they are soul cages. "
+                              "Hawthorne did not disappear; he is trapped on the other side. "
+                              "Every crack is a scar from his escape attempts.",
+                    "side_effects": [], "difficulty": "None",
+                }],
                 "npc_profiles": {},
                 "dependency_graph": {
                     "nodes": {
-                        "SI2": {"entity_id": "SI2", "entity_type": "interaction", "name": "与镜中倒影对话"},
-                        "SAT1": {"entity_id": "SAT1", "entity_type": "auto_trigger", "name": "镜面入口关闭"},
-                        "SE1": {"entity_id": "SE1", "entity_type": "event", "name": "镜中世界的真相"},
+                        "SI2": {"entity_id": "SI2", "entity_type": "interaction", "name": "speak with reflection"},
+                        "SAT1": {"entity_id": "SAT1", "entity_type": "auto_trigger", "name": "mirror entrance seals"},
+                        "SE1": {"entity_id": "SE1", "entity_type": "event", "name": "truth of the mirror world"},
                     },
                     "edges": [
                         {"source": "SE1", "target": "SI2", "dep_type": "interaction", "condition": "success"},
                     ],
                 },
-                "_scene_names": {"镜中世界": "镜中世界"},
+                "_scene_names": {"mirror_world": "mirror_world"},
                 "_phase1": {},
             },
             "l3": {
-                "module_meta": {"name": "常暗之厢", "supplement_of": "常暗之厢",
-                               "generated_for": "与黑暗存在沟通的叙事线"},
+                "module_meta": {"name": "supplement", "supplement_of": "test_module",
+                               "generated_for": "communication with the mirror entity"},
                 "world_rules": {},
                 "scene_intents": {
-                    "镜中世界": {"purpose": "揭示镜子背后的真相，提供道德抉择",
-                                 "emotion": "超现实恐惧与希望交织"}
+                    "mirror_world": {"purpose": "Reveal the truth behind the mirror, offer a moral choice",
+                                     "emotion": "Surreal horror with a glimmer of hope"}
                 },
                 "ending_conditions": [],
                 "tone_constraints": {},
                 "characters": {},
-                "driving_force": "在镜子囚笼中寻找逃脱的方法",
+                "driving_force": "Find a way out of the mirror prison",
             },
             "output_dir": "/tmp/test_supp_structural",
         }
 
-    monkeypatch.setattr(
-        "module_designer.supplement_pipeline.run_supplement_pipeline",
-        _mock_pipeline
-    )
+    _upatch("module_designer.supplement_pipeline.run_supplement_pipeline", _mock_pipeline).start()
 
-    detector_called, author_called = _patch_all(monkeypatch,
-        parse_actions=[{
-            "type": "other",
-            "text": "我透过那面裂痕镜子，凝视着黑暗中的倒影，试图与镜子另一侧的存在沟通"
-        }],
+    detector_called, author_called, stop = _setup_mocks(
+        parse_actions=[
+            [{"type": "other",
+              "text": "gaze into the cracked mirror and try to communicate with the entity in the dark"}],
+            [{"type": "move", "target": "mirror_world"}],  # recursive parse: move to new scene
+        ],
         detector_result={
             "has_intent": True,
-            "intent": "玩家想通过裂痕镜子与黑暗中的存在建立沟通，而非仅将其视为恐怖元素",
-            "reasoning": "沟通而非逃离是一条全新的核心叙事线，完全超出当前模组的覆盖范围。"
-                       "这涉及到对'镜子作为观测装置'这一核心设定的重新诠释。",
+            "intent": "Player wants to establish communication with the entity in the mirror, "
+                      "rather than treating it as a mere horror element.",
+            "reasoning": "Communication instead of escape is an entirely new narrative thread, "
+                         "completely outside the module's scope.",
         },
         author_result={
             "level": "structural",
             "entities": [],
             "scene_descriptions": {},
-            "entry_scene": "测试房间",
+            "entry_scene": "test_room",
             "exit_scene": "",
-            "justification": "玩家试图与镜子中的存在沟通，这是霍桑理论的直接延伸——"
-                           "如果镜子是'反向观测装置'，那么观测者与被观测者之间理应存在交流的可能。"
-                           "这需要创建一个全新的镜中世界场景，而非在当前场景中简单添加交互。",
+            "justification": "The player wants to communicate with the mirror entity. "
+                           "This is a direct extension of Hawthorne's theory — if the mirror is a "
+                           "'reverse observation device', then communication between observer and observed "
+                           "should be possible. This requires a new 'mirror world' scene.",
         },
         log_dir=log_dir,
     )
 
-    turn = TurnInput(raw_text="我透过那面裂痕镜子，凝视着黑暗中的倒影，试图与镜子另一侧的存在沟通")
-    result = keeper.process_turn(turn, author=author)
+    try:
+        turn = TurnInput(raw_text="gaze into the cracked mirror and try to communicate with the entity")
+        result = keeper.process_turn(turn, author=author)
 
-    # 验证新场景已注入
-    assert "镜中世界" in world.graph.nodes, \
-        f"Case E: 补充管线产出的新场景应注入 graph。实际场景: {list(world.graph.nodes.keys())}"
-    new_scene = world.graph.nodes["镜中世界"]
-    assert len(new_scene.interactions) >= 1, \
-        f"Case E: 新场景应有至少 1 个 interaction。实际: {len(new_scene.interactions)}"
+        _write_author_request_log(log_dir, {
+            "other_texts": ["gaze into the cracked mirror and try to communicate with the entity in the dark"],
+            "intent": "Player wants to communicate with the mirror entity",
+            "reasoning": "Communication is a completely new narrative thread beyond the module's scope.",
+            "scene_context_note": "location=test_room, wr0_enabled=False. Supplement pipeline mock bypasses LLM calls.",
+        })
 
-    # 验证入口场景连接边已建立
-    entry_node = world.graph.nodes["测试房间"]
-    entry_targets = [e.target for e in entry_node.edges]
-    assert "镜中世界" in entry_targets, \
-        f"Case E: 测试房间应有到「镜中世界」的 from_here edge。实际: {entry_targets}"
+        # Verify new scene injected
+        assert "mirror_world" in world.graph.nodes, \
+            f"Case E: new scene should be in graph. Found: {list(world.graph.nodes.keys())}"
+        new_scene = world.graph.nodes["mirror_world"]
+        assert len(new_scene.interactions) >= 1, \
+            f"Case E: new scene should have at least 1 interaction. Found: {len(new_scene.interactions)}"
 
-    # 验证新 entity 的 runtime_state 已初始化
-    assert "SI2" in world.runtime_state, \
-        "Case E: 新 entity SI2 的 runtime_state 应已初始化"
+        # Verify entry connection
+        entry_node = world.graph.nodes["test_room"]
+        entry_targets = [e.target for e in entry_node.edges]
+        assert "mirror_world" in entry_targets, \
+            f"Case E: test_room should have edge to mirror_world. Found: {entry_targets}"
 
-    # 验证 Author L3 已更新
-    assert "镜中世界" in str(author.l3_data.get("scene_intents", {})), \
-        "Case E: Author L3 应合并补充管线的 scene_intents"
+        # Verify runtime_state initialized for new entities
+        assert "SI2" in world.runtime_state, "Case E: SI2 runtime_state not initialized"
 
-    _write_case_log(log_dir, {
-        "case": "E — other → Author StructuralEdit (触发补充管线)",
-        "input": "透过裂痕镜子与黑暗存在沟通",
-        "parse_result": "type=other",
-        "detector_called": detector_called[0],
-        "detector_result": "needs_author=True — 开辟全新叙事线",
-        "author_called": author_called[0],
-        "author_level": "structural",
-        "author_justification": "需要镜中世界场景来承载存在沟通叙事",
-        "supplement_scenes": ["镜中世界"],
-        "supplement_entities": ["SI2: 与镜中倒影对话", "SAT1: 镜面入口关闭", "SE1: 镜中世界的真相"],
-        "integration": "graph 注入「镜中世界」场景 + from_here 连接 + runtime_state 初始化 + L3 更新",
-        "verdict": "PASS",
-    })
+        # Verify Author L3 updated
+        assert "mirror_world" in str(author.l3_data.get("scene_intents", {})), \
+            "Case E: Author L3 should include supplement scene_intents"
+
+        _write_case_log(log_dir, {
+            "case": "E - other + Author StructuralEdit",
+            "input": "communicate with mirror entity",
+            "parse_result": "type=other (round 1), move to mirror_world (round 2)",
+            "detector_called": detector_called[0],
+            "detector_result": "needs_author=True — new narrative thread",
+            "author_called": author_called[0],
+            "author_level": "structural",
+            "author_justification": "need mirror world scene for entity communication narrative",
+            "supplement_scenes": ["mirror_world"],
+            "supplement_entities": ["SI2", "SAT1", "SE1"],
+            "integration": "graph injection + from_here edge + runtime_state init + L3 update",
+            "verdict": "PASS",
+        })
+    finally:
+        stop()
 
 
 # =====================================================================
-#  Runner — 串行输出日志
+#  Runner
 # =====================================================================
 
 def run_all_with_log():
-    """串行运行 5 case，Author prompt/response 写入 debug 目录。"""
-    import pytest
-
     os.makedirs(OUT_ROOT, exist_ok=True)
 
-    print(f"Escalation Test Harness — 《常暗之厢》场景")
+    print(f"Escalation Test Harness")
     print(f"Output: {OUT_ROOT}")
     print(f"Cases: 5 (A: normal / B: flavor / C: patch / D: reject / E: structural)")
     print()
@@ -670,18 +680,15 @@ def run_all_with_log():
 
         print(f"--- {name} ---")
         try:
-            mp = pytest.MonkeyPatch()
-            test_fn(mp, log_dir=case_dir)
-            mp.undo()
+            test_fn(log_dir=case_dir)
             results[name] = "PASS"
             print(f"    PASS")
-            # List Author-related log files
-            author_files = sorted(
+            step_files = sorted(
                 f for f in os.listdir(case_dir)
-                if f.startswith("author_") or f == "_case_log.json"
+                if f[0].isdigit() or f == "_case_log.json"
             )
-            if author_files:
-                print(f"    Author logs: {', '.join(author_files)}")
+            if step_files:
+                print(f"    Logs: {', '.join(step_files)}")
         except Exception as e:
             import traceback
             results[name] = f"FAIL: {e}"
@@ -689,7 +696,6 @@ def run_all_with_log():
             traceback.print_exc()
         print()
 
-    # Summary
     summary_path = os.path.join(OUT_ROOT, "_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
