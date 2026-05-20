@@ -89,7 +89,7 @@ def _make_world():
                     "id": "I1", "entity_type": "interaction",
                     "name": "查看门上的便签正面", "scene": "6号车厢",
                     "type": "无", "requirement": "", "trigger": "调查员醒来后，注意到内侧门扉上贴着一张醒目的便签",
-                    "result": "便签正面写着"只管前进吧 已经没有退路了"",
+                    "result": "便签正面写着「只管前进吧 已经没有退路了」",
                     "side_effects": [], "difficulty": "None",
                 },
                 {
@@ -97,7 +97,7 @@ def _make_world():
                     "name": "撕下便签查看背面", "scene": "6号车厢",
                     "type": "无", "requirement": "I1",
                     "trigger": "调查员撕下门扉上的便签，翻看背面",
-                    "result": "便签背面写着"第三个箱子里有藏着钥匙"",
+                    "result": "便签背面写着「第三个箱子里有藏着钥匙」",
                     "side_effects": [], "difficulty": "None",
                 },
             ],
