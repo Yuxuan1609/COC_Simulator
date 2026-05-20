@@ -7,33 +7,11 @@ from typing import Any
 from datetime import datetime
 import json
 
-from scenario_core import DirectedGraph, ScenarioWorld, ItemGain, StatChange, SpawnEnemy, GrantWeapon, NPCStateChange
+from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
-from game.messages import TurnInput
+from game.messages import TurnInput, CombatInit
 from prompts import _build_investigator_info
 
-
-# ── Side effect application ──
-
-def _apply_side_effects(world: ScenarioWorld, side_effects: list) -> list:
-    msgs = []
-    for effect in side_effects:
-        if isinstance(effect, ItemGain):
-            world.memory.note_item(effect.item_name)
-            msgs.append(f"[获得物品] {effect.item_name}")
-        elif isinstance(effect, SpawnEnemy):
-            target_scene = effect.scene or world.current_location
-            msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
-        elif isinstance(effect, GrantWeapon):
-            world.memory.note_item(effect.weapon_ref)
-            msgs.append(f"[授予武器] {effect.weapon_ref} x{effect.quantity}")
-        elif isinstance(effect, NPCStateChange):
-            world.set_npc_state(effect.npc_name, effect.new_state)
-            msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
-        elif isinstance(effect, StatChange):
-            sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
-            msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（未自动应用）")
-    return msgs
 
 
 # ── Debug command handler ──
@@ -163,7 +141,14 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     else:
         graph = DirectedGraph(scenes=l2_scenes, events=l2.get("events", []))
 
-    world = ScenarioWorld(graph, start_node=start_node, wr0_enabled=wr0_enabled)
+    # Load enemy library
+    from library import EnemyLibrary
+    enemy_lib = EnemyLibrary()
+    enemy_lib.load_core()
+
+    world = ScenarioWorld(graph, start_node=start_node,
+                          wr0_enabled=wr0_enabled,
+                          enemy_library=enemy_lib)
 
     # Load dependency graph into world for runtime state tracking
     dep_graph = l2.get("dependency_graph", {})
@@ -224,11 +209,14 @@ def run_turn(game: dict, user_input: str,
                 })
 
     try:
-        narrative_brief, narrative = narrator.narrate(
+        narrative_brief, narrative, scene_update = narrator.narrate(
             brief, inv_info=_build_investigator_info(world), user_input=user_input)
+        if scene_update:
+            world.apply_scene_update(scene_update)
     except Exception as e:
         narrative_brief = display_brief or "（处理中）"
         narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
+        scene_update = ""
 
     ending = result.get("ending_name")
     return {
@@ -238,4 +226,53 @@ def run_turn(game: dict, user_input: str,
         "skill_results": skill_results,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "ending": {"name": ending, "narrative": result.get("ending_narrative", "")} if ending else None,
+        "scene_update": scene_update,
     }
+
+
+def continue_standoff(keeper, player_input: str) -> dict:
+    """Process a standoff avoidance attempt. Returns updated state with optional combat_init."""
+    s = keeper._standoff_pending
+    if not s:
+        return {"standoff_resolved": True, "avoided": False,
+                "message": "无待处理的对峙。", "combat_init": None}
+
+    result = keeper.resolve_standoff(s, player_input)
+
+    combat_init = None
+    if result.get("avoided"):
+        groups = s.get("groups", {})
+        current_ref = s.get("current_group", "")
+        remaining = [ref for ref in groups if ref != current_ref]
+        if remaining:
+            next_ref = remaining[0]
+            s["current_group"] = next_ref
+            result["next_standoff"] = f"你还有最后一次机会避免与{next_ref}的战斗——你要怎么做？"
+        elif s.get("hostile_iids"):
+            enemies = [keeper.world.enemy_manager.get_by_id(iid)
+                      for iid in s["hostile_iids"]
+                      if keeper.world.enemy_manager and keeper.world.enemy_manager.get_by_id(iid)]
+            enemies = [e for e in enemies if e is not None]
+            if enemies and keeper.world.enemy_manager:
+                keeper.world.enemy_manager.enter_combat(s["hostile_iids"])
+                combat_init = CombatInit(
+                    enemies=enemies, player=keeper.world.player,
+                    scene=keeper.world.current_location,
+                    initiative_context=s.get("reasoning", ""),
+                )
+    else:
+        all_iids = s.get("all_enemy_iids", [])
+        enemies = [keeper.world.enemy_manager.get_by_id(iid)
+                  for iid in all_iids
+                  if keeper.world.enemy_manager and keeper.world.enemy_manager.get_by_id(iid)]
+        enemies = [e for e in enemies if e is not None]
+        if enemies and keeper.world.enemy_manager:
+            keeper.world.enemy_manager.enter_combat(all_iids)
+            combat_init = CombatInit(
+                enemies=enemies, player=keeper.world.player,
+                scene=keeper.world.current_location,
+                initiative_context=s.get("reasoning", ""),
+            )
+
+    result["combat_init"] = combat_init
+    return result
