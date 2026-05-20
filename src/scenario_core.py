@@ -115,6 +115,13 @@ class NPCStateChange:
 
 
 @dataclass
+class NPCFollow:
+    """NPC 跟随状态变更 — 更新 NPCManager follow 状态"""
+    npc_name: str
+    follow: bool = True
+
+
+@dataclass
 class ActionResult:
     """交互/事件执行的统一返回类型"""
     success: bool
@@ -147,7 +154,7 @@ class Entity:
 # ═══════════════════════════════════════════════════════════════
 
 _MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change)'
+    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
     r'\(([^)]*)\)'
 )
 
@@ -214,6 +221,12 @@ def parse_markup(text: str):
             npc_name=kwargs.get("npc_name", ""),
             new_state=kwargs.get("new_state", ""),
         )
+    elif func_name == "npc_follow":
+        follow_str = kwargs.get("follow", "true").lower()
+        return NPCFollow(
+            npc_name=kwargs.get("npc_name", ""),
+            follow=follow_str in ("true", "1", "yes"),
+        )
     return None
 
 
@@ -263,6 +276,12 @@ def parse_markup_all(text: str) -> list:
             results.append(NPCStateChange(
                 npc_name=kwargs.get("npc_name", ""),
                 new_state=kwargs.get("new_state", ""),
+            ))
+        elif func_name == "npc_follow":
+            follow_str = kwargs.get("follow", "true").lower()
+            results.append(NPCFollow(
+                npc_name=kwargs.get("npc_name", ""),
+                follow=follow_str in ("true", "1", "yes"),
             ))
     return results
 
@@ -337,6 +356,8 @@ def _side_effect_to_dict(effect) -> dict:
         return {"type": "grant_weapon", "weapon_ref": effect.weapon_ref, "scene": effect.scene, "quantity": effect.quantity}
     elif isinstance(effect, NPCStateChange):
         return {"type": "npc_state_change", "npc_name": effect.npc_name, "new_state": effect.new_state}
+    elif isinstance(effect, NPCFollow):
+        return {"type": "npc_follow", "npc_name": effect.npc_name, "follow": effect.follow}
     return {}
 
 
@@ -1235,6 +1256,13 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
         elif isinstance(effect, NPCStateChange):
             world.set_npc_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
+        elif isinstance(effect, NPCFollow):
+            if hasattr(world, 'npc_manager') and world.npc_manager:
+                world.npc_manager.set_following(effect.npc_name, effect.follow)
+                status = "开始跟随" if effect.follow else "停止跟随"
+                msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
+            else:
+                msgs.append(f"[NPC跟随] {effect.npc_name} follow={effect.follow}")
         elif isinstance(effect, StatChange):
             if world.player:
                 new_val, detail = world.player.modify_stat(effect.stat_name, effect.delta)
