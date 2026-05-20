@@ -2,7 +2,7 @@
 
 **日期**: 2026-05-19 (更新于 2026-05-20)
 **分支**: main
-**状态**: Escalation/Author 机制重设计完成 | O1 已解决 | 补充管线就绪 | WR0 可配置 | 战斗进入/脱出判定管道打通 | 19+15 个测试覆盖全链路
+**状态**: Escalation/Author 机制重设计完成 | O1 已解决 | 补充管线就绪 | WR0 可配置 | 战斗进入/脱出管道打通 | 武器获取系统实现 | 19+15+3 个测试覆盖全链路
 
 ---
 
@@ -39,6 +39,7 @@
 - **[flag] 标记**: enemies.json 的 combat_behavior 前缀，2 种：[adjacent_aware]（跨场景感知）、[avoidable]（可非战斗绕过）
 - **对峙阶段**: avoidable 敌人 → 语义匹配 LLM → D100 技能检定 → 特质修正 → 成功转 neutral / 失败进战斗
 - **EnemyManager 追踪层**: 纯状态管理（neutral/hostile/dead），战斗系统消费者，enter_combat/exit_combat 回调
+- **武器获取系统**: grant_weapon → scene_weapons（场景放置）→ search 成功发现 → 玩家确认拾取 → Investigator.add_weapon → 场景移除
 
 ### 当前使用文件
 
@@ -152,6 +153,7 @@
 | 回合入口 + 三 Agent 初始化 | `src/game_loop.py` | `init_game()` / `run_turn()` / `continue_standoff()` |
 | Keeper 回合编配主逻辑 | `src/game/agents/keeper.py` | `process_turn():51` |
 | Parse — LLM 意图解析 | `src/game/agents/keeper.py` | `_parse()` → `prompts.py:build_keeper_parse_prompt()` |
+| Parse — 武器拾取检测 | `src/game/agents/keeper.py` | `process_turn()` 中 `entry_type == "other"` 拾取关键词匹配 |
 | Judge — 确定性闸门 | `src/game/judge.py` | `_execute_entity():99` |
 | Combat entry 检测 (并行 enrich) | `src/game/agents/keeper.py` | `process_turn()` Step 2.5 → `prompts.py:build_combat_entry_prompt()` |
 | Enrich — LLM 叙事润色 | `src/game/agents/keeper.py` | `_enrich()` → `prompts.py:build_keeper_enrich_prompt()` |
@@ -184,7 +186,7 @@
 |------|------|----------|
 | Entity 统一数据类 | `src/scenario_core.py` | `Entity:110` |
 | Node / Edge / DirectedGraph | `src/scenario_core.py` | `Node:339` / `Edge:32` / `DirectedGraph:376` |
-| ScenarioWorld 运行时状态 | `src/scenario_core.py` | `ScenarioWorld:770`（含 enemy_manager） |
+| ScenarioWorld 运行时状态 | `src/scenario_core.py` | `ScenarioWorld:770`（含 enemy_manager, scene_weapons, weapon_library） |
 | runtime_state + dependency_graph | `src/scenario_core.py` | `runtime_state:801` / `dependency_graph:802` |
 | hard requirement 解析 (AND/OR) | `src/scenario_core.py` | `parse_hard_requirement():687` |
 | dependency_graph 数据结构 | `src/module_designer/dependency_graph.py` | `DependencyEdge:24` / `DependencyGraph:40` |
