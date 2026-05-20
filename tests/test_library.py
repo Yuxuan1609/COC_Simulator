@@ -81,6 +81,36 @@ def test_enemy_search():
     assert all(e.type == "神话生物" for e in mythos)
 
 
+def test_enemy_flag_parsing():
+    """LibraryEnemy.from_dict extracts [flags] from combat_behavior."""
+    # Has flags
+    raw = {"name": "Test", "type": "test", "attributes": {},
+           "combat_behavior": "[adjacent_aware][avoidable] | 会主动攻击",
+           "armor": "无", "attacks": [], "special_abilities": [],
+           "san_loss": "0/0", "description": ""}
+    enemy = LibraryEnemy.from_dict(raw)
+    assert enemy.flags == ["adjacent_aware", "avoidable"]
+    assert enemy.combat_behavior == "会主动攻击"
+
+    # No flags
+    raw2 = {"name": "Test2", "type": "test", "attributes": {},
+            "combat_behavior": "看到人就打",
+            "armor": "无", "attacks": [], "special_abilities": [],
+            "san_loss": "0/0", "description": ""}
+    enemy2 = LibraryEnemy.from_dict(raw2)
+    assert enemy2.flags == []
+    assert enemy2.combat_behavior == "看到人就打"
+
+    # Only flags, no natural lang
+    raw3 = {"name": "Test3", "type": "test", "attributes": {},
+            "combat_behavior": "[adjacent_aware]",
+            "armor": "无", "attacks": [], "special_abilities": [],
+            "san_loss": "0/0", "description": ""}
+    enemy3 = LibraryEnemy.from_dict(raw3)
+    assert enemy3.flags == ["adjacent_aware"]
+    assert enemy3.combat_behavior == ""
+
+
 from library.judgment import JudgmentEngine, Tier1Result
 
 

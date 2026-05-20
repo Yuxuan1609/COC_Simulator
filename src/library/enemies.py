@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 import json
 import os
+import re
 
 
 @dataclass
@@ -48,6 +49,7 @@ class LibraryEnemy:
     san_loss: str
     combat_behavior: str
     description: str = ""
+    flags: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -62,10 +64,25 @@ class LibraryEnemy:
             "san_loss": self.san_loss,
             "combat_behavior": self.combat_behavior,
             "description": self.description,
+            "flags": self.flags,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "LibraryEnemy":
+        raw_behavior = data.get("combat_behavior", "")
+        flags = []
+        cleaned_behavior = raw_behavior
+        flag_pattern = re.compile(r'\[(\w+)\]')
+        while True:
+            m = flag_pattern.match(cleaned_behavior)
+            if not m:
+                break
+            flags.append(m.group(1))
+            cleaned_behavior = cleaned_behavior[m.end():]
+        cleaned_behavior = cleaned_behavior.strip()
+        if cleaned_behavior.startswith("|"):
+            cleaned_behavior = cleaned_behavior[1:].strip()
+
         return cls(
             name=data["name"],
             type=data["type"],
@@ -76,8 +93,9 @@ class LibraryEnemy:
                 SpecialAbility.from_dict(s) for s in data.get("special_abilities", [])
             ],
             san_loss=data.get("san_loss", ""),
-            combat_behavior=data.get("combat_behavior", ""),
+            combat_behavior=cleaned_behavior,
             description=data.get("description", ""),
+            flags=flags,
         )
 
 
