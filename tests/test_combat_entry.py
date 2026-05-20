@@ -91,10 +91,6 @@ def test_flag_parsing_in_enemy_library(lib):
     assert "avoidable" in h.flags
     assert "[avoidable]" not in h.combat_behavior
 
-    big = lib.get("大嘴吞噬者")
-    assert big is not None
-    assert "adjacent_aware" in big.flags
-
     c = lib.get("Clicker")
     assert c is not None
-    assert c.flags == []
+    assert "adjacent_aware" in c.flags

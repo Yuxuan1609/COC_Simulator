@@ -288,17 +288,24 @@ class Judge:
         return False
 
     def _evaluate_requirement(self, req: str) -> tuple[bool, str]:
-        """Evaluate hard requirement string using AND/OR parser + edge graph.
+        """Evaluate hard requirement string using flag check + AND/OR parser + edge graph.
 
         Order:
-        1. String-based AND/OR parsing FIRST (handles OR semantics)
-           Must come before edge check because edges are AND-only; requirement strings
-           may use OR to relax edge constraints.
+        0. Flag-based requirement check FIRST (flag:xxx)
+        1. String-based AND/OR parsing (handles OR semantics)
         2. Edge-based dependency check SECOND (structural AND, secondary)
         3. No ID found → pass (graceful degradation for LLM-generated text)
         """
         req = req.strip()
         if not req:
+            return True, ""
+
+        # Step 0: check for flag-based requirements (flag:xxx)
+        if req.startswith("flag:"):
+            flag_name = req[5:].strip()
+            state = self.world.runtime_state.get(flag_name)
+            if not state or not state.completed:
+                return False, f"需要满足条件「{flag_name}」"
             return True, ""
 
         # Step 1: string-based AND/OR parsing FIRST (handles OR semantics)

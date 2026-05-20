@@ -342,9 +342,7 @@ def test_build_step2a_prompt_structure():
     assert "interactions" in prompt
     assert "I1" in prompt
     assert "7号车厢" in prompt
-    assert "enemy_ref" in prompt
-    assert "weapon_ref" in prompt
-    assert "null" in prompt
+    assert "scene_movements" in prompt
 
 
 def test_build_step2b_events_prompt_structure():
@@ -367,7 +365,6 @@ def test_build_step2b_at_prompt_structure():
     assert "requirement" in prompt
     assert "side_effects" in prompt
     assert "based_on" in prompt
-    assert "enemy_ref" in prompt
 
 
 def test_build_step2c_l1_prompt_structure():
@@ -436,8 +433,10 @@ def test_build_step4_prompt_structure():
         {"S1": "测试场景"},
         {"6号车厢": {"purpose": "测试"}},
         {"test": "精修模组参考"},
-        ["手电筒", ".45自动手枪"],
-        ["Clicker", "深潜者"],
+        {"enemies": [{"enemy_ref": "Clicker", "min_count": 1, "max_count": 1},
+                     {"enemy_ref": "深潜者", "min_count": 0, "max_count": 0}],
+         "weapons": [{"weapon_ref": "手电筒", "min_count": 1, "max_count": 1},
+                     {"weapon_ref": ".45自动手枪", "min_count": 1, "max_count": 1}]},
         ["侦察", "急救", "图书馆使用"],
         ["STR", "CON", "DEX"],
     )
