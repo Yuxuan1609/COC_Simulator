@@ -2,6 +2,7 @@
 import pytest
 from library.enemies import EnemyLibrary
 from game.enemy_manager import EnemyInstance, EnemyManager
+from scenario_core import DirectedGraph
 
 
 @pytest.fixture
@@ -89,3 +90,57 @@ def test_get_combat_context_with_enemies(mgr):
     assert "深潜者" in ctx
     assert "疯狂信徒" in ctx
     assert "neutral" in ctx
+
+
+@pytest.fixture
+def sample_graph():
+    """车厢1 <-> 车厢2, 车厢2 <-> 车厢3"""
+    return DirectedGraph(scenes={
+        "车厢1": {
+            "description": "",
+            "interactions": [], "auto_triggers": [],
+            "from_here": [{"target": "车厢2", "method": "走到"}],
+        },
+        "车厢2": {
+            "description": "",
+            "interactions": [], "auto_triggers": [],
+            "from_here": [
+                {"target": "车厢1", "method": "走回"},
+                {"target": "车厢3", "method": "前进"},
+            ],
+        },
+        "车厢3": {
+            "description": "",
+            "interactions": [], "auto_triggers": [],
+            "from_here": [{"target": "车厢2", "method": "返回"}],
+        },
+    }, events=[])
+
+
+def test_get_active_in_range_adjacent_aware(mgr, sample_graph):
+    """adjacent_aware enemy in 车厢1 is detectable from adjacent 车厢2 but not 车厢3."""
+    mgr.spawn("大嘴吞噬者", "车厢1")  # adjacent_aware
+    mgr.spawn("疯狂信徒", "车厢2")
+
+    # 车厢1: should see 大嘴吞噬者
+    active_1 = mgr.get_active_in_range("车厢1", sample_graph)
+    refs_1 = {i.enemy_ref for i in active_1}
+    assert "大嘴吞噬者" in refs_1
+
+    # 车厢2: should see 疯狂信徒 + 大嘴吞噬者 (adjacent)
+    active_2 = mgr.get_active_in_range("车厢2", sample_graph)
+    refs_2 = {i.enemy_ref for i in active_2}
+    assert "疯狂信徒" in refs_2
+    assert "大嘴吞噬者" in refs_2
+
+    # 车厢3: should NOT see 大嘴吞噬者 (too far)
+    active_3 = mgr.get_active_in_range("车厢3", sample_graph)
+    refs_3 = {i.enemy_ref for i in active_3}
+    assert "大嘴吞噬者" not in refs_3
+
+
+def test_get_active_in_range_no_adjacent_aware(mgr, sample_graph):
+    """Enemies without adjacent_aware flag only appear in their own scene."""
+    mgr.spawn("疯狂信徒", "车厢1")
+    active = mgr.get_active_in_range("车厢2", sample_graph)
+    assert len(active) == 0

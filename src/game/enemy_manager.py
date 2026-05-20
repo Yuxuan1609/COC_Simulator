@@ -60,21 +60,24 @@ class EnemyManager:
 
     def get_active_in_range(self, scene: str, graph) -> list[EnemyInstance]:
         candidates = self.get_active_in_scene(scene)
-        adj_scenes: set[str] = set()
         for inst in self._instances.values():
             if "adjacent_aware" not in inst.flags:
                 continue
             if inst.status == "dead":
                 continue
-            node = graph.nodes.get(inst.scene)
-            if not node:
+            if inst in candidates:
+                continue  # already included
+            # Check if queried scene is the enemy's scene
+            if inst.scene == scene:
+                candidates.append(inst)
                 continue
-            for edge in node.edges:
-                adj_scenes.add(edge.target)
-        for inst in self._instances.values():
-            if inst.scene in adj_scenes and inst.status != "dead":
-                if inst not in candidates:
-                    candidates.append(inst)
+            # Check if queried scene is adjacent to the enemy's scene
+            node = graph.nodes.get(inst.scene)
+            if node:
+                for edge in node.edges:
+                    if edge.target == scene:
+                        candidates.append(inst)
+                        break
         return candidates
 
     def group_by_ref(self, scene: str) -> dict[str, list[EnemyInstance]]:
