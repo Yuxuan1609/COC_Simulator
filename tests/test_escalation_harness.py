@@ -1,5 +1,5 @@
 """
-Escalation Flow Test Harness — 基于《常暗之厢》模组场景，4 个针对性 case。
+Escalation Flow Test Harness — 基于《常暗之厢》模组场景，5 个针对性 case。
 所有 LLM 调用通过 monkeypatch 注入预定义响应，输出 Author 相关日志到 debug 目录。
 
 模拟场景（使用测试房间 + 6号车厢）:
@@ -7,6 +7,7 @@ Escalation Flow Test Harness — 基于《常暗之厢》模组场景，4 个针
   Case B: flavor 行为 — Parse 返回 other，Detector 判定无意义，Author 不触发
   Case C: other → Author Patch — 玩家尝试模组未覆盖的搜索点，Author 返回新 entity
   Case D: other → Author Reject — 玩家做出违反世界规则的行为，Author 打回
+  Case E: other → Author StructuralEdit — 玩家开辟全新叙事线，触发补充管线
 """
 import sys, os, json
 from datetime import datetime
@@ -457,18 +458,201 @@ def test_case_d_author_reject(monkeypatch, log_dir=""):
 
 
 # =====================================================================
+#  Case E: other → Author StructuralEdit — 触发补充管线
+# =====================================================================
+
+def test_case_e_author_structural(monkeypatch, log_dir=""):
+    """
+    玩家输入 "我透过裂痕镜子凝视黑暗中的存在，试图与它沟通"
+    → Detector 判定有意义（开辟全新叙事线）
+    → Author 判定 structural（模组完全未覆盖的存在沟通场景）
+    → _integrate_supplement 调用补充管线
+    → 新场景 + 新 entity 注入 graph，entry scene 连接建立
+    """
+    world = _make_world()
+    keeper = Keeper(world)
+    author = _make_author()
+
+    # 模拟补充管线的产出
+    def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
+                       entry_scene="", exit_scene="", output_dir="", module_name=""):
+        return {
+            "l1": {
+                "镜中世界": {
+                    "description": "镜面如水波般荡漾，你踏入了一个颠倒的领域",
+                    "atmosphere": "超现实的静谧中透出不可名状的恐惧",
+                    "mood": "不安与好奇交织",
+                    "perceptible": ["无限延伸的镜面长廊", "远处扭曲的人影"],
+                    "ambient_hints": ["镜中的星空与实际季节不符"],
+                    "npc_appearances": {},
+                }
+            },
+            "l2": {
+                "scenes": {
+                    "镜中世界": {
+                        "description": "一个由镜面构成的异空间，光线在这里以不可能的角度折射。远处隐约可见一个人形轮廓，正缓慢地向你走来。",
+                        "interactions": [
+                            {
+                                "id": "SI2", "entity_type": "interaction",
+                                "name": "与镜中倒影对话", "scene": "镜中世界",
+                                "type": "话术", "requirement": "",
+                                "trigger": "调查员向远处的人形轮廓发问",
+                                "result": "##GRADED##",
+                                "side_effects": [],
+                                "graded_result": {
+                                    "on_failure": "人形没有回应，只是继续缓慢接近。你感到一阵刺骨的寒意。",
+                                    "on_regular": "那个声音在你的脑海中直接响起：'你终于来了。我们等你很久了。'它停下脚步，与你保持着十米的距离。",
+                                    "on_hard": "倒影承认它一直在通过镜子观察你。它提出一个交易：让它附身于你，换取逃离这个永远黑暗的电车。",
+                                    "on_extreme": "你洞察到它的本质——它不是敌人，而是上一批被困在这里的调查员之一，灵魂被镜子捕获。它告诉你霍桑就是第一个被捕获的，镜子是唯一的出口。"
+                                },
+                                "difficulty": "hard",
+                            }
+                        ],
+                        "auto_triggers": [
+                            {
+                                "id": "SAT1", "entity_type": "auto_trigger",
+                                "name": "镜面入口关闭", "scene": "镜中世界",
+                                "type": "无", "requirement": "",
+                                "trigger": "调查员完全踏入镜中世界",
+                                "result": "身后的镜面如水银般合拢，测试房间的景象扭曲消失。你无法从这里原路返回。",
+                                "side_effects": ["进入镜中世界后需要寻找新的出路"],
+                                "difficulty": "None",
+                            }
+                        ],
+                        "from_here": [
+                            {"target": "镜渊", "method": "追随人形轮廓走向长廊深处",
+                             "requirement": "SI2"}
+                        ],
+                        "to_here": [
+                            {"source": "测试房间", "method": "全身穿过裂痕镜子",
+                             "requirement": "IT3"}
+                        ],
+                        "encounters": [], "scene_weapons": [], "extra": {},
+                    }
+                },
+                "events": [
+                    {
+                        "id": "SE1", "entity_type": "event",
+                        "name": "镜中世界的真相",
+                        "type": "无", "requirement": "SI2",
+                        "trigger": "调查员通过对话获悉霍桑的命运",
+                        "result": "你意识到这辆电车上的镜子并非普通的反射面——它们是灵魂的牢笼。霍桑并非失踪，而是被困在镜子的另一侧。每一条裂痕都是他试图逃脱时留下的。",
+                        "side_effects": [],
+                        "difficulty": "None",
+                    }
+                ],
+                "npc_profiles": {},
+                "dependency_graph": {
+                    "nodes": {
+                        "SI2": {"entity_id": "SI2", "entity_type": "interaction", "name": "与镜中倒影对话"},
+                        "SAT1": {"entity_id": "SAT1", "entity_type": "auto_trigger", "name": "镜面入口关闭"},
+                        "SE1": {"entity_id": "SE1", "entity_type": "event", "name": "镜中世界的真相"},
+                    },
+                    "edges": [
+                        {"source": "SE1", "target": "SI2", "dep_type": "interaction", "condition": "success"},
+                    ],
+                },
+                "_scene_names": {"镜中世界": "镜中世界"},
+                "_phase1": {},
+            },
+            "l3": {
+                "module_meta": {"name": "常暗之厢", "supplement_of": "常暗之厢",
+                               "generated_for": "与黑暗存在沟通的叙事线"},
+                "world_rules": {},
+                "scene_intents": {
+                    "镜中世界": {"purpose": "揭示镜子背后的真相，提供道德抉择",
+                                 "emotion": "超现实恐惧与希望交织"}
+                },
+                "ending_conditions": [],
+                "tone_constraints": {},
+                "characters": {},
+                "driving_force": "在镜子囚笼中寻找逃脱的方法",
+            },
+            "output_dir": "/tmp/test_supp_structural",
+        }
+
+    monkeypatch.setattr(
+        "module_designer.supplement_pipeline.run_supplement_pipeline",
+        _mock_pipeline
+    )
+
+    detector_called, author_called = _patch_all(monkeypatch,
+        parse_actions=[{
+            "type": "other",
+            "text": "我透过那面裂痕镜子，凝视着黑暗中的倒影，试图与镜子另一侧的存在沟通"
+        }],
+        detector_result={
+            "has_intent": True,
+            "intent": "玩家想通过裂痕镜子与黑暗中的存在建立沟通，而非仅将其视为恐怖元素",
+            "reasoning": "沟通而非逃离是一条全新的核心叙事线，完全超出当前模组的覆盖范围。"
+                       "这涉及到对'镜子作为观测装置'这一核心设定的重新诠释。",
+        },
+        author_result={
+            "level": "structural",
+            "entities": [],
+            "scene_descriptions": {},
+            "entry_scene": "测试房间",
+            "exit_scene": "",
+            "justification": "玩家试图与镜子中的存在沟通，这是霍桑理论的直接延伸——"
+                           "如果镜子是'反向观测装置'，那么观测者与被观测者之间理应存在交流的可能。"
+                           "这需要创建一个全新的镜中世界场景，而非在当前场景中简单添加交互。",
+        },
+        log_dir=log_dir,
+    )
+
+    turn = TurnInput(raw_text="我透过那面裂痕镜子，凝视着黑暗中的倒影，试图与镜子另一侧的存在沟通")
+    result = keeper.process_turn(turn, author=author)
+
+    # 验证新场景已注入
+    assert "镜中世界" in world.graph.nodes, \
+        f"Case E: 补充管线产出的新场景应注入 graph。实际场景: {list(world.graph.nodes.keys())}"
+    new_scene = world.graph.nodes["镜中世界"]
+    assert len(new_scene.interactions) >= 1, \
+        f"Case E: 新场景应有至少 1 个 interaction。实际: {len(new_scene.interactions)}"
+
+    # 验证入口场景连接边已建立
+    entry_node = world.graph.nodes["测试房间"]
+    entry_targets = [e.target for e in entry_node.edges]
+    assert "镜中世界" in entry_targets, \
+        f"Case E: 测试房间应有到「镜中世界」的 from_here edge。实际: {entry_targets}"
+
+    # 验证新 entity 的 runtime_state 已初始化
+    assert "SI2" in world.runtime_state, \
+        "Case E: 新 entity SI2 的 runtime_state 应已初始化"
+
+    # 验证 Author L3 已更新
+    assert "镜中世界" in str(author.l3_data.get("scene_intents", {})), \
+        "Case E: Author L3 应合并补充管线的 scene_intents"
+
+    _write_case_log(log_dir, {
+        "case": "E — other → Author StructuralEdit (触发补充管线)",
+        "input": "透过裂痕镜子与黑暗存在沟通",
+        "parse_result": "type=other",
+        "detector_called": detector_called[0],
+        "detector_result": "needs_author=True — 开辟全新叙事线",
+        "author_called": author_called[0],
+        "author_level": "structural",
+        "author_justification": "需要镜中世界场景来承载存在沟通叙事",
+        "supplement_scenes": ["镜中世界"],
+        "supplement_entities": ["SI2: 与镜中倒影对话", "SAT1: 镜面入口关闭", "SE1: 镜中世界的真相"],
+        "integration": "graph 注入「镜中世界」场景 + from_here 连接 + runtime_state 初始化 + L3 更新",
+        "verdict": "PASS",
+    })
+
+
+# =====================================================================
 #  Runner — 串行输出日志
 # =====================================================================
 
 def run_all_with_log():
-    """串行运行 4 case，Author prompt/response 写入 debug 目录。"""
+    """串行运行 5 case，Author prompt/response 写入 debug 目录。"""
     import pytest
 
     os.makedirs(OUT_ROOT, exist_ok=True)
 
     print(f"Escalation Test Harness — 《常暗之厢》场景")
     print(f"Output: {OUT_ROOT}")
-    print(f"Cases: 4 (A: normal entity / B: flavor / C: patch / D: reject)")
+    print(f"Cases: 5 (A: normal / B: flavor / C: patch / D: reject / E: structural)")
     print()
 
     cases = [
@@ -476,6 +660,7 @@ def run_all_with_log():
         ("case_b_other_flavor", test_case_b_other_flavor),
         ("case_c_author_patch", test_case_c_author_patch),
         ("case_d_author_reject", test_case_d_author_reject),
+        ("case_e_author_structural", test_case_e_author_structural),
     ]
 
     results = {}
