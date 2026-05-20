@@ -66,11 +66,7 @@ class EnemyManager:
             if inst.status == "dead":
                 continue
             if inst in candidates:
-                continue  # already included
-            # Check if queried scene is the enemy's scene
-            if inst.scene == scene:
-                candidates.append(inst)
-                continue
+                continue  # already in queried scene via get_active_in_scene
             # Check if queried scene is adjacent to the enemy's scene
             node = graph.nodes.get(inst.scene)
             if node:
