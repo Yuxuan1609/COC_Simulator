@@ -365,15 +365,9 @@ class Investigator:
     def remove_weapon(self, name: str):
         self.weapons = [w for w in self.weapons if w.name != name]
 
-    # ── 战斗技能鉴定（预留，当前未实装）──
-
-    def combat_check(self, weapon_name: str, target: "Investigator") -> tuple[bool, str]:
-        """战斗技能鉴定（预留）。实装时需实现：武器技能检定 + DB 加值 + 闪避对抗。"""
-        raise NotImplementedError("战斗系统尚未实现")
-
-    def damage_roll(self, weapon_name: str) -> tuple[int, str]:
-        """伤害掷骰（预留）。实装时需实现：伤害公式解析（如 1D3+DB）+ DB 应用。"""
-        raise NotImplementedError("战斗系统尚未实现")
+    # ── 战斗已由 src/game/combat.py 的 CombatSystem 接管 ──
+    # combat_check() 和 damage_roll() 的原本预留已迁移到 CombatSystem._resolve_player_action()
+    # 和 _roll_damage()。此处不再提供 combat/damage 方法。
 
     def save(self, path: str):
         """长期存储：导出为 JSON 文件"""

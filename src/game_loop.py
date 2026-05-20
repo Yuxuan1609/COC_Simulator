@@ -10,6 +10,7 @@ import json
 from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput, CombatInit
+from game.combat import CombatSystem
 from prompts import _build_investigator_info
 
 
@@ -201,6 +202,25 @@ def run_turn(game: dict, user_input: str,
     else:
         display_brief = str(brief) if brief else ""
 
+    # Combat entry: if process_turn returned CombatInit, run the combat system
+    combat_narrative = ""
+    combat_result_outcome = None
+    combat_init = result.get("combat_init")
+    if combat_init and combat_init.enemies:
+        try:
+            cs = CombatSystem(weapon_lib=weapon_lib)
+            combat_result = cs.run_combat(combat_init)
+            combat_narrative = combat_result.narrative
+            combat_result_outcome = combat_result.outcome
+            # Callback to EnemyManager
+            result_dict = {
+                "outcome": combat_result.outcome,
+                "defeated_instance_ids": combat_result.defeated_instance_ids,
+            }
+            world.enemy_manager.exit_combat(result_dict)
+        except Exception:
+            combat_result_outcome = "error"
+
     # Extract skill check results from outcomes for player display
     skill_results = []
     if hasattr(brief, 'action_outcomes'):
@@ -225,11 +245,21 @@ def run_turn(game: dict, user_input: str,
         scene_update = ""
 
     ending = result.get("ending_name")
+    standoff = result.get("standoff_prompt")
+    full_text = f"{narrative_brief}"
+    if combat_narrative:
+        full_text += f"\n\n---\n⚔ 战斗回合\n{combat_narrative}"
+    full_text += f"\n\n\n{narrative}"
     return {
         "brief": narrative_brief,
         "narrative": narrative,
-        "full": f"{narrative_brief}\n\n\n{narrative}",
+        "full": full_text,
         "skill_results": skill_results,
+        "combat": {
+            "outcome": combat_result_outcome,
+            "narrative": combat_narrative,
+        } if combat_result_outcome else None,
+        "standoff_prompt": standoff,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "ending": {"name": ending, "narrative": result.get("ending_narrative", "")} if ending else None,
         "scene_update": scene_update,
@@ -281,4 +311,19 @@ def continue_standoff(keeper, player_input: str) -> dict:
             )
 
     result["combat_init"] = combat_init
+
+    # Run combat if resolved into combat
+    if combat_init and combat_init.enemies:
+        try:
+            cs = CombatSystem(weapon_lib=keeper.world.weapon_library)
+            combat_result = cs.run_combat(combat_init)
+            result["combat_narrative"] = combat_result.narrative
+            result["combat_outcome"] = combat_result.outcome
+            keeper.world.enemy_manager.exit_combat({
+                "outcome": combat_result.outcome,
+                "defeated_instance_ids": combat_result.defeated_instance_ids,
+            })
+        except Exception:
+            result["combat_outcome"] = "error"
+
     return result
