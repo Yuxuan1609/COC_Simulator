@@ -110,6 +110,8 @@ def _step_1a(context: dict) -> dict:
 请生成1-3个新场景，每个场景含interactions和auto_triggers。
 Entity ID使用S_前缀：SS1=场景1, SI1=interaction1, SAT1=AT1。
 requirement字段使用entity ID字符串（如"SI1 AND SI2"）。
+所有描述性内容（description、trigger、result、name等）必须使用中文。
+JSON字段名和ID保持英文。
 
 返回 JSON：
 {{
@@ -132,7 +134,7 @@ requirement字段使用entity ID字符串（如"SI1 AND SI2"）。
 直接输出 JSON。"""
     response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                              reasoning_effort="max",
-                             system="你是TRPG模组创作者。生成结构化的新场景内容。",
+                             system="你是TRPG模组创作者。生成结构化的新场景内容。所有描述必须用中文。",
                              fallback_schema={"scenes": {}})
     return json.loads(response) if isinstance(response, str) else response
 
@@ -154,6 +156,8 @@ def _step_1b(context: dict) -> dict:
 
 生成全局事件（可选）和新场景之间的通行连接。
 Event ID使用SE_前缀。
+所有描述性内容（name、trigger、result等）必须使用中文。
+JSON字段名和ID保持英文。
 
 返回 JSON：
 {{
@@ -167,7 +171,7 @@ Event ID使用SE_前缀。
 直接输出 JSON。"""
     response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                              reasoning_effort="max",
-                             system="你是TRPG模组创作者。生成事件和场景通行结构。",
+                             system="你是TRPG模组创作者。生成事件和场景通行结构。所有描述必须用中文。",
                              fallback_schema={"events": []})
     return json.loads(response) if isinstance(response, str) else response
 
@@ -185,6 +189,7 @@ def _step_1c(context: dict) -> dict:
 生成L1格式的场景描述，键名为场景中文名。
 每个场景包含：description（场景描述）、atmosphere（氛围）、mood（情绪基调）、
 perceptible（可无条件感知的元素列表）、ambient_hints（环境暗示）。
+所有描述性内容必须使用中文。JSON字段名保持英文。
 
 返回 JSON：
 {{
@@ -201,7 +206,7 @@ perceptible（可无条件感知的元素列表）、ambient_hints（环境暗�
 直接输出 JSON。"""
     response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                              reasoning_effort="max",
-                             system="你是TRPG模组创作者。生成玩家可见的场景描述层。",
+                             system="你是TRPG模组创作者。生成玩家可见的场景描述层。所有描述必须用中文。",
                              fallback_schema={})
     return json.loads(response) if isinstance(response, str) else response
 

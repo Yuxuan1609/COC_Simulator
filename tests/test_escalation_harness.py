@@ -486,40 +486,44 @@ def test_case_e_author_structural(monkeypatch=None, log_dir=""):
         # Simulate pipeline Step 1 prompts and log them (as if real pipeline ran)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-            l3_summary = "genre: Lovecraftian horror\nnarrative_style: Oppressive\nforbidden: superpowers, firearms, modern communication devices working\nrecommended: tension, unknown fear, moral dilemma\ndriving_force: Keep moving forward in darkness"
-            base = f"""【L3 constraint】
+            l3_summary = "类型：克苏鲁恐怖\n叙事风格：压抑、绝望中透出微弱希望\n禁止：超能力、热武器、现代通讯设备发挥作用\n推荐：压抑感、未知恐惧、道德抉择\n核心驱动力：在黑暗中不断向前，逃离吞噬之口"
+            base = f"""【L3约束】
 {l3_summary}
 
-【Player intent】
-intent: communication with the mirror entity
-reasoning: Communication instead of escape is an entirely new narrative thread
+【玩家意图】
+意图：玩家想通过裂痕镜子与黑暗中的存在建立沟通
+原因：沟通而非逃离是全新的核心叙事线，完全超出当前模组覆盖范围
 
-【Entry/Exit】
-entry: test_room
-exit: (decided by LLM)"""
-            p1a = f"""You are a TRPG module creator. Generate supplement scenes based on the following info.
-
-{base}
-
-Generate 1-3 new scenes, each with interactions and auto_triggers.
-Entity IDs use S_ prefix: SS1=scene1, SI1=interaction1, SAT1=AT1.
-requirement field uses entity ID strings (e.g. \"SI1 AND SI2\").
-
-Return JSON:"""
-            p1b = f"""You are a TRPG module creator. Generate supplement events and scene connections based on the following info.
+【出入口】
+入口场景：test_room
+出口场景：（由LLM决定）"""
+            p1a = f"""你是TRPG模组创作者。基于以下信息生成补充场景。
 
 {base}
 
-Generate global events (optional) and passage connections between new scenes.
-Event IDs use SE_ prefix.
+请生成1-3个新场景，每个场景含interactions和auto_triggers。
+Entity ID使用S_前缀：SS1=场景1, SI1=interaction1, SAT1=AT1。
+requirement字段使用entity ID字符串（如"SI1 AND SI2"）。
+所有描述性内容必须使用中文。JSON字段名和ID保持英文。
 
-Return JSON:"""
-            p1c = f"""You are a TRPG module creator. Generate L1 player-facing layer for new scenes.
+返回 JSON："""
+            p1b = f"""你是TRPG模组创作者。基于以下信息生成补充事件和场景连接。
 
 {base}
 
-Generate L1-format scene descriptions with Chinese names as keys.
-Each scene: description, atmosphere, mood, perceptible (unconditionally perceptible elements list), ambient_hints.
+生成全局事件（可选）和新场景之间的通行连接。
+Event ID使用SE_前缀。
+所有描述性内容必须使用中文。JSON字段名和ID保持英文。
+
+返回 JSON："""
+            p1c = f"""你是TRPG模组创作者。生成新场景的玩家可见层（L1）。
+
+{base}
+
+生成L1格式的场景描述，键名为场景中文名。
+每个场景包含：description（场景描述）、atmosphere（氛围）、mood（情绪基调）、
+perceptible（可无条件感知的元素列表）、ambient_hints（环境暗示）。
+所有描述性内容必须使用中文。JSON字段名保持英文。
 
 Return JSON:"""
             for fname, content in [("04_pipeline_1a_prompt.txt", p1a),
