@@ -340,64 +340,64 @@ def test_case_c_author_patch(monkeypatch=None, log_dir=""):
 
     detector_called, author_called, stop = _setup_mocks(
         parse_actions=[
-            [{"type": "other", "text": "bend down and check under the table for hidden compartments"}],
-            [{"type": "interaction", "id": "SI1"}],  # recursive parse matches patched entity
+            [{"type": "other", "text": "弯下腰仔细检查桌子底下，看看有没有暗格或者隐藏的抽屉"}],
+            [{"type": "interaction", "id": "SI1"}],  # 递归 Parse 匹配到注入的 entity
         ],
         detector_result={
             "has_intent": True,
-            "intent": "Player wants to search the underside of the table for hidden spaces",
-            "reasoning": "The module describes the tabletop but not the underside — a reasonable search extension.",
+            "intent": "玩家想检查桌子底部的隐蔽空间，寻找可能被遗漏的线索",
+            "reasoning": "模组描述了桌面上的物品但未涉及桌子底部——这是合理的搜索延伸，需要Author创建对应的交互。",
         },
         author_result={
             "level": "patch",
             "entities": [{
                 "id": "SI1", "entity_type": "interaction",
-                "scene": "test_room", "name": "search under the table",
-                "type": "Spot Hidden", "requirement": "IT1",
-                "trigger": "crouch down and feel along the table's underside",
+                "scene": "test_room", "name": "检查桌子底部的暗格",
+                "type": "侦查", "requirement": "IT1",
+                "trigger": "调查员蹲下身，用手摸索桌子底部的边缘和角落",
                 "result": "##GRADED##",
                 "side_effects": [],
                 "graded_result": {
-                    "on_failure": "The underside is smooth — you find nothing.",
-                    "on_regular": "Your fingers find a subtle depression — a hidden compartment. Inside: a crumpled note.",
-                    "on_hard": "The compartment also contains a small key marked 'Locker 47'.",
-                    "on_extreme": "The compartment was clearly added later — likely by Hawthorne himself. A cipher is scrawled on the note's back.",
+                    "on_failure": "桌子底部一片光滑，你没有摸到任何异常。",
+                    "on_regular": "你的手指碰到了一个细微的凹陷——桌子底部有一个被巧妙隐藏的暗格。里面塞着一张皱巴巴的纸条，上面用颤抖的笔迹写着：「它能看到你，当你看到它的时候。」",
+                    "on_hard": "暗格里除了纸条，还有一把小钥匙，标记着「储物柜47号」。",
+                    "on_extreme": "你不仅找到了暗格中的纸条和钥匙，还发现暗格的做工与车厢内的其他木工完全不同——这暗格是后来加装的，很可能是霍桑亲手打造的。纸条背面还有一组模糊的数字：也许是某种密码。",
                 },
                 "difficulty": "regular",
             }],
             "scene_descriptions": {},
-            "justification": "The table underside is a reasonable search extension, consistent with Hawthorne's narrative.",
+            "justification": "桌子底部的暗格是合理的搜索延伸，与霍桑研究员的叙事线索一致，丰富了核心物品的互动深度。",
         },
         log_dir=log_dir,
     )
 
     try:
-        turn = TurnInput(raw_text="bend down and check under the table for hidden compartments")
+        turn = TurnInput(raw_text="弯下腰仔细检查桌子底下，看看有没有暗格或者隐藏的抽屉")
         result = keeper.process_turn(turn, author=author)
 
         _write_author_request_log(log_dir, {
-            "other_texts": ["bend down and check under the table for hidden compartments"],
-            "intent": "Player wants to search the underside of the table for hidden spaces",
-            "reasoning": "The module describes the tabletop but not the underside.",
-            "scene_context_note": "Built by Keeper._build_scene_context_for_author()",
+            "other_texts": ["弯下腰仔细检查桌子底下，看看有没有暗格或者隐藏的抽屉"],
+            "intent": "玩家想检查桌子底部的隐蔽空间，寻找可能被遗漏的线索",
+            "reasoning": "模组描述了桌面上的物品但未涉及桌子底部——这是合理的搜索延伸。",
+            "scene_context_note": "由 Keeper._build_scene_context_for_author() 构建",
         })
 
         node = world.graph.nodes["test_room"]
         assert len(node.interactions) >= 3, \
-            f"Case C: expected 3+ entities (IT1+IT2+SI1), got {len(node.interactions)}"
+            f"Case C: 应有 3+ entity (IT1+IT2+SI1)。实际: {len(node.interactions)}"
         assert "escalation" not in result
 
         _write_case_log(log_dir, {
-            "case": "C - other + Author Patch",
-            "input": "check under the table",
-            "parse_result": "type=other (round 1), interaction SI1 (round 2)",
+            "case": "C — other + Author Patch",
+            "input": "弯下腰仔细检查桌子底下",
+            "parse_result": "type=other (第1轮), interaction SI1 (第2轮递归)",
             "detector_called": detector_called[0],
-            "detector_result": "needs_author=True",
+            "detector_result": "needs_author=True — 合理的搜索延伸",
             "author_called": author_called[0],
             "author_level": "patch",
-            "author_entity": "SI1: search under the table",
-            "author_justification": "reasonable search extension",
-            "integration": "recursive process_turn -> entity integrated",
+            "author_entity": "SI1: 检查桌子底部的暗格 (侦查, regular, 依赖IT1)",
+            "author_justification": "桌子底部暗格是核心物品的合理延伸",
+            "integration": "递归 process_turn → entity 已注入场景",
             "verdict": "PASS",
         })
     finally:
