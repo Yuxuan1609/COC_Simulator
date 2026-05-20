@@ -13,7 +13,8 @@
 │   ├── library/
 │   │   ├── core/
 │   │   │   ├── weapons.json                 # 核心武器库（10 件）
-│   │   │   └── enemies.json                 # 核心敌人库（5 种神话生物/人类，含 [flag] 标记）
+│   │   │   ├── enemies.json                 # 核心敌人库（4 种神话生物/人类，含 [flag] 标记）
+│   │   │   └── bosses.json                  # 核心 Boss 库（1 种剧情敌人，含 boss_mechanics）
 │   │   └── extensions/                      # 用户自定义武器/敌人扩展包
 │   ├── templates/
 │   │   ├── l1_template.json                 # L1 玩家可见层模板
@@ -39,6 +40,8 @@
 │   │   ├── curator.py                       #   策展器：outcomes → NarratorBrief
 │   │   ├── combat.py                        #   CombatSystem：COC 7th 回合制战斗（独立于 Keeper 管线）
 │   │   ├── enemy_manager.py                 #   EnemyInstance + EnemyManager：敌人追踪层
+│   │   ├── boss_manager.py                  #   BossManager：Boss 信息挂钩 + CombatInit 构造（不参与 spawn）
+│   │   ├── npc_manager.py                   #   NPC + NPCManager：NPC 全量管理（对话/态度/跟随/序列化）
 │   │   ├── intent_detector.py               #   意图检测器（Parse other → Author trigger）
 │   │   └── agents/
 │   │       ├── keeper.py                    #   KP 守秘人（回合编配：parse→judge→enrich∥combat_entry→standoff→curate）
@@ -47,6 +50,7 @@
 │   ├── library/                             # 武器/敌人资源库
 │   │   ├── weapons.py                       #   LibraryWeapon + WeaponLibrary
 │   │   ├── enemies.py                       #   LibraryEnemy（含 [flag] 解析）+ EnemyLibrary
+│   │   ├── bosses.py                       #   LibraryBoss + BossLibrary
 │   │   ├── judgment.py                      #   双层判定引擎（T1 确定性 + T2 LLM 增强）
 │   │   └── injector.py                      #   内容注入（离线预填充 + 运行时动态注入）
 │   ├── module_designer/                     # 三层信息引擎
@@ -183,7 +187,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | 武器获取系统 | ✅ 已实现 | grant_weapon → SceneWeapon 场景放置 → search 发现 → 确认拾取 → Investigator.add_weapon |
 | 物品管理 | ✅ 已实现 | ItemManager（Investigator），item_gain(quantity) / consume_item（严格+LLM 模糊匹配） |
 | 属性变化 | ✅ 已实现 | StatChange → Investigator.modify_stat(int/dice formula) + LLM narrative 描述更新 |
-| NPC / 同伴系统 | TODO | **升级功能点**：NPC 主动行为、对话系统（自由文本+LLM语义匹配）、同伴跟随与协同、NPC 情绪/态度状态机。当前 L2 已有 npc_profiles 预留，NPC 仅被动响应 interaction |
+| NPC / 同伴系统 | ✅ 已实现 | NPCManager 全量管理：LLM 对话（态度/记忆上下文注入）、被动跟随（@npc_follow markup）、5级态度状态机。架构预留半主动 hook。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
+| Boss/剧情敌人 | ✅ 已实现 | 独立 bosses.json 库，`type="boss_encounter"` Entity（engage_type 硬性过滤），BossManager 信息挂钩+CombatSystem LLM 路径。特殊机制走自然语言 `boss_mechanics` 字段。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
 | 前端 UI + 随材 | TODO | **升级功能点**：游戏循环 Web 前端的视觉升级（场景插图、角色立绘、战斗动画）、音效/BGM 随材集成、移动端适配。当前 `frontend/game.html` 为纯功能界面 |
 | 时间系统 | ⚠ 转入待优化 (O5) | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent)。即将实现 |
 
@@ -218,7 +223,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 - 战斗进入/脱出判定: `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md`
 - 时间系统: `docs/superpowers/specs/2026-05-19-time-system-design.md`
 - 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
-- 综合性状态文档: `docs/superpowers/specs/NEXT-SESSION.md`
+- Boss/剧情敌人 & NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
+- Implementation Plan: `docs/superpowers/plans/2026-05-20-boss-npc-plan.md`
 
 ## 测试
 
@@ -228,6 +234,9 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `tests/test_combat_entry.py` | 6 case — SpawnEnemy→EnemyManager→combat lifecycle | 集成（确定） |
 | `tests/test_combat.py` | 10 case — damage roll/armor/tier/combat state | 单元（确定） |
 | `tests/test_combat_harness.py` | CombatSystem 完整战斗流程 | 集成（确定） |
+| `tests/test_boss_library.py` | 3 case — BossLibrary 加载/查询/字段完整性 | 单元（确定） |
+| `tests/test_boss_manager.py` | 6 case — engage_type 过滤/CombatInit 构造/active/set/resolve | 单元（确定） |
+| `tests/test_npc_manager.py` | 6 case — 创建/对话/跟随同步/场景查询/状态变更/序列化 | 单元（确定） |
 | `tests/test_library.py` | 18 case — WeaponLibrary/EnemyLibrary + flag 解析 | 单元（确定） |
 | `tests/test_author_flow.py` + `tests/test_intent_detector.py` | 11 case — Detector→Author→Keeper 全链路（全 mock） | 单元 |
 | `tests/test_escalation_harness.py` | 5 case — 正常/flavor/Patch/Reject/StructuralEdit | 集成（真实 LLM） |
@@ -247,7 +256,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `@stat_change(stat_name="", delta=-1, narrative="")` | 修改属性 + 更新描述 | Investigator.modify_stat() + LLM narrative 描述更新 |
 | `@item_gain(item_name="", quantity=1)` | 获得物品 | ItemManager.add(name, quantity) |
 | `@consume_item(item_name="", quantity=1)` | 消耗物品 | ItemManager.remove() + LLM 模糊匹配保底 |
-| `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | world.npc_states 更新 |
+| `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | NPCManager.set_state() |
+| `@npc_follow(npc_name="", follow=true/false)` | 设置 NPC 跟随状态 | NPCManager.set_following() |
 
 ## 特殊标记
 
