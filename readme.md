@@ -183,7 +183,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | 武器获取系统 | ✅ 已实现 | grant_weapon → SceneWeapon 场景放置 → search 发现 → 确认拾取 → Investigator.add_weapon |
 | 物品管理 | ✅ 已实现 | ItemManager（Investigator），item_gain(quantity) / consume_item（严格+LLM 模糊匹配） |
 | 属性变化 | ✅ 已实现 | StatChange → Investigator.modify_stat(int/dice formula) + LLM narrative 描述更新 |
-| NPC / 同伴系统 | TODO | NPC 主动行为、对话系统、同伴跟随。当前仅被动响应 interaction。L2 已有 npc_profiles 预留 |
+| NPC / 同伴系统 | TODO | **升级功能点**：NPC 主动行为、对话系统（自由文本+LLM语义匹配）、同伴跟随与协同、NPC 情绪/态度状态机。当前 L2 已有 npc_profiles 预留，NPC 仅被动响应 interaction |
+| 前端 UI + 随材 | TODO | **升级功能点**：游戏循环 Web 前端的视觉升级（场景插图、角色立绘、战斗动画）、音效/BGM 随材集成、移动端适配。当前 `frontend/game.html` 为纯功能界面 |
 | 时间系统 | 设计完成，未实现 | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent) |
 
 ### 已知缺口
