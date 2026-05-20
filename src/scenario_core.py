@@ -750,7 +750,8 @@ class ScenarioWorld:
 
     def __init__(self, graph: DirectedGraph, start_node: str,
                  background_story: str = "",
-                 wr0_enabled: bool = False):
+                 wr0_enabled: bool = False,
+                 enemy_library: Any = None):
         self.graph = graph
         self.current_location = start_node
         self.player: 'InvestigatorType | None' = None
@@ -777,6 +778,13 @@ class ScenarioWorld:
 
         # NPC 运行时状态
         self.npc_states: Dict[str, str] = {}
+
+        # Enemy tracking
+        if enemy_library is not None:
+            from game.enemy_manager import EnemyManager
+            self.enemy_manager = EnemyManager(enemy_library)
+        else:
+            self.enemy_manager = None
 
     # ── Dependency graph & runtime state ──
 
@@ -1114,7 +1122,18 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
             msgs.append(f"[获得物品] {effect.item_name}")
         elif isinstance(effect, SpawnEnemy):
             target_scene = effect.scene or world.current_location
-            msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
+            if world.enemy_manager:
+                instance = world.enemy_manager.spawn(
+                    effect.enemy_ref, target_scene, effect.quantity
+                )
+                msgs.append(
+                    f"[生成敌人] {effect.enemy_ref} x{effect.quantity} "
+                    f"在 {target_scene} ({instance.instance_id})"
+                )
+            else:
+                msgs.append(
+                    f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}"
+                )
         elif isinstance(effect, GrantWeapon):
             world.memory.note_item(effect.weapon_ref)
             msgs.append(f"[授予武器] {effect.weapon_ref} x{effect.quantity}")
