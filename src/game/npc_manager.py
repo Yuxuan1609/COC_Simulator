@@ -115,16 +115,19 @@ class NPCManager:
     # ── 序列化 ──
 
     def to_dict(self) -> dict:
-        return {
-            name: {
+        result = {}
+        for name, npc in self._npcs.items():
+            entry = {
                 "scene": npc.scene,
                 "attitude": npc.attitude,
                 "following": npc.following,
                 "memory": list(npc.memory),
                 "state": npc.state,
             }
-            for name, npc in self._npcs.items()
-        }
+            if npc.extra is not None:
+                entry["extra"] = npc.extra
+            result[name] = entry
+        return result
 
     def from_dict(self, data: dict, profiles: dict):
         """从序列化数据恢复运行时状态。profiles 用于恢复档案字段。"""
@@ -142,6 +145,7 @@ class NPCManager:
                 following=state_data.get("following", False),
                 memory=list(state_data.get("memory", [])),
                 state=state_data.get("state", "alive"),
+                extra=state_data.get("extra"),
             )
 
     def __repr__(self):
