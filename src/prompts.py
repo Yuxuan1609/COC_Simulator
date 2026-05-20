@@ -694,3 +694,41 @@ def build_combat_narrative_prompt(round_log: list, enemies_desc: str,
 返回 JSON：
 {{"narrative": "沉浸式战斗描写（中文不超过80字）", "scene_hint": ""}}
 直接输出 JSON。"""
+
+
+def build_stat_narrative_prompt(
+    inv_desc: str,
+    stat_name: str,
+    delta: str,
+    narrative: str,
+) -> str:
+    return f"""你是 COC 7th KP 助理。调查员的一项属性发生了变化，请据此更新其个人描述。
+
+当前描述：{inv_desc}
+
+属性变化：{stat_name} {delta}
+变化说明：{narrative}
+
+请输出一个更新后的个人描述（150字以内），融合本次变化的影响。保持原有风格和内容，仅增量更新。
+输出 JSON：{{"description": "更新后的描述文本"}}"""
+
+
+def build_consume_item_fuzzy_prompt(
+    target: str,
+    quantity: int,
+    held_items: str,
+) -> str:
+    return f"""你是 COC 7th KP 助理。玩家需要消耗一个物品，但物品名称与背包中的精确名称不匹配。请判断背包中是否有语义相同的物品。
+
+目标物品：{target}（需要消耗 x{quantity}）
+背包物品：
+{held_items}
+
+请判断背包中是否有物品与"{target}"语义相同：
+{{"matched": true/false, "item_name": "背包中的实际物品名", "reason": "匹配理由"}}
+
+规则：
+- 模糊匹配（如"手电"匹配"手电筒"、"绷带"匹配"急救包"）→ matched=true
+- 完全无关 → matched=false
+- item_name 必须是背包中存在的物品名（精确复制）"""
+

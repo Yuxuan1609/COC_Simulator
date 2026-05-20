@@ -62,8 +62,17 @@ class Interaction:
 
 @dataclass
 class ItemGain:
-    """获得关键物品 —— 纯文本描述，不做库匹配"""
+    """获得物品 —— 加入调查员 ItemManager"""
     item_name: str
+    quantity: int = 1
+
+
+@dataclass
+class ConsumeItem:
+    """消耗物品 —— 从调查员 ItemManager 移除"""
+    item_name: str
+    quantity: int = 1
+    narrative: str = ""  # 消耗原因（可选）
 
 
 @dataclass
@@ -138,7 +147,7 @@ class Entity:
 # ═══════════════════════════════════════════════════════════════
 
 _MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|npc_state_change)'
+    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change)'
     r'\(([^)]*)\)'
 )
 
@@ -190,7 +199,16 @@ def parse_markup(text: str):
             narrative=kwargs.get("narrative", ""),
         )
     elif func_name == "item_gain":
-        return ItemGain(item_name=kwargs.get("item_name", ""))
+        return ItemGain(
+            item_name=kwargs.get("item_name", ""),
+            quantity=int(kwargs.get("quantity", 1)),
+        )
+    elif func_name == "consume_item":
+        return ConsumeItem(
+            item_name=kwargs.get("item_name", ""),
+            quantity=int(kwargs.get("quantity", 1)),
+            narrative=kwargs.get("narrative", ""),
+        )
     elif func_name == "npc_state_change":
         return NPCStateChange(
             npc_name=kwargs.get("npc_name", ""),
@@ -231,7 +249,16 @@ def parse_markup_all(text: str) -> list:
                 narrative=kwargs.get("narrative", ""),
             ))
         elif func_name == "item_gain":
-            results.append(ItemGain(item_name=kwargs.get("item_name", "")))
+            results.append(ItemGain(
+                item_name=kwargs.get("item_name", ""),
+                quantity=int(kwargs.get("quantity", 1)),
+            ))
+        elif func_name == "consume_item":
+            results.append(ConsumeItem(
+                item_name=kwargs.get("item_name", ""),
+                quantity=int(kwargs.get("quantity", 1)),
+                narrative=kwargs.get("narrative", ""),
+            ))
         elif func_name == "npc_state_change":
             results.append(NPCStateChange(
                 npc_name=kwargs.get("npc_name", ""),
@@ -294,7 +321,9 @@ def _normalize_requirement(req):
 def _side_effect_to_dict(effect) -> dict:
     """将 side effect 实例序列化为 dict"""
     if isinstance(effect, ItemGain):
-        return {"type": "item_gain", "item_name": effect.item_name}
+        return {"type": "item_gain", "item_name": effect.item_name, "quantity": effect.quantity}
+    elif isinstance(effect, ConsumeItem):
+        return {"type": "consume_item", "item_name": effect.item_name, "quantity": effect.quantity, "narrative": effect.narrative}
     elif isinstance(effect, StatChange):
         return {"type": "stat_change", "stat_name": effect.stat_name, "delta": effect.delta, "narrative": effect.narrative}
     elif isinstance(effect, SpawnEnemy):
@@ -1132,7 +1161,51 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
     for effect in side_effects:
         if isinstance(effect, ItemGain):
             world.memory.note_item(effect.item_name)
-            msgs.append(f"[获得物品] {effect.item_name}")
+            if world.player and hasattr(world.player, 'item_manager'):
+                world.player.item_manager.add(
+                    effect.item_name, quantity=effect.quantity
+                )
+                qty_str = f" x{effect.quantity}" if effect.quantity > 1 else ""
+                msgs.append(f"[获得物品] {effect.item_name}{qty_str}（已加入背包）")
+            else:
+                msgs.append(f"[获得物品] {effect.item_name}")
+        elif isinstance(effect, ConsumeItem):
+            consumed = False
+            if world.player and hasattr(world.player, 'item_manager'):
+                im = world.player.item_manager
+                if im.has(effect.item_name) and im.get(effect.item_name).quantity >= effect.quantity:
+                    im.remove(effect.item_name, effect.quantity)
+                    consumed = True
+                else:
+                    try:
+                        from llm import call_deepseek
+                        from prompts import build_consume_item_fuzzy_prompt
+                        held = im.describe()
+                        if held and held != "（未持有物品）":
+                            prompt = build_consume_item_fuzzy_prompt(
+                                target=effect.item_name,
+                                quantity=effect.quantity,
+                                held_items=held,
+                            )
+                            result = call_deepseek(
+                                prompt, json_mode=True, model="deepseek-v4-flash",
+                                system="你是 COC 7th KP 助理。",
+                                fallback_schema={"matched": False, "item_name": "", "reason": ""},
+                            )
+                            if isinstance(result, str):
+                                import json as _json
+                                result = _json.loads(result)
+                            if result.get("matched") and result.get("item_name"):
+                                matched_name = result["item_name"]
+                                if im.has(matched_name):
+                                    im.remove(matched_name, effect.quantity)
+                                    consumed = True
+                    except Exception:
+                        pass
+            if consumed:
+                msgs.append(f"[消耗物品] {effect.item_name} x{effect.quantity}")
+            else:
+                msgs.append(f"[消耗物品] {effect.item_name} x{effect.quantity}（未找到匹配物品）")
         elif isinstance(effect, SpawnEnemy):
             target_scene = effect.scene or world.current_location
             if world.enemy_manager:
@@ -1163,8 +1236,37 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
             world.set_npc_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
         elif isinstance(effect, StatChange):
-            sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
-            msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（未自动应用）")
+            if world.player:
+                new_val, detail = world.player.modify_stat(effect.stat_name, effect.delta)
+                msgs.append(f"[属性变化] {detail}")
+                # Apply narrative description via LLM if present
+                if effect.narrative and hasattr(world.player, 'personal_description'):
+                    try:
+                        from llm import call_deepseek
+                        from prompts import build_stat_narrative_prompt
+                        prompt = build_stat_narrative_prompt(
+                            inv_desc=world.player.personal_description or world.player.appearance or "",
+                            stat_name=effect.stat_name,
+                            delta=str(effect.delta),
+                            narrative=effect.narrative,
+                        )
+                        result = call_deepseek(
+                            prompt, json_mode=True, model="deepseek-v4-flash",
+                            system="你是 COC 7th KP 助理，负责更新调查员描述。",
+                            fallback_schema={"description": world.player.personal_description or ""},
+                        )
+                        if isinstance(result, str):
+                            import json as _json
+                            result = _json.loads(result)
+                        new_desc = result.get("description", "")
+                        if new_desc and new_desc != (world.player.personal_description or ""):
+                            world.player.personal_description = new_desc
+                            msgs.append(f"[描述更新] {effect.stat_name} 变化影响了外貌/心理描述")
+                    except Exception:
+                        pass  # Narrative modification is best-effort
+            else:
+                sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
+                msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（无调查员，未应用）")
     return msgs
 
 

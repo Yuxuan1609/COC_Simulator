@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 
@@ -72,6 +73,73 @@ class Weapon:
     malfunction: int = 100     # 故障值
 
 
+@dataclass
+class InventoryItem:
+    """非武器/非剧情关键物品"""
+    name: str
+    description: str = ""
+    quantity: int = 1
+    category: str = "misc"  # tool, consumable, clothing, document, misc
+
+
+class ItemManager:
+    """半结构化物品管理器 — 持有非武器/剧情相关的常规物品"""
+
+    def __init__(self):
+        self._items: dict[str, InventoryItem] = {}
+
+    def add(self, name: str, description: str = "", quantity: int = 1) -> InventoryItem:
+        if name in self._items:
+            self._items[name].quantity += quantity
+            if description:
+                self._items[name].description = description
+            return self._items[name]
+        item = InventoryItem(name=name, description=description, quantity=quantity)
+        self._items[name] = item
+        return item
+
+    def remove(self, name: str, quantity: int = 1):
+        if name in self._items:
+            self._items[name].quantity -= quantity
+            if self._items[name].quantity <= 0:
+                del self._items[name]
+
+    def has(self, name: str) -> bool:
+        return name in self._items
+
+    def get(self, name: str) -> InventoryItem | None:
+        return self._items.get(name)
+
+    def list_all(self) -> list[InventoryItem]:
+        return list(self._items.values())
+
+    def describe(self) -> str:
+        """半结构化描述已持有物品"""
+        if not self._items:
+            return "（未持有物品）"
+        lines = []
+        for item in self._items.values():
+            desc = f"- {item.name} x{item.quantity}"
+            if item.description:
+                desc += f"：{item.description}"
+            lines.append(desc)
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        return {
+            name: {"description": item.description, "quantity": item.quantity, "category": item.category}
+            for name, item in self._items.items()
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ItemManager":
+        mgr = cls()
+        for name, idata in data.items():
+            mgr.add(name, description=idata.get("description", ""),
+                   quantity=idata.get("quantity", 1))
+        return mgr
+
+
 class Investigator:
     """COC 7th 调查员 —— 完全替代旧 Player 类"""
 
@@ -102,6 +170,7 @@ class Investigator:
 
         self.skills: List[Skill] = skills or []
         self.weapons: List[Weapon] = weapons or []
+        self.item_manager: ItemManager = ItemManager()
         self.equipment: List[str] = equipment or []
 
         self.backstory = backstory
@@ -200,12 +269,82 @@ class Investigator:
         cthulhu = self.get_skill_value("克苏鲁神话")
         self.derived = calc_derived(self.stats, self.age, cthulhu)
 
-    def modify_stat(self, name: str, delta: int):
-        attr = name.upper()
-        if attr in self._ALLOWED_STATS:
-            new_val = getattr(self.stats, attr) + delta
-            setattr(self.stats, attr, max(0, min(99, new_val)))
-            self._recalc_derived()
+    def modify_stat(self, stat_name: str, delta) -> tuple[int, str]:
+        """Modify a core stat value. delta can be int or dice formula string like \"-1d4\".
+        Returns (new_value, detail_message)."""
+        from utils import roll_dice
+
+        # Resolve delta
+        if isinstance(delta, str):
+            # Parse dice formula like "-1d4", "2d6+1"
+            total = 0
+            sign = 1
+            remaining = delta.strip()
+            if remaining.startswith('-'):
+                sign = -1
+                remaining = remaining[1:]
+            elif remaining.startswith('+'):
+                remaining = remaining[1:]
+            # Match NdS or bare number
+            dice_match = re.match(r'(\d+)[dD](\d+)', remaining)
+            if dice_match:
+                n = int(dice_match.group(1))
+                s = int(dice_match.group(2))
+                total = roll_dice(n, s)
+                remaining = remaining[dice_match.end():]
+                # Check for modifier like +1 or -2
+                mod_match = re.match(r'([+-]\d+)', remaining)
+                if mod_match:
+                    total += int(mod_match.group(1))
+                    remaining = remaining[mod_match.end():]
+            else:
+                try:
+                    total = int(remaining)
+                except ValueError:
+                    total = 0
+            delta_val = sign * total
+        else:
+            delta_val = int(delta)
+
+        detail = ""
+        upper = stat_name.upper()
+        stats = self.stats
+
+        # Map to Stats field
+        if hasattr(stats, upper):
+            old_val = getattr(stats, upper)
+            new_val = max(0, old_val + delta_val)
+            setattr(stats, upper, new_val)
+            detail = f"{stat_name}: {old_val} -> {new_val}"
+
+            # Recalculate derived stats if needed
+            if upper in ("CON", "SIZ"):
+                self.derived.HP = math.floor((stats.CON + stats.SIZ) / 10)
+                detail += f", HP={self.derived.HP}"
+            if upper == "POW":
+                self.derived.MP = math.floor(stats.POW / 5)
+                detail += f", MP={self.derived.MP}"
+            if upper == "LUCK":
+                # LUCK can't go above 99
+                if new_val > 99:
+                    setattr(stats, upper, 99)
+                    detail = f"{stat_name}: {old_val} -> 99"
+
+            return (new_val, detail)
+        elif upper == "SAN":
+            self.derived.SAN = max(0, self.derived.SAN + delta_val)
+            detail = f"SAN: {self.derived.SAN - delta_val} -> {self.derived.SAN}"
+            return (self.derived.SAN, detail)
+        elif upper == "HP":
+            self.derived.HP = max(0, self.derived.HP + delta_val)
+            detail = f"HP: {self.derived.HP - delta_val} -> {self.derived.HP}"
+            return (self.derived.HP, detail)
+        elif upper == "MP":
+            self.derived.MP = max(0, self.derived.MP + delta_val)
+            detail = f"MP: {self.derived.MP - delta_val} -> {self.derived.MP}"
+            return (self.derived.MP, detail)
+        else:
+            return (0, f"未知属性: {stat_name}")
 
     def modify_skill(self, name: str, delta: int):
         sk = self.get_skill(name)
