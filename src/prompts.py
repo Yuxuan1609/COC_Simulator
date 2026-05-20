@@ -228,48 +228,34 @@ def _build_l1l3_context(
     return "\n".join(parts) if parts else ""
 
 
-def parse_narrative_output(text: str) -> tuple[str, str]:
-    """
-    解析 LLM 叙事输出，按 ### 结果 / ### 沉浸式叙事 分割。
-    兼容旧格式（\\n\\n\\n 分割 + 结果：/沉浸式叙事：前缀）。
-    """
-    # Try new format: ### 结果 ... ### 沉浸式叙事 ...
-    if "### 结果" in text and "### 沉浸式叙事" in text:
-        # Split on the markers
-        before_result, rest = text.split("### 结果", 1)
-        result_part, narrative_part = rest.split("### 沉浸式叙事", 1)
-        brief = result_part.strip().strip('"').strip("'").strip("“").strip("”")
-        narrative = narrative_part.strip().strip('"').strip("'").strip("“").strip("”")
-        if brief and narrative:
-            return brief, narrative
+def parse_narrative_output(response: dict | str) -> tuple[str, str, str]:
+    """Parse narrator LLM response. Returns (brief, narrative, scene_update).
+    Handles JSON dict input (new format), with fallback to string parsing (old format)."""
+    if isinstance(response, dict):
+        brief = response.get("brief", "")
+        narrative = response.get("narrative", "")
+        scene_update = response.get("scene_update", "")
+        return brief, narrative, scene_update or ""
 
-    # Fallback to old format: \n\n\n split
-    parts = text.split("\n\n\n", 1)
-    if len(parts) != 2:
-        parts = text.split("\n\n", 1)
+    # Fallback: string response — try old ### marker format or triple newline
+    text = response
+    if isinstance(text, str) and "### 结果" in text and "### 沉浸式叙事" in text:
+        _, rest = text.split("### 结果", 1)
+        result_part, rest2 = rest.split("### 沉浸式叙事", 1)
+        brief = result_part.strip().strip(chr(34)+chr(39)+chr(0x201C)+chr(0x201D)+chr(0x2018)+chr(0x2019))
+        scene_update = ""
+        if "### 场景变化" in rest2:
+            narrative_part, scene_part = rest2.split("### 场景变化", 1)
+            scene_update = scene_part.strip().strip(chr(34)+chr(39)+chr(0x201C)+chr(0x201D)+chr(0x2018)+chr(0x2019))
+            if scene_update == chr(26080) or not scene_update:
+                scene_update = ""
+        else:
+            narrative_part = rest2
+        narrative = narrative_part.strip().strip(chr(34)+chr(39)+chr(0x201C)+chr(0x201D)+chr(0x2018)+chr(0x2019))
+        return brief, narrative, scene_update
 
-    if len(parts) == 2:
-        first, second = parts
-        brief = first
-        narrative = second
-
-        for sep in ["结果：", "结果:"]:
-            if sep in first:
-                brief = first.split(sep, 1)[1].strip()
-                brief = brief.strip('"').strip("'").strip("“").strip("”")
-                break
-
-        for sep in ["沉浸式叙事：", "沉浸式叙事:"]:
-            if sep in second:
-                narrative = second.split(sep, 1)[1].strip()
-                narrative = narrative.strip('"').strip("'").strip("“").strip("”")
-                break
-
-        return brief, narrative
-
-    # Fallback: 整个文本作为叙事
-    fallback_brief = text[:60] + "..." if len(text) > 60 else text
-    return fallback_brief, text
+    fb = text[:60] + "..." if len(text) > 60 else text
+    return fb, text, ""
 
 
 # ── Keeper: Parse (Step 1) ──
@@ -521,24 +507,27 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
 
 【叙事强调】{brief.suggested_emphasis}
 
-请以TRPG主持人身份生成沉浸式叙事。严格按以下格式输出：
+请以TRPG主持人身份生成沉浸式叙事。
 
-### 结果
-用简单、平淡、客观的描述性语言概括本轮发生了什么。
-仅陈述事实，不含情绪色彩，不含修饰。
-
-### 沉浸式叙事
-基于结果进行文学性展开，用丰富且带有情感的语言描述。
-融入场景氛围，让玩家身临其境。中文不超过100字。
+返回 JSON：
+{{
+  "brief": "简洁、清晰、客观的概括——本轮发生了什么。仅陈述事实，不含情绪色彩。",
+  "narrative": "基于结果进行文学性展开，融入场景氛围，让玩家身临其境。中文不超过100字。",
+  "scene_update": ""
+}}
 
 规则：
-- 结果与沉浸式叙事必须严格分离，结果不说故事，叙事不重复事实
+- brief 与 narrative 必须严格呼应，brief "简洁、清晰、客观的概述事实，narrative 基于结果进行文学性展开
+- scene_update：判断本轮行动是否导致场景可见变化（物品移动、门打开、血迹、光源、NPC出现/消失等）。有变化则输出更新后的完整场景描述；无变化则为空字符串 ""
+- 仅当本轮行动确实改变了场景时才填写 scene_update
+- 「即兴行为」不导致场景变化，不填写 scene_update
 - 不要给出前文没有的实质性信息
 - 以上下文语境和场景氛围为准
 - 叙事强调指明了本轮的叙事方向
 - 「即兴行为」仅为叙述性描写，不对世界产生任何实际影响——场景状态、物品位置、
   NPC状态等均不因其改变。描述时作为短暂的、无后果的角色动作自然融入叙事，
   一带而过即可，不做展开
+直接输出 JSON。
 """
     _show_prompt("Narrator", prompt)
     return prompt
@@ -629,3 +618,55 @@ def build_author_prompt(request, l3_data) -> str:
 """
     _show_prompt("Author", prompt)
     return prompt
+
+
+# ── Combat Entry + Standoff ──
+
+def build_combat_entry_prompt(
+    player_input: str,
+    outcomes_summary: str,
+    enemy_context: str,
+    current_scene: str,
+) -> str:
+    return f"""你是 COC 7th KP 助理。根据玩家行为、本轮结果和场景内敌人的习性，判断是否应进入回合制战斗。
+
+玩家输入：{player_input}
+本轮结果：{outcomes_summary}
+当前位置：{current_scene}
+
+场景内敌人：
+{enemy_context}
+
+请判断是否有敌人应进入战斗。输出 JSON：
+{{"enter_combat": true/false, "enemy_instance_ids": ["..."], "reasoning": "简述判定理由"}}"""
+
+
+_COC_SKILL_NAMES = [
+    "会计", "人类学", "估价", "考古学", "魅惑", "攀爬", "计算机使用",
+    "信用评级", "克苏鲁神话", "乔装", "闪避", "汽车驾驶", "电气维修",
+    "电子学", "话术", "急救", "历史", "恐吓", "跳跃", "法律",
+    "图书馆使用", "聆听", "锁匠", "机械维修", "医学", "博物学",
+    "导航", "神秘学", "操作重型机械", "说服", "驾驶", "精神分析",
+    "心理学", "读唇", "潜行", "侦查", "生存", "游泳", "投掷",
+    "追踪", "驯兽",
+]
+
+
+def build_standoff_match_prompt(player_input: str) -> str:
+    skill_list = "、".join(_COC_SKILL_NAMES)
+    return f"""你是 COC 7th KP 助理。玩家在面对敌人时试图避免战斗。
+
+玩家输入："{player_input}"
+
+可用技能：{skill_list}
+
+判断玩家意图对应的技能检定（如果有）：
+{{"matched": true/false, "skill_name": "技能名", "reason": "简述为什么匹配"}}
+
+规则：
+- matched=false 表示玩家输入无法匹配为任何有意义的避免战斗的尝试（包括"什么都不做"、直接攻击等）
+- 魅惑/取悦 → "魅惑"
+- 说服/交涉/讲道理 → "说服"
+- 潜行/偷偷溜走/绕过去 → "潜行"
+- 恐吓/威胁 → "恐吓"
+- 其他无法匹配的输出 matched=false"""
