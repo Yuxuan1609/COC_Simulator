@@ -8,7 +8,7 @@ from scenario_core import ScenarioWorld, Entity, parse_markup_all
 from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
-    CombatEntryCheck,
+    CombatEntryCheck, StandoffMatch, CombatInit,
 )
 from ..judge import Judge
 from ..curator import Curator
@@ -223,6 +223,48 @@ class Keeper:
             finally:
                 combat_executor.shutdown(wait=False)
 
+        # Step 3.6: Build standoff_prompt or combat_init from combat_entry
+        standoff_prompt = None
+        combat_init_result = None
+        if combat_entry and combat_entry.enter_combat:
+            avoidable_by_ref: dict[str, list[str]] = {}
+            hostile_iids: list[str] = []
+            for iid in combat_entry.enemy_instance_ids:
+                inst = self.world.enemy_manager.get_by_id(iid) if self.world.enemy_manager else None
+                if inst and "avoidable" in inst.flags:
+                    avoidable_by_ref.setdefault(inst.enemy_ref, []).append(iid)
+                elif inst:
+                    hostile_iids.append(iid)
+
+            if avoidable_by_ref:
+                standoff_prompt = {
+                    "groups": {ref: iids for ref, iids in avoidable_by_ref.items()},
+                    "current_group": next(iter(avoidable_by_ref)),
+                    "hostile_iids": hostile_iids,
+                    "all_enemy_iids": list(combat_entry.enemy_instance_ids),
+                    "reasoning": combat_entry.reasoning,
+                }
+                first_ref = standoff_prompt["current_group"]
+                all_outcomes.append(ActionOutcome(
+                    intent=ActionIntent(action="standoff"),
+                    success=True,
+                    message=f"你还有最后一次机会避免与{first_ref}的战斗——你要怎么做？",
+                    entity_id="STANDOFF",
+                    entity_type="standoff",
+                ))
+            elif hostile_iids:
+                enemies = [self.world.enemy_manager.get_by_id(iid)
+                          for iid in hostile_iids
+                          if self.world.enemy_manager and self.world.enemy_manager.get_by_id(iid)]
+                if enemies and self.world.enemy_manager:
+                    self.world.enemy_manager.enter_combat(hostile_iids)
+                combat_init_result = CombatInit(
+                    enemies=enemies,
+                    player=self.world.player,
+                    scene=self.world.current_location,
+                    initiative_context=combat_entry.reasoning,
+                )
+
         # Step 4: IntentDetector decision point (was Escalation check)
         if detect_future:
             try:
@@ -314,7 +356,89 @@ class Keeper:
 
         return {"brief": brief,
                 "ending_name": ending_name, "ending_narrative": ending_narrative,
-                "combat_entry": combat_entry}
+                "combat_entry": combat_entry,
+                "standoff_prompt": standoff_prompt,
+                "combat_init": combat_init_result}
+
+    def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
+        """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
+        from prompts import build_standoff_match_prompt
+        from llm import evaluate_trait_enhancement
+
+        enemy_ref = standoff_state["current_group"]
+        instance_ids = standoff_state["groups"][enemy_ref]
+        # Store standoff state for game loop continuation
+        self._standoff_pending = standoff_state
+
+        # Step 1: Semantic match (LLM, flash)
+        match_prompt = build_standoff_match_prompt(player_input)
+        try:
+            raw = call_deepseek(match_prompt, json_mode=True, model="deepseek-v4-flash",
+                               system="你是 COC 7th KP 助理，将玩家输入匹配到对应技能。",
+                               fallback_schema={"matched": False, "skill_name": "", "reason": ""})
+            match_data = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            match_data = {"matched": False, "skill_name": "", "reason": ""}
+
+        if not match_data.get("matched"):
+            for iid in instance_ids:
+                inst = self.world.enemy_manager.get_by_id(iid) if self.world.enemy_manager else None
+                if inst:
+                    inst.status = "hostile"
+            self._standoff_pending = None
+            return {"standoff_resolved": True, "avoided": False,
+                    "message": f"你的尝试无效，{enemy_ref}进入战斗！",
+                    "instance_ids": instance_ids}
+
+        # Step 2: D100 skill check
+        skill_name = match_data["skill_name"]
+        ok, skill_msg, tier = self.world.player.check_skill(skill_name, "regular")
+        skill_detail = (
+            f"[STANDOFF] {skill_name}检定 | 等级={tier} | {'成功' if ok else '失败'}\n"
+            f"  {skill_msg}"
+        )
+
+        # Step 3: Trait enhancement
+        inv_desc = (getattr(self.world.player, 'personal_description', '') or
+                   getattr(self.world.player, 'description', ''))
+        if inv_desc:
+            enh = evaluate_trait_enhancement(
+                inv_desc=inv_desc,
+                skill_name=skill_name,
+                skill_detail=skill_msg,
+                current_tier=tier,
+                entity_name=f"避免与{enemy_ref}战斗",
+                search_context=False,
+            )
+            new_tier = enh.get("tier", tier)
+            if new_tier != tier:
+                skill_detail += f"\n  [特质修正] {tier} -> {new_tier}: {enh.get('reason', '')}"
+                tier = new_tier
+                ok = (tier != "failure")
+
+        # Step 4: Apply result
+        if ok:
+            if skill_name in ("魅惑", "说服", "话术", "恐吓"):
+                for iid in instance_ids:
+                    if self.world.enemy_manager:
+                        self.world.enemy_manager.set_status(iid, "neutral")
+                msg = f"{skill_name}成功——{enemy_ref}被{skill_name}所动，敌意消退。"
+            else:
+                msg = f"潜行成功——你悄悄绕过了{enemy_ref}。"
+            self._standoff_pending = None
+            return {"standoff_resolved": True, "avoided": True,
+                    "message": msg, "instance_ids": instance_ids,
+                    "skill_detail": skill_detail}
+        else:
+            for iid in instance_ids:
+                inst = self.world.enemy_manager.get_by_id(iid) if self.world.enemy_manager else None
+                if inst:
+                    inst.status = "hostile"
+            self._standoff_pending = None
+            return {"standoff_resolved": True, "avoided": False,
+                    "message": f"{skill_name}失败——{enemy_ref}进入战斗！",
+                    "instance_ids": instance_ids,
+                    "skill_detail": skill_detail}
 
     # ── Internal ──
 
