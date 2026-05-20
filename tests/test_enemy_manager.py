@@ -119,24 +119,24 @@ def sample_graph():
 
 def test_get_active_in_range_adjacent_aware(mgr, sample_graph):
     """adjacent_aware enemy in 车厢1 is detectable from adjacent 车厢2 but not 车厢3."""
-    mgr.spawn("大嘴吞噬者", "车厢1")  # adjacent_aware
+    mgr.spawn("Clicker", "车厢1")  # adjacent_aware
     mgr.spawn("疯狂信徒", "车厢2")
 
-    # 车厢1: should see 大嘴吞噬者
+    # 车厢1: should see Clicker
     active_1 = mgr.get_active_in_range("车厢1", sample_graph)
     refs_1 = {i.enemy_ref for i in active_1}
-    assert "大嘴吞噬者" in refs_1
+    assert "Clicker" in refs_1
 
-    # 车厢2: should see 疯狂信徒 + 大嘴吞噬者 (adjacent)
+    # 车厢2: should see 疯狂信徒 + Clicker (adjacent)
     active_2 = mgr.get_active_in_range("车厢2", sample_graph)
     refs_2 = {i.enemy_ref for i in active_2}
     assert "疯狂信徒" in refs_2
-    assert "大嘴吞噬者" in refs_2
+    assert "Clicker" in refs_2
 
-    # 车厢3: should NOT see 大嘴吞噬者 (too far)
+    # 车厢3: should NOT see Clicker (too far)
     active_3 = mgr.get_active_in_range("车厢3", sample_graph)
     refs_3 = {i.enemy_ref for i in active_3}
-    assert "大嘴吞噬者" not in refs_3
+    assert "Clicker" not in refs_3
 
 
 def test_get_active_in_range_no_adjacent_aware(mgr, sample_graph):
