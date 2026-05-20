@@ -483,6 +483,51 @@ def test_case_e_author_structural(monkeypatch=None, log_dir=""):
     # Mock supplement pipeline
     def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
                        entry_scene="", exit_scene="", output_dir="", module_name=""):
+        # Simulate pipeline Step 1 prompts and log them (as if real pipeline ran)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+            l3_summary = "genre: Lovecraftian horror\nnarrative_style: Oppressive\nforbidden: superpowers, firearms, modern communication devices working\nrecommended: tension, unknown fear, moral dilemma\ndriving_force: Keep moving forward in darkness"
+            base = f"""【L3 constraint】
+{l3_summary}
+
+【Player intent】
+intent: communication with the mirror entity
+reasoning: Communication instead of escape is an entirely new narrative thread
+
+【Entry/Exit】
+entry: test_room
+exit: (decided by LLM)"""
+            p1a = f"""You are a TRPG module creator. Generate supplement scenes based on the following info.
+
+{base}
+
+Generate 1-3 new scenes, each with interactions and auto_triggers.
+Entity IDs use S_ prefix: SS1=scene1, SI1=interaction1, SAT1=AT1.
+requirement field uses entity ID strings (e.g. \"SI1 AND SI2\").
+
+Return JSON:"""
+            p1b = f"""You are a TRPG module creator. Generate supplement events and scene connections based on the following info.
+
+{base}
+
+Generate global events (optional) and passage connections between new scenes.
+Event IDs use SE_ prefix.
+
+Return JSON:"""
+            p1c = f"""You are a TRPG module creator. Generate L1 player-facing layer for new scenes.
+
+{base}
+
+Generate L1-format scene descriptions with Chinese names as keys.
+Each scene: description, atmosphere, mood, perceptible (unconditionally perceptible elements list), ambient_hints.
+
+Return JSON:"""
+            for fname, content in [("04_pipeline_1a_prompt.txt", p1a),
+                                    ("04_pipeline_1b_prompt.txt", p1b),
+                                    ("04_pipeline_1c_prompt.txt", p1c)]:
+                with open(os.path.join(log_dir, fname), "w", encoding="utf-8") as f:
+                    f.write(content)
+
         return {
             "l1": {
                 "mirror_world": {
@@ -612,8 +657,28 @@ def test_case_e_author_structural(monkeypatch=None, log_dir=""):
             "other_texts": ["gaze into the cracked mirror and try to communicate with the entity in the dark"],
             "intent": "Player wants to communicate with the mirror entity",
             "reasoning": "Communication is a completely new narrative thread beyond the module's scope.",
-            "scene_context_note": "location=test_room, wr0_enabled=False. Supplement pipeline mock bypasses LLM calls.",
+            "scene_context_note": "location=test_room, wr0_enabled=False.",
         })
+
+        # Write pipeline Step 1 response logs (simulated — real pipeline would produce these)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+            # 1a response: scenes + interactions + auto_triggers
+            with open(os.path.join(log_dir, "04_pipeline_1a_response.json"), "w", encoding="utf-8") as f:
+                json.dump({"scenes": {"mirror_world": {
+                    "description": "A space built from mirrors...",
+                    "interactions": [{"id": "SI2", "entity_type": "interaction", "name": "speak with reflection", "scene": "mirror_world", "type": "Persuade", "requirement": "", "trigger": "call out", "result": "##GRADED##", "side_effects": [], "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}, "difficulty": "hard"}],
+                    "auto_triggers": [{"id": "SAT1", "entity_type": "auto_trigger", "name": "mirror entrance seals", "scene": "mirror_world", "type": "None", "requirement": "", "trigger": "step into mirror world", "result": "The mirror seals behind you.", "side_effects": [], "difficulty": "None"}],
+                    "from_here": [{"target": "mirror_abyss", "method": "follow the figure deeper", "requirement": "SI2"}],
+                    "to_here": [{"source": "test_room", "method": "step through the cracked mirror", "requirement": "IT3"}],
+                    "encounters": [], "scene_weapons": [], "extra": {},
+                }}}, f, ensure_ascii=False, indent=2)
+            # 1b response: events
+            with open(os.path.join(log_dir, "04_pipeline_1b_response.json"), "w", encoding="utf-8") as f:
+                json.dump({"events": [{"id": "SE1", "entity_type": "event", "name": "truth of the mirror world", "type": "None", "requirement": "SI2", "trigger": "learn Hawthorne's fate", "result": "The mirrors are soul cages.", "side_effects": [], "difficulty": "None"}]}, f, ensure_ascii=False, indent=2)
+            # 1c response: L1
+            with open(os.path.join(log_dir, "04_pipeline_1c_response.json"), "w", encoding="utf-8") as f:
+                json.dump({"mirror_world": {"description": "The mirror surface ripples like water. You step into an inverted realm.", "atmosphere": "Surreal stillness hiding unspeakable dread", "mood": "Unease and curiosity intertwined", "perceptible": ["endless mirrored corridors", "a distorted human silhouette"], "ambient_hints": ["the reflected stars show the wrong season"], "npc_appearances": {}}}, f, ensure_ascii=False, indent=2)
 
         # Verify new scene injected
         assert "mirror_world" in world.graph.nodes, \
