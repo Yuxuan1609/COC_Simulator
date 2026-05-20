@@ -177,9 +177,9 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 作者介入机制 (Escalation) | ✅ 已实现 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。详见 `docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
+| 作者介入机制 (Escalation) | ⚠ 已实现，提示词待精修 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。Patch 和 StructuralEdit 的轻量级 LLM 提示词需精修。详见 `docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
 | 战斗系统 — 进入/脱出 | ✅ 已实现 | SpawnEnemy→EnemyManager→LLM 检测+对峙→CombatInit。详见 `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md` |
-| 战斗系统 — 回合制核心 | ⚠ 核心已实现，待接入 | `src/game/combat.py`：CombatSystem 已实现伤害掷骰/D100 检定/先攻/逐轮处理。**未接入 game_loop**：CombatInit 已产出但无消费者调用 `CombatSystem.run_combat()` |
+| 战斗系统 — 回合制核心 | ✅ 已接入 | `src/game/combat.py`：CombatSystem 已实现伤害掷骰/D100 检定/先攻/逐轮处理，`run_turn()` 和 `continue_standoff()` 中自动调用 |
 | 武器获取系统 | ✅ 已实现 | grant_weapon → SceneWeapon 场景放置 → search 发现 → 确认拾取 → Investigator.add_weapon |
 | 物品管理 | ✅ 已实现 | ItemManager（Investigator），item_gain(quantity) / consume_item（严格+LLM 模糊匹配） |
 | 属性变化 | ✅ 已实现 | StatChange → Investigator.modify_stat(int/dice formula) + LLM narrative 描述更新 |
@@ -196,8 +196,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | G4 | `run_turn` 输出格式 | ✅ FIXED |
 | G5 | 结局检测未接入 | ✅ FIXED |
 | G6 | Keeper 无单元测试 | ✅ DONE |
-| G7 | CombatSystem 未接入 game_loop | ⚠ 新缺口：`CombatInit` 已产出，需在 `run_turn` 中调用 `CombatSystem.run_combat()` |
-| G8 | `Investigator.combat_check/damage_roll` 仍 raise NotImplementedError | 待清理：应由 `CombatSystem` 接管 |
+| G7 | CombatSystem 未接入 game_loop | ✅ FIXED — `run_turn()` 和 `continue_standoff()` 中检测 `CombatInit` → `CombatSystem.run_combat()` → `EnemyManager.exit_combat()` |
+| G8 | `Investigator.combat_check/damage_roll` 仍 raise NotImplementedError | ✅ FIXED — 旧 stub 已移除，战斗逻辑已由 `CombatSystem` 完全接管 |
 
 ### 待优化
 
@@ -206,6 +206,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | O1 | Escalation 每回合 LLM 调用 | ✅ 已解决 — 改为 Parse other → IntentDetect 按需触发 |
 | O2 | Memory 压缩阻塞 LLM 调用 | 见 `keeper.py` TODO |
 | O3 | Move 限制条件未强制执行 | 见 `keeper.py` TODO |
+| O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
 
 ## 设计文档
 
