@@ -221,27 +221,64 @@ def _get_pipeline_version() -> str:
         return "unknown"
 
 
-def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=None) -> dict:
+def parse_step2_boss(boss_hints: list[dict], l1_data: dict, llm_json) -> dict:
+    """Generate structured boss_encounter entities from Step 1 boss hints."""
+    if not boss_hints:
+        return {"boss_encounters": []}
+    import json as _json
+    prompt = f"""根据以下 Boss 识别结果，生成结构化的 Boss Encounter 实体。
+
+## Step 1 Boss 识别
+{_json.dumps(boss_hints, ensure_ascii=False, indent=2)}
+
+## L1 场景概要（供场景名/条件参考）
+{_json.dumps(l1_data, ensure_ascii=False, indent=2)}
+
+输出格式:
+{{
+  "boss_encounters": [
+    {{
+      "id": "BOSS_1",
+      "type": "boss_encounter",
+      "engage_type": "at|interaction|event",
+      "boss_ref": "Boss库中的名称",
+      "scene": "所在场景",
+      "requirements": "(硬性条件) || 软性描述条件",
+      "description": "进入战斗时的情境描述"
+    }}
+  ]
+}}
+
+要求:
+1. engage_type 判定: 进入场景自动触发→"at", 玩家主动操作→"interaction", 全局条件满足→"event"
+2. requirements 使用 (hard) || soft 格式，hard 部分引用 runtime_state 中的 entity id
+3. boss_ref 必须与 Step 1 识别的 boss_name 对应
+"""
+    return llm_json(prompt)
+
+
+def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
+                 npc_profiles=None, boss_encounters=None) -> dict:
     """将 Step 3a 后的实体按场景分组组装为 L2 结构."""
     scenes: dict[str, dict] = {}
     for inter in interactions:
         sname = inter.get("scene", "")
         if sname:
             scenes.setdefault(sname, {"interactions": [], "auto_triggers": [],
-                                       "encounters": [], "scene_weapons": [],
-                                       "from_here": [], "to_here": [], "extra": {}})
+                                        "encounters": [], "scene_weapons": [],
+                                        "from_here": [], "to_here": [], "extra": {}})
             scenes[sname]["interactions"].append(inter)
     for at in auto_triggers:
         sname = at.get("scene", "")
         if sname:
             scenes.setdefault(sname, {"interactions": [], "auto_triggers": [],
-                                       "encounters": [], "scene_weapons": [],
-                                       "from_here": [], "to_here": [], "extra": {}})
+                                        "encounters": [], "scene_weapons": [],
+                                        "from_here": [], "to_here": [], "extra": {}})
             scenes[sname]["auto_triggers"].append(at)
     for sname, movement in scene_movements.items():
         scenes.setdefault(sname, {"interactions": [], "auto_triggers": [],
-                                   "encounters": [], "scene_weapons": [],
-                                   "from_here": [], "to_here": [], "extra": {}})
+                                    "encounters": [], "scene_weapons": [],
+                                    "from_here": [], "to_here": [], "extra": {}})
         scenes[sname]["from_here"] = movement.get("from_here", [])
         scenes[sname]["to_here"] = movement.get("to_here", [])
     for sname in scenes:
@@ -250,6 +287,7 @@ def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, 
     return {
         "scenes": scenes,
         "events": events,
+        "boss_encounters": boss_encounters if boss_encounters is not None else [],
         "npc_profiles": npc_profiles if npc_profiles is not None else {},
         "_pipeline_version": _get_pipeline_version(),
     }
@@ -498,8 +536,17 @@ def run_pipeline(
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
         print(f"  Step 2.5 完成: {len(npc_profiles)} NPC profiles")
 
+    # ── 生成 Boss Encounter（如果 Step 1 识别到了 Boss）──
+    boss_hints = step1a.get("boss_encounters", [])
+    if boss_hints:
+        step2_boss = parse_step2_boss(boss_hints, l1_data, llm_json)
+        boss_encounters_data = step2_boss.get("boss_encounters", [])
+    else:
+        boss_encounters_data = []
+
     # ── 组装 L2 结构 ──
-    l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles)
+    l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
+                                npc_profiles=npc_profiles, boss_encounters=boss_encounters_data)
     result.l2_data = l2_assembled
 
     # Extract flat lists from assembled L2 for Step 3.5/4
@@ -676,7 +723,8 @@ def run_pipeline(
 
     # Re-assemble L2 with Phase 2 standardized entities
     l2_assembled.clear()
-    l2_assembled.update(_assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles))
+    l2_assembled.update(_assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
+                                     npc_profiles=npc_profiles, boss_encounters=boss_encounters_data))
     if dep_graph:
         l2_assembled["dependency_graph"] = dep_graph.to_dict()
     l2_assembled["_phase1"] = {"enemies": phase1_result.get("enemies", []),

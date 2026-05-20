@@ -3,6 +3,7 @@ from module_designer.l1_player import SceneL1, Perceptible, NPCAppearance, load_
 from module_designer.l2_keeper import (
     SceneL2, Encounter, SceneWeapon, AutoTrigger, NPCProfile, load_l2, save_l2,
 )
+# NPCProfile is an alias for game.npc_manager.NPC (maintained for backward compat)
 from module_designer.l3_designer import (
     L3Designer, ModuleMeta, WorldRule, CharacterDesign,
     SceneIntent, EndingCondition, ToneConstraints, load_l3, save_l3,
@@ -26,4 +27,5 @@ from module_designer.dependency_graph import (
 from module_designer.layered_pipeline import (
     run_pipeline, cross_validate_layers, PipelineResult,
     CrossRefReport, CrossRefIssue, save_pipeline_result,
+    parse_step2_boss,
 )

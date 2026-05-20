@@ -70,14 +70,21 @@ def test_npc_profile_roundtrip():
     npc = NPCProfile(
         name="京山人吉",
         role="关键情报源",
-        motivation="保护乘客安全",
-        knowledge=["怪物对声音敏感", "钥匙在3号车厢"],
-        personality="冷静但焦虑",
+        personality_notes="冷静但焦虑",
+        appearance="穿着灰色西装的中年男子",
+        what_they_can_do="提供关于怪物的关键信息",
+        interaction_triggers=["玩家主动交谈", "玩家展示特定物品"],
     )
-    d = npc.to_dict()
-    restored = NPCProfile.from_dict(d)
-    assert restored.name == "京山人吉"
-    assert "怪物对声音敏感" in restored.knowledge
+    from dataclasses import asdict as _asdict
+    d = _asdict(npc)
+    assert d["name"] == "京山人吉"
+    assert d["role"] == "关键情报源"
+    assert d["personality_notes"] == "冷静但焦虑"
+    # Verify _normalize_npc_profile can handle new format dicts
+    from module_designer.l2_keeper import _normalize_npc_profile
+    restored = _normalize_npc_profile(d)
+    assert restored["name"] == "京山人吉"
+    assert restored["personality_notes"] == "冷静但焦虑"
 
 
 def test_l3_designer_roundtrip():

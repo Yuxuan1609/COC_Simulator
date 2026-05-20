@@ -140,7 +140,7 @@ from module_designer.layered_parser import (
     STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM,
     STEP25_SYSTEM, PHASE1_SYSTEM, STEP4_SYSTEM,
 )
-from module_designer.layered_pipeline import run_pipeline, cross_validate_layers, _assemble_l2
+from module_designer.layered_pipeline import run_pipeline, cross_validate_layers, _assemble_l2, parse_step2_boss
 from module_designer.dependency_graph import DependencyGraph
 from library import WeaponLibrary, EnemyLibrary
 
@@ -848,10 +848,17 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
         json.dump(step25, f, ensure_ascii=False, indent=2)
 
     # 组装 L2
+    boss_hints = runner.step1a.get("boss_encounters", [])
+    boss_encounters_data = []
+    if boss_hints:
+        step2_boss = parse_step2_boss(boss_hints, runner.l1_data, runner.llm_json)
+        boss_encounters_data = step2_boss.get("boss_encounters", [])
+
     runner.l2_assembled = _assemble_l2(
         runner.interactions, runner.events, runner.auto_triggers,
         runner.scene_movements, runner.l1_data,
         npc_profiles=runner.npc_profiles,
+        boss_encounters=boss_encounters_data,
     )
 
     if verbose:
@@ -1036,6 +1043,7 @@ def _do_phase2_finalize(runner: InteractiveRunner, verbose: bool = True):
         runner.interactions, runner.events, runner.auto_triggers,
         runner.scene_movements, runner.l1_data,
         npc_profiles=runner.npc_profiles,
+        boss_encounters=runner.l2_assembled.get("boss_encounters", []),
     )
     if runner.dep_graph:
         runner.l2_assembled["dependency_graph"] = runner.dep_graph.to_dict()

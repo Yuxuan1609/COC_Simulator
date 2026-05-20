@@ -71,12 +71,20 @@ L2_EVENT_SCHEMA = {
 L2_NPC_PROFILE_SCHEMA = {
     "name": {"required": True},
     "role": {"required": False},
-    "motivation": {"required": False},
-    "knowledge": {"required": False},
-    "personality": {"required": False},
-    "voice_notes": {"required": False},
-    "notes": {"required": False},
-    "extra": {"required": False},
+    "personality_notes": {"required": False},
+    "appearance": {"required": False},
+    "what_they_can_do": {"required": False},
+    "interaction_triggers": {"required": False},
+}
+
+L2_BOSS_ENCOUNTER_SCHEMA = {
+    "id": {"required": True},
+    "type": {"required": False},
+    "engage_type": {"required": False, "values": ["at", "interaction", "event"]},
+    "boss_ref": {"required": True},
+    "scene": {"required": False},
+    "requirements": {"required": False},
+    "description": {"required": False},
 }
 
 L2_SCENE_SCHEMA = {
@@ -285,6 +293,12 @@ def validate_l2(data: dict) -> SchemaReport:
                 report.add(f"L2.npc_profiles.{npc_name}", "NPC 数据应为 dict", "error")
                 continue
             _validate_object(npc_data, L2_NPC_PROFILE_SCHEMA, f"L2.npc_profiles.{npc_name}", report)
+
+    # 验证 boss_encounters
+    boss_encounters = data.get("boss_encounters", [])
+    if isinstance(boss_encounters, list):
+        for i, be in enumerate(boss_encounters):
+            _validate_object(be, L2_BOSS_ENCOUNTER_SCHEMA, f"L2.boss_encounters[{i}]", report)
 
     return report
 

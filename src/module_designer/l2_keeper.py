@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+# NPCProfile has been migrated to src/game/npc_manager.NPC
+# This alias maintains backward compatibility for pipeline consumers
+from game.npc_manager import NPC as NPCProfile
+
 
 @dataclass
 class Encounter:
@@ -114,45 +118,6 @@ class AutoTrigger:
 
 
 @dataclass
-class NPCProfile:
-    """NPC 完整 KP 侧信息."""
-    name: str
-    role: str = ""
-    motivation: str = ""
-    knowledge: List[str] = field(default_factory=list)
-    personality: str = ""
-    voice_notes: Optional[str] = None
-    notes: Optional[str] = None
-    extra: Optional[dict] = None
-
-    def to_dict(self) -> dict:
-        d = {
-            "name": self.name, "role": self.role, "motivation": self.motivation,
-            "knowledge": self.knowledge, "personality": self.personality,
-        }
-        if self.voice_notes:
-            d["voice_notes"] = self.voice_notes
-        if self.notes:
-            d["notes"] = self.notes
-        if self.extra:
-            d["extra"] = self.extra
-        return d
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "NPCProfile":
-        return cls(
-            name=data["name"],
-            role=data.get("role", ""),
-            motivation=data.get("motivation", ""),
-            knowledge=data.get("knowledge", []),
-            personality=data.get("personality", ""),
-            voice_notes=data.get("voice_notes"),
-            notes=data.get("notes"),
-            extra=data.get("extra"),
-        )
-
-
-@dataclass
 class SceneL2:
     """单个场景的 L2 KP 信息."""
     scene_name: str
@@ -194,6 +159,18 @@ class SceneL2:
         )
 
 
+def _normalize_npc_profile(data: dict) -> dict:
+    """Map old NPC fields to new NPC dataclass fields."""
+    return {
+        "name": data.get("name", ""),
+        "role": data.get("role", ""),
+        "personality_notes": data.get("personality_notes") or data.get("personality", ""),
+        "appearance": data.get("appearance", ""),
+        "what_they_can_do": data.get("what_they_can_do", ""),
+        "interaction_triggers": data.get("interaction_triggers", []),
+    }
+
+
 def load_l2(path: str) -> dict:
     """从 JSON 加载 L2 数据."""
     import json
@@ -201,7 +178,10 @@ def load_l2(path: str) -> dict:
         data = json.load(f)
     scenes = {name: SceneL2.from_dict(sd, name) for name, sd in data.get("scenes", {}).items()}
     events = data.get("events", [])
-    npc_profiles = {name: NPCProfile.from_dict(np) for name, np in data.get("npc_profiles", {}).items()}
+    npc_profiles = {
+        name: _normalize_npc_profile(np)
+        for name, np in data.get("npc_profiles", {}).items()
+    }
     return {"scenes": scenes, "events": events, "npc_profiles": npc_profiles}
 
 
@@ -209,10 +189,22 @@ def save_l2(l2_data: dict, path: str) -> None:
     """保存 L2 数据到 JSON."""
     import json, os
     os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    npc_data = l2_data.get("npc_profiles", {})
+    out_npc = {}
+    for name, np in npc_data.items():
+        if isinstance(np, dict):
+            out_npc[name] = _normalize_npc_profile(np)
+        elif hasattr(np, "to_dict"):
+            out_npc[name] = np.to_dict()
+        else:
+            from dataclasses import asdict as _asdict
+            out_npc[name] = _asdict(np)
+
     out = {
         "scenes": {name: scene.to_dict() for name, scene in l2_data["scenes"].items()},
         "events": l2_data.get("events", []),
-        "npc_profiles": {name: np.to_dict() for name, np in l2_data.get("npc_profiles", {}).items()},
+        "npc_profiles": out_npc,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
