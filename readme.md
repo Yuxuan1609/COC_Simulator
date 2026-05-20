@@ -31,17 +31,18 @@
 │   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
 │   ├── trpg_display.py                      # Notebook UI 显示组件
 │   ├── utils.py                             # 文件解析、Token 估算、掷骰、技能定义加载
-│   ├── prompts.py                           # LLM Prompt 构建器（Keeper/Narrator/Author 各自 prompt）
-│   ├── game_loop.py                         # 多 Agent 入口：init_game() + run_turn()
+│   ├── prompts.py                           # LLM Prompt 构建器（Keeper/Narrator/Author/CombatEntry 各自 prompt）
+│   ├── game_loop.py                         # 多 Agent 入口：init_game() + run_turn() + continue_standoff()
 │   ├── game/                                # Multi-Agent 游戏循环
-│   │   ├── messages.py                      #   8 个消息 dataclass（NarratorBrief, EscalationRequest 等）
+│   │   ├── messages.py                      #   消息 dataclass（NarratorBrief, CombatEntryCheck, CombatInit 等）
 │   │   ├── judge.py                         #   确定性闸门（需求 + 技能检定 + @markup + ##GRADED##）
 │   │   ├── curator.py                       #   策展器：outcomes → NarratorBrief
-│   │   ├── escalation.py                    #   可配置升级策略（LLM 评估维度 + 自然语言规则）
+│   │   ├── enemy_manager.py                 #   EnemyInstance + EnemyManager：敌人追踪层
+│   │   ├── intent_detector.py               #   意图检测器（Parse other → Author trigger）
 │   │   └── agents/
-│   │       ├── keeper.py                    #   KP 守秘人（回合编配：parse → judge → enrich → curate）
+│   │       ├── keeper.py                    #   KP 守秘人（回合编配：parse → judge → enrich∥combat_entry → standoff → curate）
 │   │       ├── narrator.py                  #   叙事者（唯一面向玩家，L1 + NarratorBrief → 叙事）
-│   │       └── author.py                    #   作者（L3 + EscalationRequest → ModulePatch）
+│   │       └── author.py                    #   作者（L3 + AuthorRequest → ModulePatch/StructuralEdit）
 │   ├── library/                             # 武器/敌人资源库
 │   │   ├── weapons.py                       #   LibraryWeapon + WeaponLibrary
 │   │   ├── enemies.py                       #   LibraryEnemy + EnemyLibrary
@@ -188,12 +189,15 @@ DEEPSEEK_API_KEY=your-key
 设计文档：
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
 - Escalation 重设计: `docs/superpowers/specs/2026-05-19-escalation-redesign.md`
+- 战斗进入/脱出判定: `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md`
 - 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
 
 测试：
 - `tests/game_loop_harness.py` — 7 轮真实 LLM，日志到 `data/debug/test_harness/`
 - `tests/test_author_flow.py` + `tests/test_intent_detector.py` — 11 个单元测试（全 mock）
-- `tests/test_escalation_harness.py` — 4 个 case（正常/flavor/Patch/Reject），Author 日志到 `data/debug/test_escalation/`
+- `tests/test_escalation_harness.py` — 5 个 case（正常/flavor/Patch/Reject/StructuralEdit），Author 日志到 `data/debug/test_escalation/`
+- `tests/test_enemy_manager.py` — 9 个单元测试（spawn/filter/group/combat lifecycle/range/context）
+- `tests/test_combat_entry.py` — 6 个集成测试（SpawnEnemy→EnemyManager→combat lifecycle）
 
 > **注意**：当前使用 `data/modules/常暗之厢/l*_test.json`，`start_node` 已切到「测试房间」。正式需切回正式 JSON。
 
@@ -221,7 +225,7 @@ DEEPSEEK_API_KEY=your-key
 | 功能 | 状态 | 说明 |
 |------|------|------|
 | 作者介入机制 (Escalation) | 实现完成 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。O1 已解决。设计文档：`docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
-| 战斗系统 | TODO | COC 7th 回合制战斗。需实现：进入战斗判定、先攻→行动→伤害流程、敌人 AI。skill check 已有 D100 能力 |
+| 战斗系统 | 进入/脱出管道已打通 | COC 7th 回合制战斗。进入判定（SpawnEnemy→EnemyManager→LLM 检测+对峙）、先攻→行动→伤害流程（TODO）。设计文档：`docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md` |
 | NPC / 同伴系统 | TODO | NPC 主动行为、对话系统、同伴跟随。当前仅被动响应 interaction。L2 已有 npc_profiles 预留 |
 | 时间系统 | 设计完成 | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent)。待实现 |
 

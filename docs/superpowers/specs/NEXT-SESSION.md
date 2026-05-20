@@ -1,19 +1,19 @@
 # Next Session — 当前状态 + 待办
 
-**日期**: 2026-05-19
+**日期**: 2026-05-19 (更新于 2026-05-20)
 **分支**: main
-**状态**: Escalation/Author 机制重设计完成 | O1 已解决 | 补充管线就绪 | WR0 可配置 | 19 个测试覆盖全链路
+**状态**: Escalation/Author 机制重设计完成 | O1 已解决 | 补充管线就绪 | WR0 可配置 | 战斗进入/脱出判定管道打通 | 19+15 个测试覆盖全链路
 
 ---
 
 ## 当前架构
 
 ```
-玩家输入 → Parse(LLM) → Judge(确定) → Enrich(LLM) ∥ IntentDetect(LLM) → Curate → Narrate(LLM) → 输出
-                                                                         ↓ (other+有意义)
-                                                                   Author(LLM)
-                                                                   ├─ Patch → integrate → 递归
-                                                                   ├─ Structural → 补充管线 → integrate → 递归
+玩家输入 → Parse(LLM) → Judge(确定) → Enrich(LLM) ∥ IntentDetect(LLM) ∥ CombatEntryDetect(LLM) → [对峙] → Curate → Narrate(LLM) → 输出
+                                                                         ↓ (other+有意义)                         ↓ (enter_combat+avoidable)
+                                                                   Author(LLM)                           Standoff(语义匹配→D100→特质修正)
+                                                                   ├─ Patch → integrate → 递归              ├─ 成功 → neutral/绕过 → 正常流程
+                                                                   ├─ Structural → 补充管线 → integrate     └─ 失败 → CombatInit → 战斗系统(TODO)
                                                                    └─ Reject → 注入提示 → 正常流程
 ```
 
@@ -21,10 +21,11 @@
 
 | Agent | 数据 | 职责 |
 |-------|------|------|
-| Keeper | L2 + ScenarioWorld | 回合编配: parse→judge→enrich∥detect→curate |
+| Keeper | L2 + ScenarioWorld | 回合编配: parse→judge→enrich∥detect∥combat_entry→standoff→curate |
 | Narrator | L1 | 唯一面向玩家，沉浸式叙事 |
 | Author | L3 | 两级响应: Patch(填缺口) / StructuralEdit(触发补充管线)，WR0 独立可配 |
 | IntentDetector | — | Parse 命中 other 时并行检测是否存在实际叙事意图 |
+| EnemyManager | EnemyLibrary + EnemyInstance | 纯追踪层：敌人实例管理、位置/状态/flag 查询、combat entry 上下文构建 |
 
 ### 关键机制
 - **dependency_graph + runtime_state**: 替代 world.flags，静态依赖 + 动态状态两层
@@ -32,8 +33,12 @@
 - **@markup**: 5 种（spawn_enemy/grant_weapon/stat_change/item_gain/npc_state_change），运行时解析
 - **##GRADED##**: COC 7th D100 四级检定 (failure/regular/hard/extreme)
 - **失败惩罚**: 难度升级 → LLM 创意后果
-- **特质修正**: trait enhancement sub-agent
+- **特质修正**: trait enhancement sub-agent（search、standoff、combat 等所有检定后统一调用）
 - **LLM 错误提示**: 各阶段有玩家可见警告
+- **Combat entry 检测**: 确定性闸门（active enemy in range）→ LLM 判定（与 enrich 并行）→ CombatEntryCheck
+- **[flag] 标记**: enemies.json 的 combat_behavior 前缀，2 种：[adjacent_aware]（跨场景感知）、[avoidable]（可非战斗绕过）
+- **对峙阶段**: avoidable 敌人 → 语义匹配 LLM → D100 技能检定 → 特质修正 → 成功转 neutral / 失败进战斗
+- **EnemyManager 追踪层**: 纯状态管理（neutral/hostile/dead），战斗系统消费者，enter_combat/exit_combat 回调
 
 ### 当前使用文件
 
@@ -53,15 +58,25 @@
 - 创作者豁免 WR0 如何在实际裁决中体现
 **代码位置**: `src/game/agents/keeper.py:154-161`, `src/game/agents/author.py`, `src/game/escalation.py`
 
-### 2. 战斗系统 — TODO
+### 2. 战斗系统 — 进入/脱出已打通，战斗回合 TODO
 
-**目标**: COC 7th 回合制战斗
-**关键问题**:
-- 进入战斗的判定（spawn_enemy 后是否需要自动进入战斗？玩家主动攻击？）
-- 战斗回合结构（先攻 → 行动 → 伤害 → 状态）
+**已完成** (2026-05-20):
+- `[flag]` 标记解析：`[adjacent_aware]`（跨场景感知）、`[avoidable]`（可非战斗绕过），从 enemies.json 的 combat_behavior 前缀提取
+- `EnemyManager` 追踪层：`SpawnEnemy` 真正实例化 EnemyInstance，追踪位置/状态/flag，提供 combat context
+- Combat entry 检测：确定性闸门（active enemy in range）→ LLM 判定（flash，与 enrich 并行）→ `CombatEntryCheck`
+- 对峙阶段：avoidable 敌人 → 语义匹配 LLM → D100 技能检定 → trait enhancement → 成功转 neutral / 失败进战斗
+- 脱出回调：`EnemyManager.exit_combat(result)` — defeated→dead, survivors→hostile, combat_active=False
+- 新增 15 个确定性测试（9 enemy_manager + 6 integration），全 pass
+
+**设计文档**: `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md`
+
+**待实现 — 战斗系统本体**:
+- COC 7th 回合制战斗核心（先攻 → 行动 → 伤害 → 状态）
+- 敌人 AI
 - 与现有 skill check 系统的衔接（格斗、射击等技能已有 D100 检定能力）
-- 敌人 AI（简单规则还是 LLM 辅助？）
-**代码位置**: `src/investigator/models.py`（check_skill 已有），`src/library/enemies.py`（敌人数据）
+- 战斗系统通过 `CombatInit` 接收数据，返回 `CombatResult` → EnemyManager.exit_combat()
+
+**代码位置**: `src/game/enemy_manager.py`（EnemyManager）, `src/game/agents/keeper.py`（combat entry + standoff）, `src/library/enemies.py`（LibraryEnemy+flags）, `src/game/messages.py`（CombatEntryCheck/CombatInit/StandoffMatch）
 
 ### 3. NPC / 同伴系统 — TODO
 
@@ -134,13 +149,15 @@
 
 | 功能 | 文件 | 关键位置 |
 |------|------|----------|
-| 回合入口 + 三 Agent 初始化 | `src/game_loop.py` | `init_game():111` / `run_turn():198` |
+| 回合入口 + 三 Agent 初始化 | `src/game_loop.py` | `init_game()` / `run_turn()` / `continue_standoff()` |
 | Keeper 回合编配主逻辑 | `src/game/agents/keeper.py` | `process_turn():51` |
-| Parse — LLM 意图解析 | `src/game/agents/keeper.py` | `_parse():227` → `prompts.py:build_keeper_parse_prompt()` |
+| Parse — LLM 意图解析 | `src/game/agents/keeper.py` | `_parse()` → `prompts.py:build_keeper_parse_prompt()` |
 | Judge — 确定性闸门 | `src/game/judge.py` | `_execute_entity():99` |
-| Enrich — LLM 叙事润色 | `src/game/agents/keeper.py` | `_enrich():244` → `prompts.py:build_keeper_enrich_prompt()` |
+| Combat entry 检测 (并行 enrich) | `src/game/agents/keeper.py` | `process_turn()` Step 2.5 → `prompts.py:build_combat_entry_prompt()` |
+| Enrich — LLM 叙事润色 | `src/game/agents/keeper.py` | `_enrich()` → `prompts.py:build_keeper_enrich_prompt()` |
+| 对峙阶段 | `src/game/agents/keeper.py` | `resolve_standoff()` → `prompts.py:build_standoff_match_prompt()` |
 | Curate — 组装 NarratorBrief | `src/game/curator.py` | `assemble():17` |
-| Narrator — 最终叙事 | `src/game/agents/narrator.py` | `narrate():19` → `prompts.py:build_narrator_prompt()` |
+| Narrator — 最终叙事 | `src/game/agents/narrator.py` | `narrate()` → `prompts.py:build_narrator_prompt()` |
 | Memory 记录 + 压缩 | `src/game/agents/keeper.py` | `process_turn()` 末尾 + `src/scenario_core.py:MemoryManager` |
 
 ### Author 介入全链路（新）
@@ -167,14 +184,16 @@
 |------|------|----------|
 | Entity 统一数据类 | `src/scenario_core.py` | `Entity:110` |
 | Node / Edge / DirectedGraph | `src/scenario_core.py` | `Node:339` / `Edge:32` / `DirectedGraph:376` |
-| ScenarioWorld 运行时状态 | `src/scenario_core.py` | `ScenarioWorld:770` |
+| ScenarioWorld 运行时状态 | `src/scenario_core.py` | `ScenarioWorld:770`（含 enemy_manager） |
 | runtime_state + dependency_graph | `src/scenario_core.py` | `runtime_state:801` / `dependency_graph:802` |
 | hard requirement 解析 (AND/OR) | `src/scenario_core.py` | `parse_hard_requirement():687` |
 | dependency_graph 数据结构 | `src/module_designer/dependency_graph.py` | `DependencyEdge:24` / `DependencyGraph:40` |
 | @markup 副作用解析 | `src/scenario_core.py` | `parse_markup_all():194` |
 | ##GRADED## 分级结果 | `src/scenario_core.py` | `resolve_graded_result():235` |
 | ##END_ 结局检测 | `src/scenario_core.py` | `has_ending():259` |
-| 消息类型 (dataclass) | `src/game/messages.py` | 全部 |
+| 消息类型 (dataclass) | `src/game/messages.py` | 全部（含 CombatEntryCheck/CombatInit/StandoffMatch） |
+| EnemyInstance + EnemyManager | `src/game/enemy_manager.py` | 纯追踪层，位置/状态/flag 管理 |
+| LibraryEnemy + [flag] 解析 | `src/library/enemies.py` | `from_dict()` 从 combat_behavior 前缀提取 |
 
 ### 离线管线
 
@@ -193,7 +212,9 @@
 | 真实 LLM 集成测试 | `tests/game_loop_harness.py` | 7 轮，parse→judge→enrich→narrate |
 | Author 流程单元测试 | `tests/test_author_flow.py` | 8 case，Detector → Author → Keeper 全链路 mock |
 | Detector 单元测试 | `tests/test_intent_detector.py` | 3 case，flavor/有意义/空输入 mock |
-| Escalation 集成 harness | `tests/test_escalation_harness.py` | 4 case，正常/flavor/Patch/Reject，Author 日志 |
+| Escalation 集成 harness | `tests/test_escalation_harness.py` | 5 case，正常/flavor/Patch/Reject/StructuralEdit，Author 日志 |
+| EnemyManager 单元测试 | `tests/test_enemy_manager.py` | 9 case，spawn/filter/group/combat lifecycle/range/context |
+| Combat entry 集成测试 | `tests/test_combat_entry.py` | 6 case，spawn→instantiate/gracful_degradation/context/combat_cycle/flag_parsing |
 
 ---
 
@@ -227,3 +248,5 @@ Phase 2: 标准化 (@标记化)
 | `##GRADED##` | 实际结果在 graded_result 中 |
 | `##END_名称:简述##` | 触发游戏结局 |
 | `@函数名(参数=值)` | 运行时解析为 side_effect 实例（5种） |
+| `[adjacent_aware]` | Enemy flag：跨场景可感知（如大嘴吞噬者） |
+| `[avoidable]` | Enemy flag：存在非战斗绕过途径，触发对峙阶段 |
