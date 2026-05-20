@@ -185,7 +185,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | 属性变化 | ✅ 已实现 | StatChange → Investigator.modify_stat(int/dice formula) + LLM narrative 描述更新 |
 | NPC / 同伴系统 | TODO | **升级功能点**：NPC 主动行为、对话系统（自由文本+LLM语义匹配）、同伴跟随与协同、NPC 情绪/态度状态机。当前 L2 已有 npc_profiles 预留，NPC 仅被动响应 interaction |
 | 前端 UI + 随材 | TODO | **升级功能点**：游戏循环 Web 前端的视觉升级（场景插图、角色立绘、战斗动画）、音效/BGM 随材集成、移动端适配。当前 `frontend/game.html` 为纯功能界面 |
-| 时间系统 | 设计完成，未实现 | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent) |
+| 时间系统 | ⚠ 转入待优化 (O5) | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent)。即将实现 |
 
 ### 已知缺口
 
@@ -208,6 +208,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | O2 | Memory 压缩阻塞 LLM 调用 | 见 `keeper.py` TODO |
 | O3 | Move 限制条件未强制执行 | 见 `keeper.py` TODO |
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
+| O5 | 时间系统 | 设计完成，待实现。两层架构：确定性世界时间 + TimeAgent (LLM sub-agent)。见 `docs/superpowers/specs/2026-05-19-time-system-design.md` |
+| O6 | Harness 整合 | `game_loop_harness` / `escalation_harness` / `combat_harness` 三个集成测试文件合并为统一的 mock-LLM 端到端测试 |
 
 ## 设计文档
 
