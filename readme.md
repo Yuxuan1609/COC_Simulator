@@ -188,6 +188,7 @@ DEEPSEEK_API_KEY=your-key
 设计文档：
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
 - Escalation 重设计: `docs/superpowers/specs/2026-05-19-escalation-redesign.md`
+- 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
 
 测试：
 - `tests/game_loop_harness.py` — 7 轮真实 LLM，日志到 `data/debug/test_harness/`
