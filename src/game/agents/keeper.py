@@ -150,6 +150,16 @@ class Keeper:
                             msg = "\n".join(lines)
                         else:
                             msg = "（仔细查看四周，没有特别的发现）"
+                        # Weapon discovery: check if scene has weapons
+                        scene_weps = self.world.scene_weapons.get(
+                            self.world.current_location, []
+                        )
+                        if scene_weps:
+                            wep_names = "、".join(
+                                f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
+                                for sw in scene_weps
+                            )
+                            msg += f'\n\n（你发现了 {wep_names}。输入“拾取 <武器名>”来获得它）'
                     else:
                         msg = "（你环顾四周，但昏暗的光线让你无法看清任何有用的东西）"
                 else:
@@ -159,6 +169,41 @@ class Keeper:
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
                     skill_detail=skill_detail if self.world.player else ""))
+            elif entry_type == "other":
+                text = entry.get("text", "")
+                scene = self.world.current_location
+                scene_weps = self.world.scene_weapons.get(scene, [])
+                picked_up = False
+                for sw in list(scene_weps):  # iterate copy since we mutate
+                    if sw.weapon_ref.lower() in text.lower() and \
+                       ("拾取" in text or "捡" in text or "拿" in text or "pick" in text.lower()):
+                        # Look up weapon stats from library
+                        if self.world.weapon_library:
+                            lib_wep = self.world.weapon_library.get(sw.weapon_ref)
+                            if lib_wep:
+                                from investigator.models import Weapon
+                                inv_wep = Weapon(
+                                    name=lib_wep.name,
+                                    skill_name=lib_wep.skill_name,
+                                    damage=lib_wep.damage,
+                                    range=lib_wep.range,
+                                    malfunction=lib_wep.malfunction,
+                                )
+                                self.world.player.add_weapon(inv_wep)
+                        scene_weps.remove(sw)
+                        if not scene_weps:
+                            del self.world.scene_weapons[scene]
+                        all_outcomes.append(ActionOutcome(
+                            intent=ActionIntent(action="pickup", target=sw.weapon_ref),
+                            success=True,
+                            message=f"你拾起了{sw.weapon_ref}。",
+                        ))
+                        picked_up = True
+                        break
+                if not picked_up:
+                    all_outcomes.append(ActionOutcome(
+                        intent=ActionIntent(action="other"), success=True,
+                        message=f"（{text}）"))
             else:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,

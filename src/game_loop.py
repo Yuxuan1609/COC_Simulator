@@ -146,9 +146,15 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     enemy_lib = EnemyLibrary()
     enemy_lib.load_core()
 
+    # Load weapon library
+    from library.weapons import WeaponLibrary
+    weapon_lib = WeaponLibrary()
+    weapon_lib.load_core()
+
     world = ScenarioWorld(graph, start_node=start_node,
                           wr0_enabled=wr0_enabled,
-                          enemy_library=enemy_lib)
+                          enemy_library=enemy_lib,
+                          weapon_library=weapon_lib)
 
     # Load dependency graph into world for runtime state tracking
     dep_graph = l2.get("dependency_graph", {})

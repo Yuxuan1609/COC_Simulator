@@ -91,6 +91,14 @@ class GrantWeapon:
 
 
 @dataclass
+class SceneWeapon:
+    """武器放置 — 在场景中可被发现拾取的武器"""
+    weapon_ref: str      # 引用 library/weapons 中的武器名
+    scene: str           # 所在场景
+    quantity: int = 1
+
+
+@dataclass
 class NPCStateChange:
     """NPC 状态变化 —— 更新 ScenarioWorld.npc_states"""
     npc_name: str
@@ -751,7 +759,8 @@ class ScenarioWorld:
     def __init__(self, graph: DirectedGraph, start_node: str,
                  background_story: str = "",
                  wr0_enabled: bool = False,
-                 enemy_library: Any = None):
+                 enemy_library: Any = None,
+                 weapon_library: Any = None):
         self.graph = graph
         self.current_location = start_node
         self.player: 'InvestigatorType | None' = None
@@ -778,6 +787,10 @@ class ScenarioWorld:
 
         # NPC 运行时状态
         self.npc_states: Dict[str, str] = {}
+
+        # Weapon tracking
+        self.scene_weapons: dict[str, list[SceneWeapon]] = {}
+        self.weapon_library: Any = weapon_library
 
         # Enemy tracking
         if enemy_library is not None:
@@ -1135,8 +1148,17 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
                     f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}"
                 )
         elif isinstance(effect, GrantWeapon):
+            target_scene = effect.scene or world.current_location
+            sw = SceneWeapon(
+                weapon_ref=effect.weapon_ref,
+                scene=target_scene,
+                quantity=effect.quantity,
+            )
+            if target_scene not in world.scene_weapons:
+                world.scene_weapons[target_scene] = []
+            world.scene_weapons[target_scene].append(sw)
             world.memory.note_item(effect.weapon_ref)
-            msgs.append(f"[授予武器] {effect.weapon_ref} x{effect.quantity}")
+            msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
         elif isinstance(effect, NPCStateChange):
             world.set_npc_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
