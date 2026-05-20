@@ -21,6 +21,13 @@ class EnemyInstance:
     flags: list[str] = field(default_factory=list)
     combat_behavior: str = ""
     description: str = ""
+    # ── 战斗属性桥接（从 LibraryEnemy 拷贝）──
+    attributes: dict = field(default_factory=dict)
+    armor: str = ""
+    attacks: list = field(default_factory=list)
+    special_abilities: list = field(default_factory=list)
+    san_loss: str = ""
+    hp: int = 0
 
 
 class EnemyManager:
@@ -35,6 +42,8 @@ class EnemyManager:
         if not lib_enemy:
             raise KeyError(f"Enemy '{enemy_ref}' not found in library")
         instance_id = f"{enemy_ref}_{_short_id()}"
+        attrs = lib_enemy.attributes
+        base_hp = (attrs.get("CON", 50) + attrs.get("SIZ", 50)) // 10 * quantity
         inst = EnemyInstance(
             instance_id=instance_id,
             enemy_ref=enemy_ref,
@@ -43,6 +52,12 @@ class EnemyManager:
             flags=list(lib_enemy.flags),
             combat_behavior=lib_enemy.combat_behavior,
             description=lib_enemy.description,
+            attributes=dict(attrs),
+            armor=lib_enemy.armor,
+            attacks=list(lib_enemy.attacks),
+            special_abilities=list(lib_enemy.special_abilities),
+            san_loss=lib_enemy.san_loss,
+            hp=base_hp,
         )
         self._instances[instance_id] = inst
         return inst
@@ -137,6 +152,7 @@ class EnemyManager:
                     "scene": inst.scene,
                     "quantity": inst.quantity,
                     "status": inst.status,
+                    "hp": inst.hp,
                 }
                 for iid, inst in self._instances.items()
             },
@@ -149,9 +165,21 @@ class EnemyManager:
         mgr = cls(library)
         for iid, idata in data.get("instances", {}).items():
             lib_enemy = library.get(idata["enemy_ref"])
-            flags = list(lib_enemy.flags) if lib_enemy else []
-            behavior = lib_enemy.combat_behavior if lib_enemy else ""
-            desc = lib_enemy.description if lib_enemy else ""
+            if lib_enemy:
+                flags = list(lib_enemy.flags)
+                behavior = lib_enemy.combat_behavior
+                desc = lib_enemy.description
+                attrs = dict(lib_enemy.attributes)
+                armor = lib_enemy.armor
+                attacks = list(lib_enemy.attacks)
+                abilities = list(lib_enemy.special_abilities)
+                san = lib_enemy.san_loss
+                base_hp = (attrs.get("CON", 50) + attrs.get("SIZ", 50)) // 10 * idata.get("quantity", 1)
+                hp = idata.get("hp", base_hp)
+            else:
+                flags, behavior, desc = [], "", ""
+                attrs, armor, attacks, abilities, san = {}, "", [], [], ""
+                hp = 10
             mgr._instances[iid] = EnemyInstance(
                 instance_id=idata["instance_id"],
                 enemy_ref=idata["enemy_ref"],
@@ -161,6 +189,12 @@ class EnemyManager:
                 flags=flags,
                 combat_behavior=behavior,
                 description=desc,
+                attributes=attrs,
+                armor=armor,
+                attacks=attacks,
+                special_abilities=abilities,
+                san_loss=san,
+                hp=hp,
             )
         mgr._combat_active = data.get("combat_active", False)
         mgr._combat_enemies = data.get("combat_enemies", [])
