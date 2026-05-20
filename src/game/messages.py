@@ -86,3 +86,28 @@ class TurnInput:
     """Entry point input."""
     raw_text: str
     player: Any | None = None  # Investigator | None
+
+
+@dataclass
+class CombatEntryCheck:
+    """Combat entry detection result from LLM."""
+    enter_combat: bool
+    enemy_instance_ids: list[str] = field(default_factory=list)
+    reasoning: str = ""
+
+
+@dataclass
+class StandoffMatch:
+    """Semantic match result for standoff phase."""
+    matched: bool
+    skill_name: str = ""
+    reason: str = ""
+
+
+@dataclass
+class CombatInit:
+    """Passed to pluggable combat system when combat begins."""
+    enemies: list[Any] = field(default_factory=list)
+    player: Any = None
+    scene: str = ""
+    initiative_context: str = ""
