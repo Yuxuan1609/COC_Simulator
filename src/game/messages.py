@@ -111,3 +111,14 @@ class CombatInit:
     player: Any = None
     scene: str = ""
     initiative_context: str = ""
+
+
+@dataclass
+class CombatResult:
+    """Returned by combat system when combat ends."""
+    outcome: str = ""              # "win" | "loss" | "flee"
+    defeated_instance_ids: list[str] = field(default_factory=list)
+    narrative: str = ""            # combat summary narrative
+    player_hp: int = 0
+    player_san: int = 0
+    rounds: int = 0

@@ -670,3 +670,27 @@ def build_standoff_match_prompt(player_input: str) -> str:
 - 潜行/偷偷溜走/绕过去 → "潜行"
 - 恐吓/威胁 → "恐吓"
 - 其他无法匹配的输出 matched=false"""
+
+
+def build_combat_narrative_prompt(round_log: list, enemies_desc: str,
+                                   player_name: str, scene: str) -> str:
+    """Build prompt for per-round combat narrative generation."""
+    log_text = ""
+    for a in round_log:
+        log_text += (
+            f"  {'玩家' if a.actor == 'player' else a.actor} "
+            f"{chr(10003) if a.success else chr(10007)} {a.weapon or a.action_type}: {a.narrative}\n"
+        )
+
+    return f"""你是一个TRPG战斗叙事者。根据本轮的机械结果，生成一段沉浸式战斗描写。
+
+【场景】{scene}
+【调查员】{player_name}
+【敌人】{enemies_desc}
+
+【本轮行动】
+{log_text}
+
+返回 JSON：
+{{"narrative": "沉浸式战斗描写（中文不超过80字）", "scene_hint": ""}}
+直接输出 JSON。"""

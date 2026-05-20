@@ -396,3 +396,18 @@ def evaluate_soft_requirement(expr: str, inv_desc: str, scene_desc: str) -> dict
         return {"met": result.get("met", True), "reason": result.get("reason", "")}
     except json.JSONDecodeError:
         return {"met": True, "reason": "JSON解析失败，默认通过"}
+
+
+def evaluate_combat_round_narrative(
+    round_log: list, enemies_desc: str,
+    player_name: str, scene: str,
+) -> dict:
+    """Generate per-round immersive combat narrative via LLM."""
+    from prompts import build_combat_narrative_prompt
+    prompt = build_combat_narrative_prompt(round_log, enemies_desc, player_name, scene)
+    try:
+        return call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                            thinking=False, reasoning_effort="low",
+                            fallback_schema={"narrative": "", "scene_hint": ""})
+    except Exception:
+        return {"narrative": "", "scene_hint": ""}

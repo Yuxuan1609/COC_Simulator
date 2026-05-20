@@ -288,3 +288,17 @@ def load_occupations(path: str) -> List[Occupation]:
         )
         for d in data
     ]
+
+
+def calc_db(STR: int, SIZ: int) -> str:
+    """COC 7th Damage Bonus from STR + SIZ."""
+    total = STR + SIZ
+    if total <= 64:
+        return "-2"
+    if total <= 84:
+        return "-1"
+    if total <= 124:
+        return "0"
+    if total <= 164:
+        return "+1D4"
+    return "+1D6"
