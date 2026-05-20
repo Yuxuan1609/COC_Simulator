@@ -378,14 +378,6 @@ class Keeper:
         brief = self.curator.assemble(all_outcomes, ambient, emphasis)
 
         # Step 6: Memory
-        # TODO(optimize): Memory compression currently uses LLM summarization via
-        # call_deepseek when the context buffer exceeds threshold. This is a blocking
-        # LLM call during turn processing. Planned optimizations:
-        #   - Async/background: fire compression in a separate thread, use stale
-        #     summary until ready
-        #   - Rule-based truncation: drop oldest entries before calling LLM
-        #   - Token-count trigger: use actual token count instead of record count
-        # See readme.md §待优化 for details.
         first_entry = parse_result[0] if parse_result else {"type": "other"}
         brief_text = "\n".join(o.message for o in all_outcomes)
         self.world.memory.add_record(
@@ -394,10 +386,13 @@ class Keeper:
             success=any(o.success for o in all_outcomes)
         )
         if self.world.memory.should_compress():
-            self.world.memory.compress(
+            from threading import Thread
+            t = Thread(target=self.world.memory.compress, args=(
                 lambda p: call_deepseek(p, json_mode=False, model="deepseek-v4-flash",
                                         system="你是一个擅长总结和提炼信息的助手。请将游戏历史压缩为简洁摘要，"
-                                               "保留关键事件、重要细节和当前状态，去除冗余对话。"))
+                                               "保留关键事件、重要细节和当前状态，去除冗余对话。"),
+            ), daemon=True)
+            t.start()
 
         return {"brief": brief,
                 "ending_name": ending_name, "ending_narrative": ending_narrative,
