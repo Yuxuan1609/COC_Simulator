@@ -8,6 +8,7 @@ from scenario_core import ScenarioWorld, Entity, parse_markup_all
 from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
+    CombatEntryCheck,
 )
 from ..judge import Judge
 from ..curator import Curator
@@ -163,6 +164,36 @@ class Keeper:
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
 
+        # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
+        combat_future = None
+        combat_executor = None
+        enemy_ctx = None
+        if self.world and self.world.enemy_manager and not self.world.enemy_manager._combat_active:
+            enemy_ctx = self.world.enemy_manager.get_combat_context(
+                self.world.current_location, self.world.graph
+            )
+        if enemy_ctx:
+            outcomes_summary = "\n".join(
+                f"[{o.entity_type}] {o.message}" for o in all_outcomes
+            )
+            from prompts import build_combat_entry_prompt
+            combat_prompt = build_combat_entry_prompt(
+                player_input=raw,
+                outcomes_summary=outcomes_summary,
+                enemy_context=enemy_ctx,
+                current_scene=self.world.current_location,
+            )
+            combat_executor = ThreadPoolExecutor(max_workers=1)
+            combat_future = combat_executor.submit(
+                call_deepseek,
+                combat_prompt,
+                json_mode=True,
+                model="deepseek-v4-flash",
+                reasoning_effort="low",
+                system="你是 COC 7th KP 助理，负责判断是否进入战斗。",
+                fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
+            )
+
         # Step 3: Enrich (LLM) — describe and integrate
         emphasis = ""
         if judged_entities:
@@ -175,6 +206,22 @@ class Keeper:
                 eid = o.entity_id
                 if eid in results:
                     o.message = results[eid]
+
+        # Step 3.5: Collect combat entry result
+        combat_entry = None
+        if combat_future:
+            try:
+                raw_result = combat_future.result()
+                result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
+                combat_entry = CombatEntryCheck(
+                    enter_combat=result.get("enter_combat", False),
+                    enemy_instance_ids=result.get("enemy_instance_ids", []),
+                    reasoning=result.get("reasoning", ""),
+                )
+            except Exception:
+                combat_entry = None
+            finally:
+                combat_executor.shutdown(wait=False)
 
         # Step 4: IntentDetector decision point (was Escalation check)
         if detect_future:
@@ -266,7 +313,8 @@ class Keeper:
                                                "保留关键事件、重要细节和当前状态，去除冗余对话。"))
 
         return {"brief": brief,
-                "ending_name": ending_name, "ending_narrative": ending_narrative}
+                "ending_name": ending_name, "ending_narrative": ending_narrative,
+                "combat_entry": combat_entry}
 
     # ── Internal ──
 
