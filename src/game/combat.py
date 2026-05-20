@@ -187,7 +187,7 @@ class CombatSystem:
                 skill_value = self._skill_value(player, skill) if skill else 50
                 actions.append({
                     "id": f"env:{ea['id']}", "label": ea.get("label", ea["id"]),
-                    "skill": skill, "damage": None,
+                    "skill": skill, "damage": ea.get("damage"),
                     "value": skill_value,
                 })
         return actions
@@ -249,23 +249,26 @@ class CombatSystem:
         action.tier = self._get_tier(action.roll, action.skill_value) if action.success else "failure"
 
         if action.success:
-            enemy = next((e for e in state.enemies if e.instance_id == target_iid), None)
-            if enemy:
-                enemy_attrs = enemy.attributes if hasattr(enemy, 'attributes') else {}
-                en_str = enemy_attrs.get("STR", 50)
-                en_siz = enemy_attrs.get("SIZ", 50)
-                damage = _roll_damage(match["damage"], en_str, en_siz)
-                armor = enemy.armor if hasattr(enemy, 'armor') else ""
-                final_damage = _apply_armor(damage, armor)
-                action.damage = final_damage
-                action.hp_before = getattr(enemy, 'hp', 10)
-                if not hasattr(enemy, 'hp'):
-                    enemy.hp = max(1, en_siz // 5)  # rough HP from SIZ
-                    action.hp_before = enemy.hp
-                enemy.hp = action.hp_before - final_damage
-                action.hp_after = enemy.hp
-                action.target = target_iid
-                action.narrative = f"你的{match['label']}命中！造成{final_damage}点伤害。"
+            if match.get("damage") is not None:
+                enemy = next((e for e in state.enemies if e.instance_id == target_iid), None)
+                if enemy:
+                    enemy_attrs = enemy.attributes if hasattr(enemy, 'attributes') else {}
+                    en_str = enemy_attrs.get("STR", 50)
+                    en_siz = enemy_attrs.get("SIZ", 50)
+                    damage = _roll_damage(match["damage"], en_str, en_siz)
+                    armor = enemy.armor if hasattr(enemy, 'armor') else ""
+                    final_damage = _apply_armor(damage, armor)
+                    action.damage = final_damage
+                    action.hp_before = getattr(enemy, 'hp', 10)
+                    if not hasattr(enemy, 'hp'):
+                        enemy.hp = max(1, en_siz // 5)
+                        action.hp_before = enemy.hp
+                    enemy.hp = action.hp_before - final_damage
+                    action.hp_after = enemy.hp
+                    action.target = target_iid
+                    action.narrative = f"你的{match['label']}命中！造成{final_damage}点伤害。"
+            else:
+                action.narrative = f"你成功地执行了{match['label']}！"
         else:
             action.narrative = f"你的{match['label']}未能命中目标。"
 
