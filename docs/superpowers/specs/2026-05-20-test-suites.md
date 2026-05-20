@@ -9,7 +9,7 @@
 |------|------|--------|----------|----------|
 | Game Loop Harness | `tests/game_loop_harness.py` | 7 轮 | 真实 (40-50 次) | `data/debug/test_harness/<ts>/` |
 | Author Flow 单元测试 | `tests/test_author_flow.py` + `tests/test_intent_detector.py` | 11 个 | 全 mock | 无（纯逻辑验证） |
-| Escalation Harness | `tests/test_escalation_harness.py` | 4 个 case | 全 mock | `data/debug/test_escalation/<ts>/` |
+| Escalation Harness | `tests/test_escalation_harness.py` | 5 个 case | 全 mock | `data/debug/test_escalation/<ts>/` |
 
 ---
 
@@ -93,6 +93,7 @@ cd tests && python -m pytest test_author_flow.py test_intent_detector.py -v
 | B | other + flavor | "唱了一首快乐的小曲" | Parse→other→Detector(无意义)→正常流程 |
 | C | other → Author Patch | "检查桌子底下有没有暗格" | Detect→Author(patch)→integrate→递归→entity 注入 |
 | D | other → Author Reject | "拿出手机打开闪光灯照向黑暗" | Detect→Author(reject, 违反 L3 forbidden)→消息注入 |
+| E | other → StructuralEdit | "透过裂痕镜子与黑暗存在沟通" | Detect→Author(structural)→补充管线→镜中世界注入→graph+L3 更新 |
 
 **日志结构**（每个 case 一个目录）：
 ```
@@ -109,11 +110,15 @@ data/debug/test_escalation/<timestamp>/
     author_prompt.txt
     author_response.json
     _case_log.json
-  _summary.json                — 4 case 结果汇总
+  case_e_author_structural/
+    author_prompt.txt          — Author 判定 structural 的 prompt
+    author_response.json       — 含 entry_scene, level: structural
+    _case_log.json             — 含 supplement_scenes, supplement_entities
+  _summary.json                — 5 case 结果汇总
 ```
 
 **日志文件说明**：
-- `author_prompt.txt` — 仅 Case C/D（Author 被触发时）生成，包含完整的 L3 上下文 + 场景信息 + WR0 状态
+- `author_prompt.txt` — 仅 Case C/D/E（Author 被触发时）生成，包含完整的 L3 上下文 + 场景信息 + WR0 状态
 - `author_response.json` — Author LLM 的模拟返回（entities、level、justification）
 - `_case_log.json` — 所有 case 生成，记录 Detector/Author 是否被调用、流程走向、判定结果
 
@@ -137,8 +142,9 @@ cd tests && python -m pytest test_escalation_harness.py -v               # pytes
 | other + flavor (不触发) | T7 | B | B |
 | other + Patch (触发) | — | C | C |
 | other + Reject (打回) | — | D | D |
+| other + StructuralEdit (补充管线) | — | — | E |
 | 重复意图抑制 | — | E | — |
-| Supplement 集成 | — | G | — |
+| Supplement 集成 | — | G | E |
 | Scene context 构建 | — | H | — |
 | AuthorRequest 字段 | — | F | — |
 | WR0 开关 | — | F, H | D |
