@@ -176,10 +176,11 @@ class CombatSystem:
             {"id": "flee", "label": "逃跑", "skill": None, "value": None, "damage": None},
         ]
         for w in getattr(player, 'weapons', []):
-            skill_val = self._skill_value(player, w.skill_used)
+            weapon_skill = getattr(w, 'skill_name', '') or getattr(w, 'skill_used', '')
+            skill_val = self._skill_value(player, weapon_skill)
             actions.append({
                 "id": f"weapon:{w.name}", "label": w.name,
-                "skill": w.skill_used, "damage": w.damage,
+                "skill": weapon_skill, "damage": w.damage,
                 "value": skill_val,
             })
         return actions
