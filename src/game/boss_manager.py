@@ -57,10 +57,18 @@ class BossManager:
             initiative_context=boss_entity.get("description", ""),
         )
 
+    @property
+    def active_boss_id(self) -> str | None:
+        return self._active_boss_id
+
+    @active_boss_id.setter
+    def active_boss_id(self, value: str | None):
+        self._active_boss_id = value
+
+    def set_active(self, boss_id: str | None):
+        self.active_boss_id = boss_id
+
     def resolve_outcome(self, combat_result):
         if not self._active_boss_id:
             return None
         return combat_result.outcome
-
-    def set_active(self, boss_id: str | None):
-        self._active_boss_id = boss_id

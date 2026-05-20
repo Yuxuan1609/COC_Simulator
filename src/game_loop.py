@@ -13,6 +13,7 @@ from game.messages import TurnInput, CombatInit
 from game.combat import CombatSystem
 from prompts import _build_investigator_info
 from game.boss_manager import BossManager
+from game.npc_manager import NPCManager
 
 
 
@@ -160,7 +161,6 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     boss_manager = BossManager(boss_library, boss_encounters)
 
     # Init NPC manager
-    from game.npc_manager import NPCManager
     npc_manager = NPCManager()
     npc_profiles = l2.get("npc_profiles", {})
     # Extract initial NPC scenes from L2 scene data
@@ -246,7 +246,7 @@ def run_turn(game: dict, user_input: str,
             # Boss post-combat resolution
             if 'boss_manager' in game:
                 boss_mgr = game['boss_manager']
-                if boss_mgr._active_boss_id:
+                if boss_mgr.active_boss_id:
                     boss_mgr.resolve_outcome(combat_result)
                     boss_mgr.set_active(None)
         except Exception:
