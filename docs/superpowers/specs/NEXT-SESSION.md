@@ -30,7 +30,7 @@
 ### 关键机制
 - **dependency_graph + runtime_state**: 替代 world.flags，静态依赖 + 动态状态两层
 - **parse_hard_requirement**: AND/OR 结构化解析，edge AND 兜底
-- **@markup**: 5 种（spawn_enemy/grant_weapon/stat_change/item_gain/npc_state_change），运行时解析
+- **@markup**: 6 种（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change），运行时解析
 - **##GRADED##**: COC 7th D100 四级检定 (failure/regular/hard/extreme)
 - **失败惩罚**: 难度升级 → LLM 创意后果
 - **特质修正**: trait enhancement sub-agent（search、standoff、combat 等所有检定后统一调用）
@@ -40,6 +40,8 @@
 - **对峙阶段**: avoidable 敌人 → 语义匹配 LLM → D100 技能检定 → 特质修正 → 成功转 neutral / 失败进战斗
 - **EnemyManager 追踪层**: 纯状态管理（neutral/hostile/dead），战斗系统消费者，enter_combat/exit_combat 回调
 - **武器获取系统**: grant_weapon → scene_weapons（场景放置）→ search 成功发现 → 玩家确认拾取 → Investigator.add_weapon → 场景移除
+- **属性变化系统**: stat_change → Investigator.modify_stat (delta/dice formula) + LLM narrative 更新描述
+- **物品管理**: ItemManager (Investigator)，item_gain(quantity) → 背包加入，consume_item → 严格匹配 → LLM 模糊匹配保底
 
 ### 当前使用文件
 
@@ -249,6 +251,6 @@ Phase 2: 标准化 (@标记化)
 |------|------|
 | `##GRADED##` | 实际结果在 graded_result 中 |
 | `##END_名称:简述##` | 触发游戏结局 |
-| `@函数名(参数=值)` | 运行时解析为 side_effect 实例（5种） |
+| `@函数名(参数=值)` | 运行时解析为 side_effect 实例（6种：spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change） |
 | `[adjacent_aware]` | Enemy flag：跨场景可感知（如大嘴吞噬者） |
 | `[avoidable]` | Enemy flag：存在非战斗绕过途径，触发对峙阶段 |
