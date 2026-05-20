@@ -31,12 +31,16 @@ class Keeper:
         dependency_graph: dict | None = None,
         phase1: dict | None = None,
         npc_profiles: dict[str, Any] | None = None,
+        boss_manager: Any = None,
+        npc_manager: Any = None,
     ):
         self.world = world
         # dependency_graph is now owned by world; keep reference here for backward compat
         self.dependency_graph = dependency_graph or {}
         self.phase1 = phase1 or {}
         self.npc_profiles = npc_profiles or {}
+        self.boss_manager = boss_manager
+        self.npc_manager = npc_manager
 
         self.intent_detector = IntentDetector()
 
@@ -55,6 +59,15 @@ class Keeper:
         self.turn_number += 1
         raw = turn_input.raw_text
         self._warnings.clear()
+
+        # NPC interaction routing: if user input targets a known NPC, route to NPCManager
+        if self.npc_manager:
+            npcs_present = self.npc_manager.get_in_scene(self.world.current_location)
+            for npc in npcs_present:
+                # Simple heuristic: NPC name or role keywords in user input
+                if npc.name in raw:
+                    response = self.npc_manager.talk_to(npc.name, raw, lambda prompt, **kw: call_deepseek(prompt, **kw))
+                    return {"brief": response, "narrative": response, "full": response}
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
         parse_result = self._parse(raw)
@@ -208,6 +221,15 @@ class Keeper:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
+
+        # Boss "at" check: after scene change
+        if self.boss_manager:
+            at_bosses = self.boss_manager.check_by_engage_type("at", scene=self.world.current_location)
+            for boss_entity in at_bosses:
+                if self._check_boss_requirements(boss_entity):
+                    combat_init = self.boss_manager.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.boss_manager.set_active(boss_entity["id"])
+                    return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
         combat_future = None
@@ -373,6 +395,15 @@ class Keeper:
                 intent=ActionIntent(action="other"), success=True,
                 message=f"⚠ {w}"))
 
+        # Boss "event" check: after judge completes
+        if self.boss_manager:
+            event_bosses = self.boss_manager.check_by_engage_type("event")
+            for boss_entity in event_bosses:
+                if self._check_boss_requirements(boss_entity):
+                    combat_init = self.boss_manager.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.boss_manager.set_active(boss_entity["id"])
+                    return {"combat_init": combat_init, "brief": "", "narrative": ""}
+
         # Step 5: Curate
         ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
         brief = self.curator.assemble(all_outcomes, ambient, emphasis)
@@ -479,6 +510,18 @@ class Keeper:
                     "message": f"{skill_name}失败——{enemy_ref}进入战斗！",
                     "instance_ids": instance_ids,
                     "skill_detail": skill_detail}
+
+    def _check_boss_requirements(self, boss_entity: dict) -> bool:
+        """Check boss requirements using the (hard) || soft pattern."""
+        req_str = boss_entity.get("requirements", "")
+        if not req_str:
+            return True
+        if "||" in req_str:
+            hard_part = req_str.split("||", 1)[0].strip()
+            if hard_part:
+                from scenario_core import parse_hard_requirement
+                return parse_hard_requirement(hard_part, self.world.runtime_state)
+        return True
 
     # ── Internal ──
 

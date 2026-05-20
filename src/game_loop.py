@@ -12,6 +12,7 @@ from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput, CombatInit
 from game.combat import CombatSystem
 from prompts import _build_investigator_info
+from game.boss_manager import BossManager
 
 
 
@@ -152,6 +153,25 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     weapon_lib = WeaponLibrary()
     weapon_lib.load_core()
 
+    # Load boss library
+    from library.bosses import BossLibrary
+    boss_library = BossLibrary("data/library/core/bosses.json")
+    boss_encounters = l2.get("boss_encounters", [])
+    boss_manager = BossManager(boss_library, boss_encounters)
+
+    # Init NPC manager
+    from game.npc_manager import NPCManager
+    npc_manager = NPCManager()
+    npc_profiles = l2.get("npc_profiles", {})
+    # Extract initial NPC scenes from L2 scene data
+    for scene_name, scene_data in l2_scenes.items():
+        for npc_data in scene_data.get("npcs", []):
+            name = npc_data.get("name", "")
+            if name in npc_profiles:
+                if "scene" not in npc_profiles[name] or not npc_profiles[name]["scene"]:
+                    npc_profiles[name] = {**npc_profiles[name], "scene": scene_name}
+    npc_manager.init_from_profiles(npc_profiles)
+
     world = ScenarioWorld(graph, start_node=start_node,
                           wr0_enabled=wr0_enabled,
                           enemy_library=enemy_lib,
@@ -168,6 +188,8 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         dependency_graph=l2.get("dependency_graph"),
         phase1=l2.get("_phase1"),
         npc_profiles=l2.get("npc_profiles"),
+        boss_manager=boss_manager,
+        npc_manager=npc_manager,
     )
     author = Author(l3)
     keeper.narrator_l1 = l1  # Keeper holds reference for supplement merging
@@ -176,6 +198,8 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         "keeper": keeper,
         "narrator": narrator,
         "author": author,
+        "boss_manager": boss_manager,
+        "npc_manager": npc_manager,
     }
 
 
@@ -218,6 +242,13 @@ def run_turn(game: dict, user_input: str,
                 "defeated_instance_ids": combat_result.defeated_instance_ids,
             }
             world.enemy_manager.exit_combat(result_dict)
+
+            # Boss post-combat resolution
+            if 'boss_manager' in game:
+                boss_mgr = game['boss_manager']
+                if boss_mgr._active_boss_id:
+                    boss_mgr.resolve_outcome(combat_result)
+                    boss_mgr.set_active(None)
         except Exception:
             combat_result_outcome = "error"
 
