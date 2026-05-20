@@ -105,19 +105,17 @@ class CombatSystem:
         """Run full combat loop. Returns CombatResult."""
         state = self._init_combat(combat_init)
         player = combat_init.player
+        environment_actions = getattr(combat_init, 'environment_actions', [])
 
         while not state.finished:
-            # Build available actions each round (player stats may change)
-            actions = self._get_player_actions(player)
             alive_enemies = [e for e in state.enemies
                            if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') != 'dead']
             if not alive_enemies:
                 state.finished = True
                 break
 
-            # Player action resolved by caller (web/CLI) — stub uses simple attack
             target = alive_enemies[0].instance_id
-            self._process_round(state, player, "punch", target)
+            self._process_round(state, player, "punch", target, environment_actions)
 
         outcome = "win"
         if state.player_hp <= 0:
@@ -164,8 +162,8 @@ class CombatSystem:
 
     # ── Player actions ──
 
-    def _get_player_actions(self, player) -> list[dict]:
-        """Build fixed action list from player skills and weapons."""
+    def _get_player_actions(self, player, environment_actions: list[dict] | None = None) -> list[dict]:
+        """Build fixed action list from player skills and weapons, with optional environment interactions."""
         actions = [
             {"id": "punch", "label": "拳击", "skill": "格斗(拳)", "damage": "1D3+DB",
              "value": self._skill_value(player, "格斗(拳)")},
@@ -183,6 +181,15 @@ class CombatSystem:
                 "skill": weapon_skill, "damage": w.damage,
                 "value": skill_val,
             })
+        if environment_actions:
+            for ea in environment_actions:
+                skill = ea.get("skill", "")
+                skill_value = self._skill_value(player, skill) if skill else 50
+                actions.append({
+                    "id": f"env:{ea['id']}", "label": ea.get("label", ea["id"]),
+                    "skill": skill, "damage": None,
+                    "value": skill_value,
+                })
         return actions
 
     def _skill_value(self, player, skill_name: str) -> int:
@@ -197,7 +204,7 @@ class CombatSystem:
         return 25
 
     def _resolve_player_action(self, state, player, action_id: str,
-                               target_iid: str) -> CombatAction:
+                               target_iid: str, environment_actions: list[dict] | None = None) -> CombatAction:
         """Execute player's chosen action. Returns CombatAction record."""
         action = CombatAction(actor="player")
 
@@ -227,7 +234,7 @@ class CombatSystem:
             return action
 
         # Attack actions
-        actions = self._get_player_actions(player)
+        actions = self._get_player_actions(player, environment_actions)
         match = next((a for a in actions if a["id"] == action_id), None)
         if not match:
             action.narrative = "未知动作。"
@@ -288,8 +295,54 @@ class CombatSystem:
         """Enemy targets player (extendable to NPCs later)."""
         return "player"
 
+    def _resolve_boss_action_stub(self, state, enemy, player) -> CombatAction:
+        """Boss LLM path stub — current behavior mirrors regular enemy but reads boss_mechanics.
+        Actual LLM integration deferred to later phase.
+        """
+        attack = self._select_enemy_attack(enemy)
+        action = CombatAction(
+            actor=enemy.instance_id,
+            action_type="attack",
+            weapon=attack["name"],
+            skill_name=attack["name"],
+            target="player",
+        )
+        enemy_attrs = getattr(enemy, 'attributes', {})
+        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2
+        action.skill_value = enemy_skill
+        action.roll = random.randint(1, 100)
+
+        if getattr(state, '_player_dodging', False):
+            action.success = False
+            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack['name']}被你闪开了。"
+            state._player_dodging = False
+            return action
+
+        action.success = action.roll <= enemy_skill
+        action.tier = self._get_tier(action.roll, enemy_skill) if action.success else "failure"
+
+        if action.success:
+            en_str = enemy_attrs.get("STR", 50)
+            en_siz = enemy_attrs.get("SIZ", 50)
+            damage = _roll_damage(attack["damage"], en_str, en_siz)
+            action.damage = damage
+            action.hp_before = state.player_hp
+            state.player_hp = max(0, state.player_hp - damage)
+            action.hp_after = state.player_hp
+            action.narrative = (
+                f"{getattr(enemy, 'enemy_ref', 'Boss')}用{attack['name']}击中了你！"
+                f"造成{damage}点伤害。"
+            )
+        else:
+            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack['name']}未能命中你。"
+
+        return action
+
     def _resolve_enemy_action(self, state, enemy, player) -> CombatAction:
-        """Rule-driven enemy action. Returns CombatAction record."""
+        """Rule-driven enemy action. Boss enemies route to LLM path."""
+        if "boss" in getattr(enemy, 'flags', []):
+            return self._resolve_boss_action_stub(state, enemy, player)
+
         attack = self._select_enemy_attack(enemy)
         action = CombatAction(
             actor=enemy.instance_id,
@@ -337,15 +390,14 @@ class CombatSystem:
     # ── Round processing ──
 
     def _process_round(self, state, player, player_action_id: str,
-                       target_iid: str) -> list[CombatAction]:
+                       target_iid: str, environment_actions: list[dict] | None = None) -> list[CombatAction]:
         """Execute one full combat round. Returns list of CombatActions."""
         state.log = []
         state._player_dodging = False
-        player_idx = state.initiative_order.index("player") if "player" in state.initiative_order else 0
 
         for idx, iid in enumerate(state.initiative_order):
             if iid == "player":
-                pa = self._resolve_player_action(state, player, player_action_id, target_iid)
+                pa = self._resolve_player_action(state, player, player_action_id, target_iid, environment_actions)
                 state.log.append(pa)
                 if state.finished:
                     return state.log

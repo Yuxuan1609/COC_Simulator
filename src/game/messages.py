@@ -111,6 +111,7 @@ class CombatInit:
     player: Any = None
     scene: str = ""
     initiative_context: str = ""
+    environment_actions: list[dict] = field(default_factory=list)  # [{"id":"panel","label":"操作面板","skill":"电气维修"}, ...]
 
 
 @dataclass
