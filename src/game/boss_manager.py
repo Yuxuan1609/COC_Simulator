@@ -5,13 +5,13 @@ from library.bosses import BossLibrary
 
 class BossManager:
     def __init__(self, boss_library: BossLibrary, boss_encounters: list[dict]):
-        self.library = boss_library
-        self.encounters = boss_encounters
-        self.active_boss_id: str | None = None
+        self._library = boss_library
+        self._encounters = boss_encounters
+        self._active_boss_id: str | None = None
 
     def check_by_engage_type(self, engage_type: str, *, scene: str | None = None) -> list[dict]:
         results = []
-        for enc in self.encounters:
+        for enc in self._encounters:
             if enc.get("engage_type") != engage_type:
                 continue
             if engage_type in ("at", "interaction") and scene is not None:
@@ -25,7 +25,7 @@ class BossManager:
         import uuid
 
         boss_ref = boss_entity["boss_ref"]
-        lib_boss = self.library.get(boss_ref)
+        lib_boss = self._library.get(boss_ref)
         if not lib_boss:
             raise KeyError(f"Boss '{boss_ref}' not found in boss library")
 
@@ -47,8 +47,8 @@ class BossManager:
             special_abilities=list(lib_boss.special_abilities),
             san_loss=lib_boss.san_loss,
             hp=base_hp,
+            boss_mechanics=lib_boss.boss_mechanics,
         )
-        enemy.boss_mechanics = lib_boss.boss_mechanics
 
         return CombatInit(
             enemies=[enemy],
@@ -58,9 +58,9 @@ class BossManager:
         )
 
     def resolve_outcome(self, combat_result):
-        if not self.active_boss_id:
+        if not self._active_boss_id:
             return None
         return combat_result.outcome
 
     def set_active(self, boss_id: str | None):
-        self.active_boss_id = boss_id
+        self._active_boss_id = boss_id

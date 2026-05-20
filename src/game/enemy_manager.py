@@ -28,6 +28,7 @@ class EnemyInstance:
     special_abilities: list = field(default_factory=list)
     san_loss: str = ""
     hp: int = 0
+    boss_mechanics: str = ""
 
 
 class EnemyManager:
@@ -144,18 +145,21 @@ class EnemyManager:
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
+        instances_dict = {}
+        for iid, inst in self._instances.items():
+            idata = {
+                "instance_id": inst.instance_id,
+                "enemy_ref": inst.enemy_ref,
+                "scene": inst.scene,
+                "quantity": inst.quantity,
+                "status": inst.status,
+                "hp": inst.hp,
+            }
+            if inst.boss_mechanics:
+                idata["boss_mechanics"] = inst.boss_mechanics
+            instances_dict[iid] = idata
         return {
-            "instances": {
-                iid: {
-                    "instance_id": inst.instance_id,
-                    "enemy_ref": inst.enemy_ref,
-                    "scene": inst.scene,
-                    "quantity": inst.quantity,
-                    "status": inst.status,
-                    "hp": inst.hp,
-                }
-                for iid, inst in self._instances.items()
-            },
+            "instances": instances_dict,
             "combat_active": self._combat_active,
             "combat_enemies": self._combat_enemies,
         }
@@ -174,11 +178,13 @@ class EnemyManager:
                 attacks = list(lib_enemy.attacks)
                 abilities = list(lib_enemy.special_abilities)
                 san = lib_enemy.san_loss
+                boss_mech = idata.get("boss_mechanics", "")
                 base_hp = (attrs.get("CON", 50) + attrs.get("SIZ", 50)) // 10 * idata.get("quantity", 1)
                 hp = idata.get("hp", base_hp)
             else:
                 flags, behavior, desc = [], "", ""
                 attrs, armor, attacks, abilities, san = {}, "", [], [], ""
+                boss_mech = ""
                 hp = 10
             mgr._instances[iid] = EnemyInstance(
                 instance_id=idata["instance_id"],
@@ -195,6 +201,7 @@ class EnemyManager:
                 special_abilities=abilities,
                 san_loss=san,
                 hp=hp,
+                boss_mechanics=boss_mech,
             )
         mgr._combat_active = data.get("combat_active", False)
         mgr._combat_enemies = data.get("combat_enemies", [])

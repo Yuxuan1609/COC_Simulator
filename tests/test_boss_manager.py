@@ -106,3 +106,23 @@ def test_get_nonexistent_boss():
         assert False, "Should have raised"
     except KeyError:
         pass
+
+
+def test_set_active():
+    lib = _make_library()
+    mgr = BossManager(lib, [])
+    assert mgr._active_boss_id is None
+    mgr.set_active("BOSS_1")
+    assert mgr._active_boss_id == "BOSS_1"
+    mgr.set_active(None)
+    assert mgr._active_boss_id is None
+
+
+def test_resolve_outcome():
+    lib = _make_library()
+    mgr = BossManager(lib, [])
+    assert mgr.resolve_outcome(type('R', (), {'outcome': 'win'})()) is None
+    mgr.set_active("BOSS_1")
+    class R:
+        outcome = "win"
+    assert mgr.resolve_outcome(R()) == "win"
