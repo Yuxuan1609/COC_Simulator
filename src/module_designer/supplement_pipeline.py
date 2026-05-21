@@ -329,7 +329,7 @@ Entities：
 
     try:
         response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                                 reasoning_effort="low",
+                                 reasoning_effort="max",
                                  system="你是TRPG模组标准化助手。将entity字段标准化并转换@标记。",
                                  fallback_schema={"entities": all_entities})
         result = json.loads(response) if isinstance(response, str) else response
