@@ -179,6 +179,7 @@ step1b = {"condensed_text": step1b_raw} if isinstance(step1b_raw, str) else step
 
 scenes = step1a.get("scenes", [])
 characters = step1a.get("characters", [])
+boss_hints = step1a.get("boss_encounters", [])
 condensed_text = step1b.get("condensed_text", "")
 from module_designer.layered_parser import _parse_condensed_chapters
 chapters = _parse_condensed_chapters(condensed_text) if condensed_text else {}
@@ -316,17 +317,34 @@ print(f"L3: {len(l3_data.get('world_rules',[]))} 世界规则, {len(l3_data.get(
 # ============================================================
 # CELL 11 (code)
 # ============================================================
-# ═══ Step 3a ∥ Step 2.5 (并行) ═══
-ending_conditions = l3_data.get("ending_conditions", [])
+# ═══ Step 2 Boss + Step 3a ∥ Step 2.5 (并行) ═══
+from module_designer.layered_pipeline import parse_step2_boss
 
+ending_conditions = l3_data.get("ending_conditions", [])
 l3_characters = l3_data.get("characters", [])
-with ThreadPoolExecutor(max_workers=2) as ex:
+
+max_workers = 2 + (1 if boss_hints else 0) + (1 if l3_characters else 0)
+with ThreadPoolExecutor(max_workers=max_workers) as ex:
     f3a = ex.submit(do_json_call,
         "step_3", "3a_dedup_conflict",
         build_step3a_prompt,
         chapters, interactions, events, auto_triggers, ending_conditions,
         system_prompt=STEP3A_SYSTEM
     )
+    if boss_hints:
+        def _boss_llm(prompt, system="", **kw):
+            call_name = "boss_encounter"
+            call_dir = os.path.join(DEBUG_ROOT, "step_boss", call_name)
+            os.makedirs(call_dir, exist_ok=True)
+            with open(os.path.join(call_dir, "prompt.txt"), "w", encoding="utf-8") as f:
+                f.write(f"=== SYSTEM ===\n{system}\n\n=== USER PROMPT ===\n{prompt}")
+            response = call_deepseek(prompt, system=system, json_mode=True)
+            with open(os.path.join(call_dir, "response.json"), "w", encoding="utf-8") as f:
+                json.dump(response, f, ensure_ascii=False, indent=2)
+            return response
+        f_boss = ex.submit(parse_step2_boss, boss_hints, l1_data, llm_json=_boss_llm)
+    else:
+        f_boss = None
     if l3_characters:
         f25 = ex.submit(do_json_call,
             "step_25", "25_npc_profiles",
@@ -335,19 +353,23 @@ with ThreadPoolExecutor(max_workers=2) as ex:
             system_prompt=STEP25_SYSTEM
         )
     step3a = f3a.result()
+    step2_boss = f_boss.result() if f_boss else {"boss_encounters": []}
     step25 = f25.result() if l3_characters else {"npc_profiles": {}}
 
 interactions = step3a.get("interactions", interactions)
 events = step3a.get("events", events)
 auto_triggers = step3a.get("auto_triggers", auto_triggers)
+boss_encounters = step2_boss.get("boss_encounters", [])
 npc_profiles = step25.get("npc_profiles", {})
 print(f"Step 3a 完成: 去重 + 冲突 + 结局")
 print(f"  Interactions: {len(interactions)}, Events: {len(events)}, Auto-triggers: {len(auto_triggers)}")
+if boss_hints:
+    print(f"Step 2 Boss 完成: {len(boss_encounters)} boss encounters")
 print(f"Step 2.5 完成: {len(npc_profiles)} NPC profiles")
 
 # ═══ 组装 L2 结构 ═══
 from module_designer.layered_pipeline import _assemble_l2
-l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles)
+l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles, boss_encounters=boss_encounters)
 print(f"L2 组装完成: {len(l2_assembled.get('scenes',{}))} 场景")
 
 # 从组装后的 L2 提取平面列表供 Step 3.5/4 使用
@@ -495,7 +517,7 @@ for e in events:
     e.pop("based_on", None)
 
 # ═══ 用 Phase 2 标准化后的实体重新组装 L2 ═══
-l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles)
+l2_assembled = _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data, npc_profiles=npc_profiles, boss_encounters=boss_encounters)
 print(f"L2 重新组装完成: {len(l2_assembled.get('scenes',{}))} 场景")
 if dep_graph:
     l2_assembled["dependency_graph"] = dep_graph.to_dict()
