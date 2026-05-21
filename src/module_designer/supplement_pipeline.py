@@ -61,8 +61,15 @@ def run_supplement_pipeline(
     events_data = results.get("1b_events", {})
     l1_data = results.get("1c_l1", {})
 
-    # Step 2: assemble + validate
-    l2_data = _step_2_assemble(scenes_data, events_data, shared_context)
+    # Step 2: assemble ∥ @markup standardize (parallel)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_assemble = executor.submit(_step_2_assemble, scenes_data, events_data, shared_context)
+        f_standardize = executor.submit(_step_standardize_entities, scenes_data, events_data)
+        l2_data = f_assemble.result()
+        standardized = f_standardize.result()
+    if standardized:
+        _apply_standardized(l2_data, standardized)
+
     l3_data = _build_l3_supp(base_l3, shared_context)
 
     # Save
@@ -279,3 +286,83 @@ def _build_l3_supp(base_l3: dict, context: dict) -> dict:
 def _extract_entity_ids(req_str: str) -> list[str]:
     """Extract entity IDs (I1, AT2, E3, etc.) from a requirement string."""
     return re.findall(r'[ISEA]+\d+[a-z]?', req_str)
+
+
+def _step_standardize_entities(scenes_data: dict, events_data: dict) -> dict | None:
+    """Phase 2 equivalent: standardize type names and convert natural language to @markup.
+    Runs in parallel with _step_2_assemble."""
+    all_entities = []
+    for scene_name, scene_data in scenes_data.get("scenes", {}).items():
+        for ent in scene_data.get("interactions", []) + scene_data.get("auto_triggers", []):
+            ent["_scene"] = scene_name
+            all_entities.append(_slim_entity(ent))
+    for ev in events_data.get("events", []):
+        all_entities.append(_slim_entity(ev))
+
+    if not all_entities:
+        return None
+
+    skills = "会计、人类学、估价、考古学、魅惑、攀爬、计算机使用、信用评级、克苏鲁神话、乔装、闪避、汽车驾驶、电气维修、电子学、话术、急救、历史、恐吓、跳跃、法律、图书馆使用、聆听、锁匠、机械维修、医学、博物学、导航、神秘学、操作重型机械、说服、驾驶、精神分析、心理学、读唇、潜行、侦查、生存、游泳、投掷、追踪、驯兽"
+    stats = "STR、CON、SIZ、DEX、APP、INT、POW、EDU、LUCK、HP、MP、SAN、MOV、DB、BUILD"
+
+    prompt = f"""标准化 entity 的 type、side_effects、result 字段。
+
+标准技能：{skills}
+标准属性：{stats}
+标准时段：凌晨、早晨、白天、黄昏、夜间
+
+Entities：
+{json.dumps(all_entities, ensure_ascii=False, indent=2)}
+
+任务：
+1. type 标准化：从标准技能列表选匹配技能名，不涉及检定的填"无"
+2. @标记转化：side_effects/result/graded_result 自然语言化为：
+   @spawn_enemy(enemy_ref="", scene="", quantity=1)
+   @grant_weapon(weapon_ref="", scene="", quantity=1)
+   @stat_change(stat_name="", delta=-1, narrative="")
+   @item_gain(item_name="", quantity=1)
+   @consume_item(item_name="", quantity=1, narrative="")
+   @npc_state_change(npc_name="", new_state="")
+   @npc_follow(npc_name="", follow=true)
+
+返回 JSON：{{"entities": [{{原entity字段..., type, side_effects, result, graded_result}}]}}"""
+
+    try:
+        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                 reasoning_effort="low",
+                                 system="你是TRPG模组标准化助手。将entity字段标准化并转换@标记。",
+                                 fallback_schema={"entities": all_entities})
+        result = json.loads(response) if isinstance(response, str) else response
+        return result
+    except Exception:
+        return None
+
+
+def _slim_entity(ent: dict) -> dict:
+    """Keep only fields needed for standardization."""
+    return {k: ent.get(k, "") for k in ("id", "entity_type", "name", "type",
+           "result", "side_effects", "graded_result", "_scene")}
+
+
+def _apply_standardized(l2_data: dict, standardized: dict):
+    """Apply standardized entity fields back to assembled L2."""
+    std_entities = standardized.get("entities", [])
+    if not std_entities:
+        return
+    by_id = {e["id"]: e for e in std_entities if e.get("id")}
+    for scene_data in l2_data.get("scenes", {}).values():
+        for lst in ("interactions", "auto_triggers"):
+            for ent in scene_data.get(lst, []):
+                eid = ent.get("id", "")
+                if eid in by_id:
+                    std = by_id[eid]
+                    for field in ("type", "result", "side_effects", "graded_result"):
+                        if field in std:
+                            ent[field] = std[field]
+    for ev in l2_data.get("events", []):
+        eid = ev.get("id", "")
+        if eid in by_id:
+            std = by_id[eid]
+            for field in ("type", "result", "side_effects", "graded_result"):
+                if field in std:
+                    ev[field] = std[field]
