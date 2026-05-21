@@ -21,6 +21,7 @@ class Author:
 
     def __init__(self, l3_data: Any):
         self.l3_data = l3_data
+        self.time_pressure = self.l3_data.get("time_pressure") if self.l3_data else None
         self.history: list[dict] = []  # {intent, level, justification, turn}
 
     def handle_request(self, request: AuthorRequest, turn_number: int = 0) -> ModulePatch | StructuralEdit:
@@ -71,6 +72,43 @@ class Author:
         """Merge supplement L3 updates into existing L3 data."""
         if isinstance(self.l3_data, dict):
             self.l3_data.update(l3_updates)
+
+    def assess_time_pressure(self, comms_packet) -> dict:
+        """Receive comms packet from Keeper, judge if time pressure needs action.
+        Returns {"should_press": bool, "urgency_update": int|None, "reason": str, "signal": str}."""
+
+        tp = self.time_pressure
+        if not tp:
+            return {"should_press": False, "urgency_update": None, "reason": "", "signal": ""}
+
+        from prompts import build_time_pressure_assess_prompt
+        from llm import call_deepseek
+        import json as _json
+
+        prompt = build_time_pressure_assess_prompt(
+            guide=tp.get("guide", ""),
+            urgency=tp.get("urgency", 0),
+            urgency_max=tp.get("urgency_max", 10),
+            key_signals=tp.get("key_signals", []),
+            game_time=comms_packet.game_time,
+            day=comms_packet.day,
+            time_of_day=comms_packet.time_of_day,
+            current_scene=comms_packet.current_scene,
+            player_actions=comms_packet.player_actions,
+            world_state=comms_packet.world_state,
+        )
+        try:
+            response = call_deepseek(
+                prompt, json_mode=True, model="deepseek-v4-flash",
+                system="你是 COC 7th 模组的时间压力管理者。",
+                fallback_schema={"should_press": False, "urgency_update": None, "reason": "", "signal": ""},
+            )
+            result = _json.loads(response) if isinstance(response, str) else response
+            if result.get("urgency_update") is not None:
+                tp["urgency"] = min(result["urgency_update"], tp.get("urgency_max", 10))
+            return result
+        except Exception:
+            return {"should_press": False, "urgency_update": None, "reason": "", "signal": ""}
 
     def _build_prompt(self, request: AuthorRequest) -> str:
         return build_author_prompt(request, self.l3_data)

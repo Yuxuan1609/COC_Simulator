@@ -732,3 +732,43 @@ def build_consume_item_fuzzy_prompt(
 - 完全无关 → matched=false
 - item_name 必须是背包中存在的物品名（精确复制）"""
 
+
+# ── Time Pressure ──
+
+def build_time_pressure_assess_prompt(
+    guide: str,
+    urgency: int,
+    urgency_max: int,
+    key_signals: list,
+    game_time: int,
+    day: int,
+    time_of_day: str,
+    current_scene: str,
+    player_actions: str,
+    world_state: str,
+) -> str:
+    signals = "\n".join(f"- {s}" for s in key_signals)
+    return f"""你是 COC 7th 模组的时间压力管理者。根据模组预设的时间压力指南和当前游戏状态，判断是否需要介入催促玩家。
+
+【时间压力指南】
+{guide}
+
+当前 urgency：{urgency}/{urgency_max}
+
+可选信号：
+{signals}
+
+【当前状态】
+累计时间：{game_time}分钟 (第{day}天 {time_of_day})
+当前场景：{current_scene}
+玩家最近行动：{player_actions}
+世界状态：{world_state}
+
+判断是否需要介入。返回 JSON：
+{{"should_press": true/false, "urgency_update": 新的urgency值(0-{urgency_max})或null, "reason": "简要理由", "signal": "选用的信号文本（should_press=true时填写）"}}
+
+规则：
+- 玩家推进正常、无异常停留 → should_press=false
+- 玩家反复搜索同一区域、长时间无进展、或 guide 中明确的时间节点被跨越 → should_press=true
+- urgency_update 根据 guide 中的描述弹性调整，不机械"""
+
