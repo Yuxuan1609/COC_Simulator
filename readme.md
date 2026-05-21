@@ -114,6 +114,8 @@
 - **Curator**（`curator.py`）：策展器 — outcomes + ambient → NarratorBrief
 - **CombatSystem**（`combat.py`）：COC 7th 回合制战斗，独立于 Keeper 管线。接收 CombatInit，返回 CombatResult
 - **EnemyManager**（`enemy_manager.py`）：纯追踪层 — 敌人实例管理、位置/状态/flag 查询、combat entry 上下文
+- **BossManager**（`boss_manager.py`）：Boss 信息管理 — 不参与 spawn，从 L2 预设 `boss_encounters` + `BossLibrary` 构造 CombatInit，特殊机制走自然语言 `boss_mechanics`
+- **NPCManager**（`npc_manager.py`）：NPC 全量管理 — LLM 对话（态度/记忆上下文注入）、5 级态度状态机、被动跟随（`@npc_follow` markup）、初始化从 L2 `npc_profiles`
 - **Combat Entry Detection**（keeper.py 内）：确定性闸门（active enemy in range）→ LLM 判定（flash，与 enrich 并行）→ CombatEntryCheck
 - **对峙阶段**（keeper.py 内）：avoidable 敌人 → 语义匹配 LLM → D100 检定 → trait enhancement
 
@@ -173,9 +175,9 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 ### `game_loop.py` — 入口
 
-- `init_game()`：加载 L1/L2/L3 JSON + EnemyLibrary + WeaponLibrary → 构建 DirectedGraph → ScenarioWorld → 初始化 Keeper/Narrator/Author
-- `run_turn()`：驱动回合，处理 debug 命令，返回 `{brief, narrative, combat_init, standoff_prompt}`
-- `continue_standoff()`：处理对峙阶段的玩家回避尝试，返回 `{avoided, combat_init, message}`
+- `init_game()`：加载 L1/L2/L3 JSON + EnemyLibrary/WeaponLibrary/BossLibrary + BossManager/NPCManager → 构建 DirectedGraph → ScenarioWorld → 初始化 Keeper/Narrator/Author
+- `run_turn()`：驱动回合，处理 debug 命令 → `keeper.process_turn()` → 检测 `combat_init` → `CombatSystem.run_combat()` → `narrator.narrate()` → 返回 `{brief, narrative, full, combat, standoff_prompt}`
+- `continue_standoff()`：处理对峙阶段的玩家回避尝试 → 检测结果调用 CombatSystem → 返回 `{avoided, combat_init, message, combat_narrative}`
 
 ## 待实现
 
@@ -225,6 +227,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 - 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
 - Boss/剧情敌人 & NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
 - Implementation Plan: `docs/superpowers/plans/2026-05-20-boss-npc-plan.md`
+- **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md` — 每个模块标注文件-类/函数-功能拆解，供快速定位代码
 
 ## 测试
 
