@@ -56,8 +56,17 @@ def run_supplement_pipeline(
         "story": story,
         "scene_names": scene_names,
     }
-    # Step 2 functions (_step_2a_entities, _step_2b_l1, _step_2c_l3) will be added in subsequent tasks
-    # For now, return empty data — subsequent tasks will wire up the parallel calls
+    # Step 2: wire parallel calls (2b_l1 and 2c_l3 added in later tasks)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_step_2a_entities, shared, base_l3): "2a_entities",
+        }
+        results = {}
+        for future in as_completed(futures):
+            name = futures[future]
+            results[name] = future.result()
+
+    entities_data = results.get("2a_entities", {})
 
     # Post: assemble L2 + validate (TBD in Task 4)
     l2_data = {}
@@ -169,4 +178,88 @@ def _step_1_narrative(
                              reasoning_effort="max",
                              system="你是TRPG模组创作者。写出自然融入设定基调和世界规则的叙事。",
                              fallback_schema={"story": "", "scene_names": [], "exit_scene": exit_scene})
+    return json.loads(response) if isinstance(response, str) else response
+
+
+def _step_2a_entities(shared: dict, base_l3: dict) -> dict:
+    """Step 2a: generate all entities with inline @markup standardization + dependency graph.
+
+    One LLM call covers what the main pipeline does in Step 2 (entity generation)
+    + Phase 2 (@markup standardization) + Step 3 (dedup/conflict check).
+    """
+    skills = "会计、人类学、估价、考古学、魅惑、攀爬、计算机使用、信用评级、克苏鲁神话、乔装、闪避、汽车驾驶、电气维修、电子学、话术、急救、历史、恐吓、跳跃、法律、图书馆使用、聆听、锁匠、机械维修、医学、博物学、导航、神秘学、操作重型机械、说服、驾驶、精神分析、心理学、读唇、潜行、侦查、生存、游泳、投掷、追踪、驯兽"
+
+    prompt = f"""你是TRPG模组创作者。基于已有叙事和L3设计，生成新场景的全部entity。
+
+【叙事】
+{shared['story']}
+
+【场景清单】
+{', '.join(shared['scene_names'])}
+
+【出入口】
+入口: {shared['entry_scene']}
+出口: {shared['exit_scene']}
+
+【玩家意图】
+{shared['player_intent']}
+
+Entity 字段规则:
+- id: 全局唯一 (SI1/SI2/SI3...=interaction, SAT1/SAT2...=auto_trigger, SE1/SE2...=event)
+- entity_type: interaction / auto_trigger / event
+- scene: 所在场景名 (SS1_xxx / SS2_xxx)
+- name: 简短动作名
+- type: 关联技能名 (从标准技能列表选)，不涉及检定填"无"
+- requirement: 硬性前置条件用 entity ID + AND/OR/() (如 SI1 AND SI2)，裸 ID 默认指成功完成。无条件填空字符串。特殊条件在 "||" 后用自然语言。可描述是否需要消耗常见物品及数量
+- trigger: 触发场景描述，不要和 requirement 混淆
+- result: 直接结果。涉及技能检定时填 "##GRADED##"，side_effects 留空，所有结果文字写入 graded_result。可描述失去常见消耗品。不涉及进入与怪物的战斗/对抗/追捕
+- side_effects: 间接后果（与result不重合），使用 @标记 语法:
+  @spawn_enemy(enemy_ref="名称", scene="场景", quantity=1)
+  @grant_weapon(weapon_ref="名称", scene="场景", quantity=1)
+  @stat_change(stat_name="属性", delta=-1, narrative="")
+  @item_gain(item_name="物品", quantity=1)
+  @consume_item(item_name="物品", quantity=1, narrative="")
+  @npc_state_change(npc_name="名称", new_state="状态")
+  @npc_follow(npc_name="名称", follow=true)
+- difficulty: None / regular / hard / extreme
+- graded_result: type不为"无"时填写。四等级: on_failure=检定失败 / on_regular=常规成功 / on_hard=困难成功(≤技能值/2) / on_extreme=极难成功(≤技能值/5)。若原文未区分等级，各等级可描述相同
+
+标准技能: {skills}
+
+返回 JSON:
+{{
+  "scenes": {{
+    "SS1_场景名": {{
+      "description": "场景描述",
+      "interactions": [
+        {{"id": "SI1", "entity_type": "interaction", "scene": "SS1_场景名",
+          "name": "动作名", "type": "侦查", "requirement": "", "trigger": "触发条件",
+          "result": "##GRADED##", "side_effects": [],
+          "graded_result": {{"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}},
+          "difficulty": "regular"}}
+      ],
+      "auto_triggers": [],
+      "from_here": [{{"target": "出口或下一场景", "method": "通行方式", "requirement": ""}}],
+      "to_here": [{{"source": "{shared['entry_scene']}", "method": "通行方式", "requirement": ""}}],
+      "extra": {{}}
+    }}
+  }},
+  "events": [],
+  "dependency_graph": {{
+    "nodes": {{}},
+    "edges": []
+  }}
+}}
+
+要求:
+- 所有 entity 必须有 type/side_effects/result 字段，若涉及检定 type 不为"无"则必须有 graded_result
+- 所有 @标记 直接写在 side_effects 中，不允许自然语言描述副作用
+- 所有描述性内容使用中文。JSON字段名和ID保持英文
+- 去重: 同一场景内 entity name 不应重复
+- dependency_graph 标注所有 entity 间的依赖关系 (source=依赖者, target=被依赖者, condition=completed)
+- 直接输出 JSON"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组标准化助手。同时完成entity生成、@标记标准化和依赖图构建。",
+                             fallback_schema={"scenes": {}, "events": [], "dependency_graph": {"nodes": {}, "edges": []}})
     return json.loads(response) if isinstance(response, str) else response
