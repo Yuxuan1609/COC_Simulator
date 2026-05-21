@@ -192,7 +192,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | NPC / 同伴系统 | ✅ 已实现 | NPCManager 全量管理：LLM 对话（态度/记忆上下文注入）、被动跟随（@npc_follow markup）、5级态度状态机。架构预留半主动 hook。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
 | Boss/剧情敌人 | ✅ 已实现 | 独立 bosses.json 库，`type="boss_encounter"` Entity（engage_type 硬性过滤），BossManager 信息挂钩+CombatSystem LLM 路径。特殊机制走自然语言 `boss_mechanics` 字段。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
 | 前端 UI + 随材 | TODO | **升级功能点**：游戏循环 Web 前端的视觉升级（场景插图、角色立绘、战斗动画）、音效/BGM 随材集成、移动端适配。当前 `frontend/game.html` 为纯功能界面 |
-| 时间系统 | ⚠ 转入待优化 (O5) | 设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md`。两层架构：确定性时间 + TimeAgent (LLM sub-agent)。即将实现 |
+| 时间系统 | ✅ 已实现 | 两层架构：确定性时间（`world.game_time` + `advance_time()`）+ TimeAgent (LLM sub-agent) 叙事引导。每 30 分钟调用一次。设计文档：`docs/superpowers/specs/2026-05-22-time-system-redesign.md` |
 
 ### 已知缺口
 
@@ -215,7 +215,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | O2 | Memory 压缩阻塞 LLM 调用 | ✅ FIXED — 改为 daemon Thread 后台执行，不阻塞 turn 返回 |
 | O3 | Move 限制条件未强制执行 | ✅ FIXED — `ScenarioWorld.move()` 检查 edge.requirement（hard: entity IDs + AND/OR，soft: LLM parse 评估），不满足返回阻塞消息。⚠ 模组生成管线需微调：L2 edge requirement 格式需要与 entity requirement 对齐 |
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
-| O5 | 时间系统 | 设计完成，待实现。两层架构：确定性世界时间 + TimeAgent (LLM sub-agent)。见 `docs/superpowers/specs/2026-05-19-time-system-design.md` |
+| O5 | 时间系统 | ✅ FIXED — 确定性时间（`world.game_time` + `advance_time()`）+ TimeAgent (LLM) 叙事引导，已集成到 keeper process_turn。见 `docs/superpowers/specs/2026-05-22-time-system-redesign.md` |
 | O6 | Harness 整合 | `game_loop_harness` / `escalation_harness` / `combat_harness` 三个集成测试文件合并为统一的 mock-LLM 端到端测试 |
 
 ## 设计文档
