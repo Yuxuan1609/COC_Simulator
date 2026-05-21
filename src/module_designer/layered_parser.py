@@ -188,7 +188,7 @@ def build_step1a_prompt(content: str) -> str:
 
 输出格式:
 {{
-  "module_meta": {{"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数"}},
+  "module_meta": {{"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数", "estimated_duration": 240, "comms_interval": 10}},
   "scenes": ["场景中文名", ...],
   "characters": [
     {{"name": "角色中文名", "id": "NPC_1"}},
@@ -200,6 +200,8 @@ def build_step1a_prompt(content: str) -> str:
 1. scenes 按玩家可能到达的顺序排列，使用场景中文名
 2. characters 列出所有有名字或有重要作用的角色
 3. 仅输出 JSON
+4. 估算模组剧情的预计总耗时（分钟），综合考虑所有可能的探索路径和对话时长。写入 module_meta.estimated_duration。
+5. 推荐通信间隔（分钟）写入 module_meta.comms_interval（短模组≤2h: 6-8min, 中型2-6h: 10-15min, 长型6-24h: 15-20min, 超长≥24h: 60-120min）。
 
 模组文档：
 \"\"\"
@@ -301,6 +303,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成（检定通过或无检定完成）。无条件填空字符串。需要特殊条件（如某实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述
 - trigger 是触发场景描述：什么情况下玩家可以执行此互动。如 "玩家检查抽屉时"、"玩家进入此场景时"
 - result 是直接结果：互动直接产生的结果。如 "抽屉打开了，里面有一把钥匙"。如果此互动会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头，如 "##END_真结局:电车冲出梦境## 调查员们成功..."
+- requirement 可描述是否需要消耗常见非剧情物品及数量（如"需要消耗1个急救包"）；result 可描述结果是否会失去常见消耗品（如"失去一个手电筒"）。具体数值由 Phase 2 标准化为 @consume_item
 - side_effects 是间接后果：与 result 不重合的附带影响。如 "开抽屉的声响吸引了隔壁车厢的怪物"。自然语言字符串列表
 - 互动完成即代表状态变更，不需要单独的 flag
 - type 涉及技能鉴定时，填入 graded_result（分级检定后果），此时 result 填 "##GRADED##"（占位标记），side_effects 留空。所有结果描述写入 graded_result 各等级中；type 为"无"时不填 graded_result
@@ -386,6 +389,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 - based_on 指向派生的 interaction ID（非派生事件则留空字符串）
 - requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
+- requirement 可描述是否需要消耗常见非剧情物品及数量；result 可描述结果是否会失去常见消耗品（具体数值由 Phase 2 标准化为 @consume_item）
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
@@ -471,6 +475,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - based_on 指向派生的 interaction ID（非派生 AT 则留空字符串）
 - requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
 - result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
+- requirement 可描述是否需要消耗常见非剧情物品及数量；result 可描述结果是否会失去常见消耗品（具体数值由 Phase 2 标准化为 @consume_item）
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - 只生成被动触发的事件，不要生成玩家主动互动
@@ -725,7 +730,10 @@ def build_step25_prompt(
       "what_they_can_do": "NPC能做什么、在什么条件下会做什么（核心字段）",
       "interaction_triggers": ["什么情况下玩家可以与NPC互动"],
       "personality_notes": "性格和说话风格",
-      "appearance": "外貌描述（来自L1）"
+      "appearance": "外貌描述（来自L1）",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
     }}
   }}
 }}
@@ -1103,10 +1111,18 @@ def build_step4_prompt(
         [_slim_entity(a) for a in auto_triggers], ensure_ascii=False, indent=2
     )
 
+    scene_names = "\n".join(f"- {name}" for name in l2_descriptions.keys())
+
     return f"""标准化 type，将 side_effects/result/graded_result 转为 @函数(参数) 标记。
 
 ## Phase 1 约束（spawn_enemy / grant_weapon 必须在约束范围内）
 {json.dumps(phase1_constraints, ensure_ascii=False, indent=2)}
+
+## 标准场景名称列表（@标记中的 scene 必须使用下表中的名称）
+{scene_names}
+
+## 标准时段名称（time_of_day 必须使用下表中的名称）
+凌晨、早晨、白天、黄昏、夜间
 
 ## 标准技能列表（type 必须从此列表中选择）
 {skills_list}
@@ -1120,9 +1136,11 @@ def build_step4_prompt(
 ## L3 Scene Intents
 {json.dumps(scene_intents, ensure_ascii=False, indent=2)}
 
-## 精修模组（参考上下文）
+## 精修模组（参考上下文 — 仅 enemies + overview）
 \"\"\"
-{"\n\n".join(chapters.values())}
+{chapters.get('enemies','')}
+
+{chapters.get('module_overview','')}
 \"\"\"
 
 ## Interactions (仅含需标准化的字段，side_effects 待结构化)
@@ -1138,7 +1156,8 @@ def build_step4_prompt(
    @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=1)
    @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=1)
    @stat_change(stat_name="属性名", delta=-1, narrative="角色经历（可选）")
-   @item_gain(item_name="物品名")
+   @item_gain(item_name="物品名", quantity=1)
+   @consume_item(item_name="物品名", quantity=1, narrative="消耗原因（可选）")
    @npc_state_change(npc_name="NPC名", new_state="新状态")
 
    无法归入以上类型的保留原自然语言。

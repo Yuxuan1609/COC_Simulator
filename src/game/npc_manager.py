@@ -39,6 +39,9 @@ class NPCManager:
                 what_they_can_do=data.get("what_they_can_do", ""),
                 interaction_triggers=list(data.get("interaction_triggers", [])),
                 scene=data.get("scene", ""),
+                state=data.get("initial_state", "alive"),
+                following=data.get("initial_following", False),
+                attitude=data.get("initial_attitude", "neutral"),
             )
 
     # ── 查询 ──

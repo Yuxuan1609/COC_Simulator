@@ -88,12 +88,13 @@
     "NPC名称": {
       "name": "NPC名称",
       "role": "在故事中的角色",
-      "motivation": "核心动机",
-      "knowledge": ["NPC知道的信息"],
-      "personality": "性格描述",
-      "voice_notes": "说话风格（可选）",
-      "notes": "KP备注（可选）",
-      "extra": {}
+      "what_they_can_do": "NPC能做什么、在什么条件下会做什么（核心行为字段）",
+      "interaction_triggers": ["什么情况下玩家可以与NPC互动"],
+      "personality_notes": "性格和说话风格",
+      "appearance": "外貌描述",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
     }
   }
 }
