@@ -1098,7 +1098,8 @@ class ScenarioWorld:
         if h < 5:   return "夜间"
         if h < 8:   return "早晨"
         if h < 17:  return "白天"
-        return "黄昏"
+        if h < 20:  return "黄昏"
+        return "夜间"
 
     def get_time_flags(self) -> dict:
         return {
