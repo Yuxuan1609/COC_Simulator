@@ -70,10 +70,36 @@ def run_supplement_pipeline(
 
     entities_data = results.get("2a_entities", {})
     l1_data = results.get("2b_l1", {})
-    l3_data = results.get("2c_l3", {})
+    step2c_l3 = results.get("2c_l3", {})
 
-    # Post: assemble L2 + validate (TBD in Task 4)
-    l2_data = {}
+    # Post: assemble L2 + validate
+    l2_data = _assemble_l2(entities_data, scene_names)
+
+    # Build L3 supplement: merge base_l3 with new L3 data from Step 2c
+    l3_data = {
+        "module_meta": {
+            **base_l3.get("module_meta", {}),
+            "supplement_of": base_l3.get("module_meta", {}).get("name", ""),
+            "generated_for": player_intent,
+        },
+        "world_rules": base_l3.get("world_rules", []),
+        "scene_intents": {
+            **base_l3.get("scene_intents", {}),
+            **step2c_l3.get("scene_intents", {}),
+        },
+        "ending_conditions": base_l3.get("ending_conditions", []),
+        "tone_constraints": base_l3.get("tone_constraints", {}),
+        "characters": base_l3.get("characters", {}),
+        "driving_force": base_l3.get("driving_force", ""),
+        "narrative_lines": base_l3.get("narrative_lines", []),
+        "time_pressure": base_l3.get("time_pressure", {}),
+    }
+
+    try:
+        _validate_supplement(l2_data, l1_data, scene_names)
+    except ValueError as e:
+        # Log warning but don't block — the LLM output may be imperfect
+        print(f"[supplement_pipeline] validation warning: {e}")
 
     # Save
     for name, data in [("l1_supp.json", l1_data), ("l2_supp.json", l2_data),
@@ -343,3 +369,83 @@ def _step_2c_l3(shared: dict, base_l3: dict) -> dict:
                              system="你是TRPG模组设计者。生成新场景的L3设计意图。",
                              fallback_schema={"scene_intents": {}, "new_rules": [], "tone_adjustments": {}})
     return json.loads(response) if isinstance(response, str) else response
+
+
+def _assemble_l2(entities_data: dict, scene_names: list[str]) -> dict:
+    """Assemble L2 structure from Step 2a output."""
+    scenes = entities_data.get("scenes", {})
+    events = entities_data.get("events", [])
+    dep_graph = entities_data.get("dependency_graph", {"nodes": {}, "edges": []})
+
+    scene_map = {}
+    for sid in scenes:
+        scene_map[sid] = sid
+
+    return {
+        "scenes": scenes,
+        "events": events,
+        "npc_profiles": {},
+        "dependency_graph": dep_graph,
+        "_scene_names": scene_map,
+        "_phase1": {},
+    }
+
+
+def _validate_supplement(l2: dict, l1: dict, scene_names: list[str]):
+    """Deterministic validation: entity ID uniqueness, scene references, dependency cycle check, graded_result consistency."""
+    entity_ids = set()
+
+    for scene_name, scene_data in l2.get("scenes", {}).items():
+        for ent in scene_data.get("interactions", []) + scene_data.get("auto_triggers", []):
+            eid = ent.get("id", "")
+            if not eid:
+                continue
+            if eid in entity_ids:
+                raise ValueError(f"Duplicate entity ID: {eid}")
+            entity_ids.add(eid)
+
+            if ent.get("type", "") not in ("", "无", "None") and not ent.get("graded_result"):
+                raise ValueError(f"Entity {eid} has skill type but no graded_result")
+            if ent.get("result") == "##GRADED##" and ent.get("side_effects"):
+                raise ValueError(f"Entity {eid}: ##GRADED## result but side_effects non-empty")
+
+    for ev in l2.get("events", []):
+        eid = ev.get("id", "")
+        if not eid:
+            continue
+        if eid in entity_ids:
+            raise ValueError(f"Duplicate entity ID (event): {eid}")
+        entity_ids.add(eid)
+
+    dep_edges = l2.get("dependency_graph", {}).get("edges", [])
+    adjacency = {}
+    for eid in entity_ids:
+        adjacency[eid] = []
+    for edge in dep_edges:
+        src = edge.get("source", "")
+        tgt = edge.get("target", "")
+        if src in adjacency and tgt in adjacency:
+            adjacency[src].append(tgt)
+    visited = set()
+    stack = set()
+    def _has_cycle(node):
+        visited.add(node)
+        stack.add(node)
+        for neighbor in adjacency.get(node, []):
+            if neighbor not in visited:
+                if _has_cycle(neighbor):
+                    return True
+            elif neighbor in stack:
+                return True
+        stack.discard(node)
+        return False
+    for eid in entity_ids:
+        if eid not in visited:
+            if _has_cycle(eid):
+                raise ValueError(f"Dependency cycle detected starting at {eid}")
+
+    scene_set = set(l2.get("scenes", {}).keys())
+    for scene_name, scene_data in l2.get("scenes", {}).items():
+        for ent in scene_data.get("interactions", []) + scene_data.get("auto_triggers", []):
+            if ent.get("scene") not in scene_set:
+                raise ValueError(f"Entity {ent.get('id')} references unknown scene: {ent.get('scene')}")
