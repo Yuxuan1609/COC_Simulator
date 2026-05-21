@@ -119,6 +119,58 @@
       "rarity": "uncommon",
       "special_rules": "每轮一发",
       "description": "长射程高精度步枪，适合远距离射击，但射速较慢"
+    },
+    {
+      "name": "毛瑟C96手枪",
+      "skill_name": "射击(手枪)",
+      "damage": "1D10",
+      "range": "20米",
+      "attacks_per_round": 2,
+      "ammo": 10,
+      "malfunction": 99,
+      "era": "1920s",
+      "rarity": "uncommon",
+      "special_rules": "半自动，每轮可射击2次",
+      "description": "德国制造毛瑟C96半自动手枪，使用7.63mm弹药。王大柱随身携带的武器，可靠性极高但后坐力较大。"
+    },
+    {
+      "name": "玉刀",
+      "skill_name": "格斗(刀)",
+      "damage": "1D4+DB",
+      "range": "近战",
+      "attacks_per_round": 1,
+      "ammo": 0,
+      "malfunction": 100,
+      "era": "any",
+      "rarity": "unique",
+      "special_rules": "仪式武器。对深渊之口及其仆从造成伤害时可额外附加1D3点伤害。持有者可作为封印仪式的锚点，每轮损失1D3 HP维持封印结界。",
+      "description": "约七寸长的深青色玉刀，刀身刻满漩涡状古代咒文。刀柄以红布包裹，触感异常冰冷。古代用于深渊之口的封印仪式，既是法器也是武器。"
+    },
+    {
+      "name": "矿工镐",
+      "skill_name": "格斗(大型棍棒)",
+      "damage": "1D8+DB",
+      "range": "近战",
+      "attacks_per_round": 1,
+      "ammo": 0,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "common",
+      "special_rules": "双手武器，力量不足50时命中-10",
+      "description": "矿场中随处可见的采矿镐头。木质长柄配铁制镐尖，可作临时武器使用。"
+    },
+    {
+      "name": "手术刀",
+      "skill_name": "格斗(刀)",
+      "damage": "1D3",
+      "range": "近战",
+      "attacks_per_round": 1,
+      "ammo": 0,
+      "malfunction": 100,
+      "era": "1920s",
+      "rarity": "common",
+      "special_rules": "医疗技能≥50时命中+10",
+      "description": "林晓雯随身携带的医用手术器械。锋利但短小，医疗专业人员使用更为得心应手。"
     }
   ]
 }
