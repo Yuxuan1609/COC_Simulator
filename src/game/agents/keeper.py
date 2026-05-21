@@ -551,6 +551,8 @@ class Keeper:
                 search_context=False,
                 player_input=player_input,
             )
+            from prompts import log_skill_result
+            log_skill_result(f"[STANDOFF特质增强完整响应] {json.dumps(enh, ensure_ascii=False)}")
             new_tier = enh.get("tier", tier)
             if new_tier != tier:
                 skill_detail += f"\n  [特质修正] {tier} -> {new_tier}: {enh.get('reason', '')}"

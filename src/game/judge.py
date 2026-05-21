@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import re as _re
+import json
 
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld, Entity, ActionResult
@@ -156,6 +157,8 @@ class Judge:
                     graded_tiers=entity.graded_result,
                     player_input=player_input,
                 )
+                from prompts import log_skill_result
+                log_skill_result(f"[特质增强完整响应] {json.dumps(enhancement, ensure_ascii=False)}")
                 new_tier = enhancement.get("tier", skill_tier)
                 if new_tier != skill_tier:
                     reason = enhancement.get("reason", "")
