@@ -282,6 +282,12 @@ def run_turn(game: dict, user_input: str,
     try:
         narrative_brief, narrative, scene_update = narrator.narrate(
             brief, inv_info=_build_investigator_info(world), user_input=user_input)
+        # Record brief to memory after narrator generates the final brief text
+        world.memory.add_record(
+            user_input, "narrated", "",
+            narrative_brief, location=world.current_location,
+            success=True,
+        )
         if scene_update:
             world.apply_scene_update(scene_update)
     except Exception as e:

@@ -480,14 +480,7 @@ class Keeper:
         ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
         brief = self.curator.assemble(all_outcomes, ambient, emphasis)
 
-        # Step 6: Memory
-        first_entry = parse_result[0] if parse_result else {"type": "other"}
-        brief_text = "\n".join(o.message for o in all_outcomes)
-        self.world.memory.add_record(
-            raw, first_entry.get("type", "other"), first_entry.get("target", ""),
-            brief_text, location=self.world.current_location,
-            success=any(o.success for o in all_outcomes)
-        )
+        # Step 6: Memory (now handled in game_loop after narrator.narrate)
         if self.world.memory.should_compress():
             from threading import Thread
             t = Thread(target=self.world.memory.compress, args=(
