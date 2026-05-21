@@ -119,6 +119,25 @@ def _make_world():
     return world
 
 
+def _make_l1():
+    return {
+        "test_room": {
+            "description": "你站在一间空旷的测试房间中。四壁是朴素的灰色混凝土，头顶悬挂着一盏忽明忽暗的白炽灯。房间中央有一张金属桌子，上面摆放着几样物品：一本泛黄的日志、一把生锈的钥匙、以及一面布满裂痕的镜子。",
+            "atmosphere": "安静得令人不安，只有灯泡偶尔发出的滋滋声打破沉默。",
+            "perceptible": [],
+            "ambient_hints": ["灯泡的闪烁似乎并非电路问题，而是遵循着某种规律。"],
+            "npc_appearances": [],
+        },
+        "car_6": {
+            "description": "迷失而压抑。黑暗中弥漫着一种诡异的焦虑。",
+            "atmosphere": "沉重而压迫，黑暗中透出微弱的希望。",
+            "perceptible": [],
+            "ambient_hints": [],
+            "npc_appearances": [],
+        },
+    }
+
+
 def _make_author():
     l3 = {
         "module_meta": {"name": "test_module"},
@@ -135,6 +154,14 @@ def _make_author():
         },
         "characters": {"conductor": "Injured train conductor, key info provider"},
         "driving_force": "Keep moving forward in darkness, escape the devouring maw, find hope",
+        "narrative_lines": [
+            {
+                "name": "霍桑研究员的真相",
+                "outline": "从测试房间开始，通过检查桌子上的物品发现霍桑的日志，逐步揭示镜子背后隐藏的实验真相和灵魂囚笼的秘密。",
+                "key_scenes": ["test_room", "car_6"],
+                "type": "main",
+            },
+        ],
     }
     return Author(l3)
 
@@ -253,6 +280,7 @@ def _write_author_request_log(log_dir, data):
 def test_case_a_normal_entity(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
+    keeper.narrator_l1 = _make_l1()
     author = _make_author()
 
     detector_hit = [False]
@@ -297,6 +325,7 @@ def test_case_a_normal_entity(monkeypatch=None, log_dir=""):
 def test_case_b_other_flavor(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
+    keeper.narrator_l1 = _make_l1()
     author = _make_author()
 
     detector_called, author_called, stop = _setup_mocks(
@@ -336,6 +365,7 @@ def test_case_b_other_flavor(monkeypatch=None, log_dir=""):
 def test_case_c_author_patch(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
+    keeper.narrator_l1 = _make_l1()
     author = _make_author()
 
     detector_called, author_called, stop = _setup_mocks(
@@ -412,6 +442,7 @@ def test_case_d_author_reject(monkeypatch=None, log_dir=""):
     world = _make_world()
     world.wr0_enabled = False
     keeper = Keeper(world)
+    keeper.narrator_l1 = _make_l1()
     author = _make_author()
 
     detector_called, author_called, stop = _setup_mocks(
@@ -478,11 +509,13 @@ def test_case_d_author_reject(monkeypatch=None, log_dir=""):
 def test_case_e_author_structural(monkeypatch=None, log_dir=""):
     world = _make_world()
     keeper = Keeper(world)
+    keeper.narrator_l1 = _make_l1()
     author = _make_author()
 
     # Mock supplement pipeline
     def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
-                       entry_scene="", exit_scene="", output_dir="", module_name=""):
+                       entry_scene="", exit_scene="", world_snapshot=None,
+                       output_dir="", module_name=""):
         # Simulate pipeline Step 1 prompts and log them (as if real pipeline ran)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
