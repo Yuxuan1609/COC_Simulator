@@ -78,7 +78,7 @@ el = EnemyLibrary(); el.load_core()
 bl = BossLibrary(os.path.join(os.path.dirname(__file__), "..", "data", "library", "core", "bosses.json"))
 print(f"武器: {[w.name for w in wl.list_all()]}")
 print(f"敌人: {[e.name for e in el.list_all()]}")
-print(f"Boss: {[b.name for b in bl.list_all()]}")
+print(f"Boss: {bl.list_names()}")
 
 # 创建调试输出目录 (临时产物，不放在 data/modules/)
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
