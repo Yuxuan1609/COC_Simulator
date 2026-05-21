@@ -838,6 +838,12 @@ class ScenarioWorld:
         # NPC 运行时状态
         self.npc_states: Dict[str, str] = {}
 
+        # Time system — minute clock
+        self.game_time: int = 0
+        self._last_comms_time: int = 0
+        self.comms_interval: int = 15
+        self.time_context: str = ""
+
         # Weapon tracking
         self.scene_weapons: dict[str, list[SceneWeapon]] = {}
         self.weapon_library: Any = weapon_library
@@ -1075,6 +1081,37 @@ class ScenarioWorld:
     def get_npc_state(self, npc_name: str) -> str:
         """查询 NPC 运行时状态"""
         return self.npc_states.get(npc_name, "未知")
+
+    # ── 时间钟（分钟粒度）──
+
+    @property
+    def day(self) -> int:
+        return self.game_time // 1440
+
+    @property
+    def hour(self) -> int:
+        return (self.game_time % 1440) // 60
+
+    @property
+    def time_of_day(self) -> str:
+        h = self.hour
+        if h < 5:   return "夜间"
+        if h < 8:   return "早晨"
+        if h < 17:  return "白天"
+        return "黄昏"
+
+    def get_time_flags(self) -> dict:
+        return {
+            f"day:{self.day}": True,
+            f"time:{self.time_of_day}": True,
+        }
+
+    def advance_time(self, delta_minutes: int):
+        """Advance the clock by N minutes. Auto-injects time flags into runtime_state."""
+        self.game_time += delta_minutes
+        for flag, value in self.get_time_flags().items():
+            state = self.get_runtime_state(flag)
+            state.completed = value
 
     def apply_world_update(self, abstract: str):
         """应用世界更新结果"""
