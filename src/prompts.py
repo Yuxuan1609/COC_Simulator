@@ -375,7 +375,10 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
         event_parts.append("【暂不可触发 — EVENT】\n" + "\n".join(nontrig_events))
     event_text = "\n\n".join(event_parts) if event_parts else "（无）"
 
-    prompt = f"""【玩家历史行动】
+    prompt = f"""
+你的任务是为玩家的输入匹配结构化的内容
+
+【玩家历史行动】
 {context or '（游戏刚开始）'}
 
 【世界状态】
@@ -409,14 +412,14 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 
 规则：
 - 玩家输入有明确对应的entity优先返回entity结果，之后再考虑search/move/other
-- 没有明确指定对象的索、探查、感知行为属于search不触发entity
+- 对当前场景整体没有明确指定对象的搜索、探查、感知行为属于search不触发entity
 - 一般来讲玩家一个动作（注意不是一轮输入）只匹配一个结果，但也允许同时匹配多个结果的特殊情况，你可以基于具体文字发挥
 - move指移动到别的场景，other泛指所有其他行为
 - auto_trigger 必须排在列表最前面
 - id 必须从上述实体列表中精确复制
 - move：target 填可移动方向中列出的目标
 - other：text 用自然语言简述玩家意图
-- 排除已完成的交互和已触发的事件
+- 只考虑可触发的entity
 - 如有「条件=」字段，评估是否满足，不满足的排除（硬性条件系统已处理）
 - 直接输出 JSON，不要额外文字
 """
@@ -440,7 +443,9 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
             entities_text += f" skill_tier={e['skill_tier']}"
         entities_text += "\n"
 
-    prompt = f"""【世界状态】
+    prompt = f"""
+你的任务是整合不同的文本并以半结构化的json格式输出他们
+【世界状态】
 {state}
 
 【当前场景】{world.current_location}
@@ -455,12 +460,12 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 1. 将所有实体（auto_trigger / interaction / event）的结果合并润色，统一为流畅连贯的叙事
 2. 根据 success 调整叙事：
    - success=true → 结果被清晰、明确地描述并整合进叙事，玩家能确切感知到发生了什么
-   - success=false → 结果晦涩、模糊、没有实际影响，仿佛是错觉或微不足道的细节，玩家难以确定是否真的发生了什么
+   - success=false → 侦察感知类任务描述为：结果晦涩、模糊、没有实际影响，仿佛是错觉或微不足道的细节，玩家难以确定是否真的发生了什么。可以明确得到反馈的任务描述为行动失败。
 3. 提供 reasoning：简短说明本轮整合的逻辑（为什么这样合并/改写）
 
 返回 JSON：
 {{
-  "results": {{"AT1": "环境变化描述", "I3": "润色后的结果", "E22": "事件叙事"}},
+  "results": "整合后的叙事",
   "reasoning": "简短说明整合逻辑",
   "emphasis_hint": "叙事强调方向"
 }}
@@ -482,9 +487,9 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
     entity_outcomes = ""
     flavor_outcomes = ""
     for o in brief.action_outcomes:
-        if o.intent.action == "other":
+        if o.intent.action == "other" and o.entity_type != "auto_trigger":
             flavor_outcomes += f"  · {o.message}\n"
-        else:
+        elif o.entity_type != "auto_trigger":
             entity_outcomes += f"  {'✓' if o.success else '✗'} {o.message}\n"
 
     ambient_text = "\n".join(f"  · {a}" for a in brief.ambient_changes) or "（无）"
@@ -504,8 +509,7 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
 
 【实体行动结果】
 {entity_outcomes or '（无）'}
-
-【即兴行为】{f'{chr(10)}{flavor_outcomes}' if flavor_outcomes else '（无）'}
+{'' if not flavor_outcomes else f'【即兴行为】\n{flavor_outcomes}'}
 【环境变化】
 {ambient_text}
 
