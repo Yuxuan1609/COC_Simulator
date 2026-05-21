@@ -1,14 +1,13 @@
 # ═══════════════════════════════════════════════════════════════
-#  TRPG 调查员助手 —— 主流程 (Multi-Agent 架构)
+#  TRPG 调查员助手 —— 主流程 (Multi-Agent 架构, CLI 纯文本)
 #  ═══════════════════════════════════════════════════════════════
 #  运行: python run_game.py
-#  依赖: pip install openai ipython
+#  依赖: pip install openai
 
 import sys
 import json
 import os as _os
 from datetime import datetime
-from IPython.display import HTML, display
 
 sys.path.insert(0, "src")
 
@@ -16,10 +15,6 @@ from game_loop import init_game, run_turn
 from llm import set_llm_log_file
 from prompts import set_prompt_log_file
 from library import WeaponLibrary, EnemyLibrary, ContentInjector
-from trpg_display import (
-    display_narrative, display_scene, display_system, display_debug,
-    display_input_area, render_scene_to_html, display_split_result,
-)
 from investigator import Investigator, load_investigator
 from investigator.rules import roll_stats, calc_derived, create_skill_list
 
@@ -40,11 +35,8 @@ weapon_lib.load_core()
 enemy_lib = EnemyLibrary()
 enemy_lib.load_core()
 injector = ContentInjector(weapon_lib, enemy_lib)
-display_system(
-    f"武器库：{len(weapon_lib)} 件 | 敌人库：{len(enemy_lib)} 个 | "
-    f"注入器：{'就绪' if injector else '未初始化'}",
-    "info"
-)
+print(f"[info] 武器库：{len(weapon_lib)} 件 | 敌人库：{len(enemy_lib)} 个 | "
+      f"注入器：{'就绪' if injector else '未初始化'}")
 
 # ═══════════════════════════════════════════════════════════════
 #  游戏主循环
@@ -69,69 +61,61 @@ def run_game(character_path: str = None):
 
     if _os.path.exists(character_path):
         investigator = load_investigator(character_path)
-        display_system(
-            f"已加载调查员：{investigator.name} | "
-            f"职业：{investigator.occupation.name if investigator.occupation else '无'} | "
-            f"HP={investigator.derived.HP} SAN={investigator.derived.SAN}",
-            "info"
-        )
+        print(f"[info] 已加载调查员：{investigator.name} | "
+              f"职业：{investigator.occupation.name if investigator.occupation else '无'} | "
+              f"HP={investigator.derived.HP} SAN={investigator.derived.SAN}")
     else:
-        display_system(f"未找到角色卡 {character_path}，掷骰生成默认调查员...", "warn")
+        print(f"[warn] 未找到角色卡 {character_path}，掷骰生成默认调查员...")
         investigator = Investigator(name="调查员A", age=25, gender="男")
         investigator.stats = roll_stats()
         investigator.skills = create_skill_list()
         investigator.derived = calc_derived(investigator.stats, investigator.age)
-        display_system(
-            f"已生成调查员：{investigator.name} | "
-            f"HP={investigator.derived.HP} SAN={investigator.derived.SAN}",
-            "info"
-        )
+        print(f"[info] 已生成调查员：{investigator.name} | "
+              f"HP={investigator.derived.HP} SAN={investigator.derived.SAN}")
 
     world.set_player(investigator)
     _os.makedirs("data/saves", exist_ok=True)
 
-    display_system("游戏开始。输入 /help 查看可用命令。", "info")
-    display(HTML(render_scene_to_html(world)))
+    print("[info] 游戏开始。输入 /help 查看可用命令。")
+    print(f"\n── 当前场景 ──")
+    print(_scene_text(world))
 
     # 开场
     initial = run_turn(game, "（游戏开始）")
     ts = initial.get("timestamp", "")
     if ts:
-        display_system(f"[{ts}]", "info")
-    display_split_result(initial["brief"], initial["narrative"])
+        print(f"[{ts}]")
+    _print_split(initial["brief"], initial["narrative"])
     if initial.get("skill_results"):
         for sr in initial["skill_results"]:
-            tier_label = {"extreme": "大成功", "hard": "困难成功", "regular": "成功",
-                          "failure": "失败", "fumble": "大失败"}.get(sr["tier"], sr["tier"])
-            detail = sr.get("detail", "")
-            if detail:
-                dice_line = detail.split("\n")[1] if "\n" in detail else detail
-                display_system(f"[{sr['entity_id']}] {tier_label} | {dice_line.strip()}", "debug")
-            else:
-                display_system(f"[{sr['entity_id']}] 技能检定：{tier_label}", "debug")
+            _print_skill_result(sr)
 
     # 主循环
     while True:
-        cmd = input("\n> ").strip()
+        try:
+            cmd = input("\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n[info] 游戏结束。")
+            break
         if not cmd:
             continue
 
         if cmd in ("exit", "quit"):
-            display_system("游戏结束。", "info")
+            print("[info] 游戏结束。")
             break
         elif cmd.startswith("/scene"):
-            display(HTML(render_scene_to_html(world)))
+            print(_scene_text(world))
             continue
         elif cmd.startswith("/info"):
-            display_system(json.dumps(world.get_scene_info(), ensure_ascii=False, indent=2), "debug")
+            print(json.dumps(world.get_scene_info(), ensure_ascii=False, indent=2))
             continue
         elif cmd.startswith("/events"):
             active = world.get_active_event_effects()
             if active:
                 for name, impact in active:
-                    display_system(f"◆ {name}\n  {impact}", "info")
+                    print(f"◆ {name}\n  {impact}")
             else:
-                display_system("（无已触发事件）", "info")
+                print("（无已触发事件）")
             continue
         elif cmd.startswith("/flags"):
             rs = world.runtime_state
@@ -140,21 +124,21 @@ def run_game(character_path: str = None):
                 for eid, s in rs.items():
                     if s.completed:
                         items.append(f"{eid}: {'✓' if s.completed else '✗'} tier={s.result_tier or '-'} retries={s.retries}")
-                display_system("已完成实体：\n" + "\n".join(items) if items else "（无）", "debug")
+                print("已完成实体：\n" + "\n".join(items) if items else "（无）")
             else:
-                display_system("（无运行时状态）", "debug")
+                print("（无运行时状态）")
             continue
         elif cmd.startswith("/char"):
             if world.player:
-                display_system(str(world.player), "debug")
+                print(str(world.player))
             else:
-                display_system("（未设置调查员）", "warn")
+                print("[warn] （未设置调查员）")
             continue
         elif cmd.startswith("/save"):
             slot = cmd.split(maxsplit=1)[1] if len(cmd.split()) > 1 else "quick"
             path = f"data/saves/{slot}.json"
             world.save_state(path)
-            display_system(f"存档已保存至 {path}", "info")
+            print(f"[info] 存档已保存至 {path}")
             continue
         elif cmd.startswith("/load"):
             slot = cmd.split(maxsplit=1)[1] if len(cmd.split()) > 1 else "quick"
@@ -164,17 +148,16 @@ def run_game(character_path: str = None):
                 new_world = ScenarioWorld.load_state(path)
                 keeper.world = new_world
                 world = new_world
-                display_system(f"已从 {path} 读档", "info")
-                display(HTML(render_scene_to_html(world)))
+                print(f"[info] 已从 {path} 读档")
+                print(_scene_text(world))
             else:
-                display_system(f"存档 {path} 不存在", "warn")
+                print(f"[warn] 存档 {path} 不存在")
             continue
         elif cmd.startswith("/help"):
-            display_system(
+            print(
                 "/scene 场景 | /info 状态 | /events 事件 | /flags 运行时状态\n"
                 "/char 角色 | /trigger <E1> | /spawn enemy/weapon <名称>\n"
-                "/save <槽位> | /load <槽位> | exit",
-                "info"
+                "/save <槽位> | /load <槽位> | exit"
             )
             continue
 
@@ -183,29 +166,56 @@ def run_game(character_path: str = None):
 
         ending = result.get("ending")
         if ending:
-            display_system(f"【结局触发】{ending['name']}：{ending['narrative']}", "warn")
+            print(f"【结局触发】{ending['name']}：{ending['narrative']}")
 
         ts = result.get("timestamp", "")
         if ts:
-            display_system(f"[{ts}]", "info")
+            print(f"[{ts}]")
 
         if result.get("skill_results"):
             for sr in result["skill_results"]:
-                tier_label = {"extreme": "大成功", "hard": "困难成功", "regular": "成功",
-                              "failure": "失败", "fumble": "大失败"}.get(sr["tier"], sr["tier"])
-                emoji = "✓" if sr["success"] else "✗"
-                detail = sr.get("detail", "")
-                if detail:
-                    dice_line = detail.split("\n")[1] if "\n" in detail else detail
-                    display_system(f"{emoji} [{sr['entity_id']}] {tier_label} | {dice_line.strip()}", "debug")
-                else:
-                    display_system(f"{emoji} [{sr['entity_id']}] 技能检定：{tier_label}", "debug")
+                _print_skill_result(sr)
 
-        display_split_result(result["brief"], result["narrative"])
+        _print_split(result["brief"], result["narrative"])
 
         if ending:
-            display_system("游戏结束。", "info")
+            print("[info] 游戏结束。")
             break
+
+
+def _scene_text(world):
+    """构建纯文本场景描述。"""
+    node = world.graph.nodes.get(world.current_location)
+    if not node:
+        return "（未知场景）"
+    lines = [f"Location: {node.node_id}"]
+    if node.description:
+        lines.append(node.description)
+    if node.edges:
+        edges_str = ", ".join(f"{e.target} ({e.method})" for e in node.edges)
+        lines.append(f"出口：{edges_str}")
+    return "\n".join(lines)
+
+
+def _print_split(brief, narrative):
+    """打印叙事输出。"""
+    if brief:
+        print(f"\n【KP 叙述】{brief}")
+    if narrative:
+        print(f"\n{narrative}")
+
+
+def _print_skill_result(sr):
+    """打印技能检定结果。"""
+    tier_label = {"extreme": "大成功", "hard": "困难成功", "regular": "成功",
+                  "failure": "失败", "fumble": "大失败"}.get(sr["tier"], sr["tier"])
+    emoji = "✓" if sr["success"] else "✗"
+    detail = sr.get("detail", "")
+    if detail:
+        dice_line = detail.split("\n")[1] if "\n" in detail else detail
+        print(f"{emoji} [{sr['entity_id']}] {tier_label} | {dice_line.strip()}")
+    else:
+        print(f"{emoji} [{sr['entity_id']}] 技能检定：{tier_label}")
 
 
 if __name__ == "__main__":
