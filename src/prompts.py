@@ -559,6 +559,7 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
 }}
 
 规则：
+- **你的任务是讲述，唯一的讲述根据是结合【实体行动结果】和【场景感知信息】回复用户的输入，严禁出现任何其他实质性内容**
 - brief 与 narrative 必须严格呼应，brief "简洁、清晰、客观的概述事实，narrative 基于结果进行文学性展开
 - scene_update：判断本轮行动是否导致场景可见变化（物品移动、门打开、血迹、光源、NPC出现/消失等）。有变化则输出更新后的完整场景描述；无变化则为空字符串 ""
 - 仅当本轮行动确实改变了场景时才填写 scene_update
