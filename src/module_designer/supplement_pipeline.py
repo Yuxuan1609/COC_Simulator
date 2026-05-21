@@ -60,6 +60,8 @@ def run_supplement_pipeline(
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(_step_2a_entities, shared, base_l3): "2a_entities",
+            executor.submit(_step_2b_l1, shared, base_l3): "2b_l1",
+            executor.submit(_step_2c_l3, shared, base_l3): "2c_l3",
         }
         results = {}
         for future in as_completed(futures):
@@ -67,11 +69,11 @@ def run_supplement_pipeline(
             results[name] = future.result()
 
     entities_data = results.get("2a_entities", {})
+    l1_data = results.get("2b_l1", {})
+    l3_data = results.get("2c_l3", {})
 
     # Post: assemble L2 + validate (TBD in Task 4)
     l2_data = {}
-    l1_data = {}
-    l3_data = {}
 
     # Save
     for name, data in [("l1_supp.json", l1_data), ("l2_supp.json", l2_data),
@@ -262,4 +264,82 @@ Entity 字段规则:
                              reasoning_effort="max",
                              system="你是TRPG模组标准化助手。同时完成entity生成、@标记标准化和依赖图构建。",
                              fallback_schema={"scenes": {}, "events": [], "dependency_graph": {"nodes": {}, "edges": []}})
+    return json.loads(response) if isinstance(response, str) else response
+
+
+def _step_2b_l1(shared: dict, base_l3: dict) -> dict:
+    """Step 2b: generate L1 player-facing layer for new scenes."""
+    scene_list = "\n".join(f"- {s}" for s in shared["scene_names"])
+    prompt = f"""你是TRPG模组创作者。生成新场景的玩家可见层（L1）。
+
+【叙事】
+{shared['story']}
+
+【新场景】
+{scene_list}
+
+每个场景包含: description（场景描述）、atmosphere（氛围）、mood（情绪基调）、
+perceptible（可无条件感知的元素列表，含 name/brief/linked_interaction）、
+ambient_hints（环境暗示）、npc_appearances（NPC出场，含 name/brief/demeanor）
+
+所有描述性内容使用中文。JSON字段名保持英文。
+
+返回 JSON:
+{{
+  "场景中文名": {{
+    "description": "场景描述",
+    "atmosphere": "氛围",
+    "mood": "情绪基调",
+    "perceptible": [
+      {{"name": "物品名", "brief": "简短描述", "linked_interaction": "关联entity ID或空"}}
+    ],
+    "ambient_hints": ["环境暗示"],
+    "npc_appearances": []
+  }}
+}}
+
+直接输出 JSON。"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组创作者。生成玩家可见的场景描述层。所有描述必须用中文。",
+                             fallback_schema={})
+    return json.loads(response) if isinstance(response, str) else response
+
+
+def _step_2c_l3(shared: dict, base_l3: dict) -> dict:
+    """Step 2c: generate L3 designer layer for new scenes — scene_intents + optional adjustments."""
+    scene_list = "\n".join(f"- {s}" for s in shared["scene_names"])
+    prompt = f"""你是TRPG模组设计者。为新场景生成L3设计层。
+
+【叙事】
+{shared['story']}
+
+【新场景】
+{scene_list}
+
+【出入口】
+入口: {shared['entry_scene']}
+出口: {shared['exit_scene']}
+
+为每个新场景生成 scene_intents 条目（purpose=场景目的, key_threat=关键威胁, notes=设计备注）。
+如果新场景引入新的世界规则或需要调整基调约束，在 new_rules 和 tone_adjustments 中说明。
+
+返回 JSON:
+{{
+  "scene_intents": {{
+    "SS1_场景中文名": {{
+      "purpose": "场景目的",
+      "key_threat": "关键威胁",
+      "notes": "设计备注"
+    }}
+  }},
+  "new_rules": [],
+  "tone_adjustments": {{}}
+}}
+
+直接输出 JSON。"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组设计者。生成新场景的L3设计意图。",
+                             fallback_schema={"scene_intents": {}, "new_rules": [], "tone_adjustments": {}})
     return json.loads(response) if isinstance(response, str) else response
