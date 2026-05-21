@@ -21,7 +21,11 @@ class Author:
 
     def __init__(self, l3_data: Any):
         self.l3_data = l3_data
-        self.time_pressure = self.l3_data.get("time_pressure") if self.l3_data else None
+        if self.l3_data:
+            tp = self.l3_data.get("time_pressure") if isinstance(self.l3_data, dict) else getattr(self.l3_data, "time_pressure", None)
+            self.time_pressure = tp
+        else:
+            self.time_pressure = None
         self.history: list[dict] = []  # {intent, level, justification, turn}
 
     def handle_request(self, request: AuthorRequest, turn_number: int = 0) -> ModulePatch | StructuralEdit:
