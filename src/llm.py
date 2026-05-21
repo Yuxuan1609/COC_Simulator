@@ -235,8 +235,8 @@ def evaluate_trait_enhancement(
     prompt = f"""你是 TRPG 规则辅助裁判。根据调查员的特质和本轮行动描述，判断是否应修正技能检定结果。
 
 【调查员】
-  描述：{inv_desc or '（无）'}
-  本轮输入：{player_input or '（无）'}
+描述：{inv_desc or '（无）'}
+本轮输入：{player_input or '（无）'}
 
 【当前检定】
   实体：{entity_name}
@@ -283,6 +283,7 @@ COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技�
 - detail_override 仅在确实需要新的结果描述时填写
 - 直接输出 JSON
 """
+    _log_response(f"=== 特质增强 Prompt ===\n{prompt}")
     response = client.chat.completions.create(
         model="deepseek-v4-flash",
         messages=[
@@ -294,6 +295,7 @@ COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技�
         extra_body={"thinking": {"type": "disabled"}},
     )
     raw = response.choices[0].message.content.strip()
+    _log_response(f"=== 特质增强 Response ===\n{raw}")
     if raw.startswith("```json"):
         raw = raw[7:-3].strip()
     elif raw.startswith("```"):
