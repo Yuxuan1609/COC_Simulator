@@ -467,6 +467,10 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 
 直接输出 JSON。
 """
+    time_block = ""
+    if world and hasattr(world, 'time_context') and world.time_context:
+        time_block = f"\n【时间感知】当前时间：第{world.day}天 {world.time_of_day}（累计{world.game_time}分钟）\n{world.time_context}\n"
+    prompt += time_block
     _show_prompt("Keeper Enrich", prompt)
     return prompt
 

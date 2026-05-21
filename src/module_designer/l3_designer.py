@@ -115,6 +115,35 @@ class ToneConstraints:
 
 
 @dataclass
+class TimePressureConfig:
+    """L3 时间压力配置 — 半结构化 KP 执行指南"""
+    name: str = ""
+    guide: str = ""
+    urgency: int = 0
+    urgency_max: int = 10
+    key_signals: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "guide": self.guide,
+            "urgency": self.urgency,
+            "urgency_max": self.urgency_max,
+            "key_signals": self.key_signals,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TimePressureConfig":
+        return cls(
+            name=data.get("name", ""),
+            guide=data.get("guide", ""),
+            urgency=data.get("urgency", 0),
+            urgency_max=data.get("urgency_max", 10),
+            key_signals=data.get("key_signals", []),
+        )
+
+
+@dataclass
 class CharacterDesign:
     """NPC 设计意图（L3 设计者层）."""
     id: str
@@ -143,6 +172,7 @@ class L3Designer:
     tone_constraints: ToneConstraints = field(default_factory=ToneConstraints)
     characters: List[CharacterDesign] = field(default_factory=list)
     driving_force: str = ""
+    time_pressure: TimePressureConfig | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -153,6 +183,7 @@ class L3Designer:
             "tone_constraints": self.tone_constraints.to_dict(),
             "characters": [c.to_dict() for c in self.characters],
             "driving_force": self.driving_force,
+            "time_pressure": self.time_pressure.to_dict() if self.time_pressure else None,
         }
 
     @classmethod
@@ -165,6 +196,7 @@ class L3Designer:
             tone_constraints=ToneConstraints.from_dict(data.get("tone_constraints", {})),
             characters=[CharacterDesign.from_dict(c) for c in data.get("characters", [])],
             driving_force=data.get("driving_force", ""),
+            time_pressure=TimePressureConfig.from_dict(data["time_pressure"]) if data.get("time_pressure") else None,
         )
 
 

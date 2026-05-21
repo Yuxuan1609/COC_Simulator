@@ -181,6 +181,20 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     dep_graph = l2.get("dependency_graph", {})
     world.load_dependency_graph(dep_graph)
 
+    # Load time costs reference
+    try:
+        import json as _json, os as _os
+        tc_path = _os.path.join("data", "library", "core", "time_costs.json")
+        if _os.path.exists(tc_path):
+            with open(tc_path, "r", encoding="utf-8") as f:
+                world.time_costs = _json.load(f)
+    except Exception:
+        world.time_costs = {}
+
+    module_meta = l2.get("module_meta", {})
+    if module_meta.get("comms_interval"):
+        world.comms_interval = module_meta["comms_interval"]
+
     # Init agents
     narrator = Narrator(l1)
     keeper = Keeper(
