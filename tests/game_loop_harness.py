@@ -247,12 +247,14 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
     with open(os.path.join(turn_dir, "04_narrator_prompt.txt"), "w", encoding="utf-8") as f:
         f.write(narrator_prompt)
 
-    narrative_response = call_deepseek(narrator_prompt, json_mode=False, model="deepseek-v4-flash")
-    narrative_brief, narrative = parse_narrative_output(narrative_response)
-    with open(os.path.join(turn_dir, "04_narrative.txt"), "w", encoding="utf-8") as f:
-        f.write(f"=== PLAYER INPUT ===\n{raw}\n\n"
-                f"=== BRIEF ===\n{narrative_brief}\n\n"
-                f"=== NARRATIVE ===\n{narrative}\n")
+    narrative_response = call_deepseek(narrator_prompt, json_mode=True, model="deepseek-v4-flash",
+                                        fallback_schema={"brief": "", "narrative": "", "scene_update": ""})
+    narrative_brief, narrative, scene_update = parse_narrative_output(narrative_response)
+    if scene_update:
+        world.apply_scene_update(scene_update)
+    with open(os.path.join(turn_dir, "04_narrative.json"), "w", encoding="utf-8") as f:
+        json.dump({"brief": narrative_brief, "narrative": narrative,
+                   "scene_update": scene_update or "(无)"}, f, ensure_ascii=False, indent=2)
 
     # Memory
     first_entry = parse_actions[0] if parse_actions else {"type": "other"}

@@ -28,7 +28,7 @@
 │   └── output/
 │       └── archive/                         # 旧 pipeline 输出存档
 ├── src/
-│   ├── scenario_core.py                     # 数据类、有向图、世界状态、记忆管理、Entity/@markup（6 种）
+│   ├── scenario_core.py                     # 数据类、有向图、世界状态、记忆管理、Entity/@markup（7 种）
 │   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
 │   ├── trpg_display.py                      # Notebook UI 显示组件
 │   ├── utils.py                             # 文件解析、Token 估算、掷骰、技能定义加载
@@ -58,7 +58,7 @@
 │   │   ├── l2_keeper.py                     #   L2 KP 守秘人层数据模型 (含 AutoTrigger)
 │   │   ├── l3_designer.py                   #   L3 设计者层数据模型
 │   │   ├── layered_schema.py                #   JSON Schema 定义 + 三层验证
-│   │   ├── layered_parser.py                #   渐进式解析 (prompt builders + system prompts，含 Phase 2 6 种 @markup)
+│   │   ├── layered_parser.py                #   渐进式解析 (prompt builders + system prompts，含 Phase 2 7 种 @markup)
 │   │   ├── layered_pipeline.py              #   管线编排 (并行 + retry/fallback + 最终验证)
 │   │   ├── supplement_pipeline.py           #   补充管线（Author StructuralEdit 触发）
 │   │   └── dependency_graph.py              #   依赖有向图 (构建 + 循环检测)
@@ -91,7 +91,7 @@
 纯 Python 数据模块，不依赖 LLM 或 UI。
 
 - **数据类**：`Node`（场景节点）、`Edge`（连接边）、`Entity`（统一 entity）、`Requirement`（前置条件）、`ActionResult`（统一返回类型）
-- **Side Effects (6 种)**：`ItemGain`（获得物品，含 quantity）、`ConsumeItem`（消耗物品，LLM 模糊匹配保底）、`StatChange`（属性变化，含 narrative LLM 描述更新）、`SpawnEnemy`（生成敌人）、`GrantWeapon`（授予武器）、`NPCStateChange`（NPC 状态变化）、`SceneWeapon`（场景武器放置）
+- **Side Effects (8 种)**：`ItemGain`（获得物品）、`ConsumeItem`（消耗物品）、`StatChange`（属性变化）、`SpawnEnemy`（生成敌人）、`GrantWeapon`（授予武器）、`NPCStateChange`（NPC 状态）、`NPCFollow`（NPC 跟随）、`SceneWeapon`（场景武器）
 - **DirectedGraph**：管理所有场景节点、连接关系和全局事件
 - **ScenarioWorld**：运行时状态管理器 —— 当前位置、已触发事件、已完成交互、runtime_state/dependency_graph、NPC 运行时状态、记忆管理、EnemyManager、scene_weapons、weapon_library
 - **MemoryManager**：分层记忆 —— 近期原始记录 + 远期压缩摘要 + 关键发现追踪
@@ -165,7 +165,7 @@
 4. Step 3a — 去重 + 冲突 + 结局验证
 5. 组装 L2 → Step 3b: L1↔L2↔L3 交叉核对
 6. Step 3.5 ∥ Phase 1 — 依赖图 + 风格预判 (2 并行)
-7. Phase 2 — type 标准化 + side_effects → `@函数(参数)` (6 种：spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change)
+7. Phase 2 — type 标准化 + side_effects → `@函数(参数)` (7 种：spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow)
 
 每步含 `_with_fallback` 保底策略。详细过程见 `docs/superpowers/specs/NEXT-SESSION.md`。
 
@@ -250,7 +250,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 - 测试数据：`data/modules/常暗之厢/l*_test.json`（测试房间 + 原模组内容），`start_node` 已切到「测试房间」。正式需切回正式 JSON。
 - Game Loop Harness：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
 
-## @markup 副效果系统（6 种）
+## @markup 副效果系统（7 种）
 
 | 标记 | 效果 | 应用路径 |
 |------|------|----------|

@@ -223,22 +223,17 @@ def evaluate_combat_round_narrative(
 
 ## 与 game_loop 集成
 
+战斗进入判定由 parse→enrich 主循环完成（见 `2026-05-19-combat-entry-detection-design`）。判定产出的 `CombatInit` 由主循环传至 CombatSystem。战斗系统只负责收到 `CombatInit` 后的回合执行。
+
 ```python
-def run_turn(game, user_input, ...):
-    # ... 正常 Keeper 流程 ...
-    result = keeper.process_turn(turn_input, author=author)
-    
-    if result.get("combat_pending"):
-        combat_system = CombatSystem(world, weapon_lib)
-        combat_result = combat_system.run_combat(
-            combat_pending, narrator, user_input_stream
-        )
-        # 调用 EnemyManager.exit_combat(combat_result)
-        # 如果 loss → 检查结局
-        return format_combat_result(combat_result)
-    
-    # ... 正常叙事 ...
+# 主循环调用方（战斗进入判定产出 CombatInit 后）:
+cs = CombatSystem(world, weapon_lib)
+combat_result = cs.run_combat(combat_init)
+# 战斗结束 → world.enemy_manager.exit_combat(combat_result)
+# loss → 主循环检查结局
 ```
+
+CombatSystem 不关心 `CombatInit` 从哪来（parse→enrich 判定的 combat_pending，或对峙阶段，或 debug 命令手动触发）。
 
 ## 待融合
 

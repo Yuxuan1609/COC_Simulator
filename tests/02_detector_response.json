@@ -1,0 +1,5 @@
+{
+  "has_intent": true,
+  "intent": "destroy",
+  "reasoning": "test"
+}

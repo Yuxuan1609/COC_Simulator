@@ -1169,6 +1169,7 @@ def build_step4_prompt(
    @item_gain(item_name="物品名", quantity=1)
    @consume_item(item_name="物品名", quantity=1, narrative="消耗原因（可选）")
    @npc_state_change(npc_name="NPC名", new_state="新状态")
+   @npc_follow(npc_name="NPC名", follow=true)
 
    无法归入以上类型的保留原自然语言。
 

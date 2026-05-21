@@ -1,13 +1,13 @@
 {
-  "case": "D: other + Author reject",
-  "input": "punch through the train wall",
+  "case": "D — other → Author 打回 (违反世界规则)",
+  "input": "拿出手机打开闪光灯照向黑暗",
   "parse_result": "type=other",
   "detector_called": true,
-  "detector_result": "needs_author=True",
+  "detector_result": "needs_author=True — 用手机当光源探索",
   "author_called": false,
   "author_level": "patch (reject)",
   "author_entities": [],
-  "author_justification": "REJECTED: wall is solid",
-  "integration": "rejection msg injected into outcomes",
+  "author_justification": "REJECTED: 现代通讯设备发挥作用 违反 L3 forbidden 约束",
+  "integration": "rejection 消息注入 outcomes，无 entity 增删",
   "verdict": "PASS"
 }

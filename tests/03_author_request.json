@@ -1,0 +1,11 @@
+{
+  "other_texts": [
+    "拿出手机打开闪光灯，照向铁门观察窗外的黑暗"
+  ],
+  "intent": "玩家想用手机闪光灯照射铁门外的黑暗区域，试图看清外面有什么",
+  "reasoning": "使用现代设备探索未知区域是一种主动的调查行为，但手机作为光源可能违反模组的克苏鲁恐怖基调。",
+  "scene_context": {
+    "wr0_enabled": false,
+    "note": "WR0 关闭，Author 必须遵守 L3 tone_constraints.forbidden"
+  }
+}

@@ -109,7 +109,8 @@ def _step_1a(context: dict) -> dict:
 
 请生成1-3个新场景，每个场景含interactions和auto_triggers。
 Entity ID使用S_前缀：SS1=场景1, SI1=interaction1, SAT1=AT1。
-requirement字段使用entity ID字符串（如"SI1 AND SI2"）。
+requirement字段使用entity ID字符串（如"SI1 AND SI2"），可描述是否需要消耗常见物品及数量。
+result可描述结果是否会失去常见消耗品（具体数值由后续标准化处理）。
 所有描述性内容（description、trigger、result、name等）必须使用中文。
 JSON字段名和ID保持英文。
 
@@ -134,7 +135,7 @@ JSON字段名和ID保持英文。
 直接输出 JSON。"""
     response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                              reasoning_effort="max",
-                             system="你是TRPG模组创作者。生成结构化的新场景内容。所有描述必须用中文。",
+                             system="你是TRPG模组创作者。生成结构化的新场景内容。requirement可描述常见物品消耗及数量，result可描述常见物品失去。所有描述必须用中文。",
                              fallback_schema={"scenes": {}})
     return json.loads(response) if isinstance(response, str) else response
 
@@ -155,7 +156,7 @@ def _step_1b(context: dict) -> dict:
 出口：{context.get('exit_scene') or '由你决定'}
 
 生成全局事件（可选）和新场景之间的通行连接。
-Event ID使用SE_前缀。
+Event ID使用SE_前缀。requirement可描述是否需要消耗常见物品及数量；result可描述结果是否会失去常见消耗品。
 所有描述性内容（name、trigger、result等）必须使用中文。
 JSON字段名和ID保持英文。
 
@@ -171,7 +172,7 @@ JSON字段名和ID保持英文。
 直接输出 JSON。"""
     response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                              reasoning_effort="max",
-                             system="你是TRPG模组创作者。生成事件和场景通行结构。所有描述必须用中文。",
+                             system="你是TRPG模组创作者。生成事件和场景通行结构。requirement可描述常见物品消耗，result可描述物品失去。所有描述必须用中文。",
                              fallback_schema={"events": []})
     return json.loads(response) if isinstance(response, str) else response
 
@@ -271,6 +272,7 @@ def _build_l3_supp(base_l3: dict, context: dict) -> dict:
         "tone_constraints": base_l3.get("tone_constraints", {}),
         "characters": base_l3.get("characters", {}),
         "driving_force": base_l3.get("driving_force", ""),
+        "time_pressure": base_l3.get("time_pressure", {}),
     }
 
 
