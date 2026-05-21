@@ -243,7 +243,7 @@ def evaluate_trait_enhancement(
 
     prompt = f"""你是 TRPG 规则辅助裁判。根据调查员的特质和本轮行动描述，判断是否应修正技能检定结果。
 """
-    set_log_label("trait_enhancement")
+    set_log_label("skill_checks")
     _log_response(f"=== 特质增强 Prompt ===\n{prompt}")
     response = client.chat.completions.create(
         model="deepseek-v4-flash",
