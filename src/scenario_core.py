@@ -1038,6 +1038,12 @@ class ScenarioWorld:
         if target not in possible:
             available = ', '.join(e.target for e in self.get_possible_exits())
             return ActionResult(False, f"无法从{self.current_location}前往{target}。可前往：{available or '无'}")
+        # Check edge requirement (O3 — move restriction enforcement)
+        edge = possible[target]
+        if edge.requirement and edge.requirement.strip():
+            met = parse_hard_requirement(edge.requirement, self.runtime_state)
+            if not met:
+                return ActionResult(False, f"前往{target}的条件未满足：{edge.requirement}")
         self.current_location = target
         return ActionResult(True, f"你来到了{target}。{self.get_current_description()}")
 

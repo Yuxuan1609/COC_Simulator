@@ -111,14 +111,8 @@ class Keeper:
                         "skill_tier": outcome.skill_tier,
                     })
             elif entry_type == "move":
-                # TODO: Move restriction check — from_here edges may carry requirement
-                # conditions (e.g. "6号车厢未被完全吞噬"). Currently only checks if
-                # target is in possible_exits. Future: evaluate edge.requirement via
-                # the same parse_hard_requirement + edge gating pipeline.
                 target = entry.get("target", "")
-                # --- future restriction check point ---
                 result = self.world.move(target)
-                # --- future restriction check point ---
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="move", target=target),
                     success=result.success, message=result.message,

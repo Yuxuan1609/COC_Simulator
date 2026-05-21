@@ -213,7 +213,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 |---|------|------|
 | O1 | Escalation 每回合 LLM 调用 | ✅ 已解决 — 改为 Parse other → IntentDetect 按需触发 |
 | O2 | Memory 压缩阻塞 LLM 调用 | ✅ FIXED — 改为 daemon Thread 后台执行，不阻塞 turn 返回 |
-| O3 | Move 限制条件未强制执行 | 见 `keeper.py` TODO |
+| O3 | Move 限制条件未强制执行 | ✅ FIXED — `ScenarioWorld.move()` 检查 edge.requirement → `parse_hard_requirement(runtime_state)`，不满足返回阻塞消息 |
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
 | O5 | 时间系统 | 设计完成，待实现。两层架构：确定性世界时间 + TimeAgent (LLM sub-agent)。见 `docs/superpowers/specs/2026-05-19-time-system-design.md` |
 | O6 | Harness 整合 | `game_loop_harness` / `escalation_harness` / `combat_harness` 三个集成测试文件合并为统一的 mock-LLM 端到端测试 |
