@@ -276,13 +276,10 @@ class Keeper:
             enrichment = self._enrich(judged_entities, raw)
             emphasis = enrichment.get("emphasis_hint", "")
             reasoning = enrichment.get("reasoning", "")
-            # Apply enriched results to outcomes (if dict per entity)
-            results = enrichment.get("results", {})
-            if isinstance(results, dict):
-                for o in all_outcomes:
-                    eid = o.entity_id
-                    if eid in results:
-                        o.message = results[eid]
+            # Apply enriched results: string = merged narrative for first outcome
+            results = enrichment.get("results", "")
+            if isinstance(results, str) and results and all_outcomes:
+                all_outcomes[0].message = results
 
         # Step 3.5: Collect combat entry result
         combat_entry = None
