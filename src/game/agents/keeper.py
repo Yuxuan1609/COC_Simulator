@@ -9,6 +9,7 @@ from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
     CombatEntryCheck, StandoffMatch, CombatInit,
+    TimeCommsPacket,
 )
 from ..judge import Judge
 from ..curator import Curator
@@ -100,6 +101,10 @@ class Keeper:
                 )
                 outcome = self.judge._execute_entity(entity, intent=intent)
                 self._apply_side_effects(outcome.side_effects)
+                # Time advancement for entity execution
+                if outcome.success:
+                    time_delta = self._resolve_time_delta(entity)
+                    self.world.advance_time(time_delta)
                 all_outcomes.append(outcome)
                 if outcome.success:
                     judged_entities.append({
@@ -119,6 +124,8 @@ class Keeper:
                     side_effects=result.side_effects,
                 ))
                 self._apply_side_effects(result.side_effects)
+                if result.success:
+                    self.world.advance_time(3)  # default move: ~3 min
             elif entry_type == "search":
                 # Search always performs a 侦查 (Spot Hidden) check.
                 # No dependency check, no flag update, no enrich.
@@ -176,6 +183,8 @@ class Keeper:
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
                     skill_detail=skill_detail if self.world.player else ""))
+                # Advance time for search
+                self.world.advance_time(10 if (self.world.player and ok) else 5)
             elif entry_type == "other":
                 text = entry.get("text", "")
                 scene = self.world.current_location
@@ -325,6 +334,69 @@ class Keeper:
                     scene=self.world.current_location,
                     initiative_context=combat_entry.reasoning,
                 )
+
+        # TimeAgent trigger (after enrich, before curate)
+        if self._should_trigger_time_agent():
+            try:
+                from game.agents.time_agent import TimeAgent
+                ta = TimeAgent()
+                tc_guideline = ""
+                if hasattr(self.world, 'time_costs') and self.world.time_costs:
+                    import json as _json
+                    tc_guideline = _json.dumps(self.world.time_costs, ensure_ascii=False)
+                recent = self.world.memory.raw_history[-3:] if self.world.memory.raw_history else []
+                recent_summary = "; ".join(
+                    (r.get("user_input", "") or "")[:80] for r in recent
+                )
+                result = ta.assess(
+                    game_time=self.world.game_time,
+                    day=self.world.day,
+                    time_of_day=self.world.time_of_day,
+                    hour=self.world.hour,
+                    recent_actions=recent_summary,
+                    current_scene=self.world.current_location,
+                    scene_description=self.world.get_current_description(),
+                    time_costs_guideline=tc_guideline,
+                )
+                if result.get("time_delta", 0) > 0:
+                    self.world.advance_time(result["time_delta"])
+                narrative = (result.get("narrative_hint", "") or "")
+                signal = (result.get("signal_hint", "") or "")
+                combined = f"{narrative} {signal}".strip()
+                if combined:
+                    self.world.time_context = combined
+                self._last_ta_call = self.world.game_time
+            except Exception:
+                pass  # TimeAgent is best-effort
+
+        # TimePressure comms dispatch (at most 1 per turn)
+        tp = author.time_pressure if author else None
+        if tp and self.world.game_time - self.world._last_comms_time >= self.world.comms_interval:
+            self.world._last_comms_time = self.world.game_time
+            try:
+                recent = self.world.memory.raw_history[-5:] if self.world.memory.raw_history else []
+                packet = TimeCommsPacket(
+                    game_time=self.world.game_time,
+                    day=self.world.day,
+                    time_of_day=self.world.time_of_day,
+                    current_scene=self.world.current_location,
+                    player_actions="; ".join(
+                        (r.get("user_input", "") or "")[:60] for r in recent[-3:]
+                    ),
+                    world_state=f"场景:{self.world.current_location}, "
+                               f"NPC:{list(self.world.npc_states.keys())[:3]}",
+                )
+                tp_result = author.assess_time_pressure(packet)
+                if tp_result.get("should_press") and tp_result.get("signal"):
+                    all_outcomes.append(ActionOutcome(
+                        intent=ActionIntent(action="time_pressure"),
+                        success=True,
+                        message=f"【{tp.get('name', '时间压力')}】{tp_result.get('signal', '')}",
+                        entity_id="TIME_PRESS",
+                        entity_type="time_pressure",
+                    ))
+            except Exception:
+                pass  # Comms is best-effort
 
         # Step 4: IntentDetector decision point (was Escalation check)
         if detect_future:
@@ -596,6 +668,31 @@ class Keeper:
             "location": self.world.current_location,
             "npc_states": dict(self.world.npc_states),
         }
+
+    def _resolve_time_delta(self, entity) -> int:
+        """Resolve time delta based on entity extra.time_range or defaults."""
+        if entity.extra and entity.extra.get("time_range"):
+            tr = entity.extra["time_range"]
+            return (tr.get("min", 3) + tr.get("max", 10)) // 2  # midpoint
+        category = self._infer_time_category(entity)
+        defaults = {"search": 10, "move": 3, "dialogue": 5, "combat_round": 1, "other": 3}
+        return defaults.get(category, 5)
+
+    def _infer_time_category(self, entity) -> str:
+        if entity.entity_type in ("auto_trigger", "event"):
+            return "other"
+        if entity.type and entity.type in ("侦查", "聆听", "图书馆使用"):
+            return "search"
+        return "other"
+
+    def _should_trigger_time_agent(self) -> bool:
+        if not hasattr(self, '_last_ta_call'):
+            self._last_ta_call = -1
+        if self._last_ta_call < 0:
+            return True  # first call
+        if self.world.game_time - self._last_ta_call >= 30:
+            return True
+        return False
 
     def _build_scene_context_for_author(self) -> dict:
         """Build scene_context for AuthorRequest."""
