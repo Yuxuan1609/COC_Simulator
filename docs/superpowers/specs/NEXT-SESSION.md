@@ -1,8 +1,8 @@
 # Next Session — 当前状态 + 待办
 
-**日期**: 2026-05-19 (更新于 2026-05-20)
+**日期**: 2026-05-22
 **分支**: main
-**状态**: Escalation/Author 机制重设计完成 | O1 已解决 | 补充管线就绪 | WR0 可配置 | 战斗进入/脱出管道打通 | 武器获取系统实现 | 19+15+3 个测试覆盖全链路
+**状态**: 时间系统实现 | 战斗全链路打通 | NPC 统一管理 | O1-O3 已解决 | 7 @markup 全覆盖 | 提示词全面修正 | 149 测试 pass
 
 ---
 
@@ -39,9 +39,11 @@
 - **[flag] 标记**: enemies.json 的 combat_behavior 前缀，2 种：[adjacent_aware]（跨场景感知）、[avoidable]（可非战斗绕过）
 - **对峙阶段**: avoidable 敌人 → 语义匹配 LLM → D100 技能检定 → 特质修正 → 成功转 neutral / 失败进战斗
 - **EnemyManager 追踪层**: 纯状态管理（neutral/hostile/dead），战斗系统消费者，enter_combat/exit_combat 回调
-- **武器获取系统**: grant_weapon → scene_weapons（场景放置）→ search 成功发现 → 玩家确认拾取 → Investigator.add_weapon → 场景移除
+- **时间系统**: 分钟制时钟（game_time→day/hour/time_of_day 自动推导）→ TimeAgent (LLM 叙事引导) ∥ Author.assess_time_pressure (通信包调度) → time_context 注入 enrich/narrator prompt
+- **NPC 统一管理**: NPCManager 全量管理（对话/态度/跟随/状态），@npc_state_change & @npc_follow 均路由至 NPCManager.set_state/set_following，npc_profiles 含 initial_state/attitude/following
+- **武器获取系统**: grant_weapon → scene_weapons → search 发现 → 确认拾取 → Investigator.add_weapon → 场景移除
 - **属性变化系统**: stat_change → Investigator.modify_stat (delta/dice formula) + LLM narrative 更新描述
-- **物品管理**: ItemManager (Investigator)，item_gain(quantity) → 背包加入，consume_item → 严格匹配 → LLM 模糊匹配保底
+- **物品管理**: ItemManager，item_gain(quantity) → 背包加入，consume_item → 严格匹配 → LLM 模糊匹配保底
 
 ### 当前使用文件
 

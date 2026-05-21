@@ -659,8 +659,9 @@ def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], charact
 5. tone_constraints：全局叙事护栏，含 genre / forbidden / recommended / narrative_style
 6. characters：每个 NPC 的设计意图，含 id (使用已知角色列表中的 ID), name (使用已知角色列表中的名称), behavior (行为逻辑 + 叙事作用)
 7. driving_force：一切事件的底层驱动力
-8. time_pressure（可选）：基于模组内容判断是否存在时间压力（如倒计时、追逐、环境吞噬等）。如果有，根据模板格式填写。不要无中生有——只有模组确实有明确的时间威胁时才填写。
-9. 你是高层叙事者，你的工作应该关注于一切为什么是这样/这个场景为什么要这么写。不要过度关注具体的规则和信息。
+8. narrative_lines：故事大纲和整体叙事线（可有多条）。每条含 name（叙事线名称）、outline（大纲描述，含起承转合和关键转折点）、key_scenes（涉及的关键场景列表）、type（main=主线 / branch=支线 / optional=可选支线）。至少需要一条 main 类型的主线。
+9. time_pressure（可选）：基于模组内容判断是否存在时间压力（如倒计时、追逐、环境吞噬等）。如果有，根据模板格式填写。不要无中生有——只有模组确实有明确的时间威胁时才填写。
+10. 你是高层叙事者，你的工作应该关注于一切为什么是这样/这个场景为什么要这么写。不要过度关注具体的规则和信息。
 
 重要：
 - 仅输出 JSON，不要任何解释性文字

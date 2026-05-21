@@ -516,54 +516,33 @@ def test_case_e_author_structural(monkeypatch=None, log_dir=""):
     def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
                        entry_scene="", exit_scene="", world_snapshot=None,
                        output_dir="", module_name=""):
-        # Simulate pipeline Step 1 prompts and log them (as if real pipeline ran)
+        # Simulate pipeline Step 1 + Step 2 outputs and log them (as if real pipeline ran)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-            l3_summary = "类型：克苏鲁恐怖\n叙事风格：压抑、绝望中透出微弱希望\n禁止：超能力、热武器、现代通讯设备发挥作用\n推荐：压抑感、未知恐惧、道德抉择\n核心驱动力：在黑暗中不断向前，逃离吞噬之口"
-            base = f"""【L3约束】
-{l3_summary}
-
-【玩家意图】
-意图：玩家想通过裂痕镜子与黑暗中的存在建立沟通
-原因：沟通而非逃离是全新的核心叙事线，完全超出当前模组覆盖范围
-
-【出入口】
-入口场景：test_room
-出口场景：（由LLM决定）"""
-            p1a = f"""你是TRPG模组创作者。基于以下信息生成补充场景。
-
-{base}
-
-请生成1-3个新场景，每个场景含interactions和auto_triggers。
-Entity ID使用S_前缀：SS1=场景1, SI1=interaction1, SAT1=AT1。
-requirement字段使用entity ID字符串（如"SI1 AND SI2"）。
-所有描述性内容必须使用中文。JSON字段名和ID保持英文。
-
-返回 JSON："""
-            p1b = f"""你是TRPG模组创作者。基于以下信息生成补充事件和场景连接。
-
-{base}
-
-生成全局事件（可选）和新场景之间的通行连接。
-Event ID使用SE_前缀。
-所有描述性内容必须使用中文。JSON字段名和ID保持英文。
-
-返回 JSON："""
-            p1c = f"""你是TRPG模组创作者。生成新场景的玩家可见层（L1）。
-
-{base}
-
-生成L1格式的场景描述，键名为场景中文名。
-每个场景包含：description（场景描述）、atmosphere（氛围）、mood（情绪基调）、
-perceptible（可无条件感知的元素列表）、ambient_hints（环境暗示）。
-所有描述性内容必须使用中文。JSON字段名保持英文。
-
-Return JSON:"""
-            for fname, content in [("04_pipeline_1a_prompt.txt", p1a),
-                                    ("04_pipeline_1b_prompt.txt", p1b),
-                                    ("04_pipeline_1c_prompt.txt", p1c)]:
-                with open(os.path.join(log_dir, fname), "w", encoding="utf-8") as f:
-                    f.write(content)
+            # Step 1 narrative response (simulated)
+            step1_resp = {
+                "story": "调查员凝视着那面布满裂痕的镜子，裂纹中透出的不是反光，而是一种深邃的、有生命的黑暗。当指尖触及镜面时，表面如水面般泛起涟漪——镜中世界打开了。这是一个由镜面构成的无限回廊，每个转角都映出不同角度的自己，而远方一个人形轮廓正缓慢靠近。它不是怪物，而是霍桑——或者说，是霍桑被困在此处的灵魂。他警告说镜子是灵魂的囚笼，而唯一的出路是理解镜中世界的真相，找到那面'真实的镜子'——它映出的不是外表，而是选择。",
+                "scene_names": ["SS1_镜中世界"],
+                "exit_scene": "test_room",
+            }
+            with open(os.path.join(log_dir, "04_step1_narrative_response.json"), "w", encoding="utf-8") as f:
+                json.dump(step1_resp, f, ensure_ascii=False, indent=2)
+            # Step 2a entities response (simulated — the real pipeline would generate entities from the story)
+            with open(os.path.join(log_dir, "05_step2a_entities_response.json"), "w", encoding="utf-8") as f:
+                json.dump({"scenes": {"mirror_world": {
+                    "description": "A space built from mirrors...",
+                    "interactions": [{"id": "SI2", "entity_type": "interaction", "name": "speak with reflection", "scene": "mirror_world", "type": "Persuade", "requirement": "", "trigger": "call out", "result": "##GRADED##", "side_effects": [], "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}, "difficulty": "hard"}],
+                    "auto_triggers": [{"id": "SAT1", "entity_type": "auto_trigger", "name": "mirror entrance seals", "scene": "mirror_world", "type": "None", "requirement": "", "trigger": "step into mirror world", "result": "The mirror seals behind you.", "side_effects": [], "difficulty": "None"}],
+                    "from_here": [{"target": "mirror_abyss", "method": "follow the figure deeper", "requirement": "SI2"}],
+                    "to_here": [{"source": "test_room", "method": "step through the cracked mirror", "requirement": "IT3"}],
+                    "encounters": [], "scene_weapons": [], "extra": {},
+                }}, "events": [{"id": "SE1", "entity_type": "event", "name": "truth of the mirror world", "type": "None", "requirement": "SI2", "trigger": "learn Hawthorne's fate", "result": "The mirrors are soul cages.", "side_effects": [], "difficulty": "None"}], "dependency_graph": {"nodes": {"SI2": {"entity_id": "SI2", "entity_type": "interaction", "name": "speak with reflection"}, "SAT1": {"entity_id": "SAT1", "entity_type": "auto_trigger", "name": "mirror entrance seals"}, "SE1": {"entity_id": "SE1", "entity_type": "event", "name": "truth of the mirror world"}}, "edges": [{"source": "SE1", "target": "SI2", "dep_type": "interaction", "condition": "success"}]}}, f, ensure_ascii=False, indent=2)
+            # Step 2b L1 response (simulated)
+            with open(os.path.join(log_dir, "05_step2b_l1_response.json"), "w", encoding="utf-8") as f:
+                json.dump({"mirror_world": {"description": "The mirror surface ripples like water. You step into an inverted realm.", "atmosphere": "Surreal stillness hiding unspeakable dread", "mood": "Unease and curiosity intertwined", "perceptible": ["endless mirrored corridors", "a distorted human silhouette"], "ambient_hints": ["the reflected stars show the wrong season"], "npc_appearances": {}}}, f, ensure_ascii=False, indent=2)
+            # Step 2c L3 response (simulated)
+            with open(os.path.join(log_dir, "05_step2c_l3_response.json"), "w", encoding="utf-8") as f:
+                json.dump({"scene_intents": {"mirror_world": {"purpose": "Reveal the truth behind the mirror, offer a moral choice", "key_threat": "Soul entrapment", "notes": "Hawthorne is the key to understanding"}}, "new_rules": [], "tone_adjustments": {}}, f, ensure_ascii=False, indent=2)
 
         return {
             "l1": {
@@ -696,26 +675,6 @@ Return JSON:"""
             "reasoning": "Communication is a completely new narrative thread beyond the module's scope.",
             "scene_context_note": "location=test_room, wr0_enabled=False.",
         })
-
-        # Write pipeline Step 1 response logs (simulated — real pipeline would produce these)
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
-            # 1a response: scenes + interactions + auto_triggers
-            with open(os.path.join(log_dir, "04_pipeline_1a_response.json"), "w", encoding="utf-8") as f:
-                json.dump({"scenes": {"mirror_world": {
-                    "description": "A space built from mirrors...",
-                    "interactions": [{"id": "SI2", "entity_type": "interaction", "name": "speak with reflection", "scene": "mirror_world", "type": "Persuade", "requirement": "", "trigger": "call out", "result": "##GRADED##", "side_effects": [], "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}, "difficulty": "hard"}],
-                    "auto_triggers": [{"id": "SAT1", "entity_type": "auto_trigger", "name": "mirror entrance seals", "scene": "mirror_world", "type": "None", "requirement": "", "trigger": "step into mirror world", "result": "The mirror seals behind you.", "side_effects": [], "difficulty": "None"}],
-                    "from_here": [{"target": "mirror_abyss", "method": "follow the figure deeper", "requirement": "SI2"}],
-                    "to_here": [{"source": "test_room", "method": "step through the cracked mirror", "requirement": "IT3"}],
-                    "encounters": [], "scene_weapons": [], "extra": {},
-                }}}, f, ensure_ascii=False, indent=2)
-            # 1b response: events
-            with open(os.path.join(log_dir, "04_pipeline_1b_response.json"), "w", encoding="utf-8") as f:
-                json.dump({"events": [{"id": "SE1", "entity_type": "event", "name": "truth of the mirror world", "type": "None", "requirement": "SI2", "trigger": "learn Hawthorne's fate", "result": "The mirrors are soul cages.", "side_effects": [], "difficulty": "None"}]}, f, ensure_ascii=False, indent=2)
-            # 1c response: L1
-            with open(os.path.join(log_dir, "04_pipeline_1c_response.json"), "w", encoding="utf-8") as f:
-                json.dump({"mirror_world": {"description": "The mirror surface ripples like water. You step into an inverted realm.", "atmosphere": "Surreal stillness hiding unspeakable dread", "mood": "Unease and curiosity intertwined", "perceptible": ["endless mirrored corridors", "a distorted human silhouette"], "ambient_hints": ["the reflected stars show the wrong season"], "npc_appearances": {}}}, f, ensure_ascii=False, indent=2)
 
         # Verify new scene injected
         assert "mirror_world" in world.graph.nodes, \

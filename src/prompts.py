@@ -539,40 +539,153 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
 
 # ── Author prompt ──
 
-def build_author_prompt(request, l3_data) -> str:
-    """Author: judges patch/structural level, generates content."""
-    l3_ctx = _build_l1l3_context(
-        l3_data=l3_data,
-        scene_name=request.scene_context.get("location", ""),
-    )
+def _describe_value(obj, indent=0) -> str:
+    """Convert any JSON-compatible value to natural language lines.
+    Auto-adapts to field changes — no hardcoded keys."""
+    prefix = "  " * indent
+    if obj is None or obj == "" or obj == [] or obj == {}:
+        return ""
+    if isinstance(obj, dict):
+        lines = []
+        for k, v in obj.items():
+            desc = _describe_value(v, indent + 1)
+            if desc:
+                lines.append(f"{prefix}{k}:")
+                lines.append(desc)
+        return "\n".join(lines)
+    if isinstance(obj, list):
+        if all(isinstance(v, str) for v in obj):
+            return f"{prefix}{', '.join(obj)}"
+        lines = []
+        for i, item in enumerate(obj):
+            desc = _describe_value(item, indent + 1)
+            if desc:
+                label = _describe_label(item)
+                lines.append(f"{prefix}{label}" if label else f"{prefix}-" + desc.lstrip())
+        return "\n".join(lines)
+    return f"{prefix}{obj}"
 
-    wr0_enabled = request.scene_context.get("wr0_enabled", False)
+
+def _describe_label(item: dict) -> str:
+    """Extract a short label from a dict (id+name), for list items like world_rules."""
+    eid = item.get("id", "")
+    name = item.get("name", "")
+    if eid and name:
+        return f"[{eid}] {name}"
+    return eid or name or ""
+
+
+def build_author_prompt(request, l3_data, persona: str = "") -> str:
+    """Author: judges patch/structural level, generates content."""
+    _get = lambda obj, key, default="": obj.get(key, default) if isinstance(obj, dict) else getattr(obj, key, default)
+
+    # ── Persona ──
+    persona_ctx = f"【创作者人设】{persona}" if persona else ""
+
+    # ── L3 context (auto-adaptive via _describe_value) ──
+    l3_parts = ["【L3模组设计】"]
+    world_rules = _get(l3_data, "world_rules", [])
+    if world_rules:
+        l3_parts.append("  世界规则:")
+        for wr in world_rules:
+            l3_parts.append(f"    [{_get(wr,'id','')}] {_get(wr,'name','')}")
+            l3_parts.append(f"      规则: {_get(wr,'rule','')}")
+            l3_parts.append(f"      范围: {_get(wr,'scope','')}")
+            l3_parts.append(f"      性质: {_get(wr,'is_absolute','')}")
+
+    driving_force = _get(l3_data, "driving_force", "")
+    if driving_force:
+        l3_parts.append(f"  核心驱动力: {driving_force}")
+
+    narrative_lines = _get(l3_data, "narrative_lines", [])
+    if narrative_lines:
+        l3_parts.append("  叙事线:")
+        for nl in narrative_lines:
+            nl_type = _get(nl, "type", "main")
+            nl_name = _get(nl, "name", "")
+            nl_outline = _get(nl, "outline", "")
+            nl_scenes = _get(nl, "key_scenes", [])
+            type_label = {"main": "主线", "branch": "支线", "optional": "可选支线"}.get(nl_type, nl_type)
+            l3_parts.append(f"    [{type_label}] {nl_name}")
+            if nl_outline:
+                l3_parts.append(f"      大纲: {nl_outline}")
+            if nl_scenes:
+                l3_parts.append(f"      关键场景: {', '.join(nl_scenes)}")
+
+    tc = _get(l3_data, "tone_constraints", {})
+    if tc:
+        tc_desc = _describe_value(tc, indent=1)
+        if tc_desc:
+            l3_parts.append("  基调约束:")
+            l3_parts.append(tc_desc)
+
+    scene_intents = _get(l3_data, "scene_intents", {})
+    current_scene = request.scene_context.get("location", "")
+    current_intent = scene_intents.get(current_scene, {}) if isinstance(scene_intents, dict) else {}
+    if current_intent:
+        si_desc = _describe_value(current_intent, indent=1)
+        if si_desc:
+            l3_parts.append("  当前场景设计意图:")
+            l3_parts.append(si_desc)
+
+    l3_ctx = "\n".join(l3_parts)
+
+    # ── Scene context (natural language) ──
+    scene_parts = ["【当前场景】"]
+    sc = request.scene_context
+    location = sc.get("location", "")
+    description = sc.get("description", "")
+    available = sc.get("available_scenes", [])
+    npc_states = sc.get("npc_states", {})
+    runtime = sc.get("runtime_summary", {})
+    if location:
+        scene_parts.append(f"  位置: {location}")
+    if description:
+        scene_parts.append(f"  描述: {description}")
+    if available:
+        scene_parts.append(f"  可用场景: {', '.join(available)}")
+    if npc_states:
+        scene_parts.append(f"  NPC:")
+        scene_parts.append(_describe_value(npc_states, indent=2))
+    if runtime:
+        scene_parts.append(f"  已完成交互:")
+        scene_parts.append(_describe_value(runtime, indent=2))
+    scene_ctx = "\n".join(scene_parts)
+
+    # ── Player intent ──
+    intent_ctx = f"""【玩家意图】
+  玩家想做什么: {request.intent}
+  升级原因: {request.reasoning}
+  玩家原话: {'; '.join(request.other_texts)}"""
+
+    # ── WR0 ──
+    wr0_enabled = sc.get("wr0_enabled", False)
     wr0_line = (
-        "【WR0 创作者豁免】开启 — 你拥有完全创作自由，可突破任何世界规则。"
+        "【WR0 创作者豁免】开启 — 你可选择突破世界规则进行结构性扩展（仅限 structural 级别）。"
         if wr0_enabled else
-        "【WR0 状态】关闭 — 扩展内容必须与既有世界规则、基调、L3设计意图保持一致。"
+        "【WR0 状态】关闭 — 所有内容必须与既有世界规则、基调、L3设计意图保持一致。"
+    )
+    wr0_patch_rule = (
+        "【WR0 对于 patch 级别】patch 始终不受 WR0 影响——patch 是模组缺口填充，必须遵循现有世界规则，不得引入违背规则的内容。"
+        "若玩家意图违反世界规则且 WR0 关闭，应打回（entities=[]）；若 WR0 开启，仅 structural 级别可突破规则。"
     )
 
     prompt = f"""{l3_ctx}
 
-【当前场景】
-  位置：{request.scene_context.get('location', '')}
-  描述：{request.scene_context.get('description', '')}
-  可用场景：{', '.join(request.scene_context.get('available_scenes', []))}
-  NPC状态：{json.dumps(request.scene_context.get('npc_states', {}), ensure_ascii=False)}
+{scene_ctx}
 
-【玩家意图】
-  玩家想做什么：{request.intent}
-  升级原因：{request.reasoning}
-  玩家原话：{'; '.join(request.other_texts)}
+{intent_ctx}
+
+{persona_ctx}
 
 {wr0_line}
+{wr0_patch_rule}
 
 请评估此意图的范围并生成响应：
 
 1. 判断级别：
-   - patch：行为合理但模组未覆盖 → 在当前可用场景中添加 entity
-   - structural：行为完全超出模组范围，需要结构性扩展（新场景、新结局）
+   - patch：行为合理但模组未覆盖 → 在当前可用场景中添加 entity（patch 始终遵循世界规则，WR0 不影响 patch）
+   - structural：行为完全超出模组范围，需要结构性扩展（新场景、新结局）。若 WR0 开启则可突破世界规则；若 WR0 关闭则必须与 L3 一致
 
 2. 如果 patch：
    {{
@@ -596,7 +709,8 @@ def build_author_prompt(request, l3_data) -> str:
      "justification": "L3层面理由"
    }}
 
-3. 如果 structural（触发补充管线）：
+3. 如果 structural（触发补充管线，生成新场景）：
+   entry_scene 是玩家当前所在场景（新内容的入口），exit_scene 是希望玩家最终回流的场景（可留空由管线自行决定）。补充管线会以 entry/exit 为锚点生成新场景及通行路径。
    {{
      "level": "structural",
      "entry_scene": "玩家当前场景",
@@ -604,7 +718,7 @@ def build_author_prompt(request, l3_data) -> str:
      "justification": "为什么需要结构性扩展，引用L3设计意图"
    }}
 
-4. 如果玩家意图违反世界规则且 WR0 关闭 → 打回：
+4. 如果玩家意图违反世界规则 → 打回（patch 级别始终如此；structural 仅在 WR0 关闭时打回）：
    {{
      "level": "patch",
      "entities": [],
@@ -612,12 +726,25 @@ def build_author_prompt(request, l3_data) -> str:
      "justification": "为什么拒绝。格式: REJECTED: 具体原因"
    }}
 
-规则：
+Entity 字段规则：
+- id: 全局唯一，patch 用 SI1/SI2...，auto_trigger 用 SAT1/SAT2...，event 用 SE1/SE2...
+- entity_type: interaction / auto_trigger / event
+- scene: 所在场景名（中文）
+- name: 简短动作名
+- type: 关联技能名（如"侦查""急救"），不涉及检定填"无"
+- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 SI1 AND SI2、(SI1 OR SI2) AND SI3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述。requirement 可描述是否需要消耗常见物品及数量（如"需要消耗1个急救包"）
+- trigger: 触发场景——描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
+- result: 直接结果——互动直接产生的可感知结果。如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头。result 可描述结果是否会失去常见消耗品。涉及技能检定时 result 填 "##GRADED##"（占位标记），side_effects 留空，所有结果文字写入 graded_result
+- side_effects: 间接后果——与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
+- difficulty: None / regular / hard / extreme；不涉及检定则为 None
+- graded_result: type 不为"无"时填写。四等级：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功（≤技能值/2）、on_extreme=极难成功（≤技能值/5）。若原文未区分等级，各等级可描述相同内容
+- entities 的 result/side_effects 不涉及进入与怪物的战斗/对抗/追捕（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
+- side_effects 标准化使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true)
+
+创作规则：
 - 只添加必要的entity，不要过度扩充
 - structural 仅在玩家行为确实需要时才使用
-- side_effects 使用 @function(param=value) 语法
 - justification 必须引用L3设计意图
-- entity ID 使用 S_ 前缀（SI1, SAT1, SE1 等）
 - 直接输出 JSON
 """
     _show_prompt("Author", prompt)

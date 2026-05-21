@@ -53,7 +53,7 @@ class Judge:
 
     # ── Interactions ──
 
-    def execute_interaction(self, intent: ActionIntent) -> ActionOutcome:
+    def execute_interaction(self, intent: ActionIntent, player_input: str = "") -> ActionOutcome:
         """Execute a parsed interaction intent through the gate."""
         node = self.world._current_node()
         if not node:
@@ -66,7 +66,7 @@ class Judge:
             return ActionOutcome(intent=intent, success=False,
                                 message=f"没有动作「{intent.target}」。可用：{available or '无'}")
 
-        return self._execute_entity(entity, intent=intent)
+        return self._execute_entity(entity, intent=intent, player_input=player_input)
 
     # ── Internal ──
 
@@ -96,7 +96,7 @@ class Judge:
         done = self.world.completed_interactions.get(scene, set())
         return entity.name in done
 
-    def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None) -> ActionOutcome:
+    def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None, player_input: str = "") -> ActionOutcome:
         """Run entity through gate and execute."""
         # Check structured requirements (world flags + entity IDs) — hard part only
         if entity.requirement and entity.requirement.strip():
@@ -143,13 +143,18 @@ class Judge:
                        getattr(self.world.player, 'description', '')
             if inv_desc:
                 from llm import evaluate_trait_enhancement
+                roll_m = _re.search(r'D100=(\d+)/', skill_result)
+                dice_roll = int(roll_m.group(1)) if roll_m else 0
+                skill_val = self.world.player.get_skill_value(skill_name) if self.world.player else 0
                 enhancement = evaluate_trait_enhancement(
                     inv_desc=inv_desc,
                     skill_name=skill_name,
                     skill_detail=skill_result,
-                    current_tier=skill_tier,
+                    dice_roll=dice_roll,
+                    skill_value=skill_val,
                     entity_name=entity.name,
                     graded_tiers=entity.graded_result,
+                    player_input=player_input,
                 )
                 new_tier = enhancement.get("tier", skill_tier)
                 if new_tier != skill_tier:

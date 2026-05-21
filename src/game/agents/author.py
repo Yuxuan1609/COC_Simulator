@@ -8,6 +8,12 @@ from prompts import build_author_prompt
 from llm import call_deepseek
 
 
+DEFAULT_AUTHOR_PERSONA = (
+    "专业的COC模组和小说作者，会根据一般游戏规则合理地反馈调查员们，"
+    "对合理的探索行为以中性、正面性的回复，对不合理或者极度违背剧情线的行为予以负面回复或驳回。"
+)
+
+
 class Author:
     """Author agent. Owns L3, only faces KP.
 
@@ -19,8 +25,9 @@ class Author:
     WR0 applies independently — see build_author_prompt.
     """
 
-    def __init__(self, l3_data: Any):
+    def __init__(self, l3_data: Any, persona: str = ""):
         self.l3_data = l3_data
+        self.persona = persona or DEFAULT_AUTHOR_PERSONA
         if self.l3_data:
             tp = self.l3_data.get("time_pressure") if isinstance(self.l3_data, dict) else getattr(self.l3_data, "time_pressure", None)
             self.time_pressure = tp
@@ -115,4 +122,4 @@ class Author:
             return {"should_press": False, "urgency_update": None, "reason": "", "signal": ""}
 
     def _build_prompt(self, request: AuthorRequest) -> str:
-        return build_author_prompt(request, self.l3_data)
+        return build_author_prompt(request, self.l3_data, persona=self.persona)

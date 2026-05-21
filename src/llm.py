@@ -179,59 +179,100 @@ def evaluate_trait_enhancement(
     inv_desc: str,
     skill_name: str,
     skill_detail: str,
-    current_tier: str,
+    dice_roll: int,
+    skill_value: int,
     entity_name: str,
     graded_tiers: dict | None = None,
     search_context: bool = False,
+    player_input: str | None = None,
 ) -> dict:
-    """规则增强 sub-agent：基于调查员特质修正技能检定结果。
+    """规则增强 sub-agent：基于调查员特质和行动描述修正技能检定结果。
 
     返回 {"tier": str, "detail_override": str | None, "reason": str}
-    - tier: 修正后的等级(failure/regular/hard/extreme)，可能不变
+    - tier: 修正后的等级(failure/regular/hard/extreme)
     - detail_override: 若 LLM 给出新的结果描述则使用，否则 None
     - reason: 修正理由简述
+
+    LLM 内部以骰子修正（最多±20）的思维判断最终等级。
+    大失败(≥96)和大成功(1)保护，不参与修正。
     """
     tier_order = ["failure", "regular", "hard", "extreme"]
-    current_idx = tier_order.index(current_tier) if current_tier in tier_order else 1
+
+    # Compute base tier deterministically
+    if dice_roll == 1:
+        base_tier = "extreme"
+    elif dice_roll >= 96:
+        base_tier = "failure"
+    elif dice_roll <= max(1, skill_value // 5):
+        base_tier = "extreme"
+    elif dice_roll <= max(1, skill_value // 2):
+        base_tier = "hard"
+    elif dice_roll <= skill_value:
+        base_tier = "regular"
+    else:
+        base_tier = "failure"
+
+    base_idx = tier_order.index(base_tier)
+
+    # Protected: never modify 大成功 or 大失败
+    if dice_roll == 1 or dice_roll >= 96:
+        return {"tier": base_tier, "detail_override": None,
+                "reason": "大成功/大失败，不参与特质修正", "prompt": ""}
 
     graded_text = ""
     if graded_tiers:
         for t, text in graded_tiers.items():
             graded_text += f"  {t}: {text}\n"
 
-    prompt = f"""你是 TRPG 规则辅助裁判。根据调查员的特质，判断是否需要修正本次技能检定结果。
+    prompt = f"""你是 TRPG 规则辅助裁判。根据调查员的特质和本轮行动描述，判断是否应修正技能检定结果。
 
 【调查员】
   描述：{inv_desc or '（无）'}
+  本轮输入：{player_input or '（无）'}
 
 【当前检定】
   实体：{entity_name}
   技能：{skill_name}
-  原始结果：{skill_detail}
-  当前等级：{current_tier}（failure < regular < hard < extreme）
+  技能值：{skill_value}
+  原始骰子：D100={dice_roll}
+  基础等级：{base_tier}（failure < regular < hard < extreme）
+  原始结果描述：{skill_detail}
   检定上下文：{'搜索侦查' if search_context else '实体交互'}
 
 【分级结果参考】
 {graded_text or '（无分级结果）'}
 
-请判断：调查员的特质描述是否暗示此技能应有优势（或劣势）？
-仅在特质明确相关时修正。例如：
-- "观察力极其优秀" → 侦查可提升一级
-- "胆小如鼠" → 涉及勇气的检定可降一级
-- 无关特质则不修正
+COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技能值/2={max(1, skill_value // 2)}，常规≤技能值={skill_value}，否则失败。大成功=1，大失败≥96。
 
+请判断：基于调查员的特质描述和本轮实际行为，是否应修正检定结果？
+
+修正逻辑（内部思考，不输出）：
+- 思考骰子应上浮或下浮多少点（最多±20），然后映射到最终等级
+- 特质与技能和行为高度匹配且有优势 → 骰子下浮（更容易成功）
+- 特质与行为冲突或劣势 → 骰子上浮（更难成功）
+- 特质无关 → 不修正
+- 有明确特殊规则说明的按特殊规则结算
+- 根据玩家的本轮输入额外考量。整体原则：行动越认真越容易成功反之同理
+- 根据本轮输入的修正不超过10点(±10)
+
+示例：
+- "观察力极其优秀" 的玩家在昏暗环境侦查 → 骰子可下浮5-10点，可能从 regular 升至 hard
+- "胆小如鼠" 的玩家试图恐吓怪物 → 骰子可上浮10-15点，可能从 hard 降至 regular 甚至 failure
+- "精通机械" 的工程师修理引擎，但骰子62刚好超出技能60 → 骰子下浮5点即可从 failure 救回 regular
+- 仔细搜索场景，筛子可下调5点
 返回 JSON：
 {{
-  "tier": "{current_tier}",
+  "tier": "{base_tier}",
   "detail_override": null,
-  "reason": "修正或不修正的理由"
+  "reason": "修正或不修正的理由（包含虚拟骰子调整量）"
 }}
 
-规则：
+额外规则：
 - tier 是修正后的等级，只能是 failure / regular / hard / extreme 之一
-- 若无需修正，tier 保持原值，reason 说明原因
-- detail_override 仅在确实需要新的结果描述时填写，根据【分级结果参考】新的鉴定等级和【调查员】
-  描述生成，必要的话可以在【分级结果参考】基础上2次加工
+- 若无需修正（虚拟骰子调整量为0），tier 必须严格等于基础等级 "{base_tier}"，不得改变
+- 不论修正后的结果如何，只要原始结果不是大成功/大失败 新的结果也不能是大成功/大失败，除非玩家有明确的特殊规则。
+- reason 中应提及内部判断的虚拟骰子调整量
+- detail_override 仅在确实需要新的结果描述时填写
 - 直接输出 JSON
 """
     response = client.chat.completions.create(
@@ -251,17 +292,30 @@ def evaluate_trait_enhancement(
         raw = raw[3:-3].strip()
     try:
         result = json.loads(raw)
-        # Validate tier
-        if result.get("tier") not in tier_order:
-            result["tier"] = current_tier
-        # Prevent more than 1 tier shift
-        new_idx = tier_order.index(result["tier"])
-        if abs(new_idx - current_idx) > 1:
-            result["tier"] = tier_order[current_idx + (1 if new_idx > current_idx else -1)]
-        return result
     except json.JSONDecodeError:
-        return {"tier": current_tier, "detail_override": None,
-                "reason": "JSON解析失败，保持原结果"}
+        return {"tier": base_tier, "detail_override": None,
+                "reason": "JSON解析失败，保持原结果", "prompt": prompt}
+
+    # Validate tier
+    if result.get("tier") not in tier_order:
+        result["tier"] = base_tier
+    # Prevent more than 1 tier shift
+    new_idx = tier_order.index(result["tier"])
+    if abs(new_idx - base_idx) > 1:
+        result["tier"] = tier_order[base_idx + (1 if new_idx > base_idx else -1)]
+
+    # Safety: if LLM claims no adjustment but changed tier, force back
+    reason = result.get("reason", "")
+    if new_idx != base_idx:
+        no_change_phrases = ["不进行修正", "调整量为0", "无需修正", "不修正",
+                             "不做修正", "保持不变", "不调整", "无修正"]
+        if any(p in reason for p in no_change_phrases):
+            result["tier"] = base_tier
+
+    return {"tier": result.get("tier", base_tier),
+            "detail_override": result.get("detail_override"),
+            "reason": reason,
+            "prompt": prompt}
 
 
 def evaluate_failure_penalty(

@@ -58,7 +58,21 @@
       "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_time_system.py -v --tb=short)",
       "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_time_system.py tests/test_combat_entry.py tests/test_enemy_manager.py tests/test_integration.py tests/test_combat.py tests/test_npc_manager.py tests/test_boss_manager.py tests/test_boss_library.py tests/test_library.py -v --tb=short)",
       "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_integration.py::test_author_init tests/test_time_system.py -v --tb=short)",
-      "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_time_system.py tests/test_npc_manager.py tests/test_boss_manager.py tests/test_boss_library.py tests/test_combat_entry.py tests/test_enemy_manager.py tests/test_integration.py tests/test_combat.py -v --tb=short)"
+      "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_time_system.py tests/test_npc_manager.py tests/test_boss_manager.py tests/test_boss_library.py tests/test_combat_entry.py tests/test_enemy_manager.py tests/test_integration.py tests/test_combat.py -v --tb=short)",
+      "Bash(ping -n 1 github.com)",
+      "Bash(PYTHONPATH=\"src;.\" python -c \"from game_loop import init_game, run_turn; print\\('game_loop OK'\\)\")",
+      "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/ -v --tb=line --ignore=tests/test_author.py -p no:conftest)",
+      "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_author_flow.py::test_no_other_zero_overhead tests/test_escalation_harness.py::test_case_a_normal_entity tests/test_escalation_harness.py::test_case_c_author_patch -v --tb=short)",
+      "Bash(PYTHONPATH=\"src\" python run_pipeline.py --auto --docx \"常暗之厢（7版规则，简体修正版）.docx\" --module 常暗之厢)",
+      "Bash(PYTHONPATH=\"src;.\" python -c \"from module_designer.supplement_pipeline import run_supplement_pipeline, _step_standardize_entities, _apply_standardized; print\\('import OK'\\)\")",
+      "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/ -q --tb=no --ignore=tests/test_author.py -p no:conftest)",
+      "Bash(tasklist)",
+      "Bash(PYTHONPATH=\"src;.\" python -m pytest tests/test_escalation_harness.py -v --tb=short)",
+      "Bash(PYTHONPATH=\"src;.\" python tests/test_escalation_harness.py)",
+      "Bash(PYTHONPATH=\"src\" python -c \"compile\\(open\\('notebooks/_parser_layered_export.py'\\).read\\(\\), 'test', 'exec'\\); print\\('Syntax OK'\\)\")",
+      "Bash(PYTHONPATH=\"src\" python notebooks/_parser_layered_export.py)",
+      "Bash(del notebooks\\\\_convert_to_ipynb.py)",
+      "Bash(PYTHONPATH=\"src;.\" python *)"
     ]
   }
 }

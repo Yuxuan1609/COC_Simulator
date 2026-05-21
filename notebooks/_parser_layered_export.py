@@ -42,7 +42,7 @@ from module_designer import (
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
     build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
-    build_phase1_prompt, build_step4_prompt,
+    build_step25_prompt, build_phase1_prompt, build_step4_prompt,
     # Parsers (for cross_validate)
     _is_valid_json_output, _with_fallback,
 )
@@ -67,15 +67,28 @@ print("模块导入完成")
 # 加载模组 & 初始化库 & 创建调试目录
 # ═══════════════════════════════════════════════════════════════
 
-# 加载源文档
-content = parser(os.path.join(os.path.dirname(__file__), "..", "常暗之厢（7版规则，简体修正版）.docx"))
+# Notebook 兼容: __file__ 在 Jupyter 中未定义
+try:
+    BASE_DIR = os.path.dirname(__file__)
+except NameError:
+    BASE_DIR = os.getcwd()
+
+# 加载源文档（支持 .txt 和 .docx）
+SOURCE_FILE = os.path.join(BASE_DIR, "..", "常暗之厢（7版规则，简体修正版）.docx")
+# SOURCE_FILE = os.path.join(BASE_DIR, "..", "test_story.txt")  # 测试用：取消注释这行
+
+if SOURCE_FILE.endswith(".txt"):
+    with open(SOURCE_FILE, "r", encoding="utf-8") as f:
+        content = f.read()
+else:
+    content = parser(SOURCE_FILE)
 content = estimate_and_truncate_context(content)
-print(f"源文档: {len(content)} 字符 (~{len(content)//2} tokens)")
+print(f"源文档 ({os.path.basename(SOURCE_FILE)}): {len(content)} 字符 (~{len(content)//2} tokens)")
 
 # 初始化武器/敌人库
 wl = WeaponLibrary(); wl.load_core()
 el = EnemyLibrary(); el.load_core()
-bl = BossLibrary(os.path.join(os.path.dirname(__file__), "..", "data", "library", "core", "bosses.json"))
+bl = BossLibrary(os.path.join(BASE_DIR, "..", "data", "library", "core", "bosses.json"))
 print(f"武器: {[w.name for w in wl.list_all()]}")
 print(f"敌人: {[e.name for e in el.list_all()]}")
 print(f"Boss: {bl.list_names()}")

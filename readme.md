@@ -183,7 +183,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| 作者介入机制 (Escalation) | ⚠ 已实现，提示词待精修 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。Patch 和 StructuralEdit 的轻量级 LLM 提示词需精修。详见 `docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
+| 作者介入机制 (Escalation) | ⚠ 已实现，提示词待精修 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。Patch 和 StructuralEdit 的轻量级 LLM 提示词需精修。`scene_context` 字段随 NPC/时间/Boss 系统上线待补全。Author 人设（`DEFAULT_AUTHOR_PERSONA`）可手动修改，位于 `src/game/agents/author.py`。详见 `docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
 | 战斗系统 — 进入/脱出 | ✅ 已实现 | SpawnEnemy→EnemyManager→LLM 检测+对峙→CombatInit。详见 `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md` |
 | 战斗系统 — 回合制核心 | ✅ 已接入 | `src/game/combat.py`：CombatSystem 已实现伤害掷骰/D100 检定/先攻/逐轮处理，`run_turn()` 和 `continue_standoff()` 中自动调用 |
 | 武器获取系统 | ✅ 已实现 | grant_weapon → SceneWeapon 场景放置 → search 发现 → 确认拾取 → Investigator.add_weapon |
@@ -228,6 +228,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 - Boss/剧情敌人 & NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
 - Implementation Plan: `docs/superpowers/plans/2026-05-20-boss-npc-plan.md`
 - **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md` — 每个模块标注文件-类/函数-功能拆解，供快速定位代码
+- **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md` — 三层架构说明、源文档写法、@markup 系统、敌人/Boss/NPC 设计、叙事线/时间压力配置、写作检查清单
 
 ## 测试
 
@@ -249,6 +250,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 **测试说明**：
 - 测试数据：`data/modules/常暗之厢/l*_test.json`（测试房间 + 原模组内容），`start_node` 已切到「测试房间」。正式需切回正式 JSON。
 - Game Loop Harness：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
+- **测试模组**：`test_story.txt` — 极小模组「林中小屋」(~180 字，2 场景 / 1 NPC / 1 Boss / 1 普通敌人)，用于快速验证管线。在 `notebooks/parser_layered.ipynb` Cell 2 中切 `SOURCE_FILE` 即可使用，2-3 分钟跑完全管线。
 
 ## @markup 副效果系统（7 种）
 

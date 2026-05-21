@@ -115,6 +115,32 @@ class ToneConstraints:
 
 
 @dataclass
+class NarrativeLine:
+    """故事叙事线（大纲/弧线）"""
+    name: str = ""
+    outline: str = ""
+    key_scenes: list[str] = field(default_factory=list)
+    type: str = "main"  # main | branch | optional
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "outline": self.outline,
+            "key_scenes": self.key_scenes,
+            "type": self.type,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "NarrativeLine":
+        return cls(
+            name=data.get("name", ""),
+            outline=data.get("outline", ""),
+            key_scenes=data.get("key_scenes", []),
+            type=data.get("type", "main"),
+        )
+
+
+@dataclass
 class TimePressureConfig:
     """L3 时间压力配置 — 半结构化 KP 执行指南"""
     name: str = ""
@@ -172,6 +198,7 @@ class L3Designer:
     tone_constraints: ToneConstraints = field(default_factory=ToneConstraints)
     characters: List[CharacterDesign] = field(default_factory=list)
     driving_force: str = ""
+    narrative_lines: list[NarrativeLine] = field(default_factory=list)
     time_pressure: TimePressureConfig | None = None
 
     def to_dict(self) -> dict:
@@ -183,6 +210,7 @@ class L3Designer:
             "tone_constraints": self.tone_constraints.to_dict(),
             "characters": [c.to_dict() for c in self.characters],
             "driving_force": self.driving_force,
+            "narrative_lines": [n.to_dict() for n in self.narrative_lines],
             "time_pressure": self.time_pressure.to_dict() if self.time_pressure else None,
         }
 
@@ -196,6 +224,7 @@ class L3Designer:
             tone_constraints=ToneConstraints.from_dict(data.get("tone_constraints", {})),
             characters=[CharacterDesign.from_dict(c) for c in data.get("characters", [])],
             driving_force=data.get("driving_force", ""),
+            narrative_lines=[NarrativeLine.from_dict(n) for n in data.get("narrative_lines", [])],
             time_pressure=TimePressureConfig.from_dict(data["time_pressure"]) if data.get("time_pressure") else None,
         )
 
