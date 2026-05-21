@@ -55,6 +55,7 @@ from module_designer.layered_parser import (
     STEP25_SYSTEM, PHASE1_SYSTEM, STEP4_SYSTEM,
 )
 from library import WeaponLibrary, EnemyLibrary
+from library.bosses import BossLibrary
 
 print("模块导入完成")
 
@@ -67,15 +68,17 @@ print("模块导入完成")
 # ═══════════════════════════════════════════════════════════════
 
 # 加载源文档
-content = parser("../常暗之厢（7版规则，简体修正版）.docx")
+content = parser(os.path.join(os.path.dirname(__file__), "..", "常暗之厢（7版规则，简体修正版）.docx"))
 content = estimate_and_truncate_context(content)
 print(f"源文档: {len(content)} 字符 (~{len(content)//2} tokens)")
 
 # 初始化武器/敌人库
 wl = WeaponLibrary(); wl.load_core()
 el = EnemyLibrary(); el.load_core()
+bl = BossLibrary(os.path.join(os.path.dirname(__file__), "..", "data", "library", "core", "bosses.json"))
 print(f"武器: {[w.name for w in wl.list_all()]}")
 print(f"敌人: {[e.name for e in el.list_all()]}")
+print(f"Boss: {[b.name for b in bl.list_all()]}")
 
 # 创建调试输出目录 (临时产物，不放在 data/modules/)
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -198,8 +201,12 @@ with open(f"{DEBUG_ROOT}/step_1/_summary.json", "w", encoding="utf-8") as f:
     }, f, ensure_ascii=False, indent=2)
 
 print(f"Step 1a: {len(scenes)} 场景, {len(characters)} 角色")
-for s in scenes:
-    print(f"  {s['id']}: {s['name']}")
+if scenes and isinstance(scenes[0], str):
+    for i, s in enumerate(scenes):
+        print(f"  S{i+1}: {s}")
+else:
+    for s in scenes:
+        print(f"  {s.get('id', '?')}: {s.get('name', '?')}")
 print(f"Step 1b: condensed_text {len(condensed_text)} 字符")
 print(f"产物: {DEBUG_ROOT}/step_1/1a_*/ 和 1b_*/")
 
