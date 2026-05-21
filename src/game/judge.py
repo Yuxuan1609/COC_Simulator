@@ -157,7 +157,6 @@ class Judge:
                     graded_tiers=entity.graded_result,
                     player_input=player_input,
                 )
-                from prompts import log_skill_result
                 log_skill_result(f"[特质增强完整响应] {json.dumps(enhancement, ensure_ascii=False)}")
                 new_tier = enhancement.get("tier", skill_tier)
                 if new_tier != skill_tier:
