@@ -123,3 +123,14 @@ class CombatResult:
     player_hp: int = 0
     player_san: int = 0
     rounds: int = 0
+
+
+@dataclass
+class TimeCommsPacket:
+    """Keeper -> Author: time pressure communication packet. ≤500 chars total."""
+    game_time: int = 0
+    day: int = 0
+    time_of_day: str = ""
+    current_scene: str = ""
+    player_actions: str = ""   # recent actions summary (≤200 chars)
+    world_state: str = ""      # world state overview (≤200 chars)
