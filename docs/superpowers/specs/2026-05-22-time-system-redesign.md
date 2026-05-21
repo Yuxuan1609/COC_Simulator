@@ -212,7 +212,8 @@ class TimeCommsPacket:
 
 - 短模组（≤2h）：6-8 分钟
 - 中型模组（2-6h）：10-15 分钟
-- 长模组（≥6h）：15-20 分钟
+- 长模组（6-24h）：15-20 分钟
+- 超长模组（≥24h）：1-2 小时
 
 最小 floor 5 分钟，防止极短模组通信过密。`comms_interval` 写入 L2 `module_meta.comms_interval`，运行时读取。
 
