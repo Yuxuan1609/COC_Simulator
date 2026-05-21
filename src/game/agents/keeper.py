@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from scenario_core import ScenarioWorld, Entity, parse_markup_all
@@ -99,7 +100,7 @@ class Keeper:
                     action=entry_type if entry_type != "auto_trigger" else "other",
                     target=entity.name if entry_type == "interaction" else "",
                 )
-                outcome = self.judge._execute_entity(entity, intent=intent)
+                outcome = self.judge._execute_entity(entity, intent=intent, player_input=raw)
                 self._apply_side_effects(outcome.side_effects)
                 # Time advancement for entity execution
                 if outcome.success:
@@ -142,10 +143,15 @@ class Keeper:
                                getattr(self.world.player, 'description', '')
                     if inv_desc:
                         from llm import evaluate_trait_enhancement
+                        roll_m = re.search(r'D100=(\d+)/', skill_msg)
+                        dice_roll = int(roll_m.group(1)) if roll_m else 0
+                        skill_val = self.world.player.get_skill_value("侦查") if self.world.player else 0
                         enh = evaluate_trait_enhancement(
                             inv_desc=inv_desc,                             skill_name="侦查", skill_detail=skill_msg,
-                            current_tier=tier, entity_name="搜索",
+                            dice_roll=dice_roll, skill_value=skill_val,
+                            entity_name="搜索",
                             search_context=True,
+                            player_input=raw,
                         )
                         new_tier = enh.get("tier", tier)
                         if new_tier != tier:
@@ -539,13 +545,18 @@ class Keeper:
         inv_desc = (getattr(self.world.player, 'personal_description', '') or
                    getattr(self.world.player, 'description', ''))
         if inv_desc:
+            roll_m = re.search(r'D100=(\d+)/', skill_msg)
+            dice_roll = int(roll_m.group(1)) if roll_m else 0
+            skill_val = self.world.player.get_skill_value(skill_name) if self.world.player else 0
             enh = evaluate_trait_enhancement(
                 inv_desc=inv_desc,
                 skill_name=skill_name,
                 skill_detail=skill_msg,
-                current_tier=tier,
+                dice_roll=dice_roll,
+                skill_value=skill_val,
                 entity_name=f"避免与{enemy_ref}战斗",
                 search_context=False,
+                player_input=player_input,
             )
             new_tier = enh.get("tier", tier)
             if new_tier != tier:
@@ -664,8 +675,12 @@ class Keeper:
 
     def _build_world_snapshot(self) -> dict:
         """Lightweight snapshot for IntentDetector."""
+        l1 = getattr(self, "narrator_l1", {}) or {}
+        l1_scene = l1.get(self.world.current_location, {})
+        scene_desc = l1_scene.get("description", "") if isinstance(l1_scene, dict) else ""
         return {
             "location": self.world.current_location,
+            "scene_description": scene_desc,
             "npc_states": dict(self.world.npc_states),
         }
 
@@ -720,6 +735,7 @@ class Keeper:
                 base_l3=author.l3_data,
                 entry_scene=structural_edit.entry_scene,
                 exit_scene=structural_edit.exit_scene,
+                world_snapshot=self._build_world_snapshot(),
                 module_name="",
             )
 
