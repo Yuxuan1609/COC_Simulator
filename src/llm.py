@@ -28,20 +28,28 @@ client = OpenAI(
 
 # ── 响应日志 ──
 
-_log_file: str | None = None
+_log_dir: str | None = None
+
+
+def set_llm_log_dir(log_dir: str):
+    """设置 LLM 响应日志目录。call_deepseek 会将响应写入该目录下的 llm.txt。"""
+    global _log_dir
+    _log_dir = log_dir
+    os.makedirs(_log_dir, exist_ok=True)
 
 
 def set_llm_log_file(path: str):
-    """设置 LLM 响应日志文件路径。设置后 call_deepseek 会将响应写入该文件。"""
-    global _log_file
-    _log_file = path
+    """向后兼容包装器，内部转为目录模式。"""
+    set_llm_log_dir(path)
 
 
 def _log_response(content: str):
-    """将 LLM 响应写入日志文件（如已配置）"""
-    if not _log_file:
+    """将 LLM 响应写入日志目录下的 llm.txt（如已配置）"""
+    if not _log_dir:
         return
-    with open(_log_file, 'a', encoding='utf-8') as f:
+    os.makedirs(_log_dir, exist_ok=True)
+    path = os.path.join(_log_dir, "llm.txt")
+    with open(path, 'a', encoding='utf-8') as f:
         f.write("\n--- Response ---\n")
         f.write(content)
         f.write("\n\n")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 from llm import call_deepseek
+from prompts import _show_prompt
 
 
 class TimeAgent:
@@ -38,6 +39,7 @@ time_delta 是额外推进的分钟数（如"睡觉"跳8小时），默认 0。n
 
     def assess(self, **kwargs) -> dict:
         prompt = self.build_prompt(**kwargs)
+        _show_prompt("TimeAgent", prompt)
         try:
             response = call_deepseek(
                 prompt,

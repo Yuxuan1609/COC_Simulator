@@ -7,6 +7,7 @@ Prompt 构建器 —— 为 LLM 调用链构建结构化 prompt。
 
 from __future__ import annotations
 import json
+import os
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -16,31 +17,61 @@ if TYPE_CHECKING:
 
 # ── 日志配置 ──
 
-_log_file: str | None = None
+_log_dir: str | None = None
+_log_file: str | None = None  # backward compat for log_skill_result
+_current_round: int = 0
+
+
+def set_current_round(n: int):
+    """设置当前回合数，用于日志标记。"""
+    global _current_round
+    _current_round = n
+
+
+def set_prompt_log_dir(log_dir: str):
+    """设置 prompt 日志目录。所有 build_* 函数会将 prompt 写入该目录下的独立文件。"""
+    global _log_dir, _log_file
+    _log_dir = log_dir
+    _log_file = log_dir  # for backward compat in log_skill_result
+    os.makedirs(_log_dir, exist_ok=True)
 
 
 def set_prompt_log_file(path: str):
-    """设置 prompt 日志文件路径。调用后所有 build_* 函数会将 prompt 写入该文件。"""
-    global _log_file
-    _log_file = path
+    """向后兼容包装器，内部转为目录模式。"""
+    set_prompt_log_dir(path)
 
 
-def _show_prompt(label: str, content: str):
-    """将 prompt 写入日志文件（如已配置）"""
-    if not _log_file:
+def _sanitize_label(label: str) -> str:
+    """将标签转换为合法文件名。"""
+    s = label.lower().replace(" — ", "_").replace(" ", "_").replace("—", "_")
+    return ''.join(c if c.isalnum() or c == '_' else '_' for c in s)
+
+
+def _show_prompt(label: str, content: str, log_dir: str | None = None):
+    """将 prompt 写入日志目录下的独立文件（如已配置）。"""
+    d = log_dir or _log_dir
+    if not d:
         return
-    with open(_log_file, 'a', encoding='utf-8') as f:
+    os.makedirs(d, exist_ok=True)
+    filename = f"{_sanitize_label(label)}.txt"
+    path = os.path.join(d, filename)
+    with open(path, 'a', encoding='utf-8') as f:
         f.write(f"{'='*60}\n")
-        f.write(f"=== {label} ===\n")
+        f.write(f"=== Round {_current_round} | {label} ===\n")
         f.write(f"{'='*60}\n")
         f.write(content)
-        f.write("\n")
+        f.write("\n\n")
 
 
 def log_skill_result(text: str, log_path: str | None = None):
     """将技能检定结果写入日志文件（如已配置）。可指定路径避免并行竞态。"""
-    path = log_path or _log_file
-    if not path:
+    if log_path:
+        path = log_path
+    elif _log_dir:
+        path = os.path.join(_log_dir, "skill_checks.txt")
+    elif _log_file:
+        path = _log_file
+    else:
         return
     import threading
     lock = getattr(log_skill_result, '_lock', None)
@@ -48,6 +79,7 @@ def log_skill_result(text: str, log_path: str | None = None):
         lock = threading.Lock()
         log_skill_result._lock = lock
     with lock:
+        os.makedirs(os.path.dirname(path), exist_ok=True) if os.path.dirname(path) else None
         with open(path, 'a', encoding='utf-8') as f:
             f.write(f"--- 技能检定 ---\n")
             f.write(text)
@@ -764,7 +796,7 @@ def build_combat_entry_prompt(
     enemy_context: str,
     current_scene: str,
 ) -> str:
-    return f"""你是 COC 7th KP 助理。根据玩家行为、本轮结果和场景内敌人的习性，判断是否应进入回合制战斗。
+    prompt = f"""你是 COC 7th KP 助理。根据玩家行为、本轮结果和场景内敌人的习性，判断是否应进入回合制战斗。
 
 玩家输入：{player_input}
 本轮结果：{outcomes_summary}
@@ -775,6 +807,8 @@ def build_combat_entry_prompt(
 
 请判断是否有敌人应进入战斗。输出 JSON：
 {{"enter_combat": true/false, "enemy_instance_ids": ["..."], "reasoning": "简述判定理由"}}"""
+    _show_prompt("Combat Entry", prompt)
+    return prompt
 
 
 _COC_SKILL_NAMES = [
@@ -790,7 +824,7 @@ _COC_SKILL_NAMES = [
 
 def build_standoff_match_prompt(player_input: str) -> str:
     skill_list = "、".join(_COC_SKILL_NAMES)
-    return f"""你是 COC 7th KP 助理。玩家在面对敌人时试图避免战斗。
+    prompt = f"""你是 COC 7th KP 助理。玩家在面对敌人时试图避免战斗。
 
 玩家输入："{player_input}"
 
@@ -806,6 +840,8 @@ def build_standoff_match_prompt(player_input: str) -> str:
 - 潜行/偷偷溜走/绕过去 → "潜行"
 - 恐吓/威胁 → "恐吓"
 - 其他无法匹配的输出 matched=false"""
+    _show_prompt("Standoff Match", prompt)
+    return prompt
 
 
 def build_combat_narrative_prompt(round_log: list, enemies_desc: str,
@@ -818,7 +854,7 @@ def build_combat_narrative_prompt(round_log: list, enemies_desc: str,
             f"{chr(10003) if a.success else chr(10007)} {a.weapon or a.action_type}: {a.narrative}\n"
         )
 
-    return f"""你是一个TRPG战斗叙事者。根据本轮的机械结果，生成一段沉浸式战斗描写。
+    prompt = f"""你是一个TRPG战斗叙事者。根据本轮的机械结果，生成一段沉浸式战斗描写。
 
 【场景】{scene}
 【调查员】{player_name}
@@ -830,6 +866,8 @@ def build_combat_narrative_prompt(round_log: list, enemies_desc: str,
 返回 JSON：
 {{"narrative": "沉浸式战斗描写（中文不超过80字）", "scene_hint": ""}}
 直接输出 JSON。"""
+    _show_prompt("Combat Narrative", prompt)
+    return prompt
 
 
 def build_stat_narrative_prompt(
@@ -838,7 +876,7 @@ def build_stat_narrative_prompt(
     delta: str,
     narrative: str,
 ) -> str:
-    return f"""你是 COC 7th KP 助理。调查员的一项属性发生了变化，请据此更新其个人描述。
+    prompt = f"""你是 COC 7th KP 助理。调查员的一项属性发生了变化，请据此更新其个人描述。
 
 当前描述：{inv_desc}
 
@@ -847,6 +885,8 @@ def build_stat_narrative_prompt(
 
 请输出一个更新后的个人描述（150字以内），融合本次变化的影响。保持原有风格和内容，仅增量更新。
 输出 JSON：{{"description": "更新后的描述文本"}}"""
+    _show_prompt("Stat Narrative", prompt)
+    return prompt
 
 
 def build_consume_item_fuzzy_prompt(
@@ -854,7 +894,7 @@ def build_consume_item_fuzzy_prompt(
     quantity: int,
     held_items: str,
 ) -> str:
-    return f"""你是 COC 7th KP 助理。玩家需要消耗一个物品，但物品名称与背包中的精确名称不匹配。请判断背包中是否有语义相同的物品。
+    prompt = f"""你是 COC 7th KP 助理。玩家需要消耗一个物品，但物品名称与背包中的精确名称不匹配。请判断背包中是否有语义相同的物品。
 
 目标物品：{target}（需要消耗 x{quantity}）
 背包物品：
@@ -867,6 +907,8 @@ def build_consume_item_fuzzy_prompt(
 - 模糊匹配（如"手电"匹配"手电筒"、"绷带"匹配"急救包"）→ matched=true
 - 完全无关 → matched=false
 - item_name 必须是背包中存在的物品名（精确复制）"""
+    _show_prompt("Consume Item Fuzzy", prompt)
+    return prompt
 
 
 # ── Time Pressure ──
@@ -884,7 +926,7 @@ def build_time_pressure_assess_prompt(
     world_state: str,
 ) -> str:
     signals = "\n".join(f"- {s}" for s in key_signals)
-    return f"""你是 COC 7th 模组的时间压力管理者。根据模组预设的时间压力指南和当前游戏状态，判断是否需要介入催促玩家。
+    prompt = f"""你是 COC 7th 模组的时间压力管理者。根据模组预设的时间压力指南和当前游戏状态，判断是否需要介入催促玩家。
 
 【时间压力指南】
 {guide}
@@ -907,4 +949,6 @@ def build_time_pressure_assess_prompt(
 - 玩家推进正常、无异常停留 → should_press=false
 - 玩家反复搜索同一区域、长时间无进展、或 guide 中明确的时间节点被跨越 → should_press=true
 - urgency_update 根据 guide 中的描述弹性调整，不机械"""
+    _show_prompt("Time Pressure", prompt)
+    return prompt
 

@@ -12,19 +12,21 @@ from datetime import datetime
 sys.path.insert(0, "src")
 
 from game_loop import init_game, run_turn
-from llm import set_llm_log_file
-from prompts import set_prompt_log_file
+from llm import set_llm_log_dir
+from prompts import set_prompt_log_dir, set_current_round
 from library import WeaponLibrary, EnemyLibrary, ContentInjector
 from investigator import Investigator, load_investigator
 from investigator.rules import roll_stats, calc_derived, create_skill_list
 
 # ═══════════════════════════════════════════════════════════════
-#  Prompt 日志配置
+#  Prompt 日志配置（按 agent/round 分目录）
 # ═══════════════════════════════════════════════════════════════
 
-PROMPT_LOG_FILE = f"logs/prompt_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-set_prompt_log_file(PROMPT_LOG_FILE)
-set_llm_log_file(PROMPT_LOG_FILE)
+_log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+_log_dir = f"logs/prompt_log_{_log_timestamp}"
+_os.makedirs(_log_dir, exist_ok=True)
+set_prompt_log_dir(_log_dir)
+set_llm_log_dir(_log_dir)
 
 # ═══════════════════════════════════════════════════════════════
 #  武器/敌人库初始化

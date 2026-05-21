@@ -20,8 +20,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from game_loop import init_game, run_turn
 from game.messages import ActionIntent
-from prompts import set_prompt_log_file
-from llm import set_llm_log_file
+from prompts import set_prompt_log_dir, set_current_round
+from llm import set_llm_log_dir
 from library import WeaponLibrary, EnemyLibrary, ContentInjector
 from scenario_core import ScenarioWorld
 from trpg_display import render_scene_to_html
@@ -56,10 +56,11 @@ def get_game():
 
 
 def _init_game_instance():
-    log_file = str(PROJECT_ROOT / f"logs/prompt_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
-    os.makedirs(PROJECT_ROOT / "logs", exist_ok=True)
-    set_prompt_log_file(log_file)
-    set_llm_log_file(log_file)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_dir = str(PROJECT_ROOT / f"logs/prompt_log_{timestamp}")
+    os.makedirs(log_dir, exist_ok=True)
+    set_prompt_log_dir(log_dir)
+    set_llm_log_dir(log_dir)
 
     g = init_game(
         l2_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l2_test.json"),

@@ -221,6 +221,8 @@ def run_turn(game: dict, user_input: str,
              weapon_lib=None, enemy_lib=None, injector=None) -> dict:
     """Execute one turn. Returns {"brief": str, "narrative": str, "full": str}."""
     keeper = game["keeper"]
+    from prompts import set_current_round
+    set_current_round(keeper.turn_number)
     narrator = game["narrator"]
     author = game["author"]
     world = keeper.world
