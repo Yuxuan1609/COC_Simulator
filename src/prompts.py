@@ -52,6 +52,8 @@ def _show_prompt(label: str, content: str, log_dir: str | None = None):
     d = log_dir or _log_dir
     if not d:
         return
+    from llm import set_log_label
+    set_log_label(_sanitize_label(label))
     os.makedirs(d, exist_ok=True)
     filename = f"{_sanitize_label(label)}.txt"
     path = os.path.join(d, filename)

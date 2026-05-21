@@ -29,10 +29,11 @@ client = OpenAI(
 # ── 响应日志 ──
 
 _log_dir: str | None = None
+_current_log_label: str | None = None
 
 
 def set_llm_log_dir(log_dir: str):
-    """设置 LLM 响应日志目录。call_deepseek 会将响应写入该目录下的 llm.txt。"""
+    """设置 LLM 响应日志目录。响应会写入对应 label 的文件或 llm.txt。"""
     global _log_dir
     _log_dir = log_dir
     os.makedirs(_log_dir, exist_ok=True)
@@ -43,12 +44,20 @@ def set_llm_log_file(path: str):
     set_llm_log_dir(path)
 
 
+def set_log_label(label: str | None):
+    """设置当前 LLM 调用对应的日志 label。_log_response 会写入 <label>.txt 而非 llm.txt。"""
+    global _current_log_label
+    _current_log_label = label
+
+
 def _log_response(content: str):
-    """将 LLM 响应写入日志目录下的 llm.txt（如已配置）"""
+    """将 LLM 响应写入日志目录下对应 label 的文件（如已配置）"""
     if not _log_dir:
         return
     os.makedirs(_log_dir, exist_ok=True)
-    path = os.path.join(_log_dir, "llm.txt")
+    label = _current_log_label or "llm"
+    filename = f"{label}.txt"
+    path = os.path.join(_log_dir, filename)
     with open(path, 'a', encoding='utf-8') as f:
         f.write("\n--- Response ---\n")
         f.write(content)
@@ -233,56 +242,8 @@ def evaluate_trait_enhancement(
             graded_text += f"  {t}: {text}\n"
 
     prompt = f"""你是 TRPG 规则辅助裁判。根据调查员的特质和本轮行动描述，判断是否应修正技能检定结果。
-
-【调查员】
-描述：{inv_desc or '（无）'}
-本轮输入：{player_input or '（无）'}
-
-【当前检定】
-  实体：{entity_name}
-  技能：{skill_name}
-  技能值：{skill_value}
-  原始骰子：D100={dice_roll}
-  基础等级：{base_tier}（failure < regular < hard < extreme）
-  原始结果描述：{skill_detail}
-  检定上下文：{'搜索侦查' if search_context else '实体交互'}
-
-【分级结果参考】
-{graded_text or '（无分级结果）'}
-
-COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技能值/2={max(1, skill_value // 2)}，常规≤技能值={skill_value}，否则失败。大成功=1，大失败≥96。
-
-请判断：基于调查员的特质描述和本轮实际行为，是否应修正检定结果？
-
-修正逻辑（内部思考，不输出）：
-- 思考骰子应上浮或下浮多少点（最多±20），然后映射到最终等级
-- 特质与技能和行为高度匹配且有优势 → 骰子下浮（更容易成功）
-- 特质与行为冲突或劣势 → 骰子上浮（更难成功）
-- 特质无关 → 不修正
-- 有明确特殊规则说明的按特殊规则结算
-- 根据玩家的本轮输入额外考量。整体原则：行动越认真越容易成功反之同理
-- 根据本轮输入的修正不超过10点(±10)
-
-示例：
-- "观察力极其优秀" 的玩家在昏暗环境侦查 → 骰子可下浮5-10点，可能从 regular 升至 hard
-- "胆小如鼠" 的玩家试图恐吓怪物 → 骰子可上浮10-15点，可能从 hard 降至 regular 甚至 failure
-- "精通机械" 的工程师修理引擎，但骰子62刚好超出技能60 → 骰子下浮5点即可从 failure 救回 regular
-- 仔细搜索场景，筛子可下调5点
-返回 JSON：
-{{
-  "tier": "{base_tier}",
-  "detail_override": null,
-  "reason": "修正或不修正的理由（包含虚拟骰子调整量）"
-}}
-
-额外规则：
-- tier 是修正后的等级，只能是 failure / regular / hard / extreme 之一
-- 若无需修正（虚拟骰子调整量为0），tier 必须严格等于基础等级 "{base_tier}"，不得改变
-- 不论修正后的结果如何，只要原始结果不是大成功/大失败 新的结果也不能是大成功/大失败，除非玩家有明确的特殊规则。
-- reason 中应提及内部判断的虚拟骰子调整量
-- detail_override 仅在确实需要新的结果描述时填写
-- 直接输出 JSON
 """
+    set_log_label("trait_enhancement")
     _log_response(f"=== 特质增强 Prompt ===\n{prompt}")
     response = client.chat.completions.create(
         model="deepseek-v4-flash",
