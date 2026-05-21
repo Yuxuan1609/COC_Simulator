@@ -144,6 +144,7 @@ class Entity:
     side_effects: list[str] = field(default_factory=list)  # @markup strings
     graded_result: dict | None = None
     difficulty: str = ""           # None/regular/hard/extreme
+    extra: dict | None = None      # time_range, time_gated, etc.
 
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
