@@ -599,6 +599,7 @@ class Keeper:
         prompt = build_keeper_parse_prompt(self.world, raw)
         try:
             response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                     reasoning_effort="max",
                                      system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
                                             "你可以根据经验和对COC规则的理解，判断玩家输入触发了哪些交互、"
                                             "自动事件或移动行为，并评估软性叙事条件是否满足。",

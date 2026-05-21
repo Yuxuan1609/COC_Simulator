@@ -29,6 +29,7 @@ class Narrator:
         prompt = self._build_prompt(brief, l1_scene=l1_scene, inv_info=inv_info,
                                     user_input=user_input)
         response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                                 reasoning_effort="max",
                                  system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。"
                                         "你将系统裁定结果转化为富有氛围感的描述，融入克苏鲁式的压抑与未知，"
                                         "让玩家仿佛身临其境地感受每一刻的紧张与恐惧。",

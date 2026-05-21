@@ -139,13 +139,15 @@ def call_deepseek(
                 temperature=_temperature,
                 max_tokens=_max_tokens,
                 reasoning_effort=_reasoning_effort,
+                response_format={"type": "json_object"},
                 extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
             )
-            raw = response.choices[0].message.content.strip()
-            if raw.startswith("```json"):
-                raw = raw[7:-3].strip()
-            elif raw.startswith("```"):
-                raw = raw[3:-3].strip()
+            raw = response.choices[0].message.content
+            if not raw or not raw.strip():
+                if attempt < max_retries:
+                    continue
+                raw = "{}"
+            raw = raw.strip()
             try:
                 result = json.loads(raw)
                 _log_response(json.dumps(result, ensure_ascii=False, indent=2))
