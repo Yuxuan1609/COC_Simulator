@@ -1,0 +1,12 @@
+{
+  "actions": [
+    {
+      "type": "auto_trigger",
+      "id": "AT_AMBIENT"
+    },
+    {
+      "type": "interaction",
+      "id": "IT1"
+    }
+  ]
+}

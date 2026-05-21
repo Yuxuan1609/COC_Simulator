@@ -1,0 +1,8 @@
+{
+  "actions": [
+    {
+      "type": "other",
+      "text": "sang a cheerful song while tapping on the table"
+    }
+  ]
+}

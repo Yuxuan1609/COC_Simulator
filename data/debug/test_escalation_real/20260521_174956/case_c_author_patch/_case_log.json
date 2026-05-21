@@ -1,0 +1,8 @@
+{
+  "case": "C - other + Author Patch",
+  "input": "掏出小刀在墙上刻字求救",
+  "verdict": "PASS",
+  "new_entities": [
+    "SI1"
+  ]
+}

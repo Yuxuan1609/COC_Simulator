@@ -1,0 +1,17 @@
+{
+  "new_scenes": [
+    "SS1_镜中走廊",
+    "SS2_灵魂回响"
+  ],
+  "all_scenes": [
+    "test_room",
+    "car_6",
+    "SS1_镜中走廊",
+    "SS2_灵魂回响"
+  ],
+  "author_l3_scenes": [
+    "test_room",
+    "SS1_镜中走廊",
+    "SS2_灵魂回响"
+  ]
+}

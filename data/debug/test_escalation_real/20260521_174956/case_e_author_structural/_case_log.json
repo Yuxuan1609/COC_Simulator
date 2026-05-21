@@ -1,0 +1,9 @@
+{
+  "case": "E - other + Author StructuralEdit → supplement pipeline",
+  "input": "凝视着布满裂痕的镜子，试图与黑暗中的存在建立沟通",
+  "verdict": "PASS",
+  "new_scenes": [
+    "SS1_镜中走廊",
+    "SS2_灵魂回响"
+  ]
+}

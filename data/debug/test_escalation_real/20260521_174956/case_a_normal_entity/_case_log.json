@@ -1,0 +1,6 @@
+{
+  "case": "A - normal entity match",
+  "input": "inspect every item on the table carefully",
+  "verdict": "PASS",
+  "flow": "Parse -> Judge -> Enrich -> Curate -> Narrator"
+}

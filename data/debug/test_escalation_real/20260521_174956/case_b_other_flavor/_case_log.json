@@ -1,0 +1,6 @@
+{
+  "case": "B - other + flavor",
+  "input": "sang a cheerful song while tapping on the table",
+  "verdict": "PASS",
+  "flow": "Parse(other) -> Detector(no) -> Judge -> Enrich -> Curate"
+}

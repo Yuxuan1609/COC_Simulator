@@ -1,0 +1,23 @@
+{
+  "level": "patch",
+  "entities": [
+    {
+      "id": "SI1",
+      "entity_type": "interaction",
+      "scene": "test_room",
+      "name": "刻下求救信息",
+      "type": "无",
+      "requirement": "",
+      "trigger": "玩家选择在墙面刻写求救文字时",
+      "result": "你在墙上刻下了求救信息。字迹短暂清晰，随即被墙面上缓慢渗出的暗色液体覆盖，变得模糊扭曲。空气中弥漫开一股淡淡的锈腥味。",
+      "side_effects": [
+        "通风口处传来一声微弱的刮擦声，但当你回头查看时，一切归于寂静。",
+        "你的指尖残留着一种黏腻的触感，仿佛墙壁本身在呼吸。"
+      ],
+      "graded_result": null,
+      "difficulty": null
+    }
+  ],
+  "scene_descriptions": {},
+  "justification": "玩家通过在墙面刻字求救的行为是合理且主动的信息创造动作，原模组未设计该互动。本patch在test_room中增加刻字交互，结果以墙液渗漏、异响暗示等Lovecraftian horror元素呈现，强化压抑与未知恐惧氛围，同时保留极微弱的希望感（信息可能被察觉），符合L3基调与叙事风格。"
+}

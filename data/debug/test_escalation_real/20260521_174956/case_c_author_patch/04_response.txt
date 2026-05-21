@@ -1,0 +1,8 @@
+{
+  "actions": [
+    {
+      "type": "interaction",
+      "id": "SI1"
+    }
+  ]
+}

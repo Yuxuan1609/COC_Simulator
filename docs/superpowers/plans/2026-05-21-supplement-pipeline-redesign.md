@@ -1,0 +1,655 @@
+# Supplement Pipeline Redesign Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rewrite supplement pipeline from 5 LLM calls to 4, narrative-first → parallel generation → deterministic validation.
+
+**Architecture:** Step 1 (1 call) reads full L3 + world_snapshot, writes a module-style story and outputs standardized scene names + exit scene. Step 2 (3 parallel calls) generates entities with inline @markup, L1, and L3. Post-generation assembles L2 and validates.
+
+**Tech Stack:** Python, DeepSeek V4 Flash, json_mode LLM calls, ThreadPoolExecutor
+
+---
+
+## File Structure
+
+| File | Action | Purpose |
+|------|--------|---------|
+| `src/module_designer/supplement_pipeline.py` | Rewrite | Core pipeline: run + Step 1/2 functions |
+| `src/game/agents/keeper.py:717-728` | Modify | Pass `world_snapshot` to pipeline |
+| `tests/test_escalation_harness.py:515-655` | Modify | Update Case E mock signature + logs |
+
+---
+
+### Task 1: Rewrite supplement_pipeline.py — Step 1
+
+**Files:**
+- Rewrite: `src/module_designer/supplement_pipeline.py`
+
+- [ ] **Step 1: Delete old module content, write new imports + `run_supplement_pipeline` skeleton**
+
+```python
+"""Supplement pipeline — lightweight module generation triggered by Author StructuralEdit.
+
+Input: player intent + base L3 + entry/exit scenes + world_snapshot
+Output: l1_supp.json + l2_supp.json + l3_supp.json in supplements/<timestamp>/
+
+Step 1: 1 LLM call (flash + max) — story-driven scene planning
+Step 2: 3 parallel LLM calls (flash + max)
+  2a: entities (interactions + AT + events + scene_movements) + inline @markup + dependency_graph
+  2b: L1 player-facing layer
+  2c: L3 designer layer (scene_intents for new scenes)
+Post: assemble L2 + validate + write files
+"""
+from __future__ import annotations
+import json, os, re
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from llm import call_deepseek
+
+
+def run_supplement_pipeline(
+    player_intent: str,
+    reasoning: str,
+    base_l3: dict,
+    entry_scene: str,
+    exit_scene: str = "",
+    world_snapshot: dict | None = None,
+    output_dir: str = "",
+    module_name: str = "",
+) -> dict:
+    """Run lightweight supplement pipeline. Returns {"l1": ..., "l2": ..., "l3": ..., "output_dir": ...}."""
+
+    if world_snapshot is None:
+        world_snapshot = {}
+
+    if not output_dir:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = os.path.join("data", "modules", module_name, "supplements", ts)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Step 1: narrative-driven scene planning
+    plan = _step_1_narrative(player_intent, reasoning, base_l3,
+                             entry_scene, exit_scene, world_snapshot)
+    scene_names = plan.get("scene_names", [])
+    exit_scene = plan.get("exit_scene", exit_scene)
+    story = plan.get("story", "")
+    if not scene_names:
+        return {"l1": {}, "l2": {}, "l3": {}, "output_dir": output_dir}
+
+    # Step 2: 3 parallel generation
+    shared = {
+        "player_intent": player_intent,
+        "reasoning": reasoning,
+        "entry_scene": entry_scene,
+        "exit_scene": exit_scene,
+        "story": story,
+        "scene_names": scene_names,
+    }
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_step_2a_entities, shared, base_l3): "2a_entities",
+            executor.submit(_step_2b_l1, shared, base_l3): "2b_l1",
+            executor.submit(_step_2c_l3, shared, base_l3): "2c_l3",
+        }
+        results = {}
+        for future in as_completed(futures):
+            name = futures[future]
+            results[name] = future.result()
+
+    entities_data = results.get("2a_entities", {})
+    l1_data = results.get("2b_l1", {})
+    l3_data = results.get("2c_l3", {})
+
+    # Post: assemble L2 + validate
+    l2_data = _assemble_l2(entities_data, scene_names)
+    _validate_supplement(l2_data, l1_data, scene_names)
+
+    # Save
+    for name, data in [("l1_supp.json", l1_data), ("l2_supp.json", l2_data),
+                        ("l3_supp.json", l3_data)]:
+        path = os.path.join(output_dir, name)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    return {"l1": l1_data, "l2": l2_data, "l3": l3_data, "output_dir": output_dir}
+```
+
+- [ ] **Step 2: Write `_build_l3_context` helper — extract full L3 for prompt use**
+
+```python
+def _build_l3_context(l3: dict, current_scene: str = "") -> str:
+    """Build a natural-language L3 summary for supplement prompts."""
+    parts = []
+    world_rules = l3.get("world_rules", [])
+    if world_rules:
+        parts.append("世界规则:")
+        for wr in world_rules:
+            parts.append(f"  [{wr.get('id','')}] {wr.get('name','')}: {wr.get('rule','')}")
+            parts.append(f"    范围: {wr.get('scope','')} | 性质: {wr.get('is_absolute','')}")
+
+    driving_force = l3.get("driving_force", "")
+    if driving_force:
+        parts.append(f"核心驱动力: {driving_force}")
+
+    narrative_lines = l3.get("narrative_lines", [])
+    if narrative_lines:
+        parts.append("叙事线:")
+        for nl in narrative_lines:
+            type_label = {"main": "主线", "branch": "支线", "optional": "可选支线"}.get(
+                nl.get("type", ""), nl.get("type", ""))
+            parts.append(f"  [{type_label}] {nl.get('name','')}")
+            parts.append(f"    大纲: {nl.get('outline','')}")
+            parts.append(f"    关键场景: {', '.join(nl.get('key_scenes', []))}")
+
+    tc = l3.get("tone_constraints", {})
+    if tc:
+        parts.append("基调约束:")
+        if tc.get("genre"):
+            parts.append(f"  类型: {tc['genre']}")
+        if tc.get("narrative_style"):
+            parts.append(f"  叙事风格: {tc['narrative_style']}")
+        forbidden = tc.get("forbidden", [])
+        if forbidden:
+            parts.append(f"  禁止: {', '.join(forbidden)}")
+        recommended = tc.get("recommended", [])
+        if recommended:
+            parts.append(f"  推荐: {', '.join(recommended)}")
+
+    scene_intents = l3.get("scene_intents", {})
+    if current_scene and scene_intents:
+        intent = scene_intents.get(current_scene, {})
+        if intent:
+            parts.append(f"当前场景设计意图:")
+            parts.append(f"  目的: {intent.get('purpose','')}")
+            if intent.get("key_threat"):
+                parts.append(f"  关键威胁: {intent['key_threat']}")
+
+    return "\n".join(parts)
+```
+
+- [ ] **Step 3: Write `_step_1_narrative` — single LLM call, story-driven planning**
+
+```python
+def _step_1_narrative(
+    player_intent: str, reasoning: str, base_l3: dict,
+    entry_scene: str, exit_scene: str, world_snapshot: dict,
+) -> dict:
+    """Step 1: write a module-style narrative, determine scene names + exit."""
+
+    l3_ctx = _build_l3_context(base_l3, current_scene=entry_scene)
+
+    ws_location = world_snapshot.get("location", entry_scene)
+    ws_desc = world_snapshot.get("scene_description", "")
+    ws_npc = world_snapshot.get("npc_states", {})
+
+    prompt = f"""{l3_ctx}
+
+【当前世界状态】
+  位置: {ws_location}
+  场景描述: {ws_desc}
+  NPC: {json.dumps(ws_npc, ensure_ascii=False)}
+
+【玩家意图】
+  玩家想做什么: {player_intent}
+  升级原因: {reasoning}
+
+【出入口】
+  入口场景: {entry_scene}
+  出口场景: {exit_scene or '由你决定'}
+
+你是TRPG模组创作者。玩家行为超出了当前模组范围，需要扩展。请写一段模组风格的叙事文字（最多3个新场景），描述新的展开。叙事应自然融入L3的基调约束、世界规则和叙事线。
+
+同时输出:
+- 标准化场景名 (1-3个): SS1_<中文场景名>, SS2_<中文场景名>, SS3_<中文场景名>
+- 确认的出口场景: 玩家最终回流的已有场景名
+
+返回 JSON:
+{{
+  "story": "一段模组风格叙事...",
+  "scene_names": ["SS1_镜中世界", "SS2_深渊回廊"],
+  "exit_scene": "test_room"
+}}
+
+直接输出 JSON。"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组创作者。写出自然融入设定基调和世界规则的叙事。",
+                             fallback_schema={"story": "", "scene_names": [], "exit_scene": exit_scene})
+    return json.loads(response) if isinstance(response, str) else response
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/module_designer/supplement_pipeline.py
+git commit -m "feat: supplement pipeline Step 1 — narrative-driven scene planning"
+```
+
+---
+
+### Task 2: Write Step 2a — Entities with inline @markup
+
+**Files:**
+- Modify: `src/module_designer/supplement_pipeline.py`
+
+- [ ] **Step 1: Write `_step_2a_entities` — all entities + inline standardization + dependency graph**
+
+```python
+def _step_2a_entities(shared: dict, base_l3: dict) -> dict:
+    """Step 2a: generate all entities with inline @markup standardization + dependency graph.
+    
+    One LLM call covers what the main pipeline does in Step 2 (entity generation) 
+    + Phase 2 (@markup standardization) + Step 3 (dedup/conflict check).
+    """
+    skills = "会计、人类学、估价、考古学、魅惑、攀爬、计算机使用、信用评级、克苏鲁神话、乔装、闪避、汽车驾驶、电气维修、电子学、话术、急救、历史、恐吓、跳跃、法律、图书馆使用、聆听、锁匠、机械维修、医学、博物学、导航、神秘学、操作重型机械、说服、驾驶、精神分析、心理学、读唇、潜行、侦查、生存、游泳、投掷、追踪、驯兽"
+
+    prompt = f"""你是TRPG模组创作者。基于已有叙事和L3设计，生成新场景的全部entity。
+
+【叙事】
+{shared['story']}
+
+【场景清单】
+{', '.join(shared['scene_names'])}
+
+【出入口】
+入口: {shared['entry_scene']}
+出口: {shared['exit_scene']}
+
+【玩家意图】
+{shared['player_intent']}
+
+Entity 字段规则:
+- id: 全局唯一 (SI1/SI2/SI3...=interaction, SAT1/SAT2...=auto_trigger, SE1/SE2...=event)
+- entity_type: interaction / auto_trigger / event
+- scene: 所在场景名 (SS1_xxx / SS2_xxx)
+- name: 简短动作名
+- type: 关联技能名 (从标准技能列表选)，不涉及检定填"无"
+- requirement: 硬性前置条件用 entity ID + AND/OR/() (如 SI1 AND SI2)，裸 ID 默认指成功完成。无条件填空字符串。特殊条件在 "||" 后用自然语言。可描述是否需要消耗常见物品及数量
+- trigger: 触发场景描述，不要和 requirement 混淆
+- result: 直接结果。涉及技能检定时填 "##GRADED##"，side_effects 留空，所有结果文字写入 graded_result。可描述失去常见消耗品。不涉及进入与怪物的战斗/对抗/追捕
+- side_effects: 间接后果（与result不重合），使用 @标记 语法:
+  @spawn_enemy(enemy_ref="名称", scene="场景", quantity=1)
+  @grant_weapon(weapon_ref="名称", scene="场景", quantity=1)
+  @stat_change(stat_name="属性", delta=-1, narrative="")
+  @item_gain(item_name="物品", quantity=1)
+  @consume_item(item_name="物品", quantity=1, narrative="")
+  @npc_state_change(npc_name="名称", new_state="状态")
+  @npc_follow(npc_name="名称", follow=true)
+- difficulty: None / regular / hard / extreme
+- graded_result: type不为"无"时填写。四等级: on_failure=检定失败 / on_regular=常规成功 / on_hard=困难成功(≤技能值/2) / on_extreme=极难成功(≤技能值/5)。若原文未区分等级，各等级可描述相同
+
+标准技能: {skills}
+
+返回 JSON:
+{{
+  "scenes": {{
+    "SS1_场景名": {{
+      "description": "场景描述",
+      "interactions": [
+        {{"id": "SI1", "entity_type": "interaction", "scene": "SS1_场景名",
+          "name": "动作名", "type": "侦查", "requirement": "", "trigger": "触发条件",
+          "result": "##GRADED##", "side_effects": [],
+          "graded_result": {{"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."}},
+          "difficulty": "regular"}}
+      ],
+      "auto_triggers": [],
+      "from_here": [{{"target": "出口或下一场景", "method": "通行方式", "requirement": ""}}],
+      "to_here": [{{"source": "{shared['entry_scene']}", "method": "通行方式", "requirement": ""}}],
+      "extra": {{}}
+    }}
+  }},
+  "events": [],
+  "dependency_graph": {{
+    "nodes": {{}},
+    "edges": []
+  }}
+}}
+
+要求:
+- 所有 entity 必须有 type/side_effects/result 字段，若涉及检定 type 不为"无"则必须有 graded_result
+- 所有 @标记 直接写在 side_effects 中，不允许自然语言描述副作用
+- 所有描述性内容使用中文。JSON字段名和ID保持英文
+- 去重: 同一场景内 entity name 不应重复
+- dependency_graph 标注所有 entity 间的依赖关系 (source=依赖者, target=被依赖者, condition=completed)
+- 直接输出 JSON"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组标准化助手。同时完成entity生成、@标记标准化和依赖图构建。",
+                             fallback_schema={"scenes": {}, "events": [], "dependency_graph": {"nodes": {}, "edges": []}})
+    return json.loads(response) if isinstance(response, str) else response
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/module_designer/supplement_pipeline.py
+git commit -m "feat: supplement pipeline Step 2a — entities with inline @markup + dependency graph"
+```
+
+---
+
+### Task 3: Write Step 2b + 2c — L1 and L3 generation
+
+**Files:**
+- Modify: `src/module_designer/supplement_pipeline.py`
+
+- [ ] **Step 1: Write `_step_2b_l1`**
+
+```python
+def _step_2b_l1(shared: dict, base_l3: dict) -> dict:
+    """Step 2b: generate L1 player-facing layer for new scenes."""
+    scene_list = "\n".join(f"- {s}" for s in shared["scene_names"])
+    prompt = f"""你是TRPG模组创作者。生成新场景的玩家可见层（L1）。
+
+【叙事】
+{shared['story']}
+
+【新场景】
+{scene_list}
+
+每个场景包含: description（场景描述）、atmosphere（氛围）、mood（情绪基调）、
+perceptible（可无条件感知的元素列表，含 name/brief/linked_interaction）、
+ambient_hints（环境暗示）、npc_appearances（NPC出场，含 name/brief/demeanor）
+
+所有描述性内容使用中文。JSON字段名保持英文。
+
+返回 JSON:
+{{
+  "场景中文名": {{
+    "description": "场景描述",
+    "atmosphere": "氛围",
+    "mood": "情绪基调",
+    "perceptible": [
+      {{"name": "物品名", "brief": "简短描述", "linked_interaction": "关联entity ID或空"}}
+    ],
+    "ambient_hints": ["环境暗示"],
+    "npc_appearances": []
+  }}
+}}
+
+直接输出 JSON。"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组创作者。生成玩家可见的场景描述层。所有描述必须用中文。",
+                             fallback_schema={})
+    return json.loads(response) if isinstance(response, str) else response
+```
+
+- [ ] **Step 2: Write `_step_2c_l3`**
+
+```python
+def _step_2c_l3(shared: dict, base_l3: dict) -> dict:
+    """Step 2c: generate L3 designer layer for new scenes — scene_intents + optional adjustments."""
+    scene_list = "\n".join(f"- {s}" for s in shared["scene_names"])
+    prompt = f"""你是TRPG模组设计者。为新场景生成L3设计层。
+
+【叙事】
+{shared['story']}
+
+【新场景】
+{scene_list}
+
+【出入口】
+入口: {shared['entry_scene']}
+出口: {shared['exit_scene']}
+
+为每个新场景生成 scene_intents 条目（purpose=场景目的, key_threat=关键威胁, notes=设计备注）。
+如果新场景引入新的世界规则或需要调整基调约束，在 new_rules 和 tone_adjustments 中说明。
+
+返回 JSON:
+{{
+  "scene_intents": {{
+    "SS1_场景中文名": {{
+      "purpose": "场景目的",
+      "key_threat": "关键威胁",
+      "notes": "设计备注"
+    }}
+  }},
+  "new_rules": [],
+  "tone_adjustments": {{}}
+}}
+
+直接输出 JSON。"""
+    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+                             reasoning_effort="max",
+                             system="你是TRPG模组设计者。生成新场景的L3设计意图。",
+                             fallback_schema={"scene_intents": {}, "new_rules": [], "tone_adjustments": {}})
+    return json.loads(response) if isinstance(response, str) else response
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/module_designer/supplement_pipeline.py
+git commit -m "feat: supplement pipeline Step 2b/2c — L1 and L3 parallel generation"
+```
+
+---
+
+### Task 4: Post-generation — Assemble L2 + Validate + Write
+
+**Files:**
+- Modify: `src/module_designer/supplement_pipeline.py`
+
+- [ ] **Step 1: Write `_assemble_l2`**
+
+```python
+def _assemble_l2(entities_data: dict, scene_names: list[str]) -> dict:
+    """Assemble L2 structure from Step 2a output."""
+    scenes = entities_data.get("scenes", {})
+    events = entities_data.get("events", [])
+    dep_graph = entities_data.get("dependency_graph", {"nodes": {}, "edges": []})
+
+    # Scene names map
+    scene_map = {}
+    for sid in scenes:
+        scene_map[sid] = sid
+
+    return {
+        "scenes": scenes,
+        "events": events,
+        "npc_profiles": {},
+        "dependency_graph": dep_graph,
+        "_scene_names": scene_map,
+        "_phase1": {},
+    }
+```
+
+- [ ] **Step 2: Write `_validate_supplement`**
+
+```python
+def _validate_supplement(l2: dict, l1: dict, scene_names: list[str]):
+    """Deterministic validation: entity ID uniqueness, scene references, dependency cycle check, graded_result consistency."""
+    entity_ids = set()
+
+    # 1. Check entity ID uniqueness
+    for scene_name, scene_data in l2.get("scenes", {}).items():
+        for ent in scene_data.get("interactions", []) + scene_data.get("auto_triggers", []):
+            eid = ent.get("id", "")
+            if not eid:
+                continue
+            if eid in entity_ids:
+                raise ValueError(f"Duplicate entity ID: {eid}")
+            entity_ids.add(eid)
+
+            # Check graded_result consistency
+            if ent.get("type", "") not in ("", "无", "None") and not ent.get("graded_result"):
+                raise ValueError(f"Entity {eid} has skill type but no graded_result")
+            if ent.get("result") == "##GRADED##" and ent.get("side_effects"):
+                raise ValueError(f"Entity {eid}: ##GRADED## result but side_effects non-empty")
+
+    for ev in l2.get("events", []):
+        eid = ev.get("id", "")
+        if not eid:
+            continue
+        if eid in entity_ids:
+            raise ValueError(f"Duplicate entity ID (event): {eid}")
+        entity_ids.add(eid)
+
+    # 2. cycle detection in dependency graph
+    dep_edges = l2.get("dependency_graph", {}).get("edges", [])
+    adjacency = {}
+    for eid in entity_ids:
+        adjacency[eid] = []
+    for edge in dep_edges:
+        src = edge.get("source", "")
+        tgt = edge.get("target", "")
+        if src in adjacency and tgt in adjacency:
+            adjacency[src].append(tgt)
+    visited = set()
+    stack = set()
+    def _has_cycle(node):
+        visited.add(node)
+        stack.add(node)
+        for neighbor in adjacency.get(node, []):
+            if neighbor not in visited:
+                if _has_cycle(neighbor):
+                    return True
+            elif neighbor in stack:
+                return True
+        stack.discard(node)
+        return False
+    for eid in entity_ids:
+        if eid not in visited:
+            if _has_cycle(eid):
+                raise ValueError(f"Dependency cycle detected starting at {eid}")
+
+    # 3. Scene reference integrity: entities in scenes must reference real scenes
+    scene_set = set(l2.get("scenes", {}).keys())
+    for scene_name, scene_data in l2.get("scenes", {}).items():
+        for ent in scene_data.get("interactions", []) + scene_data.get("auto_triggers", []):
+            if ent.get("scene") not in scene_set:
+                raise ValueError(f"Entity {ent.get('id')} references unknown scene: {ent.get('scene')}")
+```
+
+- [ ] **Step 3: Verify all pieces assemble. Run the import test**
+
+```bash
+cd C:\Users\micha\PyCharmMiscProject && PYTHONPATH="src;." python -c "from module_designer.supplement_pipeline import run_supplement_pipeline; print('OK')"
+```
+
+Expected: `OK` (no import errors)
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/module_designer/supplement_pipeline.py
+git commit -m "feat: supplement pipeline — L2 assembly + validation"
+```
+
+---
+
+### Task 5: Update keeper.py to pass world_snapshot
+
+**Files:**
+- Modify: `src/game/agents/keeper.py:721-728`
+
+- [ ] **Step 1: Add world_snapshot parameter to run_supplement_pipeline call**
+
+```python
+# Before (line 721-728):
+            result = run_supplement_pipeline(
+                player_intent=intent,
+                reasoning=reasoning,
+                base_l3=author.l3_data,
+                entry_scene=structural_edit.entry_scene,
+                exit_scene=structural_edit.exit_scene,
+                module_name="",
+            )
+
+# After:
+            result = run_supplement_pipeline(
+                player_intent=intent,
+                reasoning=reasoning,
+                base_l3=author.l3_data,
+                entry_scene=structural_edit.entry_scene,
+                exit_scene=structural_edit.exit_scene,
+                world_snapshot=self._build_world_snapshot(),
+                module_name="",
+            )
+```
+
+- [ ] **Step 2: Verify**
+
+```bash
+cd C:\Users\micha\PyCharmMiscProject && PYTHONPATH="src;." python -c "from game.agents.keeper import Keeper; print('OK')"
+```
+
+Expected: `OK`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/game/agents/keeper.py
+git commit -m "feat: pass world_snapshot to supplement pipeline"
+```
+
+---
+
+### Task 6: Update test_escalation_harness.py — Case E mock
+
+**Files:**
+- Modify: `tests/test_escalation_harness.py:515-655`
+
+- [ ] **Step 1: Update `_mock_pipeline` signature + add Step 1/2 log files**
+
+Replace the old `_mock_pipeline` function (lines 516-517) and its log-writing body. The new mock accepts `world_snapshot` and logs the new Step 1/2 prompt structure.
+
+The mock function signature changes from:
+```python
+def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
+                   entry_scene="", exit_scene="", output_dir="", module_name=""):
+```
+to:
+```python
+def _mock_pipeline(player_intent="", reasoning="", base_l3=None,
+                   entry_scene="", exit_scene="", world_snapshot=None,
+                   output_dir="", module_name=""):
+```
+
+And the log-writing body replaces old Step 1a/1b/1c prompt simulation with:
+- `04_step1_narrative_response.json` (simulated Step 1 output: story + scene_names + exit_scene)
+- `05_step2a_entities_response.json` (simulated entity output)
+- `05_step2b_l1_response.json` (simulated L1 output)  
+- `05_step2c_l3_response.json` (simulated L3 output)
+
+Maintain all existing assertions — verify that `mirror_world` is in `world.graph.nodes`, interactions exist, edges exist, runtime_state initialized, Author L3 updated.
+
+- [ ] **Step 2: Run test to verify**
+
+```bash
+cd C:\Users\micha\PyCharmMiscProject && PYTHONPATH="src;." python -m pytest tests/test_escalation_harness.py -v --tb=short
+```
+
+Expected: 5/5 PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/test_escalation_harness.py
+git commit -m "test: update Case E mock for new supplement pipeline signature + logs"
+```
+
+---
+
+### Task 7: Final integration test
+
+**Files:**
+- None (verification only)
+
+- [ ] **Step 1: Run full escalation harness as script (with logs)**
+
+```bash
+cd C:\Users\micha\PyCharmMiscProject && PYTHONPATH="src;." python tests/test_escalation_harness.py
+```
+
+Expected: 5/5 PASS with full log output in `data/debug/test_escalation/<timestamp>/`
+
+- [ ] **Step 2: Run all unit tests to check for regressions**
+
+```bash
+cd C:\Users\micha\PyCharmMiscProject && PYTHONPATH="src;." python -m pytest tests/test_escalation_harness.py tests/test_author_flow.py tests/test_intent_detector.py -v --tb=short
+```
+
+Expected: all PASS

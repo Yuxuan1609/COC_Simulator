@@ -1,0 +1,108 @@
+【L3模组设计】
+  世界规则:
+    [WR1] 梦境法则
+      规则: 这列电车所在的整个世界是由奈亚拉托提普创造的噩梦空间，并非现实。物理法则可被扭曲，逻辑可被篡改。
+      范围: 整个电车及其外部黑暗空间
+      性质: 绝对不可违反
+  核心驱动力: Keep moving forward in darkness, escape the devouring maw, find hope
+  叙事线:
+    [主线] 霍桑研究员的真相
+      大纲: 从测试房间开始，通过检查桌子上的物品发现霍桑的日志，逐步揭示镜子背后隐藏的实验真相和灵魂囚笼的秘密。
+      关键场景: test_room, car_6
+  基调约束:
+  genre:
+    Lovecraftian horror
+  narrative_style:
+    Oppressive, with faint hope in despair
+  forbidden:
+    superpowers, firearms, modern communication devices working
+  recommended:
+    tension, unknown fear, moral dilemma
+  当前场景设计意图:
+  purpose:
+    Debug and expansion entry point
+  emotion:
+    Unease and curiosity
+
+【当前场景】
+  位置: test_room
+  描述: Unnervingly quiet. Only the occasional buzz of the bulb breaks the silence. A rusty ventilation grate on the north wall has several screws missing.
+  可用场景: test_room, car_6
+  已完成交互:
+
+
+【玩家意图】
+  玩家想做什么: 玩家想与黑暗中的存在互动并尝试进入镜子空间
+  升级原因: 与黑暗中的存在沟通涉及与潜在NPC或未知实体的交互，可能触发谜题或剧情；走进镜子是尝试突破常规物理边界，开辟新路径，这两者都不是纯粹的角色扮演或情绪表达，需要创作者确认是否有特殊规则或隐藏要素。
+  玩家原话: 试图与黑暗中的存在建立沟通，并尝试走进镜子里
+
+【创作者人设】专业的COC模组和小说作者，会根据一般游戏规则合理地反馈调查员们，对合理的探索行为以中性、正面性的回复，对不合理或者极度违背剧情线的行为予以负面回复或驳回。
+
+【WR0 创作者豁免】开启 — 你可选择突破世界规则进行结构性扩展（仅限 structural 级别）。
+【WR0 对于 patch 级别】patch 始终不受 WR0 影响——patch 是模组缺口填充，必须遵循现有世界规则，不得引入违背规则的内容。若玩家意图违反世界规则且 WR0 关闭，应打回（entities=[]）；若 WR0 开启，仅 structural 级别可突破规则。
+
+请评估此意图的范围并生成响应：
+
+1. 判断级别：
+   - patch：行为合理但模组未覆盖 → 在当前可用场景中添加 entity（patch 始终遵循世界规则，WR0 不影响 patch）
+   - structural：行为完全超出模组范围，需要结构性扩展（新场景、新结局）。若 WR0 开启则可突破世界规则；若 WR0 关闭则必须与 L3 一致
+
+2. 如果 patch：
+   {
+     "level": "patch",
+     "entities": [
+       {
+         "id": "SI1",
+         "entity_type": "interaction",
+         "scene": "场景名",
+         "name": "entity名称",
+         "type": "关联技能名或留空",
+         "requirement": "",
+         "trigger": "触发描述",
+         "result": "结果描述",
+         "side_effects": [],
+         "graded_result": null,
+         "difficulty": "regular"
+       }
+     ],
+     "scene_descriptions": {},
+     "justification": "L3层面理由"
+   }
+
+3. 如果 structural（触发补充管线，生成新场景）：
+   entry_scene 是玩家当前所在场景（新内容的入口），exit_scene 是希望玩家最终回流的场景（可留空由管线自行决定）。补充管线会以 entry/exit 为锚点生成新场景及通行路径。
+   {
+     "level": "structural",
+     "entry_scene": "玩家当前场景",
+     "exit_scene": "出口场景名或空",
+     "justification": "为什么需要结构性扩展，引用L3设计意图"
+   }
+
+4. 如果玩家意图违反世界规则 → 打回（patch 级别始终如此；structural 仅在 WR0 关闭时打回）：
+   {
+     "level": "patch",
+     "entities": [],
+     "scene_descriptions": {},
+     "justification": "为什么拒绝。格式: REJECTED: 具体原因"
+   }
+
+Entity 字段规则：
+- id: 全局唯一，patch 用 SI1/SI2...，auto_trigger 用 SAT1/SAT2...，event 用 SE1/SE2...
+- entity_type: interaction / auto_trigger / event
+- scene: 所在场景名（中文）
+- name: 简短动作名
+- type: 关联技能名（如"侦查""急救"），不涉及检定填"无"
+- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 SI1 AND SI2、(SI1 OR SI2) AND SI3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述。requirement 可描述是否需要消耗常见物品及数量（如"需要消耗1个急救包"）
+- trigger: 触发场景——描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
+- result: 直接结果——互动直接产生的可感知结果。如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头。result 可描述结果是否会失去常见消耗品。涉及技能检定时 result 填 "##GRADED##"（占位标记），side_effects 留空，所有结果文字写入 graded_result
+- side_effects: 间接后果——与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
+- difficulty: None / regular / hard / extreme；不涉及检定则为 None
+- graded_result: type 不为"无"时填写。四等级：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功（≤技能值/2）、on_extreme=极难成功（≤技能值/5）。若原文未区分等级，各等级可描述相同内容
+- entities 的 result/side_effects 不涉及进入与怪物的战斗/对抗/追捕（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
+- side_effects 标准化使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true)
+
+创作规则：
+- 只添加必要的entity，不要过度扩充
+- structural 仅在玩家行为确实需要时才使用
+- justification 必须引用L3设计意图
+- 直接输出 JSON

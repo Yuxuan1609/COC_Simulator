@@ -1,0 +1,7 @@
+{
+  "model": "deepseek-v4-flash",
+  "reasoning_effort": "low",
+  "json_mode": true,
+  "call_order": 2,
+  "elapsed_s": 1.86
+}
