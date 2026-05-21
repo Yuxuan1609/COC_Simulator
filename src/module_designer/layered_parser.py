@@ -188,11 +188,18 @@ def build_step1a_prompt(content: str) -> str:
 
 输出格式:
 {{
-  "module_meta": {{"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数", "estimated_duration": 240, "comms_interval": 10}},
+  "module_meta": {{"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数", "estimated_duration": 240, "comms_interval": 10, "starting_time_of_day": "夜间"}},
   "scenes": ["场景中文名", ...],
   "characters": [
     {{"name": "角色中文名", "id": "NPC_1"}},
     {{"name": "角色中文名", "id": "NPC_2"}}
+  ],
+  "boss_encounters": [
+    {{
+      "boss_ref": "Boss名称（来自module文档中提到的Boss/大怪/强敌）",
+      "scene": "出现场景",
+      "description": "Boss在故事中的定位"
+    }}
   ]
 }}
 
@@ -202,6 +209,8 @@ def build_step1a_prompt(content: str) -> str:
 3. 仅输出 JSON
 4. 估算模组剧情的预计总耗时（分钟），综合考虑所有可能的探索路径和对话时长。写入 module_meta.estimated_duration。
 5. 推荐通信间隔（分钟）写入 module_meta.comms_interval（短模组≤2h: 6-8min, 中型2-6h: 10-15min, 长型6-24h: 15-20min, 超长≥24h: 60-120min）。
+6. 识别模组文档中提到的Boss、大怪、强敌，不为普通怪物——Boss是剧情核心敌人、需要特殊机制或为最终战。提取后写入boss_encounters。
+7. 设定模组开始时的时段（凌晨/早晨/白天/黄昏/夜间），写入 module_meta.starting_time_of_day。基于模组文本中描述的时间氛围判断。
 
 模组文档：
 \"\"\"
@@ -650,7 +659,8 @@ def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], charact
 5. tone_constraints：全局叙事护栏，含 genre / forbidden / recommended / narrative_style
 6. characters：每个 NPC 的设计意图，含 id (使用已知角色列表中的 ID), name (使用已知角色列表中的名称), behavior (行为逻辑 + 叙事作用)
 7. driving_force：一切事件的底层驱动力
-8. 你是高层叙事者，你的工作应该关注于一切为什么是这样/这个场景为什么要这么写。不要过度关注具体的规则和信息。
+8. time_pressure（可选）：基于模组内容判断是否存在时间压力（如倒计时、追逐、环境吞噬等）。如果有，根据模板格式填写。不要无中生有——只有模组确实有明确的时间威胁时才填写。
+9. 你是高层叙事者，你的工作应该关注于一切为什么是这样/这个场景为什么要这么写。不要过度关注具体的规则和信息。
 
 重要：
 - 仅输出 JSON，不要任何解释性文字

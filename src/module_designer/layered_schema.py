@@ -151,6 +151,17 @@ L3_TOP_SCHEMA = {
     "tone_constraints": {"required": False, "nested": L3_TONE_CONSTRAINTS_SCHEMA},
     "characters": {"required": False, "list_of": L3_CHARACTER_SCHEMA},
     "driving_force": {"required": False},
+    "time_pressure": {
+        "type": "dict",
+        "required": False,
+        "schema": {
+            "name": {"type": "str", "required": False},
+            "guide": {"type": "str", "required": False},
+            "urgency": {"type": "int", "required": False},
+            "urgency_max": {"type": "int", "required": False},
+            "key_signals": {"type": "list", "required": False},
+        },
+    },
 }
 
 
