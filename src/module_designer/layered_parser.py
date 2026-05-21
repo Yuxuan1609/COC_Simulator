@@ -319,6 +319,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - based_on 始终为 null（Step 2b 会给派生实体填值）
 - 通行路径记录每个场景的出边（from_here）和入边（to_here），包含通行方式和前置条件
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
+- **模组中提到的可获取物品（clues_and_items 章节中的物品/线索）必须在对应场景的 entity 中通过 result 或 graded_result 明确表达为可获取状态，确保每个物品都有对应的 entity 承载其获取路径**
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -374,6 +375,7 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 12. 通行路径的 target/source 使用场景中文名，method 描述通行方式，requirement 描述硬性通行前置条件
 13. 严格依据精修模组内容，基于场景氛围合理补充，不要和原文冲突
 14. based_on 始终填 null（派生关系由 Step 2b 标注）
+15. 模组 clues_and_items 章节中提到的可获取物品和线索，必须在对应场景的 entity 中通过 result 或 graded_result 表达为可获取/可发现状态。每个物品都应有对应的 entity 承载其获取路径，不可遗漏
 精修模组：
 \"\"\"
 {"\n\n".join(chapters.values())}
@@ -489,6 +491,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - 只生成被动触发的事件，不要生成玩家主动互动
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
+- **模组 clues_and_items 中标记为初始可见/场景内放置的物品，必须生成为进入场景时的 auto_trigger（requirement 留空），trigger 为"玩家进入此场景时"，result 描述玩家自动感知到该物品的存在。无需检定即可获取的物品直接以 result 表达获取；需要检定的以 graded_result 表达**
 - 仅输出 JSON，不要任何解释性文字"""
 
 
