@@ -1122,19 +1122,12 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
             world.memory.note_item(effect.weapon_ref)
             msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
         elif isinstance(effect, NPCStateChange):
-            # Route through NPCManager — unified NPC state tracking
-            if hasattr(world, 'npc_manager') and world.npc_manager:
-                world.npc_manager.set_state(effect.npc_name, effect.new_state)
-            else:
-                world.set_npc_state(effect.npc_name, effect.new_state)
+            world.npcs.set_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
         elif isinstance(effect, NPCFollow):
-            if hasattr(world, 'npc_manager') and world.npc_manager:
-                world.npc_manager.set_following(effect.npc_name, effect.follow)
-                status = "开始跟随" if effect.follow else "停止跟随"
-                msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
-            else:
-                msgs.append(f"[NPC跟随] {effect.npc_name} follow={effect.follow}")
+            world.npcs.set_following(effect.npc_name, effect.follow)
+            status = "开始跟随" if effect.follow else "停止跟随"
+            msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
         elif isinstance(effect, StatChange):
             if world.player:
                 new_val, detail = world.player.modify_stat(effect.stat_name, effect.delta)
