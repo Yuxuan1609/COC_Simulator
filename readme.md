@@ -219,6 +219,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | G6 | Keeper 无单元测试 | ✅ DONE |
 | G7 | CombatSystem 未接入 game_loop | ✅ FIXED — `run_turn()` 和 `continue_standoff()` 中检测 `CombatInit` → `CombatSystem.run_combat()` → `EnemyManager.exit_combat()` |
 | G8 | `Investigator.combat_check/damage_roll` 仍 raise NotImplementedError | ✅ FIXED — 旧 stub 已移除，战斗逻辑已由 `CombatSystem` 完全接管 |
+| G9 | `item_manager` 未序列化 | ⚠ KNOWN — `to_dict`/`from_dict` 不包含 ItemManager。游戏过程中通过 `@item_gain` 获得的物品在存档/读档后丢失。`equipment` 字段仅为向后兼容保留的空壳 |
+| G10 | 子系统 (clock/enemies/npcs/bosses) 未序列化 | ⚠ KNOWN — `to_dict`/`from_dict` 不包含 GameClock、EnemyManager、NPCManager、BossManager。存档/读档后游戏时间、敌人位置、NPC 态度、Boss 状态丢失 |
 
 ### 待优化
 
@@ -230,7 +232,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
 | O5 | 时间系统 | ⚠ 部分实现 — TimeAgent prompt 未传入玩家输入，other 行为未接入。需修复 |
 | O6 | Harness 整合 | ⚠ 部分实现 — 新增 `test_harness_parallel.py`（16 case 并行真实 LLM）+ `test_harness_stability.py`（2 case 串行稳定性）。旧 `game_loop_harness.py` 仍存在（绕过 Keeper 走旧 pipeline，待迁移或删除） |
-| O7 | 世界状态类 & 调查员类 | ✅ FIXED — ScenarioWorld 重构为 Facade + GameClock + EnemyManager/NPCManager/BossManager 组合模式；@markup 解析迁至 `game/side_effects.py`；Keeper 接管 time_costs/comms_interval/apply_side_effects。详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md` |
+| O7 | 世界状态类 & 调查员类 | ⚠ 架构已重构，序列化待修复 — ScenarioWorld 重构为 Facade + GameClock + EnemyManager/NPCManager/BossManager 组合模式；@markup 解析迁至 `game/side_effects.py`；Keeper 接管 time_costs/comms_interval/apply_side_effects。详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md`。**子系统序列化 (G9/G10) 待后续修复** |
 ## 设计文档
 
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
