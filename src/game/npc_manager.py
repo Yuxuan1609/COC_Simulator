@@ -55,6 +55,13 @@ class NPCManager:
     def get_following(self) -> list[NPC]:
         return [n for n in self._npcs.values() if n.following]
 
+    def get_in_scene_snapshot(self, scene: str) -> list[dict]:
+        """Lightweight dict list for world snapshot — no dataclass internals exposed."""
+        return [
+            {"name": n.name, "state": n.state, "attitude": n.attitude, "following": n.following}
+            for n in self._npcs.values() if n.scene == scene
+        ]
+
     def all_names(self) -> list[str]:
         return list(self._npcs.keys())
 

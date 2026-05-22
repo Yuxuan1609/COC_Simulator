@@ -73,6 +73,21 @@ class BossManager:
             return None
         return combat_result.outcome
 
+    def active_snapshot(self) -> dict | None:
+        """Return active boss info for world snapshot, or None."""
+        if not self._active_boss_id:
+            return None
+        for enc in self._encounters:
+            if enc.get("id") == self._active_boss_id:
+                lib_boss = self._library.get(enc.get("boss_ref", ""))
+                return {
+                    "entity_id": self._active_boss_id,
+                    "boss_ref": enc.get("boss_ref", ""),
+                    "engage_type": enc.get("engage_type", ""),
+                    "mechanics": lib_boss.boss_mechanics if lib_boss else "",
+                }
+        return None
+
     def to_dict(self) -> dict:
         return {
             "active_boss_id": self._active_boss_id,
