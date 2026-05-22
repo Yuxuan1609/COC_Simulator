@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 from dataclasses import dataclass, field
 from module_designer.dependency_graph import DependencyNode, DependencyEdge
 
+from game.side_effects import (
+    ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon,
+    SceneWeapon, NPCStateChange, NPCFollow,
+    parse_markup, parse_markup_all,
+)
+
 
 # ═══════════════════════════════════════════════════════════════
 #  工具函数
@@ -60,66 +66,6 @@ class Interaction:
         return f"[{self.type}] {self.name}"
 
 
-@dataclass
-class ItemGain:
-    """获得物品 —— 加入调查员 ItemManager"""
-    item_name: str
-    quantity: int = 1
-
-
-@dataclass
-class ConsumeItem:
-    """消耗物品 —— 从调查员 ItemManager 移除"""
-    item_name: str
-    quantity: int = 1
-    narrative: str = ""  # 消耗原因（可选）
-
-
-@dataclass
-class StatChange:
-    """属性/状态变化。delta 为数值变化，narrative 描述难以量化的影响（恐惧、幻觉等）."""
-    stat_name: str
-    delta: int = 0
-    narrative: str = ""
-
-
-@dataclass
-class SpawnEnemy:
-    """生成敌人遭遇 —— 从 library 中实例化敌人"""
-    enemy_ref: str       # 引用 library/enemies 中的敌人名
-    scene: str           # 目标场景
-    quantity: int = 1
-
-
-@dataclass
-class GrantWeapon:
-    """授予武器 —— 从 library/weapons 中选取标准化武器"""
-    weapon_ref: str      # 引用 library/weapons 中的武器名
-    scene: str = ""      # 目标场景（空=当前场景）
-    quantity: int = 1
-
-
-@dataclass
-class SceneWeapon:
-    """武器放置 — 在场景中可被发现拾取的武器"""
-    weapon_ref: str      # 引用 library/weapons 中的武器名
-    scene: str           # 所在场景
-    quantity: int = 1
-
-
-@dataclass
-class NPCStateChange:
-    """NPC 状态变化 —— 更新 ScenarioWorld.npc_states"""
-    npc_name: str
-    new_state: str       # 如 "清醒"、"死亡"、"已对话"、"已离开"
-
-
-@dataclass
-class NPCFollow:
-    """NPC 跟随状态变更 — 更新 NPCManager follow 状态"""
-    npc_name: str
-    follow: bool = True
-
 
 @dataclass
 class ActionResult:
@@ -150,141 +96,6 @@ class Entity:
         return f"[{self.type}] {self.name}"
 
 
-# ═══════════════════════════════════════════════════════════════
-#  @markup 解析器
-# ═══════════════════════════════════════════════════════════════
-
-_MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
-    r'\(([^)]*)\)'
-)
-
-
-def _parse_kwargs(kwargs_str: str) -> dict:
-    """Parse key=value pairs from @markup arg string. Values may be quoted."""
-    result = {}
-    if not kwargs_str.strip():
-        return result
-    # Match key=value pairs, value can be quoted (single/double) or unquoted
-    for match in re.findall(r'(\w+)\s*=\s*(?:"""([^"]*)"""|"([^"]*)"|\'([^\']*)\'|([^,)]+))', kwargs_str):
-        key = match[0]
-        value = match[1] or match[2] or match[3] or match[4]
-        value = value.strip().rstrip(',')
-        result[key] = value
-    return result
-
-
-def parse_markup(text: str):
-    """Parse a single @function(args) markup string into a side effect dataclass."""
-    match = _MARKUP_PATTERN.search(text)
-    if not match:
-        return None
-    func_name = match.group(1)
-    kwargs_str = match.group(2)
-    kwargs = _parse_kwargs(kwargs_str)
-
-    if func_name == "spawn_enemy":
-        return SpawnEnemy(
-            enemy_ref=kwargs.get("enemy_ref", ""),
-            scene=kwargs.get("scene", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-        )
-    elif func_name == "grant_weapon":
-        return GrantWeapon(
-            weapon_ref=kwargs.get("weapon_ref", ""),
-            scene=kwargs.get("scene", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-        )
-    elif func_name == "stat_change":
-        delta_str = kwargs.get("delta", "0")
-        try:
-            delta = int(delta_str)
-        except ValueError:
-            delta = delta_str  # keep as string if it's a dice formula like "-1d4"
-        return StatChange(
-            stat_name=kwargs.get("stat_name", ""),
-            delta=delta,
-            narrative=kwargs.get("narrative", ""),
-        )
-    elif func_name == "item_gain":
-        return ItemGain(
-            item_name=kwargs.get("item_name", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-        )
-    elif func_name == "consume_item":
-        return ConsumeItem(
-            item_name=kwargs.get("item_name", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-            narrative=kwargs.get("narrative", ""),
-        )
-    elif func_name == "npc_state_change":
-        return NPCStateChange(
-            npc_name=kwargs.get("npc_name", ""),
-            new_state=kwargs.get("new_state", ""),
-        )
-    elif func_name == "npc_follow":
-        follow_str = kwargs.get("follow", "true").lower()
-        return NPCFollow(
-            npc_name=kwargs.get("npc_name", ""),
-            follow=follow_str in ("true", "1", "yes"),
-        )
-    return None
-
-
-def parse_markup_all(text: str) -> list:
-    """Parse all @markup occurrences in a string."""
-    results = []
-    for match in _MARKUP_PATTERN.finditer(text):
-        func_name = match.group(1)
-        kwargs_str = match.group(2)
-        kwargs = _parse_kwargs(kwargs_str)
-
-        if func_name == "spawn_enemy":
-            results.append(SpawnEnemy(
-                enemy_ref=kwargs.get("enemy_ref", ""),
-                scene=kwargs.get("scene", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-            ))
-        elif func_name == "grant_weapon":
-            results.append(GrantWeapon(
-                weapon_ref=kwargs.get("weapon_ref", ""),
-                scene=kwargs.get("scene", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-            ))
-        elif func_name == "stat_change":
-            delta_str = kwargs.get("delta", "0")
-            try:
-                delta = int(delta_str)
-            except ValueError:
-                delta = delta_str
-            results.append(StatChange(
-                stat_name=kwargs.get("stat_name", ""),
-                delta=delta,
-                narrative=kwargs.get("narrative", ""),
-            ))
-        elif func_name == "item_gain":
-            results.append(ItemGain(
-                item_name=kwargs.get("item_name", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-            ))
-        elif func_name == "consume_item":
-            results.append(ConsumeItem(
-                item_name=kwargs.get("item_name", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-                narrative=kwargs.get("narrative", ""),
-            ))
-        elif func_name == "npc_state_change":
-            results.append(NPCStateChange(
-                npc_name=kwargs.get("npc_name", ""),
-                new_state=kwargs.get("new_state", ""),
-            ))
-        elif func_name == "npc_follow":
-            follow_str = kwargs.get("follow", "true").lower()
-            results.append(NPCFollow(
-                npc_name=kwargs.get("npc_name", ""),
-                follow=follow_str in ("true", "1", "yes"),
-            ))
-    return results
 
 _GRADED_PATTERN = re.compile(r'^##GRADED##$')
 _END_PATTERN = re.compile(r'^##END_([^:]+):(.+?)##')

@@ -7,7 +7,8 @@ import json
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld, Entity, ActionResult
 
-from scenario_core import parse_markup_all, resolve_graded_result
+from game.side_effects import parse_markup_all
+from scenario_core import resolve_graded_result
 from .messages import ActionIntent, ActionOutcome
 from prompts import log_skill_result, _build_scene_context
 
