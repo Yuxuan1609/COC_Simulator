@@ -155,7 +155,7 @@ class Investigator:
         derived: Optional[DerivedStats] = None,
         skills: Optional[List[Skill]] = None,
         weapons: Optional[List[Weapon]] = None,
-        equipment: Optional[List[str]] = None,
+        equipment: Optional[List[str]] = None,   # deprecated, kept for serialization compat
         backstory: str = "",
         appearance: str = "",
         personal_description: str = "",
@@ -171,7 +171,6 @@ class Investigator:
         self.skills: List[Skill] = skills or []
         self.weapons: List[Weapon] = weapons or []
         self.item_manager: ItemManager = ItemManager()
-        self.equipment: List[str] = equipment or []
 
         self.backstory = backstory
         self.appearance = appearance
@@ -366,13 +365,15 @@ class Investigator:
         if sk:
             sk.value = max(0, min(99, sk.value + delta))
 
-    def add_item(self, item: str):
-        if item not in self.equipment:
-            self.equipment.append(item)
+    # ── 物品便捷查询 ──
 
-    def remove_item(self, item: str):
-        if item in self.equipment:
-            self.equipment.remove(item)
+    def has_item(self, name: str) -> bool:
+        """Check if investigator holds a specific item."""
+        return self.item_manager.has(name)
+
+    def list_items(self) -> str:
+        """Describe all held items (formatted string)."""
+        return self.item_manager.describe()
 
     def add_weapon(self, w: Weapon):
         self.weapons.append(w)
