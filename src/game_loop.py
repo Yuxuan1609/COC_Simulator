@@ -11,7 +11,7 @@ from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput, CombatInit
 from game.combat import CombatSystem
-from prompts import _build_investigator_info
+
 
 
 
@@ -271,8 +271,9 @@ def run_turn(game: dict, user_input: str,
                 })
 
     try:
+        snap = world.build_snapshot()
         narrative_brief, narrative, scene_update = narrator.narrate(
-            brief, inv_info=_build_investigator_info(world), user_input=user_input)
+            brief, snap=snap, user_input=user_input)
         # Record brief to memory after narrator generates the final brief text
         world.memory.add_record(
             user_input, "narrated", "",
