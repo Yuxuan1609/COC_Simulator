@@ -86,6 +86,7 @@ class Keeper:
         # Step 2: Judge (deterministic) — flag check, skill check, ##GRADED##
         all_outcomes = []
         judged_entities = []  # for enrich prompt
+        action_summaries: list[dict] = []  # collected for TimeAgent
         for entry in parse_result:
             entry_type = entry.get("type", "")
             if entry_type in ("auto_trigger", "interaction", "event"):
@@ -99,10 +100,15 @@ class Keeper:
                 )
                 outcome = self.judge._execute_entity(entity, intent=intent, player_input=raw)
                 self._apply_side_effects(outcome.side_effects)
-                # Time advancement for entity execution
                 if outcome.success:
-                    time_delta = self._resolve_time_delta(entity)
-                    self.world.clock.advance_time(time_delta)
+                    tr = entity.extra.get("time_range") if entity.extra else None
+                    action_summaries.append({
+                        "type": entity.entity_type,
+                        "name": entity.name,
+                        "success": True,
+                        "time_range": tr,
+                        "time_category": self._infer_time_category(entity),
+                    })
                 all_outcomes.append(outcome)
                 if outcome.success:
                     judged_entities.append({
@@ -123,7 +129,13 @@ class Keeper:
                 ))
                 self._apply_side_effects(result.side_effects)
                 if result.success:
-                    self.world.clock.advance_time(3)  # default move: ~3 min
+                    action_summaries.append({
+                        "type": "move",
+                        "name": f"移动到{target}",
+                        "success": True,
+                        "time_range": None,
+                        "time_category": "move",
+                    })
             elif entry_type == "search":
                 # Search always performs a 侦查 (Spot Hidden) check.
                 # No dependency check, no flag update, no enrich.
@@ -176,7 +188,7 @@ class Keeper:
                                 f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
                                 for sw in scene_weps
                             )
-                            msg += f'\n\n（你发现了 {wep_names}。输入“拾取 <武器名>”来获得它）'
+                            msg += f'\n\n（你发现了 {wep_names}。输入"拾取 <武器名>"来获得它）'
                     else:
                         msg = "（你环顾四周，但昏暗的光线让你无法看清任何有用的东西）"
                 else:
@@ -186,17 +198,21 @@ class Keeper:
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
                     skill_detail=skill_detail if self.world.player else ""))
-                # Advance time for search
-                self.world.clock.advance_time(10 if (self.world.player and ok) else 5)
+                action_summaries.append({
+                    "type": "search",
+                    "name": "搜索",
+                    "success": True,
+                    "time_range": None,
+                    "time_category": "search",
+                })
             elif entry_type == "other":
                 text = entry.get("text", "")
                 scene = self.world.current_location
                 scene_weps = self.world.scene_weapons.get(scene, [])
                 picked_up = False
-                for sw in list(scene_weps):  # iterate copy since we mutate
+                for sw in list(scene_weps):
                     if sw.weapon_ref.lower() in text.lower() and \
                        ("拾取" in text or "捡" in text or "拿" in text or "pick" in text.lower()):
-                        # Look up weapon stats from library
                         if self.world.weapon_library:
                             lib_wep = self.world.weapon_library.get(sw.weapon_ref)
                             if lib_wep:
@@ -218,18 +234,36 @@ class Keeper:
                             message=f"你拾起了{sw.weapon_ref}。",
                         ))
                         picked_up = True
+                        action_summaries.append({
+                            "type": "other",
+                            "name": f"拾取{sw.weapon_ref}",
+                            "success": True,
+                            "time_range": None,
+                            "time_category": "other",
+                        })
                         break
                 if not picked_up:
                     all_outcomes.append(ActionOutcome(
                         intent=ActionIntent(action="other"), success=True,
                         message=f"（{text}）"))
+                    action_summaries.append({
+                        "type": "other",
+                        "name": text,
+                        "success": True,
+                        "time_range": None,
+                        "time_category": "other",
+                    })
             else:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
-            # Time advancement for "other" actions
-            other_default = (self.world.time_costs or {}).get("other", 3)
-            self.world.clock.advance_time(other_default)
+                action_summaries.append({
+                    "type": "other",
+                    "name": entry.get("text", ""),
+                    "success": True,
+                    "time_range": None,
+                    "time_category": "other",
+                })
 
         # Boss "at" check: after scene change
         if self.world.bosses:
@@ -270,18 +304,38 @@ class Keeper:
                 fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
             )
 
-        # Step 3: Enrich (LLM) — describe and integrate
+        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — parallel with combat_entry
         emphasis = ""
-        if judged_entities:
-            enrichment = self._enrich(judged_entities, raw)
+        enrich_future = None
+        ta_future = None
+        enrich_executor = None
+        if judged_entities or action_summaries:
+            n_workers = (1 if judged_entities else 0) + (1 if action_summaries else 0)
+            enrich_executor = ThreadPoolExecutor(max_workers=n_workers) if n_workers > 0 else None
+            if enrich_executor:
+                if judged_entities:
+                    enrich_future = enrich_executor.submit(self._enrich, judged_entities, raw)
+                if action_summaries:
+                    ta_future = enrich_executor.submit(self._run_time_agent, action_summaries, raw)
+
+        # Step 3.5: Collect enrich + TA results
+        if enrich_future:
+            enrichment = enrich_future.result()
             emphasis = enrichment.get("emphasis_hint", "")
-            reasoning = enrichment.get("reasoning", "")
-            # Apply enriched results: string = merged narrative for first outcome
             results = enrichment.get("results", "")
             if isinstance(results, str) and results and all_outcomes:
                 all_outcomes[0].message = results
+        if ta_future:
+            ta_result = ta_future.result()
+            if ta_result.get("time_delta", 0) > 0:
+                self.world.clock.advance_time(ta_result["time_delta"])
+            narrative = (ta_result.get("narrative_hint", "") or "")
+            if narrative:
+                self.world.clock.time_context = narrative
+        if enrich_executor:
+            enrich_executor.shutdown(wait=False)
 
-        # Step 3.5: Collect combat entry result
+        # Step 3.6: Collect combat entry result
         combat_entry = None
         if combat_future:
             try:
@@ -297,7 +351,7 @@ class Keeper:
             finally:
                 combat_executor.shutdown(wait=False)
 
-        # Step 3.6: Build standoff_prompt or combat_init from combat_entry
+        # Step 3.7: Build standoff_prompt or combat_init from combat_entry
         standoff_prompt = None
         combat_init_result = None
         if combat_entry and combat_entry.enter_combat:
@@ -338,41 +392,6 @@ class Keeper:
                     scene=self.world.current_location,
                     initiative_context=combat_entry.reasoning,
                 )
-
-        # TimeAgent trigger (after enrich, before curate)
-        if self._should_trigger_time_agent():
-            try:
-                from game.agents.time_agent import TimeAgent
-                ta = TimeAgent()
-                tc_guideline = ""
-                if self.world.time_costs:
-                    import json as _json
-                    tc_guideline = _json.dumps(self.world.time_costs, ensure_ascii=False)
-                recent = self.world.memory.raw_history[-3:] if self.world.memory.raw_history else []
-                recent_summary = "; ".join(
-                    (r.get("user_input", "") or "")[:80] for r in recent
-                )
-                result = ta.assess(
-                    game_time=self.world.clock.game_time,
-                    day=self.world.clock.day,
-                    time_of_day=self.world.clock.time_of_day,
-                    hour=self.world.clock.hour,
-                    recent_actions=recent_summary,
-                    current_scene=self.world.current_location,
-                    scene_description=self.world.get_current_description(),
-                    time_costs_guideline=tc_guideline,
-                    current_input=raw,
-                )
-                if result.get("time_delta", 0) > 0:
-                    self.world.clock.advance_time(result["time_delta"])
-                narrative = (result.get("narrative_hint", "") or "")
-                signal = (result.get("signal_hint", "") or "")
-                combined = f"{narrative} {signal}".strip()
-                if combined:
-                    self.world.clock.time_context = combined
-                self._last_ta_call = self.world.clock.game_time
-            except Exception:
-                pass  # TimeAgent is best-effort
 
         # TimePressure comms dispatch (at most 1 per turn)
         tp = author.time_pressure if author else None
@@ -680,15 +699,6 @@ class Keeper:
             "npc_states": {n["name"]: n["state"] for n in snap["npcs_in_scene"]},
         }
 
-    def _resolve_time_delta(self, entity) -> int:
-        """Resolve time delta based on entity extra.time_range or defaults."""
-        if entity.extra and entity.extra.get("time_range"):
-            tr = entity.extra["time_range"]
-            return (tr.get("min", 3) + tr.get("max", 10)) // 2
-        category = self._infer_time_category(entity)
-        defaults = self.world.time_costs or {"search": 10, "move": 3, "dialogue": 5, "combat_round": 1, "other": 3}
-        return defaults.get(category, 5)
-
     def _infer_time_category(self, entity) -> str:
         if entity.entity_type in ("auto_trigger", "event"):
             return "other"
@@ -696,14 +706,11 @@ class Keeper:
             return "search"
         return "other"
 
-    def _should_trigger_time_agent(self) -> bool:
-        if not hasattr(self, '_last_ta_call'):
-            self._last_ta_call = -1
-        if self._last_ta_call < 0:
-            return True  # first call
-        if self.world.clock.game_time - self._last_ta_call >= 30:
-            return True
-        return False
+    def _run_time_agent(self, action_summaries: list[dict], raw: str) -> dict:
+        """Call TimeAgent with collected action summaries. Runs in parallel with enrich."""
+        from game.agents.time_agent import TimeAgent
+        ta = TimeAgent()
+        return ta.assess(actions=action_summaries, current_input=raw)
 
     def _build_scene_context_for_author(self) -> dict:
         """Build scene_context for AuthorRequest. Delegates to World snapshot."""
