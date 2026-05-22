@@ -261,6 +261,21 @@ class Investigator:
                 min_tier = tier
         return all_pass, "；".join(results), min_tier
 
+    def build_snapshot(self) -> dict:
+        """Return a lightweight dict of player state for prompt contexts."""
+        return {
+            "name": self.name,
+            "hp": self.derived.HP,
+            "san": self.derived.SAN,
+            "mp": self.derived.MP,
+            "weapons": [w.name for w in self.weapons],
+            "inventory": self.item_manager.describe(),
+            "skills_summary": ", ".join(
+                f"{s.name}={s.value}" for s in self.skills[:10]
+            ),
+            "description": self.personal_description or "",
+        }
+
     # ── 修改（供未来游戏循环使用）──
 
     def _recalc_derived(self):
