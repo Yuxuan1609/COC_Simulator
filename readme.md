@@ -14,7 +14,7 @@
 │   │   ├── core/
 │   │   │   ├── weapons.json                 # 核心武器库（10 件）
 │   │   │   ├── enemies.json                 # 核心敌人库（4 种神话生物/人类，含 [flag] 标记）
-│   │   │   └── bosses.json                  # 核心 Boss 库（1 种剧情敌人，含 boss_mechanics）
+│   │   │   └── bosses.json                  # 核心 Boss 库（3 种剧情敌人，含 boss_mechanics）
 │   │   └── extensions/                      # 用户自定义武器/敌人扩展包
 │   ├── templates/
 │   │   ├── l1_template.json                 # L1 玩家可见层模板
@@ -75,7 +75,8 @@
 ├── run_pipeline.py                          # 管线 CLI 入口（配置向导 + 手动/自动模式）
 ├── notebooks/
 │   ├── notebook_simplified.ipynb            # 主游戏循环（导入 src/ 模块）
-│   └── parser_test.ipynb                    # 管线驱动与测试
+│   ├── parser_test.ipynb                    # 管线驱动与测试（交互式）
+│   └── _parser_layered_export.py            # 管线一键运行脚本（命令行可执行）
 ├── docs/
 │   └── superpowers/
 │       ├── specs/                           # 设计文档（含 combat-entry-detection-design）
@@ -157,14 +158,14 @@
 
 ### `src/module_designer/` — 三层信息引擎
 
-渐进式解析流程（12 次 LLM 调用）：
+渐进式解析流程（13 次 LLM 调用）：
 
-1. Step 1a/1b — 结构化提取 + 精修模组 (2 并行)
+1. Step 1a/1b — 结构化提取 + 精修模组 (2 并行)。Step 1a 同时输出敌人/武器/Boss 约束
 2. Step 2a — Interactions + scene_movements
-3. Step 2b/2c — Events + AT + L1 + L3 (4 并行)
-4. Step 3a — 去重 + 冲突 + 结局验证
+3. Step 2b/2c — Events + AT + L1 + L3 (4 并行)。AT 自动生成 AT_WORLD 世界初始化实体
+4. Step 3a ∥ Step 2.5 ∥ Step_boss — 去重/冲突/结局验证 ∥ NPC 行为档案 ∥ Boss 遭遇实体 (3 并行)
 5. 组装 L2 → Step 3b: L1↔L2↔L3 交叉核对
-6. Step 3.5 ∥ Phase 1 — 依赖图 + 风格预判 (2 并行)
+6. Step 3.5 — 依赖图构建 + 循环检测
 7. Phase 2 — type 标准化 + side_effects → `@函数(参数)` (7 种：spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow)
 
 每步含 `_with_fallback` 保底策略。详细过程见 `docs/superpowers/specs/NEXT-SESSION.md`。
@@ -213,7 +214,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 |---|------|------|
 | O1 | Escalation 每回合 LLM 调用 | ✅ 已解决 — 改为 Parse other → IntentDetect 按需触发 |
 | O2 | Memory 压缩阻塞 LLM 调用 | ✅ FIXED — 改为 daemon Thread 后台执行，不阻塞 turn 返回 |
-| O3 | Move 限制条件未强制执行 | ✅ FIXED — `ScenarioWorld.move()` 检查 edge.requirement（hard: entity IDs + AND/OR，soft: LLM parse 评估），不满足返回阻塞消息。⚠ 模组生成管线需微调：L2 edge requirement 格式需要与 entity requirement 对齐 |
+| O3 | Move 限制条件未强制执行 | ✅ FIXED — `ScenarioWorld.move()` 检查 edge.requirement（hard: entity IDs + AND/OR，soft: LLM parse 评估），不满足返回阻塞消息 |
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
 | O5 | 时间系统 | ⚠ 部分实现 — TimeAgent prompt 未传入玩家输入，other 行为未接入。需修复 |
 | O6 | Harness 整合 | `game_loop_harness` / `escalation_harness` / `combat_harness` 三个集成测试文件合并为统一的 mock-LLM 端到端测试 |
