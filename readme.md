@@ -28,7 +28,7 @@
 │   └── output/
 │       └── archive/                         # 旧 pipeline 输出存档
 ├── src/
-│   ├── scenario_core.py                     # 数据类、有向图、世界状态、记忆管理、Entity/@markup（7 种）
+│   ├── scenario_core.py                     # 数据类、有向图、世界状态 Facade、记忆管理、Entity/##GRADED##/##END_
 │   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
 │   ├── trpg_display.py                      # Notebook UI 显示组件
 │   ├── utils.py                             # 文件解析、Token 估算、掷骰、技能定义加载
@@ -36,6 +36,8 @@
 │   ├── game_loop.py                         # 多 Agent 入口：init_game() + run_turn() + continue_standoff()
 │   ├── game/                                # Multi-Agent 游戏循环
 │   │   ├── messages.py                      #   消息 dataclass（NarratorBrief, CombatEntryCheck, CombatInit, CombatResult 等）
+│   │   ├── side_effects.py                  #   Side effect dataclass（7 种）+ @markup 解析器（纯函数）
+│   │   ├── clock.py                         #   GameClock — 确定性分钟计时器（day/hour/time_of_day）
 │   │   ├── judge.py                         #   确定性闸门（需求 + 技能检定 + @markup + ##GRADED##）
 │   │   ├── curator.py                       #   策展器：outcomes → NarratorBrief
 │   │   ├── combat.py                        #   CombatSystem：COC 7th 回合制战斗（独立于 Keeper 管线）
@@ -46,7 +48,8 @@
 │   │   └── agents/
 │   │       ├── keeper.py                    #   KP 守秘人（回合编配：parse→judge→enrich∥combat_entry→standoff→curate）
 │   │       ├── narrator.py                  #   叙事者（唯一面向玩家，L1 + NarratorBrief → 叙事）
-│   │       └── author.py                    #   作者（L3 + AuthorRequest → ModulePatch/StructuralEdit）
+│   │       ├── author.py                    #   作者（L3 + AuthorRequest → ModulePatch/StructuralEdit）
+│   │       └── time_agent.py               #   TimeAgent — 轻量 LLM 时间评估器（读 Clock，不写 Clock）
 │   ├── library/                             # 武器/敌人资源库
 │   │   ├── weapons.py                       #   LibraryWeapon + WeaponLibrary
 │   │   ├── enemies.py                       #   LibraryEnemy（含 [flag] 解析）+ EnemyLibrary
@@ -89,15 +92,20 @@
 
 ### `scenario_core.py`
 
-纯 Python 数据模块，不依赖 LLM 或 UI。
+纯 Python 数据模块，不依赖 LLM 或 UI。一级 Facade 组合 5 个子系统。
 
 - **数据类**：`Node`（场景节点）、`Edge`（连接边）、`Entity`（统一 entity）、`Requirement`（前置条件）、`ActionResult`（统一返回类型）
-- **Side Effects (8 种)**：`ItemGain`（获得物品）、`ConsumeItem`（消耗物品）、`StatChange`（属性变化）、`SpawnEnemy`（生成敌人）、`GrantWeapon`（授予武器）、`NPCStateChange`（NPC 状态）、`NPCFollow`（NPC 跟随）、`SceneWeapon`（场景武器）
 - **DirectedGraph**：管理所有场景节点、连接关系和全局事件
-- **ScenarioWorld**：运行时状态管理器 —— 当前位置、已触发事件、已完成交互、runtime_state/dependency_graph、NPC 运行时状态、记忆管理、EnemyManager、scene_weapons、weapon_library
+- **ScenarioWorld**：运行时状态 Facade —— 当前位置、已触发事件、已完成交互、runtime_state/dependency_graph。挂载子系统：
+  - `clock: GameClock` — 确定性分钟计时器（`game_time`/`day`/`hour`/`time_of_day`/`advance_time()`）
+  - `memory: MemoryManager` — 分层记忆（近期原始记录 + 远期压缩摘要 + 关键发现追踪）
+  - `enemies: EnemyManager` — 敌人实例追踪层
+  - `npcs: NPCManager` — NPC 全量管理
+  - `bosses: BossManager` — Boss 遭遇管理
 - **MemoryManager**：分层记忆 —— 近期原始记录 + 远期压缩摘要 + 关键发现追踪
-- **@markup 解析器**：`parse_markup` / `parse_markup_all` 将 @函数(参数) 标记文本解析为 dataclass 实例
 - **##GRADED## / ##END_**：分级检定结果 + 结局嵌入
+
+> Side effect dataclass（7 种）和 @markup 解析器已迁至 `src/game/side_effects.py`。
 
 ### `src/game/` — Multi-Agent 游戏循环
 
@@ -111,6 +119,9 @@
 | IntentDetector | — | Parse 命中 other 时并行检测是否存在实际叙事意图 | `src/game/intent_detector.py` |
 
 **支持系统**：
+- **Side Effects**（`side_effects.py`）：7 种 dataclass（ItemGain/ConsumeItem/StatChange/SpawnEnemy/GrantWeapon/NPCStateChange/NPCFollow）+ `parse_markup()`/`parse_markup_all()` 纯函数解析器
+- **GameClock**（`clock.py`）：确定性分钟计时器 — `game_time`/`day`/`hour`/`time_of_day`/`advance_time()`/`get_time_flags()`。不做 LLM 调用
+- **TimeAgent**（`agents/time_agent.py`）：轻量 LLM 时间评估器 — 读 Clock 状态，评估额外时间消耗，不写 Clock。Author 管理叙事时间压力
 - **Judge**（`judge.py`）：确定性闸门 — requirement 检查 + COC 7th D100 检定 + ##GRADED## 分级 + LLM 失败惩罚 + trait enhancement
 - **Curator**（`curator.py`）：策展器 — outcomes + ambient → NarratorBrief
 - **CombatSystem**（`combat.py`）：COC 7th 回合制战斗，独立于 Keeper 管线。接收 CombatInit，返回 CombatResult
@@ -193,7 +204,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | NPC / 同伴系统 | ✅ 已实现 | NPCManager 全量管理：LLM 对话（态度/记忆上下文注入）、被动跟随（@npc_follow markup）、5级态度状态机。架构预留半主动 hook。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
 | Boss/剧情敌人 | ✅ 已实现 | 独立 bosses.json 库，`type="boss_encounter"` Entity（engage_type 硬性过滤），BossManager 信息挂钩+CombatSystem LLM 路径。特殊机制走自然语言 `boss_mechanics` 字段。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
 | 前端 UI + 随材 | TODO | **升级功能点**：游戏循环 Web 前端的视觉升级（场景插图、角色立绘、战斗动画）、音效/BGM 随材集成、移动端适配。当前 `frontend/game.html` 为纯功能界面 |
-| 时间系统 | ⚠ 已实现，有已知问题 | 两层架构：确定性时间（`world.game_time` + `advance_time()`）+ TimeAgent (LLM sub-agent) 叙事引导。每 30 分钟调用一次。设计文档：`docs/superpowers/specs/2026-05-22-time-system-redesign.md` **已知问题：1) TimeAgent prompt 未传入玩家本轮输入，导致叙事引导与玩家行为脱节 2) other 行为（即兴/搜索/非常规互动）未接入 TimeAgent，应在每轮判定中主动触发时间感知** |
+| 时间系统 | ⚠ 已实现，有已知问题 | 三层架构：`GameClock`（确定性分钟计时器 + `day`/`hour`/`time_of_day`）+ `TimeAgent`（LLM 轻量时间评估器）+ `Author`（叙事时间压力管理）。设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md` **已知问题：1) TimeAgent prompt 未传入玩家本轮输入 2) other 行为未接入 TimeAgent** |
 
 ### 已知缺口
 
@@ -218,7 +229,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
 | O5 | 时间系统 | ⚠ 部分实现 — TimeAgent prompt 未传入玩家输入，other 行为未接入。需修复 |
 | O6 | Harness 整合 | `game_loop_harness` / `escalation_harness` / `combat_harness` 三个集成测试文件合并为统一的 mock-LLM 端到端测试 |
-| O7 | 世界状态类 & 调查员类 | `ScenarioWorld` 和 `Investigator` 两个核心类体积过大、职责混杂，待结构性优化拆分 |
+| O7 | 世界状态类 & 调查员类 | ✅ FIXED — ScenarioWorld 重构为 Facade + GameClock + EnemyManager/NPCManager/BossManager 组合模式；@markup 解析迁至 `game/side_effects.py`；Keeper 接管 time_costs/comms_interval/apply_side_effects。详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md` |
 ## 设计文档
 
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
@@ -228,6 +239,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 - 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
 - Boss/剧情敌人 & NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
 - Implementation Plan: `docs/superpowers/plans/2026-05-20-boss-npc-plan.md`
+- ScenarioWorld 重构: `docs/superpowers/specs/2026-05-22-world-refactor-design.md`
 - **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md` — 每个模块标注文件-类/函数-功能拆解，供快速定位代码
 - **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md` — 三层架构说明、源文档写法、@markup 系统、敌人/Boss/NPC 设计、叙事线/时间压力配置、写作检查清单
 
@@ -235,6 +247,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 | 文件 | 覆盖范围 | 类型 |
 |------|----------|------|
+| `tests/test_clock.py` | 10 case — GameClock 默认值/推进/跨天/时段转换/时间标记/序列化/隔离 | 单元（确定） |
+| `tests/test_time_system.py` | 8 case — GameClock 集成 world + time_costs 文件完整性 | 单元（确定） |
 | `tests/test_enemy_manager.py` | 9 case — spawn/filter/group/combat lifecycle/range/context | 单元（确定） |
 | `tests/test_combat_entry.py` | 6 case — SpawnEnemy→EnemyManager→combat lifecycle | 集成（确定） |
 | `tests/test_combat.py` | 10 case — damage roll/armor/tier/combat state | 单元（确定） |
