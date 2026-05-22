@@ -66,7 +66,6 @@ def _init_game_instance():
         l2_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l2_test.json"),
         l1_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l1_test.json"),
         l3_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l3_test.json"),
-        escalation_config_path=str(PROJECT_ROOT / "data/modules/常暗之厢/escalation_config.json"),
         start_node="测试房间",
     )
 

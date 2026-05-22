@@ -147,6 +147,18 @@
 入口：`init_game()` 加载所有 JSON + EnemyLibrary + WeaponLibrary + 初始化三 Agent，`run_turn()` 驱动每回合。
 仅 `keeper.world` 暴露 ScenarioWorld，L3 数据内聚在 Author。
 
+**Enricher（`src/game/agents/keeper.py:642-657` + `src/prompts.py:495-544`）**：
+
+parse → judge 之后、curate → narrator 之前的软缓冲层。职责是**合并润色**——将分散的实体触发结果（含成功和失败）转化为连贯的叙事段落，但不做任何裁决或状态变更。
+
+- **输入**：`judged_entities`（修复后包含失败实体，含失败惩罚叙事）、`user_input`、`world.build_snapshot()`（世界状态/场景现状/时间块）
+- **输出**：`{"results": "合并叙事", "reasoning": "整合逻辑", "emphasis_hint": "叙事方向"}`
+- **覆写规则**（2026-05-22 修复）：enrich 结果只覆写第一个**成功且非 AT** 的 outcome.message，失败实体的惩罚叙事不受影响。失败实体的 result 如含明确后果（扣血/刷怪等）则保留原文入叙事，仅当 result 为简单"检定失败"时才改为晦涩模糊。
+- **并行**：与 `combat_entry(LLM)` 和 `TimeAgent(LLM)` 在同一线程池中并行执行
+- **提示词**见上方 `丰富后的enrich提示词` 章节详细展示
+
+**输出管线分离**：`skill_detail`（检定骰值、难度递增标记、失败惩罚标记）和 `TimeAgent` 的时间信息走独立输出管线（CLI `skill_results` + 日志 `skill_checks.txt`），不经过 Narrator。Narrator 仅接收已完成的叙事文本（`ActionOutcome.message`），保持"叙事者只叙事"的职责边界。
+
 **CombatSystem（`src/game/combat.py`）**：
 - 独立于 Keeper 管线，接收 `CombatInit`，返回 `CombatResult`
 - 伤害掷骰（1D6+DB 等公式）、护甲减免、D100 技能检定（格斗/射击/闪避）
@@ -209,6 +221,15 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | **2** | O4 | 基于 Escalation 修改轻量级管线 | Author Patch/StructuralEdit 轻量级 LLM 提示词质量不稳定。需结合 escalation 的 real-LLM 测试结果精修 prompt 模板，提升 Patch 命中率和 StructuralEdit 生成质量 |
 | 3 | O5 | 时间系统 | ✅ 已修复 — `_resolve_time_delta` 移除，改为每轮单次 TimeAgent 调用（与 enrich 并行）。TA 接收本轮所有 action 摘要 + time_range + 玩家输入，统一评估总耗时。日志写入 `logs/<ts>/TimeAgent.txt` |
 | 4 | O7 | 世界状态类 & 调查员类序列化 | 详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md`。子系统序列化 (G9/G10) 待修复 |
+| 5 | O8 | parse → enrich → curate 链路缺少明确中间结构 | `judged_entities` / `action_summaries` 在 `process_turn` 中为局部裸 list[dict] 自由漂浮，无类型约束。建议引入 `EnrichInput` dataclass 封装传给 enrich 的完整上下文，降低未来管线修改引入 bug 的风险 |
+
+### 待升级（不优先）
+
+| # | 问题 | 说明 |
+|----|------|------|
+| U1 | Author 的 "other 行为" 缺乏意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。当前 IntentDetector 只判断"是否有意图"但不评分"意图对应哪个实体/是否需要检定"，导致 detect 的 false positive 触发不必要的 Author 调用。建议引入二次确认（如 Keeper 反问玩家"你要实际尝试吗？"）或实体匹配置信度阈值 |
+| U2 | 缺少技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，但限制未来多人扩展 |
+
 ## 设计文档
 
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
@@ -241,6 +262,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `tests/test_escalation_real.py` | 5 case — 真实 LLM 升级流测试，含完整 prompt/response 日志 | 集成（真实 LLM） |
 | `tests/test_harness_parallel.py` | **NEW** — 16 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局，含 `--mock` 模式 | 集成（真实 LLM） |
 | `tests/test_harness_stability.py` | **NEW** — 2 case 串行稳定性测试（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
+| `tests/test_failure_penalty.py` | **NEW** — 2 case 失败惩罚链路：Judge 生成→Keeper 保留→Narrator 接收，全 mock | 单元 |
 | `tests/game_loop_harness.py` | ⚠ 已弃用 — 7 轮旧 pipeline（绕过 Keeper.process_turn，使用废弃的 `apply_side_effects`），待迁移到新 harness | 集成（真实 LLM） |
 | 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup | 单元 + 集成 |
 
@@ -261,6 +283,44 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `@consume_item(item_name="", quantity=1)` | 消耗物品 | ItemManager.remove() + LLM 模糊匹配保底 |
 | `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | NPCManager.set_state() |
 | `@npc_follow(npc_name="", follow=true/false)` | 设置 NPC 跟随状态 | NPCManager.set_following() |
+
+## 失败惩罚系统
+
+多次鉴定同一实体失败时触发三层递增惩罚（`src/game/judge.py:173-225`）：
+
+| 失败次数 | 惩罚 | 说明 |
+|----------|------|------|
+| **第 1 次** | 难度递增 | 该实体鉴定难度永久提升一级（`regular`→`hard`→`extreme`），记录在 `NodeRuntimeState.escalated_difficulty` |
+| **第 2 次** | 无额外惩罚 | 仅递增 `retries` 计数 |
+| **第 3 次及以后** | LLM 创意惩罚 | 调用 `evaluate_failure_penalty()`（`src/llm.py:344-422`），生成失败叙事 + 可选 @markup 副作用（扣HP/SAN、刷怪、NPC变敌对等） |
+
+**惩罚数据流**：
+
+```
+Judge._execute_entity()
+  ├── 失败 → escalate_difficulty（首次）/ retries++
+  ├── retries>=2 → evaluate_failure_penalty(LLM) → {narrative, markup_effects}
+  │                  ├── narrative → ActionOutcome.message
+  │                  └── markup_effects → parse_markup_all() → ActionOutcome.side_effects
+  ├── Keeper._apply_side_effects() → 世界状态变更（扣血/刷敌/物品等）
+  └── Keeper._enrich() → 合并叙事（含惩罚叙事）→ Curator → Narrator → 玩家
+```
+
+**状态追踪**（`src/scenario_core.py:201-207`）：
+```python
+@dataclass
+class NodeRuntimeState:
+    completed: bool
+    result_tier: str       # fumble|failure|regular|hard|extreme
+    retries: int           # 失败重试次数
+    escalated_difficulty: str  # 持久化的难度提升
+```
+每个实体一份状态，持久化存档。CLI 下 `/flags` 命令可查看。
+
+**2026-05-22 修复**：失败实体的惩罚叙事曾因 enrich 步骤的两个 bug 丢失：
+- `judged_entities` 只收集成功实体 → enrich LLM 看不到惩罚内容
+- `all_outcomes[0].message` 无条件被 enrich 结果覆盖 → 惩罚叙事可能被擦除  
+详见 `tests/test_failure_penalty.py`（2 case，全部 mock）。
 
 ## 特殊标记
 

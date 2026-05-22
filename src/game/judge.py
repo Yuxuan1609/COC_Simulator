@@ -190,7 +190,7 @@ class Judge:
             if retries >= 2:
                 inv_desc = getattr(self.world.player, 'personal_description', '') or \
                            getattr(self.world.player, 'description', '')
-                scene_ctx = _build_scene_context(self.world)
+                scene_ctx = _build_scene_context(self.world.build_snapshot())
                 graded_on_failure = ""
                 if entity.graded_result and isinstance(entity.graded_result, dict):
                     graded_on_failure = entity.graded_result.get("on_failure", "")

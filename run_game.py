@@ -49,7 +49,6 @@ def run_game(character_path: str = None):
         l2_path="data/modules/常暗之厢/l2_test.json",
         l1_path="data/modules/常暗之厢/l1_test.json",
         l3_path="data/modules/常暗之厢/l3_test.json",
-        escalation_config_path="data/modules/常暗之厢/escalation_config.json",
         start_node="测试房间",
     )
 

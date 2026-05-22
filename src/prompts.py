@@ -528,7 +528,7 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 1. 将所有实体（auto_trigger / interaction / event）的结果合并润色，统一为流畅连贯的叙事
 2. 根据 success 调整叙事：
    - success=true → 结果被清晰、明确地描述并整合进叙事，玩家能确切感知到发生了什么
-   - success=false → 侦察感知类任务描述为：结果晦涩、模糊、没有实际影响，仿佛是错觉或微不足道的细节，玩家难以确定是否真的发生了什么。可以明确得到反馈的任务描述为行动失败。
+   - success=false → 如果实体的 result 已经包含明确的失败后果描述（如扣血、惩罚、敌人出现等具象结果），则直接保留原文整合进叙事，不得改为晦涩模糊。仅当 result 为简单的"检定失败"类通用文字时，才将其描述为晦涩、模糊、仿佛是错觉或微不足道的细节。
 3. 提供 reasoning：简短说明本轮整合的逻辑（为什么这样合并/改写）
 
 返回 JSON：

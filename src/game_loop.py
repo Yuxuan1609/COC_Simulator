@@ -88,9 +88,8 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
 # ── New entry point ──
 
 def init_game(l2_path: str, l1_path: str, l3_path: str,
-              escalation_config_path: str,  # deprecated, kept for backward compat
-              start_node: str = "6号车厢",
-              wr0_enabled: bool = False) -> dict[str, Any]:
+               start_node: str = "6号车厢",
+               wr0_enabled: bool = False) -> dict[str, Any]:
     """Initialize all agents and world state from JSON files.
 
     Returns dict with keys: keeper, narrator, author, l3_data.

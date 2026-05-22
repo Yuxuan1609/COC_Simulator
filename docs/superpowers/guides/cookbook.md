@@ -22,34 +22,55 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 2. Keeper 回合编配
 
-### `src/game/agents/keeper.py` (763 行)
+### `src/game/agents/keeper.py` (1013 行)
 
 | 方法 | 功能 |
 |------|------|
-| `process_turn(turn_input, author)` | **主流程**：NPC 对话路由 → Step1 parse(LLM) → Step2 judge(确定) + 并行 IntentDetect → Step2.5 combat_entry(LLM,并行 enrich) → Step3 enrich(LLM) → Step3.5 收集 combat_entry → Step3.6 对峙/CombatInit → Step4 IntentDetect 决策 → Step5 curate → Step6 memory(后台线程压缩) → 返回 `{brief, combat_entry, standoff_prompt, combat_init}` |
+| `process_turn(turn_input, author)` | **主流程**：NPC 对话路由 → Step1 parse(LLM) → Step2 judge(确定) + 并行 IntentDetect → Step3 [enrich(LLM) ∥ combat_entry(LLM) ∥ TimeAgent(LLM)] → Step3.5 收集结果 → Step4 对峙/CombatInit → Step5 IntentDetect 决策 → Step6 curate → Step7 memory(后台压缩) → 返回 `{brief, combat_entry, standoff_prompt, combat_init}` |
 | `_parse(raw)` | LLM parse：玩家输入 → 匹配 entity (interaction/auto_trigger/event/move/search/other) |
-| `_enrich(judged_entities, user_input)` | LLM enrich：检定结果 → 叙事润色 |
+| `_enrich(judged_entities, user_input)` | **LLM enrich**：将本轮所有实体结果（含成功/失败/AT）合并润色为连贯叙事段落。输入包含 `judged_entities`（修复后含失败实体及惩罚叙事）、world snapshot（世界状态/场景现状/时间块）。覆写规则：结果只覆写第一个成功且非 AT 的 outcome.message，保护失败实体的惩罚叙事 |
 | `_find_entity_by_id(eid)` | 跨 graph(场景+events) 查找 entity |
-| `_apply_side_effects(side_effects)` | 代理到 `scenario_core.apply_side_effects()` |
+| `_apply_side_effects(side_effects)` | 应用 7 种 @markup side effect dataclass 到世界状态（ItemGain/ConsumeItem/StatChange/SpawnEnemy/GrantWeapon/NPCStateChange/NPCFollow） |
 | `resolve_standoff(state, player_input)` | 对峙：语义匹配 LLM → D100 检定 → trait enhancement → 成功转 neutral / 失败进战斗 |
 | `_build_world_snapshot()` | 给 IntentDetector 构建世界快照 |
 | `_build_scene_context_for_author()` | 给 Author 构建场景上下文 |
 | `_integrate_patch(patch)` | Author Patch 实体注入到 graph |
 | `_integrate_supplement(structural_edit, author)` | Author StructuralEdit → 补充管线 → 合并 graph + L1 + L3 |
+| `_run_time_agent(action_summaries, raw)` | TimeAgent：评估本轮行动耗时（与 enrich 并行，不写 Clock 只返回 time_delta） |
 
 ---
 
 ## 3. 确定性闸门
 
-### `src/game/judge.py` (317 行)
+### `src/game/judge.py` (324 行)
 
 | 方法 | 功能 |
 |------|------|
-| `_execute_entity(entity, intent)` | **核心判定**：requirement 检查(hard+soft) → D100 技能检定 → ##GRADED## 分级 → 失败惩罚(LLM) → side_effects 解析 → 返回 ActionOutcome |
+| `_execute_entity(entity, intent)` | **核心判定**：requirement 检查(hard+soft) → D100 技能检定 → trait enhancement(LLM 特质修正) → ##GRADED## 分级 → **失败惩罚系统**(LLM) → side_effects 解析 → 返回 ActionOutcome |
 | `_split_requirement(req)` | 拆分 hard(AND/OR) \|\| soft(自然语言) |
 | `_are_requirements_met(entity)` | 硬条件检查：`parse_hard_requirement()` + dependency_graph |
 | `_set_completion_flag(entity)` | 标记 entity 完成：更新 runtime_state + dependency_graph 入度 |
 | `check_auto_triggers()` | 扫描当前场景 + 全局 events 的满足条件 AT |
+
+---
+
+## 3.5. 失败惩罚系统
+
+### `src/game/judge.py:173-225` + `src/llm.py:344-422`
+
+三层递增机制，在 `_execute_entity()` 内触发（仅当 skill_passed = False）：
+
+| 失败次数 | 触发 | 说明 |
+|----------|------|------|
+| 第 1 次 | `_escalate_difficulty()` | 实体鉴定难度永久提升一级，写入 `NodeRuntimeState.escalated_difficulty` |
+| 第 2 次 | `state.retries++` | 仅递增重试计数 |
+| 第 3+ 次 | `evaluate_failure_penalty(LLM)` | 生成创意惩罚叙事 + 可选 @markup 副作用（扣HP/SAN、刷怪、NPC变敌对等），经 `parse_markup_all` 解析后由 `Keeper._apply_side_effects()` 应用 |
+
+**状态追踪**：`NodeRuntimeState`（`src/scenario_core.py:201-207`）每实体一份，含 `retries/escalated_difficulty`，持久化存档。CLI `/flags` 可查询。
+
+**2026-05-22 修复**：失败实体此前被排除在 enrich 的 `judged_entities` 且 `all_outcomes[0].message` 被 unconditionally 覆写，导致惩罚叙事丢失。已修复。
+
+**测试**：`tests/test_failure_penalty.py`（2 case，全 mock）
 
 ---
 
@@ -220,7 +241,7 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 10. Prompt 构建
 
-### `src/prompts.py` (734 行)
+### `src/prompts.py` (990 行)
 
 | 函数 | 用途 |
 |------|------|
@@ -235,15 +256,15 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 | `build_combat_narrative_prompt(round_log, enemies_desc, player_name, scene)` | 战斗逐轮叙事 |
 | `_build_investigator_info(world)` | 构建调查员状态摘要（供各 prompt 复用） |
 | `_build_l1l3_context(l1, l3, location)` | L1/L3 基调约束 + 场景感知上下文 |
-| `log_skill_result(detail)` | 技能检定写入日志 |
-| `evaluate_trait_enhancement(inv_desc, ...)` | LLM 特质修正 sub-agent |
-| `evaluate_failure_penalty(inv_desc, ...)` | LLM 失败惩罚 sub-agent |
+| `log_skill_result(detail)` | 技能检定写入日志 `skill_checks.txt` |
+| `set_current_round(n)` | 设置当前回合号（供日志命名） |
+| `_show_prompt(label, prompt)` | 调试用 prompt 打印（由环境变量控制） |
 
 ---
 
 ## 11. LLM 封装
 
-### `src/llm.py` (412 行)
+### `src/llm.py` (490 行)
 
 | 函数 | 用途 |
 |------|------|
@@ -301,7 +322,10 @@ L1/L2/L3 数据模型定义
 | `tests/test_author_flow.py` (8 case) | Detector→Author→Keeper mock | 单元 |
 | `tests/test_intent_detector.py` (3 case) | flavor/有意义/空输入 | 单元 |
 | `tests/test_escalation_harness.py` (5 case) | 正常/flavor/Patch/Reject/StructuralEdit | 集成(真实LLM) |
+| `tests/test_failure_penalty.py` (2 case) | Judge惩罚生成→Keeper enrich保留→Narrator接收 | 单元(全mock) |
 | `tests/game_loop_harness.py` (7 轮) | parse→judge→enrich→narrate | 集成(真实LLM) |
+| `tests/test_harness_stability.py` (2 case) | 正常探索 + 混合压力，3轮/每轮3turn | 集成(真实LLM) |
+| `tests/test_harness_parallel.py` (16 case) | search/检定/依赖/AT/NPC/武器/move/对峙/战斗/道具/属性/结局 | 集成(真实LLM+mock) |
 | 其他 | test_judge/dependency_graph/directed_graph/entity/entity_resolvers/curator/integration/module_designer | 单元+集成 |
 
 ---
@@ -320,12 +344,14 @@ L1/L2/L3 数据模型定义
 
 单回合: user_input → Keeper.process_turn()
            ├─ parse(LLM flash) → intent matches
-           ├─ judge(deterministic) → D100 check + @markup resolve
-           ├─ [enrich(LLM flash) ∥ combat_entry(LLM flash)]
+           ├─ judge(deterministic) → D100 check + @markup resolve + [失败≥3次 → 惩罚系统(LLM) → penalty narrative + markup_effects]
+           ├─ [enrich(LLM flash) ∥ combat_entry(LLM flash) ∥ TimeAgent(LLM)]
            ├─ [对峙(avoidable敌人): 语义匹配(LLM flash) → D100 → trait_enhancement]
            ├─ curate → NarratorBrief
            ├─ [IntentDetect → Author → Patch/StructuralEdit (按需)]
            └─ narrator(LLM) → immersive narrative
+           ╎ 独立管线: skill_detail(骰值/难度递增/惩罚标记) → CLI skill_results + 日志
+           ╎          TimeAgent → clock.advance_time() + time_context
 
 战斗: CombatInit → CombatSystem.run_combat()
         ├─ _init_combat → CombatState

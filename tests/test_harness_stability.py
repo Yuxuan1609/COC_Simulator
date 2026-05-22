@@ -20,7 +20,6 @@ PROJECT_ROOT = os.path.dirname(__file__)
 L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l2_test.json")
 L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l1_test.json")
 L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l3_test.json")
-ESCALATION_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "escalation_config.json")
 CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.json")
 
 
@@ -34,7 +33,6 @@ def _init_game():
 
     game = init_game(
         l2_path=L2_PATH, l1_path=L1_PATH, l3_path=L3_PATH,
-        escalation_config_path=ESCALATION_PATH,
         start_node="测试房间",
     )
     world = game["keeper"].world

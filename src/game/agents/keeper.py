@@ -110,15 +110,14 @@ class Keeper:
                         "time_category": self._infer_time_category(entity),
                     })
                 all_outcomes.append(outcome)
-                if outcome.success:
-                    judged_entities.append({
-                        "entity_type": entity.entity_type,
-                        "id": entity.id,
-                        "name": entity.name,
-                        "result": outcome.message,
-                        "success": True,
-                        "skill_tier": outcome.skill_tier,
-                    })
+                judged_entities.append({
+                    "entity_type": entity.entity_type,
+                    "id": entity.id,
+                    "name": entity.name,
+                    "result": outcome.message,
+                    "success": outcome.success,
+                    "skill_tier": outcome.skill_tier,
+                })
             elif entry_type == "move":
                 target = entry.get("target", "")
                 result = self.world.move(target)
@@ -324,7 +323,14 @@ class Keeper:
             emphasis = enrichment.get("emphasis_hint", "")
             results = enrichment.get("results", "")
             if isinstance(results, str) and results and all_outcomes:
-                all_outcomes[0].message = results
+                updated = False
+                for o in all_outcomes:
+                    if o.success and o.entity_type != "auto_trigger":
+                        o.message = results
+                        updated = True
+                        break
+                if not updated:
+                    all_outcomes[0].message = results
         if ta_future:
             ta_result = ta_future.result()
             if ta_result.get("time_delta", 0) > 0:
