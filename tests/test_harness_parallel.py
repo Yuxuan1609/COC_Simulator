@@ -69,22 +69,23 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
 
     call_counter = [0]
 
-    def _logging_wrapper(prompt, json_mode=True, model="", system="",
-                         reasoning_effort="", fallback_schema=None, max_tokens=0):
+    def _logging_wrapper(prompt, json_mode=True, **kw):
         call_counter[0] += 1
         n = call_counter[0]
         t0 = time.perf_counter()
 
         with open(os.path.join(log_dir, f"{n:02d}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
+        system = kw.get("system", "")
         if system:
             with open(os.path.join(log_dir, f"{n:02d}_system.txt"), "w", encoding="utf-8") as f:
                 f.write(system)
 
-        response = _REAL_CALL(
-            prompt, json_mode=json_mode, model=model, system=system,
-            reasoning_effort=reasoning_effort, fallback_schema=fallback_schema,
-        )
+        allowed = {"json_mode", "model", "system", "reasoning_effort",
+                   "fallback_schema", "thinking", "temperature", "max_tokens"}
+        filtered = {k: v for k, v in kw.items() if k in allowed}
+        filtered["json_mode"] = json_mode
+        response = _REAL_CALL(prompt, **filtered)
         elapsed = time.perf_counter() - t0
         ext = "json" if json_mode else "txt"
         content = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2)
@@ -116,7 +117,7 @@ def _setup_mocks(case_dir, parse_seq):
     os.makedirs(log_dir, exist_ok=True)
     turn_idx = [0]
 
-    def _mock_call_deepseek(prompt, json_mode=True, model="", system="", **kw):
+    def _mock_call_deepseek(prompt, json_mode=True, **kw):
         n = turn_idx[0] + 1
         with open(os.path.join(log_dir, f"{n:02d}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
@@ -247,7 +248,7 @@ def case_auto_trigger(game, case_dir, mock=False):
 
 def case_npc_dialogue(game, case_dir, mock=False):
     world = game["keeper"].world
-    results = _run_turns(game, ["京山人吉，这里发生了什么事？"], case_dir)
+    results = _run_turns(game, ["京山 人吉，这里发生了什么事？"], case_dir)
     r = results[0]
     has_response = len(str(r["brief"])) > 20
     return {"verdict": "PASS" if has_response else "SOFT_PASS",
@@ -346,7 +347,7 @@ CASE_REGISTRY = {
     "interaction_hard":           ("5_interaction_hard",           case_interaction_hard,           "IT4: 力量 hard difficulty",                 [["用尽全力去撞开那扇铁门"]]),
     "interaction_dependency":     ("6_interaction_dependency",     case_interaction_dependency,     "IT1 → IT2 依赖链",                          [["仔细检查桌子上所有的物品"], ["翻开那本泛黄的日志仔细阅读"]]),
     "auto_trigger":               ("7_auto_trigger",               case_auto_trigger,               "AT_TEST_AUTO: auto-trigger on entry",       [["站着不动，环顾四周"]]),
-    "npc_dialogue":               ("8_npc_dialogue",               case_npc_dialogue,               "NPC: talk_to 路由",                         [["京山人吉，这里发生了什么事？"]]),
+    "npc_dialogue":               ("8_npc_dialogue",               case_npc_dialogue,               "NPC: talk_to 路由",                         [["京山 人吉，这里发生了什么事？"]]),
     "weapon_pickup":              ("9_weapon_pickup",              case_weapon_pickup,              "search → 撬棍发现 → 拾取",                  [["环顾四周，仔细搜索这个房间"], ["拾取撬棍"]]),
     "move":                       ("10_move",                     case_move,                       "IT4 unlock → move to 6号车厢",              [["用尽全力去撞开那扇铁门"], ["去6号车厢"]]),
     "move_blocked":               ("11_move_blocked",             case_move_blocked,               "move without IT4 → blocked",               [["去6号车厢"]]),

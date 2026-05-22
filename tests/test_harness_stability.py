@@ -20,6 +20,7 @@ PROJECT_ROOT = os.path.dirname(__file__)
 L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l2_test.json")
 L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l1_test.json")
 L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l3_test.json")
+ESCALATION_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "escalation_config.json")
 CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.json")
 
 
@@ -33,6 +34,7 @@ def _init_game():
 
     game = init_game(
         l2_path=L2_PATH, l1_path=L1_PATH, l3_path=L3_PATH,
+        escalation_config_path=ESCALATION_PATH,
         start_node="测试房间",
     )
     world = game["keeper"].world
@@ -63,22 +65,24 @@ def _setup_llm_logging(case_dir, case_name):
     log_dir = os.path.join(case_dir, "_llm_logs")
     os.makedirs(log_dir, exist_ok=True)
 
-    def _logging_wrapper(prompt, json_mode=True, model="", system="",
-                         reasoning_effort="", fallback_schema=None, max_tokens=0):
+    def _logging_wrapper(prompt, json_mode=True, **kw):
         call_counter[0] += 1
         n = call_counter[0]
         t0 = time.perf_counter()
 
         with open(os.path.join(log_dir, f"{n:02d}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
+        system = kw.get("system", "")
         if system:
             with open(os.path.join(log_dir, f"{n:02d}_system.txt"), "w", encoding="utf-8") as f:
                 f.write(system)
 
-        response = _REAL_CALL(
-            prompt, json_mode=json_mode, model=model, system=system,
-            reasoning_effort=reasoning_effort, fallback_schema=fallback_schema,
-        )
+        # Only pass kwargs that call_deepseek actually accepts
+        allowed = {"json_mode", "model", "system", "reasoning_effort",
+                   "fallback_schema", "thinking", "temperature", "max_tokens"}
+        filtered = {k: v for k, v in kw.items() if k in allowed}
+        filtered["json_mode"] = json_mode
+        response = _REAL_CALL(prompt, **filtered)
         elapsed = time.perf_counter() - t0
 
         ext = "json" if json_mode else "txt"
@@ -132,7 +136,7 @@ CASE_B = {
     "turns": [
         ("用力敲击铁门，大声呼喊！",
          "IT5: spawn 深潜者+Clicker, combat entry detection triggers"),
-        ("京山人吉，这里发生了什么事？",
+        ("京山 人吉，这里发生了什么事？",
          "NPC dialogue: name-match routing, early return via talk_to"),
         ("检查房间角落的急救箱",
          "IT7: @item_gain + @consume_item, item lifecycle"),
