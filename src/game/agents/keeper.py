@@ -665,14 +665,15 @@ class Keeper:
                 "ending_name": None, "ending_narrative": None}
 
     def _build_world_snapshot(self) -> dict:
-        """Lightweight snapshot for IntentDetector."""
+        """Lightweight snapshot for IntentDetector. Delegates to World."""
+        snap = self.world.build_snapshot()
         l1 = getattr(self, "narrator_l1", {}) or {}
         l1_scene = l1.get(self.world.current_location, {})
         scene_desc = l1_scene.get("description", "") if isinstance(l1_scene, dict) else ""
         return {
-            "location": self.world.current_location,
-            "scene_description": scene_desc,
-            "npc_states": {name: npc.state for name, npc in self.world.npcs._npcs.items()},
+            "location": snap["location"],
+            "scene_description": scene_desc or snap["description"],
+            "npc_states": {n["name"]: n["state"] for n in snap["npcs_in_scene"]},
         }
 
     def _resolve_time_delta(self, entity) -> int:
@@ -701,13 +702,13 @@ class Keeper:
         return False
 
     def _build_scene_context_for_author(self) -> dict:
-        """Build scene_context for AuthorRequest."""
-        node = self.world._current_node()
+        """Build scene_context for AuthorRequest. Delegates to World snapshot."""
+        snap = self.world.build_snapshot()
         return {
-            "location": self.world.current_location,
-            "description": node.description if node else "",
+            "location": snap["location"],
+            "description": snap["description"],
             "available_scenes": list(self.world.graph.nodes.keys()),
-            "npc_states": {name: npc.state for name, npc in self.world.npcs._npcs.items()},
+            "npc_states": {n["name"]: n["state"] for n in snap["npcs_in_scene"]},
             "runtime_summary": {
                 eid: s.result_tier
                 for eid, s in self.world.runtime_state.items()
