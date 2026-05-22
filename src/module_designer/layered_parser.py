@@ -77,6 +77,16 @@ def _is_valid_json_output(data: dict, required_keys: list[str]) -> bool:
     return True
 
 
+def _join_chapters(chapters: dict[str, str], *keys: str) -> str:
+    """拼接指定章节为参考文本。未找到的 key 静默跳过。"""
+    parts = []
+    for k in keys:
+        v = chapters.get(k, "")
+        if v:
+            parts.append(f"## {k}\n{v}")
+    return "\n\n".join(parts)
+
+
 def _parse_condensed_chapters(markdown_text: str) -> dict[str, str]:
     """按 ## 标题拆分为章节 dict。key 为标题名（去掉 ## 前缀和空格）."""
     chapters = {}
@@ -170,12 +180,16 @@ def _with_fallback(
 # ═══════════════════════════════════════════════════════════════
 
 STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
-你的任务是：从模组文档中提取模组的元信息、场景列表和人物列表，使用固定的 ID 体系。
+你的任务是：从模组文档中提取模组的元信息、场景列表、人物列表、Boss、敌人和武器约束，使用固定的 ID 体系。
 
 重要原则：
 - 场景使用原文中的中文名称（不需要 ID）
 - 人物 ID 使用 NPC_1, NPC_2... 格式
 - 人物名使用原文中的中文名称
+- enemy_ref / weapon_ref 必须从可用库中选择，不允许自创
+- 约束宽松，只需符合模组背景设定，允许随机性
+- 不做场景绑定——跑团中任何场景都可能出现
+- min_count 可为 0（表示可能不出现），max_count 为最多出现次数
 - 仅输出 JSON，不要任何解释性文字
 - 如果模组文档没有出现可以为空，保留占位符
 - 注意：不能理智性交互或有意义对话的怪物/邪教徒不属characters
@@ -183,8 +197,20 @@ STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
 
 
 
-def build_step1a_prompt(content: str) -> str:
+def build_step1a_prompt(content: str, weapon_library_names: list[str] = None, enemy_library_names: list[str] = None, boss_library_names: list[str] = None) -> str:
+    weapons_list = "\n".join(f"- {w}" for w in (weapon_library_names or []))
+    enemies_list = "\n".join(f"- {e}" for e in (enemy_library_names or []))
+    boss_list = "\n".join(f"- {b}" for b in (boss_library_names or []))
     return f"""从以下模组文档中提取结构化信息。
+
+## 可用武器库
+{weapons_list if weapons_list else "（未提供武器库，weapons 返回空列表）"}
+
+## 可用敌人库
+{enemies_list if enemies_list else "（未提供敌人库，enemies 返回空列表）"}
+
+## Boss 库（boss_ref 必须从此列表中选择）
+{boss_list if boss_list else "（未提供Boss库，boss_encounters 返回空列表）"}
 
 输出格式:
 {{
@@ -196,10 +222,16 @@ def build_step1a_prompt(content: str) -> str:
   ],
   "boss_encounters": [
     {{
-      "boss_ref": "Boss名称（来自module文档中提到的Boss/大怪/强敌）",
+      "boss_ref": "Boss库中的名称",
       "scene": "出现场景",
       "description": "Boss在故事中的定位"
     }}
+  ],
+  "enemies": [
+    {{"enemy_ref": "敌人名", "min_count": 0, "max_count": 2}}
+  ],
+  "weapons": [
+    {{"weapon_ref": "武器名", "min_count": 1, "max_count": 1}}
   ]
 }}
 
@@ -209,8 +241,9 @@ def build_step1a_prompt(content: str) -> str:
 3. 仅输出 JSON
 4. 估算模组剧情的预计总耗时（分钟），综合考虑所有可能的探索路径和对话时长。写入 module_meta.estimated_duration。
 5. 推荐通信间隔（分钟）写入 module_meta.comms_interval（短模组≤2h: 6-8min, 中型2-6h: 10-15min, 长型6-24h: 15-20min, 超长≥24h: 60-120min）。
-6. 识别模组文档中提到的Boss、大怪、强敌，不为普通怪物——Boss是剧情核心敌人、需要特殊机制或为最终战。提取后写入boss_encounters。
+6. 识别模组文档中提到的Boss、大怪、强敌，不为普通怪物——Boss是剧情核心敌人、需要特殊机制或为最终战。boss_ref 必须从 Boss 库中选择，若模组Boss不在库中则选择最接近的库中名称。提取后写入boss_encounters。
 7. 设定模组开始时的时段（凌晨/早晨/白天/黄昏/夜间），写入 module_meta.starting_time_of_day。基于模组文本中描述的时间氛围判断。
+8. enemy_ref 和 weapon_ref 必须从可用库中选择，不允许自创。数量约束宽松，只需符合背景；若模组未提及敌人/武器，返回空列表。
 
 模组文档：
 \"\"\"
@@ -218,9 +251,9 @@ def build_step1a_prompt(content: str) -> str:
 \"\"\""""
 
 
-def parse_step1a(content: str, llm_call) -> dict:
-    """从模组文档提取结构化元信息."""
-    prompt = build_step1a_prompt(content)
+def parse_step1a(content: str, llm_call, weapon_library_names: list[str] = None, enemy_library_names: list[str] = None, boss_library_names: list[str] = None) -> dict:
+    """从模组文档提取结构化元信息（含敌人/武器/Boss约束）."""
+    prompt = build_step1a_prompt(content, weapon_library_names, enemy_library_names, boss_library_names)
     return llm_call(prompt, system=STEP1A_SYSTEM)
 
 
@@ -320,15 +353,20 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - 通行路径记录每个场景的出边（from_here）和入边（to_here），包含通行方式和前置条件
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - **模组中提到的可获取物品（clues_and_items 章节：clues 为剧情关键物品/线索，items 为非剧情普通物品，需结合精修模组原文和常识判断）必须在对应场景的 entity 中通过 result 或 graded_result 明确表达为可获取状态，确保每个物品都有对应的 entity 承载其获取路径**
+- **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称，不允许自创或使用别名**
 - 仅输出 JSON，不要任何解释性文字"""
 
 
-def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
+def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict] = None) -> str:
     scene_list = "\n".join(f"- {s}" for s in scenes)
+    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
     return f"""从精修模组文本中提取每个场景的全部可执行互动，以及场景间的通行路径。
 
 已知场景列表:
 {scene_list}
+
+已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
+{char_list if char_list else "（无）"}
 
 输出格式:
 {{
@@ -376,13 +414,13 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict]) -> str:
 13. 严格依据精修模组内容，基于场景氛围合理补充，不要和原文冲突
 14. based_on 始终填 null（派生关系由 Step 2b 标注）
 15. 模组 clues_and_items 章节中提到的可获取物品（clues=剧情物品/线索，items=非剧情普通物品，需结合精修模组原文和常识判断），必须在对应场景的 entity 中通过 result 或 graded_result 表达为可获取/可发现状态。每个物品都应有对应的 entity 承载其获取路径，不可遗漏
-精修模组：
+精修模组（参考上下文）：
 \"\"\"
-{"\n\n".join(chapters.values())}
+{_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary')}
 \"\"\""""
-def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call) -> dict:
+def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call, characters: list[dict] = None) -> dict:
     """从精修模组提取所有 interactions."""
-    prompt = build_step2a_prompt(chapters, scenes)
+    prompt = build_step2a_prompt(chapters, scenes, characters)
     return llm_call(prompt, system=STEP2A_SYSTEM)
 
 
@@ -404,6 +442,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 - side_effects 是与 result 不重合的间接后果
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
+- **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -411,16 +450,21 @@ def build_step2b_events_prompt(
     chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
+    characters: list[dict] = None,
 ) -> str:
     scene_list = "\n".join(f"- {s}" for s in scenes)
     interaction_list = "\n".join(
         f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
         for i in interactions
     )
+    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
     return f"""从精修模组文本中提取所有全局事件。
 
 已知场景:
 {scene_list}
+
+已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
+{char_list if char_list else "（无）"}
 
 已知互动（事件可基于这些互动派生，based_on 指向其 ID；非派生事件留空）:
 {interaction_list}
@@ -453,12 +497,10 @@ def build_step2b_events_prompt(
 7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
 8. 事件是全局的，不绑定特定场景（无 scene 字段）
 
-精修模组：
+精修模组（参考上下文）：
 \"\"\"
-{"\n\n".join(chapters.values())}
-\"\"\"
-
-"""
+{_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary')}
+\"\"\""""
 
 
 def parse_step2b_events(
@@ -466,8 +508,9 @@ def parse_step2b_events(
     scenes: list[dict],
     interactions: list[dict],
     llm_call,
+    characters: list[dict] = None,
 ) -> dict:
-    prompt = build_step2b_events_prompt(chapters, scenes, interactions)
+    prompt = build_step2b_events_prompt(chapters, scenes, interactions, characters)
     return llm_call(prompt, system=STEP2B_EVENTS_SYSTEM)
 
 
@@ -492,6 +535,13 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - 只生成被动触发的事件，不要生成玩家主动互动
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - **模组 clues_and_items（clues=剧情物品/线索，items=非剧情普通物品，需结合精修模组原文和常识判断）中标记为初始可见/场景内放置的物品，必须生成为进入场景时的 auto_trigger（requirement 留空），trigger 为"玩家进入此场景时"，result 描述玩家自动感知到该物品的存在。无需检定即可获取的物品直接以 result 表达获取；需要检定的以 graded_result 表达**
+- **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
+- **必须生成一个 AT_WORLD（id="AT_WORLD", scene="world", type="无", difficulty="None", based_on=""）用于世界初始化。trigger 为"模组开始时自动触发"，result 为"世界环境初始化"。side_effects 中使用 @标记 声明初始配置：
+  · @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=N) — 初始敌人配置。enemy_ref 必须来自下方敌人约束列表
+  · @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=N) — 初始散落武器。weapon_ref 必须来自下方武器约束列表
+  · @item_gain(item_name="物品名", quantity=N) — 初始剧情物品放置
+  · 同一 @标记可多次出现（如多个场景放置敌人/武器），quantity 表示该位置的生成数量
+  · 初始配置只声明模组开始时的默认状态，运行时动态生成由 game loop 处理
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -499,19 +549,34 @@ def build_step2b_at_prompt(
     chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
+    characters: list[dict] = None,
+    enemies: list[dict] = None,
+    weapons: list[dict] = None,
 ) -> str:
     scene_list = "\n".join(f"- {s}" for s in scenes)
     interaction_list = "\n".join(
         f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
         for i in interactions
     )
-    return f"""从精修模组文本中生成所有自动触发事件。
+    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
+    enemy_list = "\n".join(f"- {e['enemy_ref']} (max {e.get('max_count',1)})" for e in (enemies or []))
+    weapon_list = "\n".join(f"- {w['weapon_ref']} (max {w.get('max_count',1)})" for w in (weapons or []))
+    return f"""从精修模组文本中生成所有自动触发事件，包括一个世界初始化自动触发（AT_WORLD）。
 
 已知场景:
 {scene_list}
 
+已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
+{char_list if char_list else "（无）"}
+
 已知互动（auto_trigger 可基于这些互动派生，based_on 指向其 ID；非派生 AT 留空）:
 {interaction_list}
+
+## 敌人约束（AT_WORLD 中 @spawn_enemy 的 enemy_ref 必须来自此列表，总调用次数不超过对应 max_count）
+{enemy_list if enemy_list else "（无约束）"}
+
+## 武器约束（AT_WORLD 中 @grant_weapon 的 weapon_ref 必须来自此列表，总调用次数不超过对应 max_count）
+{weapon_list if weapon_list else "（无约束）"}
 
 输出格式:
 {{
@@ -541,10 +606,11 @@ def build_step2b_at_prompt(
 6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
 7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
 8. 每个场景生成 0-2 个 auto_trigger
+9. **必须**生成 AT_WORLD 世界初始化自动触发。AT_WORLD 的 side_effects 使用 @spawn_enemy / @grant_weapon / @item_gain 标记初始配置。enemy_ref 和 weapon_ref 必须来自约束列表，@spawn_enemy / @grant_weapon 的总调用次数不得超过对应 max_count。@item_gain 用于纯文本物品名
 
-精修模组：
+精修模组（参考上下文）：
 \"\"\"
-{"\n\n".join(chapters.values())}
+{_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary')}
 \"\"\""""
 
 
@@ -553,8 +619,11 @@ def parse_step2b_at(
     scenes: list[dict],
     interactions: list[dict],
     llm_call,
+    characters: list[dict] = None,
+    enemies: list[dict] = None,
+    weapons: list[dict] = None,
 ) -> dict:
-    prompt = build_step2b_at_prompt(chapters, scenes, interactions)
+    prompt = build_step2b_at_prompt(chapters, scenes, interactions, characters, enemies, weapons)
     return llm_call(prompt, system=STEP2B_AT_SYSTEM)
 
 
@@ -606,9 +675,9 @@ def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], charact
 - 场景 key 名必须与给定列表中的 name 一致
 - 只列出当前场景确实在场的 NPC
 
-精修模组：
+精修模组（参考上下文）：
 \"\"\"
-{"\n\n".join(chapters.values())}
+{_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary', 'enemies')}
 \"\"\""""
 
 
@@ -771,6 +840,107 @@ def parse_step25(
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Step 2 Boss: Boss 遭遇实体生成
+# ═══════════════════════════════════════════════════════════════
+
+STEP2_BOSS_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成 Boss 遭遇实体。
+你的任务是：基于 Step 1 的 Boss 识别结果和已知 L2 entity，生成结构化的 Boss Encounter 实体。
+
+术语：interaction、auto_trigger、event、boss_encounter 统称为 entity（实体）。
+
+重要原则：
+- boss_ref 必须从 Boss 库中选择，不允许自创
+- requirements 使用 (entity ID + AND/OR/()) || 软性条件 格式，硬性部分引用已知 entity ID
+- engage_type 判定: 进入场景自动触发→"at", 玩家主动操作→"interaction", 全局条件满足→"event"
+- description 是进入战斗时的情境描述，基于精修模组内容扩写
+- entity 的 result/side_effects 不涉及战斗/对抗的详细过程（战斗由 game loop 运行时统一管理），但可以声明怪物出现和情境
+- 仅输出 JSON，不要任何解释性文字"""
+
+
+def build_step2_boss_prompt(
+    boss_hints: list[dict],
+    boss_library_names: list[str],
+    interactions: list[dict],
+    auto_triggers: list[dict],
+    scenes: list[str],
+    chapters: dict[str, str],
+) -> str:
+    import json as _json
+
+    # Slim entity references for prompt: id, name, scene, trigger summary
+    entity_refs = []
+    for e in interactions:
+        entity_refs.append({"id": e.get("id",""), "name": e.get("name",""), "scene": e.get("scene",""), "trigger": e.get("trigger","")[:80]})
+    for e in auto_triggers:
+        entity_refs.append({"id": e.get("id",""), "name": e.get("name",""), "scene": e.get("scene",""), "trigger": e.get("trigger","")[:80]})
+
+    scene_names = "\n".join(f"- {s}" for s in scenes)
+    boss_names = "\n".join(f"- {n}" for n in boss_library_names)
+
+    return f"""根据以下 Boss 识别结果，生成结构化的 Boss Encounter 实体。
+
+## Boss 库（boss_ref 必须从此列表中选择）
+{boss_names if boss_names else "（无可用Boss库）"}
+
+## Step 1 Boss 识别
+{_json.dumps(boss_hints, ensure_ascii=False, indent=2)}
+
+## 统一场景名
+{scene_names}
+
+## 已知 Entity（可用于 requirements 硬性条件引用）
+{_json.dumps(entity_refs, ensure_ascii=False, indent=2)}
+
+## 精修模组（参考上下文）
+\"\"\"
+{chapters.get('module_overview','')}
+
+{chapters.get('enemies','')}
+\"\"\"
+
+输出格式:
+{{
+  "boss_encounters": [
+    {{
+      "id": "BOSS_1",
+      "type": "boss_encounter",
+      "engage_type": "at|interaction|event",
+      "boss_ref": "Boss库中的名称",
+      "scene": "所在场景",
+      "requirements": "(entity ID + AND/OR/()) || 软性描述条件",
+      "description": "进入战斗时的情境描述"
+    }}
+  ]
+}}
+
+要求:
+1. engage_type 判定: 进入场景自动触发→"at", 玩家主动操作→"interaction", 全局条件满足→"event"
+2. requirements 使用 (hard) || soft 格式。hard 部分引用已知 entity 的 ID（如 I2、AT3），soft 部分用自然语言描述（如"玩家下到地下室"）
+3. boss_ref 必须从 Boss 库中选择。若 Step 1 识别的 boss_name 不在库中，选择最接近的库中名称
+4. scene 使用统一场景名
+5. description 基于精修模组内容扩写为一段紧张的情境叙述（50-150字），从玩家视角描述进入战斗的瞬间
+6. 仅输出 JSON"""
+
+
+def parse_step2_boss(
+    boss_hints: list[dict],
+    boss_library_names: list[str],
+    interactions: list[dict],
+    auto_triggers: list[dict],
+    scenes: list[str],
+    chapters: dict[str, str],
+    llm_call,
+) -> dict:
+    """从 Boss 提示和 L2 entity 生成结构化 boss_encounter 实体."""
+    if not boss_hints:
+        return {"boss_encounters": []}
+    prompt = build_step2_boss_prompt(
+        boss_hints, boss_library_names, interactions, auto_triggers, scenes, chapters
+    )
+    return llm_call(prompt, system=STEP2_BOSS_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Step 3a: L2 依赖解析
 # ═══════════════════════════════════════════════════════════════
 
@@ -780,7 +950,7 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 重要原则：
 - interaction/event/auto_trigger统称为entity
 - based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个entity和其based_on指向的entity
-  如果语义重复（name/trigger/result 高度相似），合并为一个。
+  描述的是同一个事件（判断标准：指代同一件事情的发生，而非仅仅文字相似），合并为一个。
 - 合并时优先保留auto_trigger和interaction
 - graded_result 在 type != "无" 时强制填写至少1条；type == "无" 时删除空 graded_result
 - result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
@@ -802,7 +972,7 @@ def build_step3a_prompt(
 
 ## 精修模组（参考上下文）
 \"\"\"
-{"\n\n".join(chapters.values())}
+{_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary')}
 \"\"\"
 
 ## L3 结局条件（用于验证 ##END_## 标记）
@@ -818,7 +988,7 @@ def build_step3a_prompt(
 {json.dumps(auto_triggers, ensure_ascii=False, indent=2)}
 
 任务:
-1. **Based_on 去重**: based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个 entity 和其 based_on 指向的 entity 语义重复（name/trigger/result 高度相似），合并为一个。
+1. **Based_on 去重**: based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个 entity 和其 based_on 指向的 entity 描述的是同一个事件（判断标准：指代同一件事情的发生，而非仅仅文字相似），合并为一个。
 2. **合并时优先保留 auto_trigger 和 interaction（即优先合并 event）。
 3. **Graded_result 检查**: type != "无" 时填写 graded_result 中至少一条；type == "无" 时删除空 graded_result。
 4. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
@@ -872,9 +1042,9 @@ def build_step3b_prompt(
     scene_names = ", ".join(step1_scenes)
     return f"""核对 L1 与 L2 的交叉引用。
 
-## 精修模组（参考上下文）
+## 模组概述（参考上下文）
 \"\"\"
-{"\n\n".join(chapters.values())}
+{chapters.get('module_overview', '')}
 \"\"\"
 
 ## 统一场景名（Step 1 确定）
@@ -929,13 +1099,12 @@ STEP35_SYSTEM = """你是一个 TRPG 依赖关系解析助手。
 重要原则：
 - interaction/event/auto_trigger统称为entity
 - 从 requirement 中提取依赖关系。requirement 格式：硬性条件（entity ID + AND/OR/()）|| 软性条件（自然语言）
-- 硬性条件中裸 entity ID（如 I3）默认指该实体成功完成 → {{"type": "interaction", "id": "I3", "condition": "success"}}
+- 硬性条件中裸 entity ID（如 I3）默认指该实体完成 → {{"type": "interaction", "id": "I3"}}
 - 硬性条件中 AND/OR 连接的每个 entity ID 各提取为一条依赖
-- 软性条件（|| 之后）中如提到 "I3 失败" → {{"type": "interaction", "id": "I3", "condition": "fail"}}
-- trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "completed"}}
+- 软性条件（|| 之后）中如提到其他 entity ID 依赖 → 同样提取
+- trigger 中如提到 "E1 已触发" → {{"type": "event", "id": "E1"}}
 - 每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
-- condition 只涉及entity不涉及其他要求（物品持有/技能/flag 等不提取为 entity 依赖）
-- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定成功/entity已经鉴定失败
+- 仅提取 entity 之间的依赖关系，不提取物品持有/技能/flag 等其他条件
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -952,7 +1121,7 @@ def build_step35_prompt(
 
 ## 精修模组（参考上下文）
 \"\"\"
-{"\n\n".join(chapters.values())}
+{_join_chapters(chapters, 'module_overview', 'scenes', 'events_summary')}
 \"\"\"
 
 ## Interactions
@@ -967,13 +1136,12 @@ def build_step35_prompt(
 任务:
 1. 扫描每个 entity 的 requirement 字段。格式为：硬性条件（entity ID + AND/OR/()）|| 软性条件（自然语言）
 2. 提取其中描述的依赖关系，标准化为:
-   - 硬性条件中裸 entity ID（如 I3）默认指该实体成功完成 → {{"type": "interaction", "id": "I3", "condition": "success"}}
+   - 硬性条件中裸 entity ID（如 I3）默认指该实体完成 → {{"type": "interaction", "id": "I3"}}
      AND/OR 连接的每个 entity ID 各提取为一条独立依赖
-   - 软性条件（|| 之后）中如提到实体失败时提取，如 "I3 失败" → {{"type": "interaction", "id": "I3", "condition": "fail"}}
-   - trigger 中的 "E1 已触发" → {{"type": "event", "id": "E1", "condition": "completed"}}
+   - 软性条件（|| 之后）中如提到其他 entity ID → 同样提取为 {{"type": "interaction", "id": "I4"}}
+   - trigger 中如提到 "E1 已触发" → {{"type": "event", "id": "E1"}}
      每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
-- condition 只涉及entity不涉及其他要求（物品持有/技能/flag 等不提取为 entity 依赖）
-- condition 为 Uncompleted/completed/success/fail 四选一分别代表entity还没触发/entity已经触发不涉及鉴定或者鉴定结果不相干/entity已经鉴定成功/entity已经鉴定失败
+   - 依赖仅表示"必须完成目标 entity"，不区分成功/失败/触发等条件（requirement 语义由 runtime 解析）
 
 3. 每条 entity 必须在输出中列出，requires 为空列表表示无依赖
 4. 实体 ID 必须精确匹配（如 I3 不能写成 I03）
@@ -988,14 +1156,14 @@ def build_step35_prompt(
     {{
       "entity_id": "I3",
       "requires": [
-        {{"type": "interaction", "id": "I1", "condition": "success"}}
+        {{"type": "interaction", "id": "I1"}}
       ]
     }},
     {{
       "entity_id": "I5",
       "requires": [
-        {{"type": "interaction", "id": "I3", "condition": "success"}},
-        {{"type": "interaction", "id": "I4", "condition": "fail"}}
+        {{"type": "interaction", "id": "I3"}},
+        {{"type": "interaction", "id": "I4"}}
       ]
     }}
   ]
@@ -1150,10 +1318,8 @@ def build_step4_prompt(
 ## L3 Scene Intents
 {json.dumps(scene_intents, ensure_ascii=False, indent=2)}
 
-## 精修模组（参考上下文 — 仅 enemies + overview）
+## 模组概述（参考上下文）
 \"\"\"
-{chapters.get('enemies','')}
-
 {chapters.get('module_overview','')}
 \"\"\"
 

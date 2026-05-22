@@ -7,11 +7,10 @@ from typing import List, Optional
 #  L1 玩家可见层 Schema
 # ═══════════════════════════════════════════════════════════════
 
-L1_MOODS = {"confused", "uneasy", "tense", "terrified", "hopeful", "desperate"}
 L1_PERCEPTIBLE_TYPES = {"object", "sound", "smell", "sight", "touch", "intuition"}
 
 L1_PERCEPTIBLE_SCHEMA = {
-    "type": {"required": True, "values": L1_PERCEPTIBLE_TYPES},
+    "type": {"required": False, "values": L1_PERCEPTIBLE_TYPES},
     "name": {"required": True},
     "brief": {"required": True},
     "linked_interaction": {"required": False},
@@ -24,9 +23,8 @@ L1_NPC_APPEARANCE_SCHEMA = {
 }
 
 L1_SCENE_SCHEMA = {
-    "entry_narrative": {"required": False},
+    "description": {"required": False},
     "atmosphere": {"required": False},
-    "mood": {"required": False, "values": L1_MOODS},
     "perceptible": {"required": False, "list_of": L1_PERCEPTIBLE_SCHEMA},
     "ambient_hints": {"required": False},
     "npc_appearances": {"required": False, "list_of": L1_NPC_APPEARANCE_SCHEMA},
@@ -37,7 +35,7 @@ L1_SCENE_SCHEMA = {
 #  L2 KP 守秘人层 Schema
 # ═══════════════════════════════════════════════════════════════
 
-L2_DIFFICULTIES = {"regular", "hard", "extreme"}
+L2_DIFFICULTIES = {"None", "regular", "hard", "extreme"}
 
 L2_INTERACTION_SCHEMA = {
     "type": {"required": True},
@@ -46,7 +44,6 @@ L2_INTERACTION_SCHEMA = {
     "trigger": {"required": False},
     "result": {"required": False},
     "side_effects": {"required": False},
-    "skill_name": {"required": False},
     "difficulty": {"required": False, "values": L2_DIFFICULTIES},
     "based_on": {"required": False},
     "graded_result": {"required": False},
@@ -75,6 +72,9 @@ L2_NPC_PROFILE_SCHEMA = {
     "appearance": {"required": False},
     "what_they_can_do": {"required": False},
     "interaction_triggers": {"required": False},
+    "initial_state": {"required": False},
+    "initial_attitude": {"required": False},
+    "initial_following": {"required": False},
 }
 
 L2_BOSS_ENCOUNTER_SCHEMA = {
@@ -93,6 +93,8 @@ L2_SCENE_SCHEMA = {
     "to_here": {"required": False},
     "interactions": {"required": False, "list_of": L2_INTERACTION_SCHEMA},
     "auto_triggers": {"required": False, "list_of": L2_AUTO_TRIGGER_SCHEMA},
+    "encounters": {"required": False},
+    "scene_weapons": {"required": False},
     "extra": {"required": False},
 }
 
@@ -158,14 +160,13 @@ L3_TOP_SCHEMA = {
         "type": {"required": False},
     }},
     "time_pressure": {
-        "type": "dict",
         "required": False,
-        "schema": {
-            "name": {"type": "str", "required": False},
-            "guide": {"type": "str", "required": False},
-            "urgency": {"type": "int", "required": False},
-            "urgency_max": {"type": "int", "required": False},
-            "key_signals": {"type": "list", "required": False},
+        "nested": {
+            "name": {"required": False},
+            "guide": {"required": False},
+            "urgency": {"required": False},
+            "urgency_max": {"required": False},
+            "key_signals": {"required": False},
         },
     },
 }

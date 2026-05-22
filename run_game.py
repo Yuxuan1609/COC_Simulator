@@ -217,6 +217,8 @@ def _print_skill_result(sr):
     emoji = "✓" if sr["success"] else "✗"
     detail = sr.get("detail", "")
     lines = detail.split("\n") if detail else []
+    # Line 0: header like "[SEARCH] 侦查检定 | 等级=regular | 成功"
+    header = lines[0].strip() if lines else f"[{sr['entity_id']}] 技能检定"
     dice_info = ""
     trait_info = ""
     for line in lines[1:]:
@@ -231,7 +233,6 @@ def _print_skill_result(sr):
     if trait_info:
         print(f"   {trait_info}")
     if not dice_info and not trait_info:
-        header = lines[0].strip() if lines else f"[{sr['entity_id']}] 技能检定"
         print(f"   {header}")
 
 

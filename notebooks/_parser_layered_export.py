@@ -174,8 +174,8 @@ print(f"  do_text_call(step_name, call_name, prompt_fn, *args, system_prompt=, *
 # CELL 5 (code)
 # ============================================================
 # ═══ Step 1a: 结构化提取 ═══
-# 输入: 原始模组文档 + 武器/敌人/Boss库名
-# 输出: module_meta + scenes + characters + enemies + weapons + boss_encounters
+# 输入: 原始模组文档
+# 输出: module_meta + scenes[name, ...] + characters[{name,id}] + enemies + weapons
 weapon_names_1a = [w.name for w in wl.list_all()] if wl else []
 enemy_names_1a = [e.name for e in el.list_all()] if el else []
 boss_names_1a = bl.list_names() if bl else []
@@ -336,10 +336,12 @@ print(f"L3: {len(l3_data.get('world_rules',[]))} 世界规则, {len(l3_data.get(
 # ============================================================
 # CELL 11 (code)
 # ============================================================
-# ═══ Step 3a ∥ Step 2.5 ∥ Step_boss (并行) ═══
+# ═══ Step 2 Boss + Step 3a ∥ Step 2.5 (并行) ═══
+from module_designer.layered_parser import parse_step2_boss
+
 ending_conditions = l3_data.get("ending_conditions", [])
 l3_characters = l3_data.get("characters", [])
-boss_hints = step1a.get("boss_encounters", [])
+
 boss_lib_names = bl.list_names() if bl else []
 
 max_workers = 2 + (1 if boss_hints else 0) + (1 if l3_characters else 0)

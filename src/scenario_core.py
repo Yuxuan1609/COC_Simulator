@@ -734,21 +734,10 @@ class ScenarioWorld:
 
         for edge in edges:
             target_id = edge.get("target", "")
-            condition = edge.get("condition", "completed")
             target_state = self.get_runtime_state(target_id)
 
-            if condition == "success":
-                if target_state.result_tier not in ("regular", "hard", "extreme"):
-                    return False, f"需要成功完成「{target_id}」"
-            elif condition == "completed":
-                if not target_state.completed:
-                    return False, f"需要先完成「{target_id}」"
-            elif condition == "fail":
-                if target_state.result_tier not in ("failure", "fumble"):
-                    return False, f"需要「{target_id}」结果为失败"
-            elif condition == "Uncompleted":
-                if target_state.completed:
-                    return False, f"需要「{target_id}」未完成"
+            if not target_state.completed:
+                return False, f"需要先完成「{target_id}」"
 
         return True, ""
 
