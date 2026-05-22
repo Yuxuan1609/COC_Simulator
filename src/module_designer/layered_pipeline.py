@@ -221,40 +221,6 @@ def _get_pipeline_version() -> str:
         return "unknown"
 
 
-def parse_step2_boss(boss_hints: list[dict], l1_data: dict, llm_json) -> dict:
-    """Generate structured boss_encounter entities from Step 1 boss hints."""
-    if not boss_hints:
-        return {"boss_encounters": []}
-    import json as _json
-    prompt = f"""根据以下 Boss 识别结果，生成结构化的 Boss Encounter 实体。
-
-## Step 1 Boss 识别
-{_json.dumps(boss_hints, ensure_ascii=False, indent=2)}
-
-## L1 场景概要（供场景名/条件参考）
-{_json.dumps(l1_data, ensure_ascii=False, indent=2)}
-
-输出格式:
-{{
-  "boss_encounters": [
-    {{
-      "id": "BOSS_1",
-      "type": "boss_encounter",
-      "engage_type": "at|interaction|event",
-      "boss_ref": "Boss库中的名称",
-      "scene": "所在场景",
-      "requirements": "(硬性条件) || 软性描述条件",
-      "description": "进入战斗时的情境描述"
-    }}
-  ]
-}}
-
-要求:
-1. engage_type 判定: 进入场景自动触发→"at", 玩家主动操作→"interaction", 全局条件满足→"event"
-2. requirements 使用 (hard) || soft 格式，hard 部分引用 runtime_state 中的 entity id
-3. boss_ref 必须与 Step 1 识别的 boss_name 对应
-"""
-    return llm_json(prompt)
 
 
 def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
@@ -336,6 +302,7 @@ def run_pipeline(
     *,
     weapon_lib=None,
     enemy_lib=None,
+    boss_lib=None,
     max_retries: int = 3,
     verbose: bool = True,
     inject_l3_wr0: bool = True,
@@ -347,7 +314,8 @@ def run_pipeline(
         parse_step2a, parse_step2b_events, parse_step2b_at,
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
-        parse_step35, parse_phase1, parse_step25,
+        parse_step35, parse_step25,
+        parse_step2_boss,
         _merge_phase2_fields, _slim_entity,
     )
     from concurrent.futures import ThreadPoolExecutor
@@ -357,13 +325,34 @@ def run_pipeline(
 
     result = PipelineResult()
 
+    # Pre-extract library name lists for Step 1a (enemy/weapon constraint selection)
+    weapon_names_step1 = []
+    enemy_names_step1 = []
+    try:
+        if weapon_lib:
+            weapon_names_step1 = [w.name for w in weapon_lib.list_all()]
+    except Exception:
+        pass
+    try:
+        if enemy_lib:
+            enemy_names_step1 = [e.name for e in enemy_lib.list_all()]
+    except Exception:
+        pass
+
     # ── Step 1 ──────────────────────────────────────────────
     if verbose:
         print("═" * 50)
         print("[Step 1] 元信息提取 + 精修模组...")
 
+    boss_names_step1 = []
+    try:
+        if boss_lib:
+            boss_names_step1 = boss_lib.list_names()
+    except Exception:
+        pass
+
     def _do_step1a():
-        return parse_step1a(content, llm_json)
+        return parse_step1a(content, llm_json, weapon_names_step1, enemy_names_step1, boss_names_step1)
     def _do_step1b():
         return parse_step1b(content, llm_text)
 
@@ -407,7 +396,7 @@ def run_pipeline(
         print("[Step 2a] Interactions 提取...")
 
     def _do_step2a():
-        return parse_step2a(chapters, scenes, llm_json)
+        return parse_step2a(chapters, scenes, llm_json, characters=characters)
     step2a = _with_fallback(
         _do_step2a, ["interactions"],
         {"interactions": []},
@@ -426,9 +415,13 @@ def run_pipeline(
         print("[Step 2b+2c] Events, Auto-triggers, L1, L3 (并行)...")
 
     def _do_events():
-        return parse_step2b_events(chapters, scenes, interactions, llm_json)
+        return parse_step2b_events(chapters, scenes, interactions, llm_json, characters=characters)
+    step1_enemies = step1a.get("enemies", [])
+    step1_weapons = step1a.get("weapons", [])
+
     def _do_at():
-        return parse_step2b_at(chapters, scenes, interactions, llm_json)
+        return parse_step2b_at(chapters, scenes, interactions, llm_json,
+                               characters=characters, enemies=step1_enemies, weapons=step1_weapons)
     def _do_l1():
         return parse_step2c_l1(chapters, scenes, characters, llm_json)
     def _do_l3():
@@ -460,13 +453,6 @@ def run_pipeline(
 
     events = events_data.get("events", [])
     auto_triggers = at_data.get("auto_triggers", [])
-    # Inject world-generation auto_trigger
-    auto_triggers.append({
-        "id": "AT_WORLD", "name": "世界生成", "scene": "world", "type": "无",
-        "requirement": "", "trigger": "模组开始时自动触发",
-        "result": "世界环境初始化", "side_effects": [],
-        "difficulty": "None", "based_on": "",
-    })
     for fb_name, fb_data in [("Step 2b events", events_data),
                               ("Step 2b auto_triggers", at_data),
                               ("Step 2c L1", l1_data),
@@ -539,7 +525,17 @@ def run_pipeline(
     # ── 生成 Boss Encounter（如果 Step 1 识别到了 Boss）──
     boss_hints = step1a.get("boss_encounters", [])
     if boss_hints:
-        step2_boss = parse_step2_boss(boss_hints, l1_data, llm_json)
+        boss_library_names = []
+        try:
+            if boss_lib:
+                boss_library_names = boss_lib.list_names()
+        except Exception:
+            pass
+        step2_boss = parse_step2_boss(
+            boss_hints, boss_library_names,
+            interactions, auto_triggers, scenes, chapters,
+            llm_json,
+        )
         boss_encounters_data = step2_boss.get("boss_encounters", [])
     else:
         boss_encounters_data = []
@@ -587,10 +583,10 @@ def run_pipeline(
             }
             world_rules.insert(0, wr0)
 
-    # ── Step 3.5 + Phase 1 (并行) ──────────────────────────────
+    # ── Step 3.5 ──────────────────────────────────────────────
     if verbose:
         print("═" * 50)
-        print("[Step 3.5 + Phase 1] 依赖图构建 + 风格预判 (并行)...")
+        print("[Step 3.5] 依赖图构建...")
 
     stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
@@ -599,19 +595,6 @@ def run_pipeline(
         desc = sdata.get("description", "") or sdata.get("atmosphere", "") or sdata.get("entry_narrative", "")
         if desc:
             l2_descriptions[name] = desc
-
-    weapon_names = []
-    enemy_names = []
-    try:
-        if weapon_lib:
-            weapon_names = [f"{w.name} — {w.description}" if w.description else w.name for w in weapon_lib.list_all()]
-    except Exception:
-        pass
-    try:
-        if enemy_lib:
-            enemy_names = [f"{e.name} — {e.description}" if e.description else e.name for e in enemy_lib.list_all()]
-    except Exception:
-        pass
 
     skill_names = []
     try:
@@ -657,36 +640,20 @@ def run_pipeline(
         graph.cut_random_edge_in_cycles()
         return {"graph": graph, "dependencies": deps, "_circular_cut": True}
 
-    def _do_phase1():
-        return parse_phase1(
-            chapters, l3_data.get("scene_intents", {}),
-            weapon_names, enemy_names, llm_json,
-        )
-
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f35 = ex.submit(_do_step35)
-        f_p1 = ex.submit(lambda: _with_fallback(
-            _do_phase1, ["enemies"],
-            {"enemies": [], "weapons": []},
-            max_retries, verbose, "Phase 1",
-        ))
-        step35_result = f35.result()
-        phase1_result = f_p1.result()
+    step35_result = _do_step35()
 
     dep_graph = step35_result.get("graph")
     if dep_graph:
         result.l2_data["dependency_graph"] = dep_graph.to_dict()
     if step35_result.get("_circular_cut"):
         result.fallbacks.append("Step 3.5 (circular cut)")
-    if phase1_result.get("_fallback"):
-        result.fallbacks.append("Phase 1")
+
+    # Enemy/weapon constraints now come from Step 1a (merged Phase 1)
+    phase1_clean = {"enemies": step1a.get("enemies", []),
+                    "weapons": step1a.get("weapons", [])}
 
     if verbose:
-        print(f"  Phase 1 完成: {len(phase1_result.get('enemies',[]))} 敌人类型, {len(phase1_result.get('weapons',[]))} 武器类型")
-
-    # Strip fallback metadata before passing to Phase 2 LLM prompt
-    phase1_clean = {"enemies": phase1_result.get("enemies", []),
-                    "weapons": phase1_result.get("weapons", [])}
+        print(f"  Step 1a 约束: {len(phase1_clean.get('enemies',[]))} 敌人类型, {len(phase1_clean.get('weapons',[]))} 武器类型")
 
     # ── Phase 2 (串行，依赖 Phase 1 约束) ─────────────────────
     if verbose:

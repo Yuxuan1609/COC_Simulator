@@ -87,10 +87,10 @@ def run_game(character_path: str = None):
     ts = initial.get("timestamp", "")
     if ts:
         print(f"[{ts}]")
-    _print_split(initial["brief"], initial["narrative"])
     if initial.get("skill_results"):
         for sr in initial["skill_results"]:
             _print_skill_result(sr)
+    _print_split(initial["brief"], initial["narrative"])
 
     # 主循环
     while True:
@@ -168,7 +168,7 @@ def run_game(character_path: str = None):
 
         ending = result.get("ending")
         if ending:
-            print(f"【结局触发】{ending['name']}：{ending['narrative']}")
+            print(f"\n【结局触发】{ending['name']}：{ending['narrative']}")
 
         ts = result.get("timestamp", "")
         if ts:
@@ -200,24 +200,40 @@ def _scene_text(world):
 
 
 def _print_split(brief, narrative):
-    """打印叙事输出。"""
+    """打印叙事输出：目前结果 → 沉浸式叙述。"""
     if brief:
-        print(f"\n【KP 叙述】{brief}")
+        print(f"\n── 目前结果 ──")
+        print(brief)
     if narrative:
-        print(f"\n{narrative}")
+        print(f"\n── 沉浸式输出 ──")
+        print(narrative)
 
 
 def _print_skill_result(sr):
-    """打印技能检定结果。"""
-    tier_label = {"extreme": "大成功", "hard": "困难成功", "regular": "成功",
-                  "failure": "失败", "fumble": "大失败"}.get(sr["tier"], sr["tier"])
+    """打印技能检定结果，含增强/判定过程。"""
+    tier_labels = {"extreme": "极难成功", "hard": "困难成功", "regular": "常规成功",
+                   "failure": "失败", "fumble": "大失败"}
+    tier_label = tier_labels.get(sr["tier"], sr["tier"])
     emoji = "✓" if sr["success"] else "✗"
     detail = sr.get("detail", "")
-    if detail:
-        dice_line = detail.split("\n")[1] if "\n" in detail else detail
-        print(f"{emoji} [{sr['entity_id']}] {tier_label} | {dice_line.strip()}")
-    else:
-        print(f"{emoji} [{sr['entity_id']}] 技能检定：{tier_label}")
+    lines = detail.split("\n") if detail else []
+    # Line 0: header like "[SEARCH] 侦查检定 | 等级=regular | 成功"
+    header = lines[0].strip() if lines else f"[{sr['entity_id']}] 技能检定"
+    dice_info = ""
+    trait_info = ""
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped.startswith("[特质修正]"):
+            trait_info = stripped
+        elif "D100=" in stripped:
+            dice_info = stripped
+    print(f"\n{emoji} 检定「{sr['entity_id']}」→ {tier_label}")
+    if dice_info:
+        print(f"   骰值: {dice_info}")
+    if trait_info:
+        print(f"   {trait_info}")
+    if not dice_info and not trait_info:
+        print(f"   {header}")
 
 
 if __name__ == "__main__":

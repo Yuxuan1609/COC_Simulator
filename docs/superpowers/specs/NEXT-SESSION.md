@@ -142,7 +142,7 @@
 
 | # | 问题 | 处置 |
 |---|------|------|
-| A1 | ScenarioWorld 职责边界模糊化（God object 趋势） | 后续加入新系统（时间/NPC）时拆分为组合模式 |
+| A1 | ScenarioWorld 职责边界模糊化（God object 趋势） | **FIXED** — 拆分为 Facade + GameClock；markup 解析迁至 game/side_effects.py；npc_states 移除，NPCManager 唯一真源；EnemyManager/NPCManager/BossManager 正式挂载；Keeper 接管 time_costs/comms_interval/apply_side_effects |
 | A2 | Author ModulePatch 注入无校验 | 与 O1 一起在 escalation 重设计中解决 |
 | A3 | 离线管线 requirement 语义一致性依赖生成质量 | 已有 fallback + 多轮渐进 + 人工审计对冲 |
 

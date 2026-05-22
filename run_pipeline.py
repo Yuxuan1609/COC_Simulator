@@ -129,7 +129,7 @@ from module_designer import (
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
     build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
-    build_step25_prompt, build_phase1_prompt, build_step4_prompt,
+    build_step25_prompt, build_step4_prompt, build_step2_boss_prompt,
     _with_fallback,
 )
 from module_designer.layered_parser import (
@@ -138,11 +138,12 @@ from module_designer.layered_parser import (
     STEP2A_SYSTEM, STEP2B_EVENTS_SYSTEM, STEP2B_AT_SYSTEM,
     STEP2C_L1_SYSTEM, STEP2C_L3_SYSTEM,
     STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM,
-    STEP25_SYSTEM, PHASE1_SYSTEM, STEP4_SYSTEM,
+    STEP25_SYSTEM, STEP4_SYSTEM, STEP2_BOSS_SYSTEM,
 )
-from module_designer.layered_pipeline import run_pipeline, cross_validate_layers, _assemble_l2, parse_step2_boss
+from module_designer.layered_pipeline import run_pipeline, cross_validate_layers, _assemble_l2
 from module_designer.dependency_graph import DependencyGraph
 from library import WeaponLibrary, EnemyLibrary
+from library.bosses import BossLibrary
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -479,6 +480,7 @@ class InteractiveRunner:
         # 库
         self.wl: WeaponLibrary | None = None
         self.el: EnemyLibrary | None = None
+        self.bl: BossLibrary | None = None
 
         # 输入
         self.content: str = ""  # 源文档全文（由 run_* 函数设置）
@@ -669,8 +671,12 @@ def _do_step1(runner: InteractiveRunner, verbose: bool = True):
     if verbose:
         print("\n\033[1m[Step 1] 结构化提取 + 精修模组（并行）\033[0m")
 
+    weapon_names_1a = [w.name for w in runner.wl.list_all()] if runner.wl else []
+    enemy_names_1a = [e.name for e in runner.el.list_all()] if runner.el else []
+    boss_names_1a = runner.bl.list_names() if runner.bl else []
+
     def _do_1a():
-        prompt = build_step1a_prompt(runner.content)
+        prompt = build_step1a_prompt(runner.content, weapon_names_1a, enemy_names_1a, boss_names_1a)
         return runner.llm_json(prompt, system=STEP1A_SYSTEM)
 
     def _do_1b():
@@ -716,7 +722,7 @@ def _do_step2a(runner: InteractiveRunner, verbose: bool = True):
         print("\n\033[1m[Step 2a] Interactions 提取\033[0m")
 
     def _do():
-        prompt = build_step2a_prompt(runner.chapters, runner.scenes)
+        prompt = build_step2a_prompt(runner.chapters, runner.scenes, runner.characters)
         return runner.llm_json(prompt, system=STEP2A_SYSTEM)
 
     step2a = _do()  # Step 2a 较简单，直接调用
@@ -745,11 +751,14 @@ def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
         print("\n\033[1m[Step 2b+2c] Events + AT + L1 + L3（并行）\033[0m")
 
     def _do_events():
-        prompt = build_step2b_events_prompt(runner.chapters, runner.scenes, runner.interactions)
+        prompt = build_step2b_events_prompt(runner.chapters, runner.scenes, runner.interactions, runner.characters)
         return runner.llm_json(prompt, system=STEP2B_EVENTS_SYSTEM)
 
     def _do_at():
-        prompt = build_step2b_at_prompt(runner.chapters, runner.scenes, runner.interactions)
+        prompt = build_step2b_at_prompt(runner.chapters, runner.scenes, runner.interactions,
+                                        runner.characters,
+                                        enemies=runner.step1a.get("enemies", []),
+                                        weapons=runner.step1a.get("weapons", []))
         return runner.llm_json(prompt, system=STEP2B_AT_SYSTEM)
 
     def _do_l1():
@@ -775,15 +784,6 @@ def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
 
     runner.events = events_data.get("events", [])
     runner.auto_triggers = at_data.get("auto_triggers", [])
-
-    # 注入世界 AT
-    if config.inject_world_at:
-        runner.auto_triggers.append({
-            "id": "AT_WORLD", "name": "世界生成", "scene": "world", "type": "无",
-            "requirement": "", "trigger": "模组开始时自动触发",
-            "result": "世界环境初始化", "side_effects": [],
-            "difficulty": "None", "based_on": "",
-        })
 
     # 保存
     step_dir = runner._step_dir("step_2")
@@ -851,7 +851,14 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
     boss_hints = runner.step1a.get("boss_encounters", [])
     boss_encounters_data = []
     if boss_hints:
-        step2_boss = parse_step2_boss(boss_hints, runner.l1_data, runner.llm_json)
+        boss_lib_names = runner.bl.list_names() if runner.bl else []
+        from module_designer.layered_parser import parse_step2_boss as _parse_step2_boss
+        step2_boss = _parse_step2_boss(
+            boss_hints, boss_lib_names,
+            runner.interactions, runner.auto_triggers,
+            runner.scenes, runner.chapters,
+            runner.llm_json,
+        )
         boss_encounters_data = step2_boss.get("boss_encounters", [])
 
     runner.l2_assembled = _assemble_l2(
@@ -907,17 +914,7 @@ def _do_step35_phase1(runner: InteractiveRunner, verbose: bool = True):
     """Step 3.5 + Phase 1: 依赖图 + 风格预判（并行）。"""
     config = runner.config
     if verbose:
-        print("\n\033[1m[Step 3.5+Phase 1] 依赖图 + 风格预判（并行）\033[0m")
-
-    # 构建武器/敌人名列表（含描述）
-    weapon_names = [
-        f"{w.name} — {w.description}" if w.description else w.name
-        for w in (runner.wl.list_all() if runner.wl else [])
-    ]
-    enemy_names = [
-        f"{e.name} — {e.description}" if e.description else e.name
-        for e in (runner.el.list_all() if runner.el else [])
-    ]
+        print("\n\033[1m[Step 3.5] 依赖图\033[0m")
 
     # 从组装的 L2 提取平面实体列表
     step35_interactions = []
@@ -955,22 +952,12 @@ def _do_step35_phase1(runner: InteractiveRunner, verbose: bool = True):
                 return graph
         return None
 
-    def _do_p1():
-        prompt = build_phase1_prompt(
-            runner.chapters, runner.l3_data.get("scene_intents", {}),
-            weapon_names, enemy_names,
-        )
-        return runner.llm_json(prompt, system=PHASE1_SYSTEM)
+    runner.dep_graph = _do_35()
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f35 = ex.submit(_do_35)
-        f_p1 = ex.submit(_do_p1)
-        runner.dep_graph = f35.result()
-        phase1 = f_p1.result()
-
+    # Enemy/weapon constraints now come from Step 1a (merged Phase 1)
     runner.phase1_clean = {
-        "enemies": phase1.get("enemies", []),
-        "weapons": phase1.get("weapons", []),
+        "enemies": runner.step1a.get("enemies", []),
+        "weapons": runner.step1a.get("weapons", []),
     }
 
     # 保存
@@ -1133,11 +1120,13 @@ def run_interactive(config: PipelineConfig):
     runner = InteractiveRunner(config)
 
     # ── 加载库 ──
-    print("加载武器/敌人库...")
+    print("加载武器/敌人/Boss库...")
     wl = WeaponLibrary(); wl.load_core()
     el = EnemyLibrary(); el.load_core()
+    bl = BossLibrary("data/library/core/bosses.json")
     runner.wl = wl
     runner.el = el
+    runner.bl = bl
 
     # ── 加载文档 ──
     docx_path = PROJECT_ROOT / config.docx_path
@@ -1210,6 +1199,7 @@ def run_auto(config: PipelineConfig):
     wl.load_core()
     el = EnemyLibrary()
     el.load_core()
+    bl = BossLibrary("data/library/core/bosses.json")
 
     # 加载文档
     docx_path = PROJECT_ROOT / config.docx_path
@@ -1239,6 +1229,7 @@ def run_auto(config: PipelineConfig):
         llm_text=llm_text,
         weapon_lib=wl,
         enemy_lib=el,
+        boss_lib=bl,
         max_retries=config.max_retries,
         verbose=True,
         inject_l3_wr0=config.inject_wr0,

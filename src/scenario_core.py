@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 from dataclasses import dataclass, field
 from module_designer.dependency_graph import DependencyNode, DependencyEdge
 
+from game.side_effects import (
+    ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon,
+    SceneWeapon, NPCStateChange, NPCFollow,
+    parse_markup, parse_markup_all,
+)
+
 
 # ═══════════════════════════════════════════════════════════════
 #  工具函数
@@ -60,66 +66,6 @@ class Interaction:
         return f"[{self.type}] {self.name}"
 
 
-@dataclass
-class ItemGain:
-    """获得物品 —— 加入调查员 ItemManager"""
-    item_name: str
-    quantity: int = 1
-
-
-@dataclass
-class ConsumeItem:
-    """消耗物品 —— 从调查员 ItemManager 移除"""
-    item_name: str
-    quantity: int = 1
-    narrative: str = ""  # 消耗原因（可选）
-
-
-@dataclass
-class StatChange:
-    """属性/状态变化。delta 为数值变化，narrative 描述难以量化的影响（恐惧、幻觉等）."""
-    stat_name: str
-    delta: int = 0
-    narrative: str = ""
-
-
-@dataclass
-class SpawnEnemy:
-    """生成敌人遭遇 —— 从 library 中实例化敌人"""
-    enemy_ref: str       # 引用 library/enemies 中的敌人名
-    scene: str           # 目标场景
-    quantity: int = 1
-
-
-@dataclass
-class GrantWeapon:
-    """授予武器 —— 从 library/weapons 中选取标准化武器"""
-    weapon_ref: str      # 引用 library/weapons 中的武器名
-    scene: str = ""      # 目标场景（空=当前场景）
-    quantity: int = 1
-
-
-@dataclass
-class SceneWeapon:
-    """武器放置 — 在场景中可被发现拾取的武器"""
-    weapon_ref: str      # 引用 library/weapons 中的武器名
-    scene: str           # 所在场景
-    quantity: int = 1
-
-
-@dataclass
-class NPCStateChange:
-    """NPC 状态变化 —— 更新 ScenarioWorld.npc_states"""
-    npc_name: str
-    new_state: str       # 如 "清醒"、"死亡"、"已对话"、"已离开"
-
-
-@dataclass
-class NPCFollow:
-    """NPC 跟随状态变更 — 更新 NPCManager follow 状态"""
-    npc_name: str
-    follow: bool = True
-
 
 @dataclass
 class ActionResult:
@@ -150,141 +96,6 @@ class Entity:
         return f"[{self.type}] {self.name}"
 
 
-# ═══════════════════════════════════════════════════════════════
-#  @markup 解析器
-# ═══════════════════════════════════════════════════════════════
-
-_MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
-    r'\(([^)]*)\)'
-)
-
-
-def _parse_kwargs(kwargs_str: str) -> dict:
-    """Parse key=value pairs from @markup arg string. Values may be quoted."""
-    result = {}
-    if not kwargs_str.strip():
-        return result
-    # Match key=value pairs, value can be quoted (single/double) or unquoted
-    for match in re.findall(r'(\w+)\s*=\s*(?:"""([^"]*)"""|"([^"]*)"|\'([^\']*)\'|([^,)]+))', kwargs_str):
-        key = match[0]
-        value = match[1] or match[2] or match[3] or match[4]
-        value = value.strip().rstrip(',')
-        result[key] = value
-    return result
-
-
-def parse_markup(text: str):
-    """Parse a single @function(args) markup string into a side effect dataclass."""
-    match = _MARKUP_PATTERN.search(text)
-    if not match:
-        return None
-    func_name = match.group(1)
-    kwargs_str = match.group(2)
-    kwargs = _parse_kwargs(kwargs_str)
-
-    if func_name == "spawn_enemy":
-        return SpawnEnemy(
-            enemy_ref=kwargs.get("enemy_ref", ""),
-            scene=kwargs.get("scene", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-        )
-    elif func_name == "grant_weapon":
-        return GrantWeapon(
-            weapon_ref=kwargs.get("weapon_ref", ""),
-            scene=kwargs.get("scene", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-        )
-    elif func_name == "stat_change":
-        delta_str = kwargs.get("delta", "0")
-        try:
-            delta = int(delta_str)
-        except ValueError:
-            delta = delta_str  # keep as string if it's a dice formula like "-1d4"
-        return StatChange(
-            stat_name=kwargs.get("stat_name", ""),
-            delta=delta,
-            narrative=kwargs.get("narrative", ""),
-        )
-    elif func_name == "item_gain":
-        return ItemGain(
-            item_name=kwargs.get("item_name", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-        )
-    elif func_name == "consume_item":
-        return ConsumeItem(
-            item_name=kwargs.get("item_name", ""),
-            quantity=int(kwargs.get("quantity", 1)),
-            narrative=kwargs.get("narrative", ""),
-        )
-    elif func_name == "npc_state_change":
-        return NPCStateChange(
-            npc_name=kwargs.get("npc_name", ""),
-            new_state=kwargs.get("new_state", ""),
-        )
-    elif func_name == "npc_follow":
-        follow_str = kwargs.get("follow", "true").lower()
-        return NPCFollow(
-            npc_name=kwargs.get("npc_name", ""),
-            follow=follow_str in ("true", "1", "yes"),
-        )
-    return None
-
-
-def parse_markup_all(text: str) -> list:
-    """Parse all @markup occurrences in a string."""
-    results = []
-    for match in _MARKUP_PATTERN.finditer(text):
-        func_name = match.group(1)
-        kwargs_str = match.group(2)
-        kwargs = _parse_kwargs(kwargs_str)
-
-        if func_name == "spawn_enemy":
-            results.append(SpawnEnemy(
-                enemy_ref=kwargs.get("enemy_ref", ""),
-                scene=kwargs.get("scene", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-            ))
-        elif func_name == "grant_weapon":
-            results.append(GrantWeapon(
-                weapon_ref=kwargs.get("weapon_ref", ""),
-                scene=kwargs.get("scene", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-            ))
-        elif func_name == "stat_change":
-            delta_str = kwargs.get("delta", "0")
-            try:
-                delta = int(delta_str)
-            except ValueError:
-                delta = delta_str
-            results.append(StatChange(
-                stat_name=kwargs.get("stat_name", ""),
-                delta=delta,
-                narrative=kwargs.get("narrative", ""),
-            ))
-        elif func_name == "item_gain":
-            results.append(ItemGain(
-                item_name=kwargs.get("item_name", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-            ))
-        elif func_name == "consume_item":
-            results.append(ConsumeItem(
-                item_name=kwargs.get("item_name", ""),
-                quantity=int(kwargs.get("quantity", 1)),
-                narrative=kwargs.get("narrative", ""),
-            ))
-        elif func_name == "npc_state_change":
-            results.append(NPCStateChange(
-                npc_name=kwargs.get("npc_name", ""),
-                new_state=kwargs.get("new_state", ""),
-            ))
-        elif func_name == "npc_follow":
-            follow_str = kwargs.get("follow", "true").lower()
-            results.append(NPCFollow(
-                npc_name=kwargs.get("npc_name", ""),
-                follow=follow_str in ("true", "1", "yes"),
-            ))
-    return results
 
 _GRADED_PATTERN = re.compile(r'^##GRADED##$')
 _END_PATTERN = re.compile(r'^##END_([^:]+):(.+?)##')
@@ -811,50 +622,88 @@ class ScenarioWorld:
                  background_story: str = "",
                  wr0_enabled: bool = False,
                  enemy_library: Any = None,
-                 weapon_library: Any = None):
+                 weapon_library: Any = None,
+                 boss_library: Any = None,
+                 boss_encounters: list | None = None,
+                 npc_profiles: dict | None = None):
+        from game.clock import GameClock
+        from game.enemy_manager import EnemyManager
+        from game.npc_manager import NPCManager
+        from game.boss_manager import BossManager
+
         self.graph = graph
         self.current_location = start_node
         self.player: 'InvestigatorType | None' = None
-
-        # 背景故事（模组设定，供叙事阶段参考）
         self.background_story = background_story
         self.wr0_enabled = wr0_enabled
 
-        # 事件追踪
+        # 子系统
+        self.clock = GameClock()
+        self.memory = MemoryManager()
+        self.enemies = EnemyManager(enemy_library) if enemy_library else None
+        self.npcs = NPCManager()
+        if npc_profiles:
+            self.npcs.init_from_profiles(npc_profiles)
+        self.bosses = BossManager(boss_library, boss_encounters or []) if boss_library else None
+
+        # 本体状态
+        self.scene_weapons: dict[str, list[SceneWeapon]] = {}
+        self.weapon_library = weapon_library
+        self.time_costs: dict = {}
+        self.comms_interval: int = 15
+
         self.triggered_events: Dict[str, bool] = {
             eid: False for eid in graph.get_all_event_ids()
         }
-
-        # 每个场景已完成动作名
         self.completed_interactions: Dict[str, Set[str]] = {}
 
-        # L2 dependency graph + per-entity runtime state (replaces flags)
         self.runtime_state: Dict[str, NodeRuntimeState] = {}
         self.dependency_graph: Dict[str, Any] = {}
 
+    # ── 向后兼容属性 — 代理到 clock ──
 
-        # 记忆管理器
-        self.memory = MemoryManager()
+    @property
+    def game_time(self) -> int:
+        return self.clock.game_time
 
-        # NPC 运行时状态
-        self.npc_states: Dict[str, str] = {}
+    @property
+    def day(self) -> int:
+        return self.clock.day
 
-        # Time system — minute clock
-        self.game_time: int = 0
-        self._last_comms_time: int = 0
-        self.comms_interval: int = 15
-        self.time_context: str = ""
+    @property
+    def hour(self) -> int:
+        return self.clock.hour
 
-        # Weapon tracking
-        self.scene_weapons: dict[str, list[SceneWeapon]] = {}
-        self.weapon_library: Any = weapon_library
+    @property
+    def time_of_day(self) -> str:
+        return self.clock.time_of_day
 
-        # Enemy tracking
-        if enemy_library is not None:
-            from game.enemy_manager import EnemyManager
-            self.enemy_manager = EnemyManager(enemy_library)
-        else:
-            self.enemy_manager = None
+    @property
+    def time_context(self) -> str:
+        return self.clock.time_context
+
+    @time_context.setter
+    def time_context(self, value: str):
+        self.clock.time_context = value
+
+    def advance_time(self, minutes: int):
+        self.clock.advance_time(minutes)
+        # Auto-inject time flags into runtime_state
+        for flag, value in self.clock.get_time_flags().items():
+            state = self.get_runtime_state(flag)
+            state.completed = value
+
+    def get_time_flags(self) -> dict:
+        return self.clock.get_time_flags()
+
+    @property
+    def enemy_manager(self):
+        """向后兼容 — 代理到 self.enemies。"""
+        return self.enemies
+
+    @enemy_manager.setter
+    def enemy_manager(self, value):
+        self.enemies = value
 
     # ── Dependency graph & runtime state ──
 
@@ -890,23 +739,26 @@ class ScenarioWorld:
 
         for edge in edges:
             target_id = edge.get("target", "")
-            condition = edge.get("condition", "completed")
             target_state = self.get_runtime_state(target_id)
 
-            if condition == "success":
-                if target_state.result_tier not in ("regular", "hard", "extreme"):
-                    return False, f"需要成功完成「{target_id}」"
-            elif condition == "completed":
-                if not target_state.completed:
-                    return False, f"需要先完成「{target_id}」"
-            elif condition == "fail":
-                if target_state.result_tier not in ("failure", "fumble"):
-                    return False, f"需要「{target_id}」结果为失败"
-            elif condition == "Uncompleted":
-                if target_state.completed:
-                    return False, f"需要「{target_id}」未完成"
+            if not target_state.completed:
+                return False, f"需要先完成「{target_id}」"
 
         return True, ""
+
+    def mark_completed(self, entity_id: str, tier: str = ""):
+        """Mark entity as completed in runtime state with optional result tier."""
+        state = self.get_runtime_state(entity_id)
+        state.completed = True
+        if tier:
+            state.result_tier = tier
+
+    def is_entity_completed(self, entity_id: str) -> bool:
+        """Check if entity is completed. Checks runtime_state first, falls back to triggered_events."""
+        state = self.runtime_state.get(entity_id)
+        if state and state.completed:
+            return True
+        return self.triggered_events.get(entity_id, False)
 
     # ── 背景故事 ──
 
@@ -951,7 +803,7 @@ class ScenarioWorld:
         done = self.completed_interactions.get(self.current_location, set())
         return interaction_name in done
 
-    def _are_requirements_met(self, entity) -> bool:
+    def are_entity_requirements_met(self, entity) -> bool:
         """Check if entity prerequisites are satisfied via runtime_state.
         For '||' separated requirements, only checks the hard part (before ||)."""
         if hasattr(entity, 'requirement'):
@@ -998,7 +850,7 @@ class ScenarioWorld:
         lines.append("═══ 可执行动作 ═══")
         if available:
             for i, inter in enumerate(available, 1):
-                hint = " [需要前置]" if not self._are_requirements_met(inter) else ""
+                hint = " [需要前置]" if not self.are_entity_requirements_met(inter) else ""
                 lines.append(f"  {i}. {inter.summary()}{hint} —— {inter.trigger}")
         else:
             lines.append("  （无新增可执行动作）")
@@ -1030,7 +882,7 @@ class ScenarioWorld:
             "interactions": [
                 {"type": i.type, "name": i.name, "trigger": i.trigger,
                  "completed": i.name in done,
-                 "requirements_met": self._are_requirements_met(i)}
+                 "requirements_met": self.are_entity_requirements_met(i)}
                 for i in interactions
             ],
             "triggered_events": [eid for eid, t in self.triggered_events.items() if t],
@@ -1072,48 +924,45 @@ class ScenarioWorld:
                     results.append((event.name, event.impact))
         return results
 
+    def build_snapshot(self) -> dict:
+        """Pure data assembly — single source of truth for all prompt builders."""
+        return {
+            "location": self.current_location,
+            "description": self.get_current_description(),
+            "exits": [
+                {"target": e.target, "method": e.method}
+                for e in self.get_possible_exits()
+            ],
+            "time": self.clock.to_dict(),
+            "player": self.player.build_snapshot() if self.player else {},
+            "npcs_in_scene": self.npcs.get_in_scene_snapshot(self.current_location),
+            "enemies_in_scene": (
+                self.enemies.get_active_in_scene_snapshot(self.current_location)
+                if self.enemies else []
+            ),
+            "boss_active": self.bosses.active_snapshot() if self.bosses else None,
+            "scene_weapons": [
+                {"weapon_ref": sw.weapon_ref, "quantity": sw.quantity}
+                for sw in self.scene_weapons.get(self.current_location, [])
+            ],
+            "runtime": {
+                "completed": [
+                    eid for eid, s in self.runtime_state.items() if s.completed
+                ],
+                "triggered_events": [
+                    eid for eid, t in self.triggered_events.items() if t
+                ],
+            },
+        }
 
     # ── NPC 运行时状态 ──
 
     def set_npc_state(self, npc_name: str, state: str):
-        """更新 NPC 运行时状态"""
-        self.npc_states[npc_name] = state
+        self.npcs.set_state(npc_name, state)
 
     def get_npc_state(self, npc_name: str) -> str:
-        """查询 NPC 运行时状态"""
-        return self.npc_states.get(npc_name, "未知")
-
-    # ── 时间钟（分钟粒度）──
-
-    @property
-    def day(self) -> int:
-        return self.game_time // 1440
-
-    @property
-    def hour(self) -> int:
-        return (self.game_time % 1440) // 60
-
-    @property
-    def time_of_day(self) -> str:
-        h = self.hour
-        if h < 5:   return "夜间"
-        if h < 8:   return "早晨"
-        if h < 17:  return "白天"
-        if h < 20:  return "黄昏"
-        return "夜间"
-
-    def get_time_flags(self) -> dict:
-        return {
-            f"day:{self.day}": True,
-            f"time:{self.time_of_day}": True,
-        }
-
-    def advance_time(self, delta_minutes: int):
-        """Advance the clock by N minutes. Auto-injects time flags into runtime_state."""
-        self.game_time += delta_minutes
-        for flag, value in self.get_time_flags().items():
-            state = self.get_runtime_state(flag)
-            state.completed = value
+        npc = self.npcs.get(npc_name)
+        return npc.state if npc else "未知"
 
     def apply_world_update(self, abstract: str):
         """应用世界更新结果"""
@@ -1305,19 +1154,12 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
             world.memory.note_item(effect.weapon_ref)
             msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
         elif isinstance(effect, NPCStateChange):
-            # Route through NPCManager — unified NPC state tracking
-            if hasattr(world, 'npc_manager') and world.npc_manager:
-                world.npc_manager.set_state(effect.npc_name, effect.new_state)
-            else:
-                world.set_npc_state(effect.npc_name, effect.new_state)
+            world.npcs.set_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
         elif isinstance(effect, NPCFollow):
-            if hasattr(world, 'npc_manager') and world.npc_manager:
-                world.npc_manager.set_following(effect.npc_name, effect.follow)
-                status = "开始跟随" if effect.follow else "停止跟随"
-                msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
-            else:
-                msgs.append(f"[NPC跟随] {effect.npc_name} follow={effect.follow}")
+            world.npcs.set_following(effect.npc_name, effect.follow)
+            status = "开始跟随" if effect.follow else "停止跟随"
+            msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
         elif isinstance(effect, StatChange):
             if world.player:
                 new_val, detail = world.player.modify_stat(effect.stat_name, effect.delta)

@@ -23,18 +23,17 @@ class DependencyNode:
 @dataclass(frozen=True)
 class DependencyEdge:
     source: str     # 依赖方（需要满足条件才能触发）
-    target: str     # 被依赖方
+    target: str     # 被依赖方（必须 completed 才能解除此依赖）
     dep_type: str = ""       # interaction / event / auto_trigger / item
-    condition: str = ""      # completed / triggered / possess / not_*
 
     def to_dict(self) -> dict:
         return {"source": self.source, "target": self.target,
-                "dep_type": self.dep_type, "condition": self.condition}
+                "dep_type": self.dep_type}
 
     @classmethod
     def from_dict(cls, data: dict) -> "DependencyEdge":
         return cls(source=data["source"], target=data["target"],
-                   dep_type=data.get("dep_type", ""), condition=data.get("condition", ""))
+                   dep_type=data.get("dep_type", ""))
 
 
 class DependencyGraph:
@@ -61,7 +60,6 @@ class DependencyGraph:
                     source=eid,
                     target=req.get("id", req.get("name", "")),
                     dep_type=req.get("type", ""),
-                    condition=req.get("condition", ""),
                 )
                 self.edges.append(edge)
                 target_id = edge.target
@@ -105,7 +103,7 @@ class DependencyGraph:
         self.edges = [e for e in self.edges if e is not edge]
         self._circular_cut = True
         self._cut_info = {"source": edge.source, "target": edge.target,
-                          "dep_type": edge.dep_type, "condition": edge.condition}
+                          "dep_type": edge.dep_type}
 
     def cut_random_edge_in_cycles(self) -> bool:
         cycles = self.detect_cycles()

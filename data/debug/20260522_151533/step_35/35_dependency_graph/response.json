@@ -1,0 +1,389 @@
+{
+  "dependencies": [
+    {
+      "entity_id": "I1",
+      "requires": []
+    },
+    {
+      "entity_id": "I2",
+      "requires": []
+    },
+    {
+      "entity_id": "I3",
+      "requires": []
+    },
+    {
+      "entity_id": "I4",
+      "requires": []
+    },
+    {
+      "entity_id": "I5",
+      "requires": []
+    },
+    {
+      "entity_id": "I49",
+      "requires": []
+    },
+    {
+      "entity_id": "I6",
+      "requires": []
+    },
+    {
+      "entity_id": "I7",
+      "requires": []
+    },
+    {
+      "entity_id": "I8",
+      "requires": []
+    },
+    {
+      "entity_id": "I9",
+      "requires": []
+    },
+    {
+      "entity_id": "I10",
+      "requires": []
+    },
+    {
+      "entity_id": "I11",
+      "requires": []
+    },
+    {
+      "entity_id": "I12",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I11"
+        }
+      ]
+    },
+    {
+      "entity_id": "I13",
+      "requires": []
+    },
+    {
+      "entity_id": "I14",
+      "requires": []
+    },
+    {
+      "entity_id": "I15",
+      "requires": []
+    },
+    {
+      "entity_id": "I16",
+      "requires": []
+    },
+    {
+      "entity_id": "I17",
+      "requires": []
+    },
+    {
+      "entity_id": "I18",
+      "requires": []
+    },
+    {
+      "entity_id": "I19",
+      "requires": []
+    },
+    {
+      "entity_id": "I20",
+      "requires": []
+    },
+    {
+      "entity_id": "I21",
+      "requires": []
+    },
+    {
+      "entity_id": "I22",
+      "requires": []
+    },
+    {
+      "entity_id": "I23",
+      "requires": []
+    },
+    {
+      "entity_id": "I24",
+      "requires": []
+    },
+    {
+      "entity_id": "I25",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I24"
+        }
+      ]
+    },
+    {
+      "entity_id": "I26",
+      "requires": []
+    },
+    {
+      "entity_id": "I27",
+      "requires": []
+    },
+    {
+      "entity_id": "I28",
+      "requires": []
+    },
+    {
+      "entity_id": "I29",
+      "requires": []
+    },
+    {
+      "entity_id": "I30",
+      "requires": []
+    },
+    {
+      "entity_id": "I31",
+      "requires": []
+    },
+    {
+      "entity_id": "I48",
+      "requires": []
+    },
+    {
+      "entity_id": "I32",
+      "requires": []
+    },
+    {
+      "entity_id": "I33",
+      "requires": []
+    },
+    {
+      "entity_id": "I34",
+      "requires": []
+    },
+    {
+      "entity_id": "I35",
+      "requires": []
+    },
+    {
+      "entity_id": "I36",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I12"
+        },
+        {
+          "type": "interaction",
+          "id": "I13"
+        },
+        {
+          "type": "interaction",
+          "id": "I25"
+        }
+      ]
+    },
+    {
+      "entity_id": "I37",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I33"
+        }
+      ]
+    },
+    {
+      "entity_id": "I38",
+      "requires": []
+    },
+    {
+      "entity_id": "I39",
+      "requires": []
+    },
+    {
+      "entity_id": "I40",
+      "requires": []
+    },
+    {
+      "entity_id": "I41",
+      "requires": []
+    },
+    {
+      "entity_id": "I42",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I48"
+        }
+      ]
+    },
+    {
+      "entity_id": "I43",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I12"
+        },
+        {
+          "type": "interaction",
+          "id": "I13"
+        }
+      ]
+    },
+    {
+      "entity_id": "I44",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I12"
+        },
+        {
+          "type": "interaction",
+          "id": "I13"
+        },
+        {
+          "type": "interaction",
+          "id": "I25"
+        }
+      ]
+    },
+    {
+      "entity_id": "I45",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I12"
+        },
+        {
+          "type": "interaction",
+          "id": "I13"
+        },
+        {
+          "type": "interaction",
+          "id": "I25"
+        }
+      ]
+    },
+    {
+      "entity_id": "I46",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I12"
+        },
+        {
+          "type": "interaction",
+          "id": "I13"
+        },
+        {
+          "type": "interaction",
+          "id": "I25"
+        }
+      ]
+    },
+    {
+      "entity_id": "I47",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I12"
+        },
+        {
+          "type": "interaction",
+          "id": "I13"
+        },
+        {
+          "type": "interaction",
+          "id": "I48"
+        },
+        {
+          "type": "interaction",
+          "id": "I22"
+        }
+      ]
+    },
+    {
+      "entity_id": "I50",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I42"
+        },
+        {
+          "type": "interaction",
+          "id": "I43"
+        }
+      ]
+    },
+    {
+      "entity_id": "E1",
+      "requires": []
+    },
+    {
+      "entity_id": "E3",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I18"
+        }
+      ]
+    },
+    {
+      "entity_id": "E4",
+      "requires": []
+    },
+    {
+      "entity_id": "E11",
+      "requires": [
+        {
+          "type": "interaction",
+          "id": "I37"
+        }
+      ]
+    },
+    {
+      "entity_id": "AT1",
+      "requires": []
+    },
+    {
+      "entity_id": "AT2",
+      "requires": []
+    },
+    {
+      "entity_id": "AT3",
+      "requires": []
+    },
+    {
+      "entity_id": "AT4",
+      "requires": []
+    },
+    {
+      "entity_id": "AT5",
+      "requires": []
+    },
+    {
+      "entity_id": "AT6",
+      "requires": []
+    },
+    {
+      "entity_id": "AT7",
+      "requires": []
+    },
+    {
+      "entity_id": "AT8",
+      "requires": []
+    },
+    {
+      "entity_id": "AT9",
+      "requires": []
+    },
+    {
+      "entity_id": "AT10",
+      "requires": []
+    },
+    {
+      "entity_id": "AT11",
+      "requires": []
+    },
+    {
+      "entity_id": "AT12",
+      "requires": []
+    },
+    {
+      "entity_id": "AT_WORLD",
+      "requires": []
+    }
+  ]
+}

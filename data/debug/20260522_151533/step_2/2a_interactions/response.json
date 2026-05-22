@@ -1,0 +1,966 @@
+{
+  "interactions": [
+    {
+      "id": "I1",
+      "scene": "村口：土地庙与雾中的星陨村",
+      "type": "医学",
+      "name": "检查香炉中的血迹与指甲",
+      "requirement": "",
+      "trigger": "调查员仔细观察土地庙供桌上的香炉时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你觉得那只是普通的污渍和碎屑，不值一提。",
+        "on_regular": "你辨认出香灰中掺杂着暗红色的人类血迹和几片被蛮力拔下的人类指甲，血迹陈旧约两周以上。",
+        "on_hard": "同上，你还注意到血迹分布的形状，似乎是在极度痛苦中留下的。",
+        "on_extreme": "同上，你甚至能从指甲断裂的角度推断出这是此人自己用牙齿咬下的，仿佛在抵抗某种可怕的冲动。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I2",
+      "scene": "村口：土地庙与雾中的星陨村",
+      "type": "无",
+      "name": "查看被钉死的枯井",
+      "requirement": "",
+      "trigger": "调查员绕到土地庙后方时",
+      "result": "你发现一口枯井，井口被厚重的木板钉死，铁钉生锈，缝隙中隐隐透出硫磺气味。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I3",
+      "scene": "村口：土地庙与雾中的星陨村",
+      "type": "心理学",
+      "name": "分析炭笔警告的笔迹",
+      "requirement": "",
+      "trigger": "调查员仔细观察门板上的炭笔字迹时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你看不出什么特别，只是觉得字迹潦草。",
+        "on_regular": "从笔压不均和慌乱急促的笔画中，你推断书写者正处于极度的恐惧之中，这些字是写给村中其他人的最后警告。",
+        "on_hard": "同上，你还注意到“勿看”两个字被反复描粗，似乎书写者最恐惧的是“注视”。",
+        "on_extreme": "同上，你甚至可以从笔画停顿中推测出书写者可能缺少了一只手指，或者手受了伤。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I4",
+      "scene": "村口：土地庙与雾中的星陨村",
+      "type": "无",
+      "name": "向老赵打听星陨村的事",
+      "requirement": "",
+      "trigger": "调查员与在场的老赵交谈时",
+      "result": "老赵脸色苍白，不停叨念着“没人出来过”，极力劝你们离开。如果被问及村子历史，他会说星陨村的名字源于百年前有陨星坠落，后来人们在山上发现了奇怪的石头，矿场就是为此而开。他还提到昨天深夜曾听到村中有大量脚步声和沉重的东西拖行的声音。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I5",
+      "scene": "村口：土地庙与雾中的星陨村",
+      "type": "侦查",
+      "name": "查看卡车里的血手印",
+      "requirement": "",
+      "trigger": "调查员注意到驾驶室座位上的干涸血手印时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只看到一个模糊的污迹。",
+        "on_regular": "你确认那是一个干涸的人类血手印，形状扭曲，似乎留下手印的人当时很痛苦。",
+        "on_hard": "同上，你还注意到手印边缘有挣扎的痕迹，像是被强行拖离驾驶室。",
+        "on_extreme": "同上，你甚至能推断出手印的主人可能是一名男性，年龄在30-40岁之间。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I6",
+      "scene": "废弃民宅：壁画之屋",
+      "type": "美术",
+      "name": "临摹东墙上的恐怖壁画",
+      "requirement": "",
+      "trigger": "调查员尝试用纸笔临摹墙上的漩涡巨口壁画时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你无法准确捕捉那些纹路的细节，只画出了一些杂乱的线条。",
+        "on_regular": "你成功临摹下了一幅较为完整的副本，漩涡纹样清晰可辨。",
+        "on_hard": "你的临摹非常精确，甚至复现了那种令人不安的立体感。",
+        "on_extreme": "同上，你还在临本边注明了色彩和质感，临本仿佛有了生命。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I7",
+      "scene": "废弃民宅：壁画之屋",
+      "type": "无",
+      "name": "尝试擦除壁画的一部分",
+      "requirement": "",
+      "trigger": "调查员用布或工具擦拭壁画表面时",
+      "result": "表面的炭笔和颜料被擦掉后，下面露出了更古老的图层：描绘着古代祭祀场景——一个活人被绑在石板上，祭司模样的人正依次割去他的双眼、舌头和耳朵。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I8",
+      "scene": "废弃民宅：壁画之屋",
+      "type": "医学",
+      "name": "检验三具尸体的死因",
+      "requirement": "",
+      "trigger": "调查员检查里屋的三具尸体时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你发现他们的器官被摘除，但无法确定死因。",
+        "on_regular": "你确定死因并非失血，而是脑组织剧烈的液化萎缩，仿佛意识被某种力量直接从颅内“抽走”。伤口处长满了灰白色的霉菌，菌丝在缓慢蠕动。",
+        "on_hard": "同上，你还注意到这些霉菌与深渊孢子同源，正以记忆为食。",
+        "on_extreme": "同上，你甚至能推断出死者生前并没有挣扎，似乎是在某种仪式性的安静中被带走器官的。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I9",
+      "scene": "废弃民宅：壁画之屋",
+      "type": "无",
+      "name": "徒手触碰尸体上的霉菌",
+      "requirement": "",
+      "trigger": "调查员大胆地用手指触碰那些灰白霉菌时",
+      "result": "你的手指感到一阵麻木，随即扩散到整个手掌，但很快消退。当晚你做了充满触须的噩梦。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I10",
+      "scene": "废弃民宅：壁画之屋",
+      "type": "侦查",
+      "name": "仔细搜索屋内的家具与橱柜",
+      "requirement": "",
+      "trigger": "调查员在废弃民宅中翻箱倒柜时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只找到一些发霉的杂物。",
+        "on_regular": "你发现一封未寄出的家信，是写给在外地的儿子的，内容充满恐惧：“村里井水变红”“大家都做怪梦”“村长叫大家别上山”“别回来”，署名张永福。此外，你在橱柜深处还找到一个暗格，里面有一块刻着漩涡纹的黑色碎陶片。",
+        "on_hard": "同上，你更加迅速地找到了暗格。",
+        "on_extreme": "同上，并且你注意到了暗格的机关构造，推测出类似的手法可能在其他建筑也有。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I11",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "图书馆使用",
+      "name": "整理书桌上散落的宣纸",
+      "requirement": "",
+      "trigger": "调查员进入书房，看到散落一地的宣纸和书桌前的干尸时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你无法理清顺序，只获得了一些片段：似乎提到矿井、爆炸、怪物。",
+        "on_regular": "你成功将笔记按时间顺序排列，获得了完整的孙伯安笔记。笔记详细记录了事件全貌、法器描述、以及“玉刀暗格”的提示。",
+        "on_hard": "同上，你还在笔记空白处发现了一些孙伯安绘制的法器草图，更直观。",
+        "on_extreme": "同上，你甚至从笔迹变化推断出孙伯安精神状态恶化的时间线，为理解深渊侵蚀速度提供了依据。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I12",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "无",
+      "name": "根据笔记提示找到暗格中的玉刀",
+      "requirement": "I11",
+      "trigger": "在了解到“玉刀暗格”的提示后，你在书房角落发现了一个半开的暗格，内有红布包裹的长条物。",
+      "result": "你打开红布，露出一把深青色的玉刀，长约七寸，刀身满布漩涡纹。握持时冰冷刺骨，但意识却感到前所未有的清晰。",
+      "side_effects": [
+        "马德胜通过铜镜感应到玉刀易主，开始主动追踪你的位置。"
+      ],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I13",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "侦查",
+      "name": "仔细搜索书房，寻找隐藏的暗格",
+      "requirement": "",
+      "trigger": "你在书房中仔细翻找每一个角落，敲击墙壁和地板时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你没能发现任何异常。或许此处并无暗格。",
+        "on_regular": "你注意到墙角一块砖缝不太对劲，打开后发现一个隐秘的暗格，内有红布包裹的玉刀。玉刀深青色，长约七寸，满布漩涡纹，握持时冰冷刺骨，但意识感到前所未有的清晰。马德胜通过铜镜感应到玉刀易主，开始主动追踪你的位置。",
+        "on_hard": "同上，你第一时间就找到了它。马德胜通过铜镜感应到玉刀易主，开始主动追踪你的位置。",
+        "on_extreme": "同上，你甚至发现了暗格的机关构造，并留意到开启的痕迹，似乎不久前还有人打开过。马德胜通过铜镜感应到玉刀易主，开始主动追踪你的位置。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I14",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "无",
+      "name": "观察院中结着黑色果实的怪异植物",
+      "requirement": "",
+      "trigger": "调查员靠近院子里的异常植物时",
+      "result": "这是一种墨绿色茎干的植物，顶端结着拳头大的黑色果实，果皮微透明，内部有东西在蠕动。这显然是深渊孢子孕育的产物。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I15",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "无",
+      "name": "用刀切开一枚黑色果实",
+      "requirement": "",
+      "trigger": "当你切开果实时",
+      "result": "果实喷出一股致幻孢子云。近距离吸入的调查员眼前出现了深渊在呼唤的幻觉，持续约十分钟。",
+      "side_effects": [
+        "吸入孢子云的调查员可能暂时神志不清"
+      ],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I16",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "无",
+      "name": "查看孙伯安的卧室",
+      "requirement": "",
+      "trigger": "调查员进入耳房卧室时",
+      "result": "床铺凌乱，枕边放着一本《金刚经》和一把左轮手枪，弹巢里还剩三发子弹。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I17",
+      "scene": "孙伯安的住处：书房中的死人",
+      "type": "无",
+      "name": "查看院子里的铁锹",
+      "requirement": "",
+      "trigger": "调查员检查靠在墙边的铁锹时",
+      "result": "铁锹上沾着黑色黏土，你在黑暗中注意到它发出微弱的荧光，这是从矿井深处带出来的东西。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I18",
+      "scene": "佛寺：疯僧的遗言",
+      "type": "无",
+      "name": "聆听濒死的明觉的遗言",
+      "requirement": "",
+      "trigger": "调查员靠近盘坐在血壁画前的明觉时",
+      "result": "明觉用断续的呓语透露了三件法器的位置与功能、马德胜的堕落、法器合一的危险，以及碉楼暗格藏有古代封印方法的线索。最后他低语了一句“你身上有玉刀的气味！小心！它想要回去！”然后气绝身亡。",
+      "side_effects": [
+        "明觉死亡。若尸体未被焚烧，深夜可能被深渊气息侵染而“坐起”。"
+      ],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I19",
+      "scene": "佛寺：疯僧的遗言",
+      "type": "无",
+      "name": "拾取明觉身边的桦树皮",
+      "requirement": "",
+      "trigger": "调查员注意到明觉身侧地上的桦树皮时",
+      "result": "你拿起几张桦树皮，上面用炭条反复写着“口”字，还有一段断续的短句：“刀在孙 镜在马 像在下 三者合 口开”。这是明觉留下的速记索引。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I20",
+      "scene": "佛寺：疯僧的遗言",
+      "type": "无",
+      "name": "长时间驻足观看殿中的血壁画",
+      "requirement": "",
+      "trigger": "调查员在血壁画前停留良久时",
+      "result": "你开始听到类似诵经的低沉耳语，那声音仿佛直接钻入脑中。这实际上是深渊的幻听。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I21",
+      "scene": "佛寺：疯僧的遗言",
+      "type": "侦查",
+      "name": "下到古井中寻找隐藏的壁龛",
+      "requirement": "",
+      "trigger": "调查员用绳索降入古井，在井壁上仔细搜索时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你没有发现任何隐藏物。",
+        "on_regular": "你找到一个壁龛，内有多只骨灰坛。其中一坛底部刻有“以身为烛，照破永夜”，其夹层中藏有一枚刻有咒文的骨片。",
+        "on_hard": "同上，而且你注意到骨片还微微散发着灵气。",
+        "on_extreme": "同上，你还发现坛底有暗藏的灌顶真言，暗示着牺牲的意义。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I22",
+      "scene": "佛寺：疯僧的遗言",
+      "type": "侦查",
+      "name": "在偏殿藏经阁寻找隐藏物",
+      "requirement": "",
+      "trigger": "调查员检查空荡荡的藏经阁，敲击地板时听到空洞的声音",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只是掀起了几块松动的木板，下面空无一物。",
+        "on_regular": "你发现了一个隐藏的铁盒，里面有一卷用梵文和古汉文抄写的《不动明王降魔法》残本，记载了“逆咒”法术。",
+        "on_hard": "同上，你还发现铁盒内层刻有防护咒，说明藏匿者很谨慎。",
+        "on_extreme": "同上，而且经卷的夹页中有一张简易的咒阵示意图，有助于理解逆咒步骤。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I23",
+      "scene": "佛寺：疯僧的遗言",
+      "type": "无",
+      "name": "用火焚化明觉的遗体",
+      "requirement": "需要火源（如火柴、打火机）",
+      "trigger": "调查员在明觉死后决定焚毁其遗体时",
+      "result": "你点燃了僧袍，火焰迅速吞没了尸体。明觉的肉体最终化为灰烬，避免了被深渊侵染的可能。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I24",
+      "scene": "碉楼：避难所与古卷",
+      "type": "侦查",
+      "name": "搜索碉楼二层，寻找传说中的暗格",
+      "requirement": "",
+      "trigger": "调查员在碉楼二层仔细敲击墙壁，检查每一块石砖时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你找了一圈，没有发现任何暗格。",
+        "on_regular": "你发现了一块略显凹陷的石砖。按下后，旁边弹开一个暗格，内有一个铁皮箱。箱中存放着五张羊皮纸手稿和一束黑色羽毛。",
+        "on_hard": "同上，你还在箱底发现一本村中旧账簿。",
+        "on_extreme": "同上，而且你敏锐地察觉到暗格机关近期被打开过，可能有人在你之前来查阅过。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I25",
+      "scene": "碉楼：避难所与古卷",
+      "type": "考古学",
+      "name": "解读古拙楷书与神秘文字写成的羊皮纸",
+      "requirement": "I24",
+      "trigger": "你开始翻阅羊皮纸，对照繁体汉文小注，试图理解其中的内容",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只能辨认出一些关于“深渊”、“封印”的零散词汇，无法形成完整的理解。",
+        "on_regular": "你费了很大力气，终于解读出三种封印方法的大致内容：生命封印、法术封印和献祭封印，以及所需的步骤和材料。",
+        "on_hard": "同上，并且你还注意到一些调和施法的附注，可以在施行仪式时降低风险。",
+        "on_extreme": "同上，你甚至领悟到可以用现代知识优化某些步骤，减少牺牲。"
+      },
+      "difficulty": "hard",
+      "based_on": null
+    },
+    {
+      "id": "I26",
+      "scene": "碉楼：避难所与古卷",
+      "type": "无",
+      "name": "搬动粮袋堵住碉楼大门",
+      "requirement": "",
+      "trigger": "当调查员准备迎击门外威胁时",
+      "result": "大门被沉重的粮袋牢牢顶住，可以坚持更久的时间。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I27",
+      "scene": "碉楼：避难所与古卷",
+      "type": "侦查",
+      "name": "搜寻可能存在的密道",
+      "requirement": "",
+      "trigger": "调查员在碉楼底层四处敲打，试图找到隐藏的出口时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你什么也没找到。",
+        "on_regular": "你发现一块松动的石板，下面是一条窄窄的旧密道，通向村外一处废井。",
+        "on_hard": "同上，而且密道内相对完好，可以快速撤离。",
+        "on_extreme": "同上，你还注意到密道壁上刻着指向矿井方向的箭头，可能是以前村民逃难用的。"
+      },
+      "difficulty": "hard",
+      "based_on": null
+    },
+    {
+      "id": "I28",
+      "scene": "矿井入口与马德胜的办公室",
+      "type": "无",
+      "name": "查看保险柜内部的刻痕",
+      "requirement": "",
+      "trigger": "调查员拉开保险柜门，注意到内壁上的刮痕时",
+      "result": "保险柜内壁上用指甲刻着一行字：“它饿了，我必须喂它，不然它会吃我。”笔迹绝望，是马德胜留下的。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I29",
+      "scene": "矿井入口与马德胜的办公室",
+      "type": "图书馆使用",
+      "name": "翻阅矿场账簿和图纸",
+      "requirement": "",
+      "trigger": "调查员在办公桌上发现沾满煤灰的账簿和一份矿场图纸时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只看到一堆数字和符号，难以理解。",
+        "on_regular": "你发现账簿记录了从矿石产量到“交付记忆量”的转变，每个矿工名字后都有漩涡符号。图纸则标明了地下坑道结构和“黑石壁”、“未知洞穴”的位置。有了这张图，你在井下不会彻底迷路。",
+        "on_hard": "同上，而且你核算出了马德胜可能连他家人的记忆也交付了。",
+        "on_extreme": "同上，你还发现图纸上有一条用虚线标记的捷径，可直通祭坛附近。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I30",
+      "scene": "矿井入口与马德胜的办公室",
+      "type": "无",
+      "name": "检查并触碰挂着的黏液工作服",
+      "requirement": "",
+      "trigger": "调查员好奇地触碰那件沾满黑色黏液的工作服时",
+      "result": "手指接触黏液的瞬间，你眼前闪过强烈的幻觉——你直视了深渊之口的一角，感受到无尽的虚无。幻觉持续片刻后消退。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I31",
+      "scene": "矿井入口与马德胜的办公室",
+      "type": "无",
+      "name": "询问棚屋中仍保持神志的矿工",
+      "requirement": "",
+      "trigger": "调查员走进办公室后的棚屋，发现了几个蜷缩的矿工时",
+      "result": "矿工们惊魂未定地告诉你马德胜的行动规律，并透露了一个弱点：铜镜在正午时分力量最弱，阳光直射时其吞噬能力会大幅衰减；若在镜面刻下反向漩涡符，可以使其暂时宕机。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I32",
+      "scene": "矿井深处：黑石层与咒阵绘制点",
+      "type": "无",
+      "name": "阅读黑石壁上矿工用炭石留下的遗言",
+      "requirement": "",
+      "trigger": "调查员注意到墙壁上密密麻麻的字迹",
+      "result": "你读到“它看到了我”“别碰镜子”“炸错了”等绝望的话语，似乎矿工们在死前经历了极大的恐惧。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I33",
+      "scene": "矿井深处：黑石层与咒阵绘制点",
+      "type": "侦查",
+      "name": "搜索壁龛和地面上的有用物品",
+      "requirement": "",
+      "trigger": "调查员翻找通道上的杂物时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只找到一些生锈的工具和破布。",
+        "on_regular": "你找到一盏还能用的乙炔灯、几件工具，以及一箱受潮的炸药。",
+        "on_hard": "同上，炸药保存得相对完好，可以安全使用。",
+        "on_extreme": "同上，你还发现了一枚矿工遗落的护身符，上面刻着佛教咒语，能微弱抵抗精神侵蚀。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I34",
+      "scene": "矿井深处：黑石层与咒阵绘制点",
+      "type": "无",
+      "name": "检查半嵌在石墙中的矿工尸体",
+      "requirement": "",
+      "trigger": "调查员靠近那些与黑石融为一体的尸体时",
+      "result": "你看到两具矿工的尸体已经半融合进黑色的石墙中，面部表情惊恐，口鼻中长出黑色晶簇。当你尝试触摸时，能感到石头正在缓慢吞噬他们。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I35",
+      "scene": "矿井深处：黑石层与咒阵绘制点",
+      "type": "无",
+      "name": "试图将尸体从石墙中拽出",
+      "requirement": "",
+      "trigger": "你用力拉扯尸体时",
+      "result": "尸体与石墙紧紧相连，强行拉扯导致尸体碎裂，周围的黑色石头渗出了黑色液体，同时引起了轻微的地震——那是深渊雕像的反应。",
+      "side_effects": [
+        "地震可能惊动附近的敌人"
+      ],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I36",
+      "scene": "矿井深处：黑石层与咒阵绘制点",
+      "type": "考古学",
+      "name": "在黑石地面上刻画封印咒阵",
+      "requirement": "(I12 OR I13) AND I25",
+      "trigger": "当调查员准备以玉刀为笔，在黑石地面刻下古卷中的咒文时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你没能准确复刻咒文，玉刀的光芒一闪而灭，刻痕也迅速被黑石吸收。咒阵绘制失败。",
+        "on_regular": "经过约一刻钟的努力，你成功完成了咒阵。咒文在黑石地面上发出微光，与玉刀共鸣。这个咒阵将作为封印仪式的核心组件，可以降低在祭坛进行仪式的难度。",
+        "on_hard": "同上，而且咒阵的稳定性更好，反噬效果减轻。",
+        "on_extreme": "同上，你甚至注入了额外的灵性力量，使得咒阵能自行抵御一小部分深渊侵蚀。"
+      },
+      "difficulty": "hard",
+      "based_on": null
+    },
+    {
+      "id": "I37",
+      "scene": "矿井深处：黑石层与咒阵绘制点",
+      "type": "爆破",
+      "name": "用受潮的炸药布置陷阱",
+      "requirement": "I33",
+      "trigger": "调查员在狭窄通道处准备引爆炸药时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "炸药受潮严重，引信虽然点燃但未能爆炸。",
+        "on_regular": "你成功设置了炸药，可以按计划引爆。当马德胜或怪物经过时，可以给予重创。",
+        "on_hard": "同上，而且你优化了陷阱位置，最大化了伤害范围。",
+        "on_extreme": "同上，你还设计了一个延迟引信，确保自己在安全距离。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I38",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "远距离观察祭坛上的雕像",
+      "requirement": "",
+      "trigger": "调查员踏入空腔，将目光投向祭坛中央时",
+      "result": "那尊雕像的形状不断变化：正面是布满利齿的巨口，侧面是巨眼，背面是触须。你的视线感到刺痛，大脑难以处理它的形态。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I39",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "用手触碰雕像",
+      "requirement": "",
+      "trigger": "调查员伸手触碰雕像时",
+      "result": "你的心智瞬间被捕获，你看到了一个庞大到无法理解的意识体在无尽虚空中蠕动的画面。随后，你感到自我的边界开始消融，意识正在被吞入雕像深处。",
+      "side_effects": [
+        "触碰者每时每刻都在丧失记忆和理智，除非有外力（如玉刀）强行阻断"
+      ],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I40",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "侦查",
+      "name": "在祭坛周围搜索遗物",
+      "requirement": "",
+      "trigger": "调查员在空腔地面上翻找散落的骨骸和遗物时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "你只找到一些常见的陶片和锈铁。",
+        "on_regular": "你发现一具清代探险者的骨骸，手中握着一块刻有“永封”二字的玉牌，身旁有一本脆化的日记。日记中包含一套封印手印和“安魂经”。",
+        "on_hard": "同上，而且你小心地处理了日记，没有造成损坏，可以完整阅读。",
+        "on_extreme": "同上，你还找到了另外一些碎片，拼凑出封印仪式中手印的真确顺序。"
+      },
+      "difficulty": "regular",
+      "based_on": null
+    },
+    {
+      "id": "I41",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "观看四壁描绘的远古封印场景",
+      "requirement": "",
+      "trigger": "调查员举起光源照亮石壁时",
+      "result": "壁画展示了远古人类用活祭封印深渊之口的完整步骤：割取器官、安置法器、身体化石封住裂缝。这解释了村中器官缺失的谜团。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I42",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "将铜镜安放到对应的凹槽中",
+      "requirement": "I48",
+      "trigger": "当调查员将铜镜放入祭坛底座的一个凹槽时",
+      "result": "铜镜严丝合缝地嵌入凹槽，雕像表面的微光似乎黯淡了一丝，涌入裂缝的雾气也减缓了。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I43",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "将玉刀安放到对应的凹槽中",
+      "requirement": "I12 OR I13",
+      "trigger": "当调查员将玉刀放入底座凹槽时",
+      "result": "玉刀嵌入后，雕像周围的黑暗似乎缩了一缩，雾气涌入的速度有所降低。",
+      "side_effects": [
+        "但这样做会使你失去玉刀的保护"
+      ],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I44",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "以鲜血进行生命封印",
+      "requirement": "(I12 OR I13) AND I25 || 需要至少三名自愿者提供鲜血",
+      "trigger": "当调查员按照古卷指示，用玉刀划破三名自愿者的手臂，将鲜血洒在祭坛周围，并共同念诵咒圈时",
+      "result": "##END_生命封印:深渊被封，三人付出代价## 玉刀浸满鲜血，咒圈爆发出耀眼光芒，雕像的口缓缓闭合，裂缝停止扩张。封印成功，但三名献血者各自承受了永久的体质或理智损失。空壳村民的记忆可能部分回归。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I45",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "以咒术和黑羽束进行法术封印",
+      "requirement": "(I12 OR I13) AND I25 || 需要黑羽束作为施法材料，且一人自愿担任承受反噬的“锚”",
+      "trigger": "当锚者手持玉刀站在咒阵中心，吟唱古卷咒文，燃烧黑羽时",
+      "result": "##END_法术封印:深渊暂时冻结## 透明的结界以玉刀为中心展开，将祭坛笼罩。裂缝被暂时封住，深渊之口无法降临，但锚者承受了剧烈的反噬剧痛，可能死亡。村民维持空壳状态，但威胁暂时解除。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I46",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "以纯净灵魂进行献祭封印",
+      "requirement": "(I12 OR I13) AND I25 || 需要一名灵魂未被污染的志愿者",
+      "trigger": "当纯净意志者将玉刀刺入自己心脏，在雕像前倒下时",
+      "result": "##END_献祭封印:彻底消灭深渊## 玉刀穿透心脏的瞬间，灵魂化作永恒的光，融入雕像。深渊之口被彻底封死，裂缝愈合，雾气消散。牺牲者不可挽回，但村庄得救，所有被吞噬的记忆得以归还。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I47",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "神秘学",
+      "name": "通过逆咒迫使铜镜释放吞噬的记忆",
+      "requirement": "(I12 OR I13) AND I48 AND I22",
+      "trigger": "当调查员在咒阵中割破持刀者的手，将血滴在铜镜上，并念诵逆咒咒文时",
+      "result": "##GRADED##",
+      "side_effects": [],
+      "graded_result": {
+        "on_failure": "血滴在镜上，但咒文未能扭转镜中的力量。铜镜变得更加贪婪。",
+        "on_regular": "铜镜开始剧烈震动，镜面碎裂，大量白色光雾涌出，化为无数记忆碎片回归到空壳村民体内。村民们逐渐恢复神智。铜镜碎裂损坏，无法再用。",
+        "on_hard": "同上，而且记忆回归非常彻底，村民几乎完全恢复了。",
+        "on_extreme": "同上，你还额外从镜中唤回了马德胜部份良知，他恢复了一点人性。"
+      },
+      "difficulty": "hard",
+      "based_on": null
+    },
+    {
+      "id": "I48",
+      "scene": "矿井入口与马德胜的办公室",
+      "type": "无",
+      "name": "在马德胜的尸体附近找到铜镜",
+      "requirement": "|| 马德胜已被击败",
+      "trigger": "当马德胜倒下后，调查员搜索他的随身物品时",
+      "result": "你在他的怀中发现了那面暗金色的铜镜。镜面中不是反射，而是有东西在蠕动。触之冰冷。这是深渊的眼睛。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I49",
+      "scene": "村口：土地庙与雾中的星陨村",
+      "type": "无",
+      "name": "向司机询问情况",
+      "requirement": "",
+      "trigger": "调查员与驾驶座上的司机攀谈时",
+      "result": "司机紧张地抽着烟，说之前搭载过一个“怪人”，那人中途下车后消失在雾中，在座位上留下一个血手印。司机表示他只等到日落就会离开。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    },
+    {
+      "id": "I50",
+      "scene": "地下空腔：深渊祭坛（终局场景）",
+      "type": "无",
+      "name": "将铜镜和玉刀都放入凹槽，却不启动封印仪式",
+      "requirement": "I42 AND I43",
+      "trigger": "当调查员犹豫或放弃仪式，转身准备离开时",
+      "result": "##END_深渊降临:口开天裂，一切被吞噬## 三个法器同时就位，祭坛开始剧烈震动，裂缝猛然扩张，深渊之口完全张开，吞没了整个空腔，随后是星陨村，最终一切都坠入永恒的虚无。",
+      "side_effects": [],
+      "graded_result": null,
+      "difficulty": "None",
+      "based_on": null
+    }
+  ],
+  "scene_movements": {
+    "村口：土地庙与雾中的星陨村": {
+      "from_here": [
+        {
+          "target": "废弃民宅：壁画之屋",
+          "method": "沿右侧石板路步行，经过民居",
+          "requirement": ""
+        },
+        {
+          "target": "佛寺：疯僧的遗言",
+          "method": "沿左侧岔路步行前往",
+          "requirement": ""
+        },
+        {
+          "target": "碉楼：避难所与古卷",
+          "method": "沿中央主路步行，穿过广场",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "废弃民宅：壁画之屋",
+          "method": "返回村口",
+          "requirement": ""
+        },
+        {
+          "source": "佛寺：疯僧的遗言",
+          "method": "返回村口",
+          "requirement": ""
+        },
+        {
+          "source": "碉楼：避难所与古卷",
+          "method": "从中央主路返回",
+          "requirement": ""
+        },
+        {
+          "source": "孙伯安的住处：书房中的死人",
+          "method": "经废弃民宅返回村口",
+          "requirement": ""
+        }
+      ]
+    },
+    "废弃民宅：壁画之屋": {
+      "from_here": [
+        {
+          "target": "村口：土地庙与雾中的星陨村",
+          "method": "沿路返回村口",
+          "requirement": ""
+        },
+        {
+          "target": "孙伯安的住处：书房中的死人",
+          "method": "沿路继续向前，经过更多废弃房屋",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "村口：土地庙与雾中的星陨村",
+          "method": "从村口右侧石板路前来",
+          "requirement": ""
+        },
+        {
+          "source": "孙伯安的住处：书房中的死人",
+          "method": "从孙伯安住处返回",
+          "requirement": ""
+        }
+      ]
+    },
+    "孙伯安的住处：书房中的死人": {
+      "from_here": [
+        {
+          "target": "废弃民宅：壁画之屋",
+          "method": "沿来路返回，经过废弃房屋",
+          "requirement": ""
+        },
+        {
+          "target": "村口：土地庙与雾中的星陨村",
+          "method": "经废弃民宅返回村口",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "废弃民宅：壁画之屋",
+          "method": "从废弃民宅沿路前来",
+          "requirement": ""
+        }
+      ]
+    },
+    "佛寺：疯僧的遗言": {
+      "from_here": [
+        {
+          "target": "村口：土地庙与雾中的星陨村",
+          "method": "沿来路返回村口",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "村口：土地庙与雾中的星陨村",
+          "method": "从村口左侧岔路前来",
+          "requirement": ""
+        }
+      ]
+    },
+    "碉楼：避难所与古卷": {
+      "from_here": [
+        {
+          "target": "村口：土地庙与雾中的星陨村",
+          "method": "沿中央主路返回村口",
+          "requirement": ""
+        },
+        {
+          "target": "矿井入口与马德胜的办公室",
+          "method": "出碉楼向矿场方向前行，穿过广场",
+          "requirement": ""
+        },
+        {
+          "target": "村口外废井",
+          "method": "通过碉楼密道",
+          "requirement": "需要发现密道 (I27)"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "村口：土地庙与雾中的星陨村",
+          "method": "从村口沿中央主路前来",
+          "requirement": ""
+        },
+        {
+          "source": "矿井入口与马德胜的办公室",
+          "method": "从矿场返回",
+          "requirement": ""
+        }
+      ]
+    },
+    "矿井入口与马德胜的办公室": {
+      "from_here": [
+        {
+          "target": "碉楼：避难所与古卷",
+          "method": "返回碉楼或村口方向",
+          "requirement": ""
+        },
+        {
+          "target": "矿井深处：黑石层与咒阵绘制点",
+          "method": "通过检修步行斜道向下",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "碉楼：避难所与古卷",
+          "method": "从碉楼前来",
+          "requirement": ""
+        },
+        {
+          "source": "矿井深处：黑石层与咒阵绘制点",
+          "method": "从斜道返回",
+          "requirement": ""
+        }
+      ]
+    },
+    "矿井深处：黑石层与咒阵绘制点": {
+      "from_here": [
+        {
+          "target": "矿井入口与马德胜的办公室",
+          "method": "沿检修斜道向上返回",
+          "requirement": ""
+        },
+        {
+          "target": "地下空腔：深渊祭坛（终局场景）",
+          "method": "穿过被炸开的豁口，进入巨大空腔",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "矿井入口与马德胜的办公室",
+          "method": "通过检修斜道下行到此",
+          "requirement": ""
+        },
+        {
+          "source": "地下空腔：深渊祭坛（终局场景）",
+          "method": "从空腔返回豁口",
+          "requirement": ""
+        }
+      ]
+    },
+    "地下空腔：深渊祭坛（终局场景）": {
+      "from_here": [
+        {
+          "target": "矿井深处：黑石层与咒阵绘制点",
+          "method": "穿越豁口返回",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "矿井深处：黑石层与咒阵绘制点",
+          "method": "穿过豁口进入",
+          "requirement": ""
+        }
+      ]
+    }
+  }
+}

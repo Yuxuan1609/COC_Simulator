@@ -19,6 +19,7 @@ from module_designer.layered_parser import (
     build_step2c_l1_prompt, build_step2c_l3_prompt,
     build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
     build_step25_prompt, build_phase1_prompt, build_step4_prompt,
+    build_step2_boss_prompt, parse_step2_boss,
     _with_fallback, _is_valid_json_output,
 )
 from module_designer.dependency_graph import (
@@ -27,5 +28,4 @@ from module_designer.dependency_graph import (
 from module_designer.layered_pipeline import (
     run_pipeline, cross_validate_layers, PipelineResult,
     CrossRefReport, CrossRefIssue, save_pipeline_result,
-    parse_step2_boss,
 )

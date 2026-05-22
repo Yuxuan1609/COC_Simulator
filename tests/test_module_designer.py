@@ -151,12 +151,14 @@ def test_validate_l1_valid():
 def test_validate_l1_invalid_mood():
     data = {
         "test": {
-            "mood": "happy",  # 不在枚举中
+            "perceptible": [
+                {"name": "item", "brief": "desc", "type": "invalid_type"}
+            ]
         }
     }
     report = validate_l1(data)
     # 枚举违规是 warning，不是 error（LLM 可能生成近似值，后续可自动修正）
-    assert any("happy" in w.message for w in report.warnings)
+    assert any("invalid_type" in w.message for w in report.warnings)
 
 
 def test_validate_l2_valid():
@@ -405,8 +407,8 @@ def test_build_step35_prompt_structure():
     interactions = [{"id": "I1", "name": "搜查", "scene": "S1", "requirement": "需要先完成I3", "trigger": "", "result": "找到钥匙", "side_effects": []}]
     events = [{"id": "E1", "name": "事件", "requirement": "interaction I1 完成后", "trigger": ""}]
     auto_triggers = []
-    prompt = build_step35_prompt({"test": "精修模组"}, interactions, events, auto_triggers)
-    assert "精修模组" in prompt
+    prompt = build_step35_prompt({"module_overview": "模组概述", "scenes": "场景", "events_summary": "事件"}, interactions, events, auto_triggers)
+    assert "模组概述" in prompt
     assert "dependencies" in prompt
     assert "entity_id" in prompt
     assert "requires" in prompt

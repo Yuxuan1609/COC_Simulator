@@ -92,6 +92,19 @@ class EnemyManager:
                         break
         return candidates
 
+    def get_active_in_scene_snapshot(self, scene: str) -> list[dict]:
+        """Lightweight dict list for world snapshot."""
+        return [
+            {
+                "enemy_ref": i.enemy_ref,
+                "status": i.status,
+                "flags": i.flags,
+                "quantity": i.quantity,
+            }
+            for i in self._instances.values()
+            if i.scene == scene and i.status != "dead"
+        ]
+
     def group_by_ref(self, scene: str) -> dict[str, list[EnemyInstance]]:
         groups: dict[str, list[EnemyInstance]] = {}
         for inst in self.get_active_in_scene(scene):

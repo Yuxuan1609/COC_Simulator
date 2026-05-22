@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "title": "星陨村",
+    "author": "",
+    "era": "1937",
+    "theme": "记忆与身份剥夺，古代深渊封印",
+    "expected_duration": "12-16小时",
+    "player_count": "3-5",
+    "estimated_duration": 720,
+    "comms_interval": 15,
+    "starting_time_of_day": "黄昏"
+  },
+  "scenes": [
+    "村口：土地庙与雾中的星陨村",
+    "废弃民宅：壁画之屋",
+    "孙伯安的住处：书房中的死人",
+    "佛寺：疯僧的遗言",
+    "碉楼：避难所与古卷",
+    "矿井入口与马德胜的办公室",
+    "矿井深处：黑石层与咒阵绘制点",
+    "地下空腔：深渊祭坛（终局场景）"
+  ],
+  "characters": [
+    {
+      "name": "老赵",
+      "id": "NPC_1"
+    },
+    {
+      "name": "王大柱",
+      "id": "NPC_2"
+    },
+    {
+      "name": "林晓雯",
+      "id": "NPC_3"
+    },
+    {
+      "name": "陈瑞明",
+      "id": "NPC_4"
+    },
+    {
+      "name": "明觉",
+      "id": "NPC_5"
+    }
+  ],
+  "condensed_text_length": 18538
+}

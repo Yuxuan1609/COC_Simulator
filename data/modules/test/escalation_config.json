@@ -1,0 +1,42 @@
+{
+  "dimensions": {
+    "uncovered_action": {
+      "enabled": true,
+      "threshold": 0.5,
+      "cooldown": 3,
+      "max_per_session": null
+    },
+    "narrative_deviation": {
+      "enabled": true,
+      "threshold": 0.6,
+      "cooldown": 3,
+      "max_per_session": null
+    },
+    "world_inconsistency": {
+      "enabled": true,
+      "threshold": 0.5,
+      "cooldown": 2,
+      "max_per_session": null
+    }
+  },
+  "rules": [
+    {
+      "name": "npc_death",
+      "priority": 10,
+      "description": "Any NPC death triggers immediate Author review",
+      "condition": "An NPC died or was killed during this turn's action outcomes or triggered events."
+    },
+    {
+      "name": "major_ending",
+      "priority": 10,
+      "description": "Player action directly triggers an ending",
+      "condition": "An event or interaction result contains '##END_' marker, indicating the game is reaching a conclusion."
+    },
+    {
+      "name": "world_rule_violation",
+      "priority": 5,
+      "description": "Player action violates L3 tone constraints or world rules",
+      "condition": "The player's action or its outcome contradicts the module's tone constraints (genre, forbidden items) or world rules."
+    }
+  ]
+}

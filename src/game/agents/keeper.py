@@ -5,7 +5,12 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from scenario_core import ScenarioWorld, Entity, parse_markup_all
+from scenario_core import ScenarioWorld, Entity
+from game.side_effects import (
+    parse_markup_all,
+    ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon, SceneWeapon,
+    NPCStateChange, NPCFollow,
+)
 from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
@@ -30,19 +35,11 @@ class Keeper:
     def __init__(
         self,
         world: ScenarioWorld,
-        dependency_graph: dict | None = None,
         phase1: dict | None = None,
-        npc_profiles: dict[str, Any] | None = None,
-        boss_manager: Any = None,
-        npc_manager: Any = None,
     ):
         self.world = world
-        # dependency_graph is now owned by world; keep reference here for backward compat
-        self.dependency_graph = dependency_graph or {}
         self.phase1 = phase1 or {}
-        self.npc_profiles = npc_profiles or {}
-        self.boss_manager = boss_manager
-        self.npc_manager = npc_manager
+        self._last_comms_time = 0
 
         self.intent_detector = IntentDetector()
 
@@ -63,12 +60,12 @@ class Keeper:
         self._warnings.clear()
 
         # NPC interaction routing: if user input targets a known NPC, route to NPCManager
-        if self.npc_manager:
-            npcs_present = self.npc_manager.get_in_scene(self.world.current_location)
+        if self.world.npcs:
+            npcs_present = self.world.npcs.get_in_scene(self.world.current_location)
             for npc in npcs_present:
                 # Simple heuristic: NPC name or role keywords in user input
                 if npc.name in raw:
-                    response = self.npc_manager.talk_to(npc.name, raw, lambda prompt, **kw: call_deepseek(prompt, **kw))
+                    response = self.world.npcs.talk_to(npc.name, raw, lambda prompt, **kw: call_deepseek(prompt, **kw))
                     return {"brief": response, "narrative": response, "full": response}
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
@@ -89,6 +86,7 @@ class Keeper:
         # Step 2: Judge (deterministic) — flag check, skill check, ##GRADED##
         all_outcomes = []
         judged_entities = []  # for enrich prompt
+        action_summaries: list[dict] = []  # collected for TimeAgent
         for entry in parse_result:
             entry_type = entry.get("type", "")
             if entry_type in ("auto_trigger", "interaction", "event"):
@@ -102,10 +100,15 @@ class Keeper:
                 )
                 outcome = self.judge._execute_entity(entity, intent=intent, player_input=raw)
                 self._apply_side_effects(outcome.side_effects)
-                # Time advancement for entity execution
                 if outcome.success:
-                    time_delta = self._resolve_time_delta(entity)
-                    self.world.advance_time(time_delta)
+                    tr = entity.extra.get("time_range") if entity.extra else None
+                    action_summaries.append({
+                        "type": entity.entity_type,
+                        "name": entity.name,
+                        "success": True,
+                        "time_range": tr,
+                        "time_category": self._infer_time_category(entity),
+                    })
                 all_outcomes.append(outcome)
                 if outcome.success:
                     judged_entities.append({
@@ -126,7 +129,13 @@ class Keeper:
                 ))
                 self._apply_side_effects(result.side_effects)
                 if result.success:
-                    self.world.advance_time(3)  # default move: ~3 min
+                    action_summaries.append({
+                        "type": "move",
+                        "name": f"移动到{target}",
+                        "success": True,
+                        "time_range": None,
+                        "time_category": "move",
+                    })
             elif entry_type == "search":
                 # Search always performs a 侦查 (Spot Hidden) check.
                 # No dependency check, no flag update, no enrich.
@@ -179,7 +188,7 @@ class Keeper:
                                 f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
                                 for sw in scene_weps
                             )
-                            msg += f'\n\n（你发现了 {wep_names}。输入“拾取 <武器名>”来获得它）'
+                            msg += f'\n\n（你发现了 {wep_names}。输入"拾取 <武器名>"来获得它）'
                     else:
                         msg = "（你环顾四周，但昏暗的光线让你无法看清任何有用的东西）"
                 else:
@@ -189,17 +198,21 @@ class Keeper:
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
                     skill_detail=skill_detail if self.world.player else ""))
-                # Advance time for search
-                self.world.advance_time(10 if (self.world.player and ok) else 5)
+                action_summaries.append({
+                    "type": "search",
+                    "name": "搜索",
+                    "success": True,
+                    "time_range": None,
+                    "time_category": "search",
+                })
             elif entry_type == "other":
                 text = entry.get("text", "")
                 scene = self.world.current_location
                 scene_weps = self.world.scene_weapons.get(scene, [])
                 picked_up = False
-                for sw in list(scene_weps):  # iterate copy since we mutate
+                for sw in list(scene_weps):
                     if sw.weapon_ref.lower() in text.lower() and \
                        ("拾取" in text or "捡" in text or "拿" in text or "pick" in text.lower()):
-                        # Look up weapon stats from library
                         if self.world.weapon_library:
                             lib_wep = self.world.weapon_library.get(sw.weapon_ref)
                             if lib_wep:
@@ -221,31 +234,52 @@ class Keeper:
                             message=f"你拾起了{sw.weapon_ref}。",
                         ))
                         picked_up = True
+                        action_summaries.append({
+                            "type": "other",
+                            "name": f"拾取{sw.weapon_ref}",
+                            "success": True,
+                            "time_range": None,
+                            "time_category": "other",
+                        })
                         break
                 if not picked_up:
                     all_outcomes.append(ActionOutcome(
                         intent=ActionIntent(action="other"), success=True,
                         message=f"（{text}）"))
+                    action_summaries.append({
+                        "type": "other",
+                        "name": text,
+                        "success": True,
+                        "time_range": None,
+                        "time_category": "other",
+                    })
             else:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
+                action_summaries.append({
+                    "type": "other",
+                    "name": entry.get("text", ""),
+                    "success": True,
+                    "time_range": None,
+                    "time_category": "other",
+                })
 
         # Boss "at" check: after scene change
-        if self.boss_manager:
-            at_bosses = self.boss_manager.check_by_engage_type("at", scene=self.world.current_location)
+        if self.world.bosses:
+            at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
             for boss_entity in at_bosses:
                 if self._check_boss_requirements(boss_entity):
-                    combat_init = self.boss_manager.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.boss_manager.set_active(boss_entity["id"])
+                    combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.world.bosses.set_active(boss_entity["id"])
                     return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
         combat_future = None
         combat_executor = None
         enemy_ctx = None
-        if self.world and self.world.enemy_manager and not self.world.enemy_manager._combat_active:
-            enemy_ctx = self.world.enemy_manager.get_combat_context(
+        if self.world and self.world.enemies and not self.world.enemies._combat_active:
+            enemy_ctx = self.world.enemies.get_combat_context(
                 self.world.current_location, self.world.graph
             )
         if enemy_ctx:
@@ -270,18 +304,38 @@ class Keeper:
                 fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
             )
 
-        # Step 3: Enrich (LLM) — describe and integrate
+        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — parallel with combat_entry
         emphasis = ""
-        if judged_entities:
-            enrichment = self._enrich(judged_entities, raw)
+        enrich_future = None
+        ta_future = None
+        enrich_executor = None
+        if judged_entities or action_summaries:
+            n_workers = (1 if judged_entities else 0) + (1 if action_summaries else 0)
+            enrich_executor = ThreadPoolExecutor(max_workers=n_workers) if n_workers > 0 else None
+            if enrich_executor:
+                if judged_entities:
+                    enrich_future = enrich_executor.submit(self._enrich, judged_entities, raw)
+                if action_summaries:
+                    ta_future = enrich_executor.submit(self._run_time_agent, action_summaries, raw)
+
+        # Step 3.5: Collect enrich + TA results
+        if enrich_future:
+            enrichment = enrich_future.result()
             emphasis = enrichment.get("emphasis_hint", "")
-            reasoning = enrichment.get("reasoning", "")
-            # Apply enriched results: string = merged narrative for first outcome
             results = enrichment.get("results", "")
             if isinstance(results, str) and results and all_outcomes:
                 all_outcomes[0].message = results
+        if ta_future:
+            ta_result = ta_future.result()
+            if ta_result.get("time_delta", 0) > 0:
+                self.world.clock.advance_time(ta_result["time_delta"])
+            narrative = (ta_result.get("narrative_hint", "") or "")
+            if narrative:
+                self.world.clock.time_context = narrative
+        if enrich_executor:
+            enrich_executor.shutdown(wait=False)
 
-        # Step 3.5: Collect combat entry result
+        # Step 3.6: Collect combat entry result
         combat_entry = None
         if combat_future:
             try:
@@ -297,14 +351,14 @@ class Keeper:
             finally:
                 combat_executor.shutdown(wait=False)
 
-        # Step 3.6: Build standoff_prompt or combat_init from combat_entry
+        # Step 3.7: Build standoff_prompt or combat_init from combat_entry
         standoff_prompt = None
         combat_init_result = None
         if combat_entry and combat_entry.enter_combat:
             avoidable_by_ref: dict[str, list[str]] = {}
             hostile_iids: list[str] = []
             for iid in combat_entry.enemy_instance_ids:
-                inst = self.world.enemy_manager.get_by_id(iid) if self.world.enemy_manager else None
+                inst = self.world.enemies.get_by_id(iid) if self.world.enemies else None
                 if inst and "avoidable" in inst.flags:
                     avoidable_by_ref.setdefault(inst.enemy_ref, []).append(iid)
                 elif inst:
@@ -327,11 +381,11 @@ class Keeper:
                     entity_type="standoff",
                 ))
             elif hostile_iids:
-                enemies = [self.world.enemy_manager.get_by_id(iid)
+                enemies = [self.world.enemies.get_by_id(iid)
                           for iid in hostile_iids
-                          if self.world.enemy_manager and self.world.enemy_manager.get_by_id(iid)]
-                if enemies and self.world.enemy_manager:
-                    self.world.enemy_manager.enter_combat(hostile_iids)
+                          if self.world.enemies and self.world.enemies.get_by_id(iid)]
+                if enemies and self.world.enemies:
+                    self.world.enemies.enter_combat(hostile_iids)
                 combat_init_result = CombatInit(
                     enemies=enemies,
                     player=self.world.player,
@@ -339,56 +393,22 @@ class Keeper:
                     initiative_context=combat_entry.reasoning,
                 )
 
-        # TimeAgent trigger (after enrich, before curate)
-        if self._should_trigger_time_agent():
-            try:
-                from game.agents.time_agent import TimeAgent
-                ta = TimeAgent()
-                tc_guideline = ""
-                if hasattr(self.world, 'time_costs') and self.world.time_costs:
-                    import json as _json
-                    tc_guideline = _json.dumps(self.world.time_costs, ensure_ascii=False)
-                recent = self.world.memory.raw_history[-3:] if self.world.memory.raw_history else []
-                recent_summary = "; ".join(
-                    (r.get("user_input", "") or "")[:80] for r in recent
-                )
-                result = ta.assess(
-                    game_time=self.world.game_time,
-                    day=self.world.day,
-                    time_of_day=self.world.time_of_day,
-                    hour=self.world.hour,
-                    recent_actions=recent_summary,
-                    current_scene=self.world.current_location,
-                    scene_description=self.world.get_current_description(),
-                    time_costs_guideline=tc_guideline,
-                )
-                if result.get("time_delta", 0) > 0:
-                    self.world.advance_time(result["time_delta"])
-                narrative = (result.get("narrative_hint", "") or "")
-                signal = (result.get("signal_hint", "") or "")
-                combined = f"{narrative} {signal}".strip()
-                if combined:
-                    self.world.time_context = combined
-                self._last_ta_call = self.world.game_time
-            except Exception:
-                pass  # TimeAgent is best-effort
-
         # TimePressure comms dispatch (at most 1 per turn)
         tp = author.time_pressure if author else None
-        if tp and self.world.game_time - self.world._last_comms_time >= self.world.comms_interval:
-            self.world._last_comms_time = self.world.game_time
+        if tp and self.world.clock.game_time - self._last_comms_time >= self.world.comms_interval:
+            self._last_comms_time = self.world.clock.game_time
             try:
                 recent = self.world.memory.raw_history[-5:] if self.world.memory.raw_history else []
                 packet = TimeCommsPacket(
-                    game_time=self.world.game_time,
-                    day=self.world.day,
-                    time_of_day=self.world.time_of_day,
+                    game_time=self.world.clock.game_time,
+                    day=self.world.clock.day,
+                    time_of_day=self.world.clock.time_of_day,
                     current_scene=self.world.current_location,
                     player_actions="; ".join(
                         (r.get("user_input", "") or "")[:60] for r in recent[-3:]
                     ),
                     world_state=f"场景:{self.world.current_location}, "
-                               f"NPC:{list(self.world.npc_states.keys())[:3]}",
+                               f"NPC:{self.world.npcs.all_names()[:3]}",
                 )
                 tp_result = author.assess_time_pressure(packet)
                 if tp_result.get("should_press") and tp_result.get("signal"):
@@ -466,12 +486,12 @@ class Keeper:
                 message=f"⚠ {w}"))
 
         # Boss "event" check: after judge completes
-        if self.boss_manager:
-            event_bosses = self.boss_manager.check_by_engage_type("event")
+        if self.world.bosses:
+            event_bosses = self.world.bosses.check_by_engage_type("event")
             for boss_entity in event_bosses:
                 if self._check_boss_requirements(boss_entity):
-                    combat_init = self.boss_manager.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.boss_manager.set_active(boss_entity["id"])
+                    combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.world.bosses.set_active(boss_entity["id"])
                     return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 5: Curate
@@ -516,7 +536,7 @@ class Keeper:
 
         if not match_data.get("matched"):
             for iid in instance_ids:
-                inst = self.world.enemy_manager.get_by_id(iid) if self.world.enemy_manager else None
+                inst = self.world.enemies.get_by_id(iid) if self.world.enemies else None
                 if inst:
                     inst.status = "hostile"
             self._standoff_pending = None
@@ -561,8 +581,8 @@ class Keeper:
         if ok:
             if skill_name in ("魅惑", "说服", "话术", "恐吓"):
                 for iid in instance_ids:
-                    if self.world.enemy_manager:
-                        self.world.enemy_manager.set_status(iid, "neutral")
+                    if self.world.enemies:
+                        self.world.enemies.set_status(iid, "neutral")
                 msg = f"{skill_name}成功——{enemy_ref}被{skill_name}所动，敌意消退。"
             else:
                 msg = f"潜行成功——你悄悄绕过了{enemy_ref}。"
@@ -572,7 +592,7 @@ class Keeper:
                     "skill_detail": skill_detail}
         else:
             for iid in instance_ids:
-                inst = self.world.enemy_manager.get_by_id(iid) if self.world.enemy_manager else None
+                inst = self.world.enemies.get_by_id(iid) if self.world.enemies else None
                 if inst:
                     inst.status = "hostile"
             self._standoff_pending = None
@@ -668,24 +688,16 @@ class Keeper:
                 "ending_name": None, "ending_narrative": None}
 
     def _build_world_snapshot(self) -> dict:
-        """Lightweight snapshot for IntentDetector."""
+        """Lightweight snapshot for IntentDetector. Delegates to World."""
+        snap = self.world.build_snapshot()
         l1 = getattr(self, "narrator_l1", {}) or {}
         l1_scene = l1.get(self.world.current_location, {})
         scene_desc = l1_scene.get("description", "") if isinstance(l1_scene, dict) else ""
         return {
-            "location": self.world.current_location,
-            "scene_description": scene_desc,
-            "npc_states": dict(self.world.npc_states),
+            "location": snap["location"],
+            "scene_description": scene_desc or snap["description"],
+            "npc_states": {n["name"]: n["state"] for n in snap["npcs_in_scene"]},
         }
-
-    def _resolve_time_delta(self, entity) -> int:
-        """Resolve time delta based on entity extra.time_range or defaults."""
-        if entity.extra and entity.extra.get("time_range"):
-            tr = entity.extra["time_range"]
-            return (tr.get("min", 3) + tr.get("max", 10)) // 2  # midpoint
-        category = self._infer_time_category(entity)
-        defaults = {"search": 10, "move": 3, "dialogue": 5, "combat_round": 1, "other": 3}
-        return defaults.get(category, 5)
 
     def _infer_time_category(self, entity) -> str:
         if entity.entity_type in ("auto_trigger", "event"):
@@ -694,23 +706,20 @@ class Keeper:
             return "search"
         return "other"
 
-    def _should_trigger_time_agent(self) -> bool:
-        if not hasattr(self, '_last_ta_call'):
-            self._last_ta_call = -1
-        if self._last_ta_call < 0:
-            return True  # first call
-        if self.world.game_time - self._last_ta_call >= 30:
-            return True
-        return False
+    def _run_time_agent(self, action_summaries: list[dict], raw: str) -> dict:
+        """Call TimeAgent with collected action summaries. Runs in parallel with enrich."""
+        from game.agents.time_agent import TimeAgent
+        ta = TimeAgent()
+        return ta.assess(actions=action_summaries, current_input=raw)
 
     def _build_scene_context_for_author(self) -> dict:
-        """Build scene_context for AuthorRequest."""
-        node = self.world._current_node()
+        """Build scene_context for AuthorRequest. Delegates to World snapshot."""
+        snap = self.world.build_snapshot()
         return {
-            "location": self.world.current_location,
-            "description": node.description if node else "",
+            "location": snap["location"],
+            "description": snap["description"],
             "available_scenes": list(self.world.graph.nodes.keys()),
-            "npc_states": dict(self.world.npc_states),
+            "npc_states": {n["name"]: n["state"] for n in snap["npcs_in_scene"]},
             "runtime_summary": {
                 eid: s.result_tier
                 for eid, s in self.world.runtime_state.items()
@@ -867,9 +876,105 @@ class Keeper:
             side_effects=side_effects,
         )
 
-    def _apply_side_effects(self, side_effects: list):
-        from scenario_core import apply_side_effects as _apply
-        _apply(self.world, side_effects)
+    def _apply_side_effects(self, side_effects: list) -> list[str]:
+        """Apply side effect dataclasses via respective managers. Returns log messages."""
+        msgs = []
+        for effect in side_effects:
+            if isinstance(effect, ItemGain):
+                self.world.memory.note_item(effect.item_name)
+                if self.world.player and hasattr(self.world.player, 'item_manager'):
+                    self.world.player.item_manager.add(effect.item_name, quantity=effect.quantity)
+                    qty_str = f" x{effect.quantity}" if effect.quantity > 1 else ""
+                    msgs.append(f"[获得物品] {effect.item_name}{qty_str}（已加入背包）")
+                else:
+                    msgs.append(f"[获得物品] {effect.item_name}")
+
+            elif isinstance(effect, ConsumeItem):
+                consumed = False
+                if self.world.player and hasattr(self.world.player, 'item_manager'):
+                    im = self.world.player.item_manager
+                    if im.has(effect.item_name) and im.get(effect.item_name).quantity >= effect.quantity:
+                        im.remove(effect.item_name, effect.quantity)
+                        consumed = True
+                    else:
+                        try:
+                            from llm import call_deepseek
+                            from prompts import build_consume_item_fuzzy_prompt
+                            held = im.describe()
+                            if held and held != "（未持有物品）":
+                                prompt = build_consume_item_fuzzy_prompt(
+                                    target=effect.item_name, quantity=effect.quantity, held_items=held)
+                                result = call_deepseek(
+                                    prompt, json_mode=True, model="deepseek-v4-flash",
+                                    system="你是 COC 7th KP 助理。",
+                                    fallback_schema={"matched": False, "item_name": "", "reason": ""})
+                                if isinstance(result, str):
+                                    import json as _json
+                                    result = _json.loads(result)
+                                if result.get("matched") and result.get("item_name"):
+                                    if im.has(result["item_name"]):
+                                        im.remove(result["item_name"], effect.quantity)
+                                        consumed = True
+                        except Exception:
+                            pass
+                msgs.append(f"[消耗物品] {effect.item_name} x{effect.quantity}" +
+                           ("" if consumed else "（未找到匹配物品）"))
+
+            elif isinstance(effect, SpawnEnemy):
+                target_scene = effect.scene or self.world.current_location
+                if self.world.enemies:
+                    instance = self.world.enemies.spawn(effect.enemy_ref, target_scene, effect.quantity)
+                    msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene} ({instance.instance_id})")
+                else:
+                    msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
+
+            elif isinstance(effect, GrantWeapon):
+                target_scene = effect.scene or self.world.current_location
+                sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity)
+                if target_scene not in self.world.scene_weapons:
+                    self.world.scene_weapons[target_scene] = []
+                self.world.scene_weapons[target_scene].append(sw)
+                self.world.memory.note_item(effect.weapon_ref)
+                msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
+
+            elif isinstance(effect, NPCStateChange):
+                self.world.npcs.set_state(effect.npc_name, effect.new_state)
+                msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
+
+            elif isinstance(effect, NPCFollow):
+                self.world.npcs.set_following(effect.npc_name, effect.follow)
+                status = "开始跟随" if effect.follow else "停止跟随"
+                msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
+
+            elif isinstance(effect, StatChange):
+                if self.world.player:
+                    new_val, detail = self.world.player.modify_stat(effect.stat_name, effect.delta)
+                    msgs.append(f"[属性变化] {detail}")
+                    if effect.narrative and hasattr(self.world.player, 'personal_description'):
+                        try:
+                            from llm import call_deepseek
+                            from prompts import build_stat_narrative_prompt
+                            prompt = build_stat_narrative_prompt(
+                                inv_desc=self.world.player.personal_description or self.world.player.appearance or "",
+                                stat_name=effect.stat_name, delta=str(effect.delta), narrative=effect.narrative)
+                            result = call_deepseek(
+                                prompt, json_mode=True, model="deepseek-v4-flash",
+                                system="你是 COC 7th KP 助理，负责更新调查员描述。",
+                                fallback_schema={"description": self.world.player.personal_description or ""})
+                            if isinstance(result, str):
+                                import json as _json
+                                result = _json.loads(result)
+                            new_desc = result.get("description", "")
+                            if new_desc and new_desc != (self.world.player.personal_description or ""):
+                                self.world.player.personal_description = new_desc
+                                msgs.append(f"[描述更新] {effect.stat_name} 变化影响了外貌/心理描述")
+                        except Exception:
+                            pass
+                else:
+                    sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
+                    msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（无调查员，未应用）")
+
+        return msgs
 
     def _integrate_patch(self, patch):
         """Integrate ModulePatch entities into world graph."""

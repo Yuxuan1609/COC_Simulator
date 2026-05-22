@@ -63,6 +63,64 @@
             "on_extreme": "你一脚踹开铁门，门后的黑暗似乎被你的气势逼退了一瞬。通道另一头隐约传来一声惊讶的、非人的轻叹。"
           },
           "difficulty": "hard"
+        },
+        {
+          "id": "IT5",
+          "scene": "测试房间",
+          "type": "无",
+          "name": "惊动黑暗中的存在",
+          "requirement": "",
+          "trigger": "调查员在房间中制造出巨大声响",
+          "result": "你大声呼喊/敲击铁门，巨大的声响在空旷的车厢中回荡。黑暗中传来了窸窸窣窣的回应——有什么东西被惊动了。@spawn_enemy(enemy_ref=\"深潜者\", scene=\"测试房间\", quantity=1) @spawn_enemy(enemy_ref=\"Clicker\", scene=\"测试房间\", quantity=1)",
+          "side_effects": [
+            "@spawn_enemy(enemy_ref=\"深潜者\", scene=\"测试房间\", quantity=1)",
+            "@spawn_enemy(enemy_ref=\"Clicker\", scene=\"测试房间\", quantity=1)"
+          ],
+          "difficulty": "None"
+        },
+        {
+          "id": "IT6",
+          "scene": "测试房间",
+          "type": "无",
+          "name": "凝视裂痕镜中的倒影",
+          "requirement": "",
+          "trigger": "调查员长时间凝视镜子中的裂痕，试图理解其中的异常",
+          "result": "镜中的你的倒影开始自主移动——它对你咧嘴一笑，然后伸出镜中的手向你抓来。你被一阵剧烈的眩晕击中，感到自己的心智正在被某种不可名状的力量侵蚀。@stat_change(stat_name=\"SAN\", delta=-5, narrative=\"镜子中的异常倒影对你的心智造成了冲击\")",
+          "side_effects": [
+            "@stat_change(stat_name=\"SAN\", delta=-5, narrative=\"镜子中的异常倒影对你的心智造成了冲击\")"
+          ],
+          "difficulty": "None"
+        },
+        {
+          "id": "IT7",
+          "scene": "测试房间",
+          "type": "无",
+          "name": "找到并使用应急药品",
+          "requirement": "",
+          "trigger": "调查员在房间角落的急救箱中找到一支镇静剂",
+          "result": "你在金属桌下的急救箱中找到了一支镇静剂。这可能是之前某位调查员留下的。你将镇静剂注射入手臂，感到一阵暖流扩散至全身，紧绷的神经松弛了一些。@item_gain(item_name=\"镇静剂\") @consume_item(item_name=\"镇静剂\", quantity=1)",
+          "side_effects": [
+            "@item_gain(item_name=\"镇静剂\")",
+            "@consume_item(item_name=\"镇静剂\", quantity=1)"
+          ],
+          "difficulty": "None"
+        },
+        {
+          "id": "IT8",
+          "scene": "测试房间",
+          "type": "考古学",
+          "name": "辨识墙壁上的远古铭文",
+          "requirement": "",
+          "trigger": "调查员发现墙壁上隐约刻有古老的文字，尝试辨识其含义",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你仔细端详了墙上的刻痕，但它们似乎是某种已经失传的古老文字，你完全无法理解其中的含义。",
+            "on_regular": "你依稀辨认出几个符号，似乎与某种古老的封印仪式有关。",
+            "on_hard": "你成功解读了大部分铭文——它们描述了一个关于镜子和灵魂交换的禁忌仪式。",
+            "on_extreme": "你完全解读了铭文，了解到这是一个古代封印术，用于囚禁'镜中的取代者'——一种能够通过镜子替换活人灵魂的异界实体。"
+          },
+          "difficulty": "regular"
         }
       ],
       "auto_triggers": [
@@ -81,7 +139,18 @@
         }
       ],
       "encounters": [],
-      "scene_weapons": [],
+      "scene_weapons": [
+        {
+          "weapon_ref": "撬棍",
+          "scene": "测试房间",
+          "quantity": 1
+        }
+      ],
+      "npcs": [
+        {
+          "name": "京山 人吉"
+        }
+      ],
       "from_here": [
         {
           "target": "6号车厢",
@@ -673,6 +742,7 @@
   "npc_profiles": {
     "京山 人吉": {
       "name": "京山 人吉",
+      "scene": "测试房间",
       "role": "受伤的电车乘务员，关键信息提供者与道德困境载体",
       "what_they_can_do": "京山人吉起初因重伤陷入休克，无法行动，可被调查员急救唤醒。苏醒后他会表现出强烈的求生欲与基本责任感，主动讲述电车上发生了无眼人形怪物的袭击，并告知怪物对声音极其敏感，自己曾制造声响引开怪物才逃脱；同时指出驾驶室钥匙和操作面板钥匙放在黑色挎包里，挎包在逃跑时遗落在3号车厢前门附近。他会恳求调查员帮助停车，因为他不知道列车后方已被吞噬之口堵死。如果调查员告知实情（无法停车），他会因巨大的恐惧陷入混乱，放弃自己的主张，将决定权完全交给调查员。若调查员选择背负他一同行动，他会在进入3号车厢时立即指出挎包的具体位置，帮助快速找到钥匙，但他的腿部重伤会导致移动速度变慢，背负他通过2号车厢时极有可能因额外的动静引来怪物。他的生死直接关联真结局的真实性：若他在真结局中生还，现实中会发现根本没有这名乘务员，暗示他可能是梦境的一部分。",
       "interaction_triggers": [
@@ -692,6 +762,10 @@
       "IT2": {"entity_id": "IT2", "entity_type": "interaction", "name": ""},
       "IT3": {"entity_id": "IT3", "entity_type": "interaction", "name": ""},
       "IT4": {"entity_id": "IT4", "entity_type": "interaction", "name": ""},
+      "IT5": {"entity_id": "IT5", "entity_type": "interaction", "name": ""},
+      "IT6": {"entity_id": "IT6", "entity_type": "interaction", "name": ""},
+      "IT7": {"entity_id": "IT7", "entity_type": "interaction", "name": ""},
+      "IT8": {"entity_id": "IT8", "entity_type": "interaction", "name": ""},
       "AT_TEST_AUTO": {"entity_id": "AT_TEST_AUTO", "entity_type": "auto_trigger", "name": ""},
       "E_TEST_END": {"entity_id": "E_TEST_END", "entity_type": "event", "name": ""},
       "I1": {

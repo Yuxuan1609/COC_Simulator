@@ -42,7 +42,7 @@ from module_designer import (
     build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
     build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
-    build_step25_prompt, build_phase1_prompt, build_step4_prompt,
+    build_step25_prompt, build_step4_prompt, build_step2_boss_prompt,
     # Parsers (for cross_validate)
     _is_valid_json_output, _with_fallback,
 )
@@ -52,7 +52,7 @@ from module_designer.layered_parser import (
     STEP2A_SYSTEM, STEP2B_EVENTS_SYSTEM, STEP2B_AT_SYSTEM,
     STEP2C_L1_SYSTEM, STEP2C_L3_SYSTEM,
     STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM,
-    STEP25_SYSTEM, PHASE1_SYSTEM, STEP4_SYSTEM,
+    STEP25_SYSTEM, STEP4_SYSTEM, STEP2_BOSS_SYSTEM,
 )
 from library import WeaponLibrary, EnemyLibrary
 from library.bosses import BossLibrary
@@ -175,11 +175,16 @@ print(f"  do_text_call(step_name, call_name, prompt_fn, *args, system_prompt=, *
 # ============================================================
 # ═══ Step 1a: 结构化提取 ═══
 # 输入: 原始模组文档
-# 输出: module_meta + scenes[name, ...] + characters[{name,id}]
+# 输出: module_meta + scenes[name, ...] + characters[{name,id}] + enemies + weapons
+weapon_names_1a = [w.name for w in wl.list_all()] if wl else []
+enemy_names_1a = [e.name for e in el.list_all()] if el else []
+boss_names_1a = bl.list_names() if bl else []
 with ThreadPoolExecutor(max_workers=2) as ex:
     f1a = ex.submit(do_json_call,
         "step_1", "1a_structured_extraction",
         build_step1a_prompt, content,
+        weapon_library_names=weapon_names_1a, enemy_library_names=enemy_names_1a,
+        boss_library_names=boss_names_1a,
         system_prompt=STEP1A_SYSTEM
     )
     f1b = ex.submit(do_text_call,
@@ -249,7 +254,7 @@ print("..." if len(condensed_text) > 600 else "")
 # 输出: interactions 列表（含 ID + 场景中文名）
 step2a = do_json_call(
     "step_2", "2a_interactions",
-    build_step2a_prompt, chapters, scenes,
+    build_step2a_prompt, chapters, scenes, characters,
     system_prompt=STEP2A_SYSTEM
 )
 interactions = step2a.get("interactions", [])
@@ -272,12 +277,13 @@ if len(interactions) > 5:
 with ThreadPoolExecutor(max_workers=4) as ex:
     f_ev = ex.submit(do_json_call,
         "step_2", "2b_events",
-        build_step2b_events_prompt, chapters, scenes, interactions,
+        build_step2b_events_prompt, chapters, scenes, interactions, characters,
         system_prompt=STEP2B_EVENTS_SYSTEM
     )
     f_at = ex.submit(do_json_call,
         "step_2", "2b_auto_triggers",
-        build_step2b_at_prompt, chapters, scenes, interactions,
+        build_step2b_at_prompt, chapters, scenes, interactions, characters,
+        enemies=step1a.get("enemies", []), weapons=step1a.get("weapons", []),
         system_prompt=STEP2B_AT_SYSTEM
     )
     f_l1 = ex.submit(do_json_call,
@@ -297,13 +303,6 @@ with ThreadPoolExecutor(max_workers=4) as ex:
 
 events = events_data.get("events", [])
 auto_triggers = at_data.get("auto_triggers", [])
-# Inject world-generation auto_trigger
-auto_triggers.append({
-    "id": "AT_WORLD", "name": "世界生成", "scene": "world", "type": "无",
-    "requirement": "", "trigger": "模组开始时自动触发",
-    "result": "世界环境初始化", "side_effects": [],
-    "difficulty": "None", "based_on": "",
-})
 
 # 保存 Step 2 汇总
 with open(f"{DEBUG_ROOT}/step_2/_summary.json", "w", encoding="utf-8") as f:
@@ -338,10 +337,12 @@ print(f"L3: {len(l3_data.get('world_rules',[]))} 世界规则, {len(l3_data.get(
 # CELL 11 (code)
 # ============================================================
 # ═══ Step 2 Boss + Step 3a ∥ Step 2.5 (并行) ═══
-from module_designer.layered_pipeline import parse_step2_boss
+from module_designer.layered_parser import parse_step2_boss
 
 ending_conditions = l3_data.get("ending_conditions", [])
 l3_characters = l3_data.get("characters", [])
+
+boss_lib_names = bl.list_names() if bl else []
 
 max_workers = 2 + (1 if boss_hints else 0) + (1 if l3_characters else 0)
 with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -362,7 +363,11 @@ with ThreadPoolExecutor(max_workers=max_workers) as ex:
             with open(os.path.join(call_dir, "response.json"), "w", encoding="utf-8") as f:
                 json.dump(response, f, ensure_ascii=False, indent=2)
             return response
-        f_boss = ex.submit(parse_step2_boss, boss_hints, l1_data, llm_json=_boss_llm)
+        f_boss = ex.submit(
+            parse_step2_boss, boss_hints, boss_lib_names,
+            interactions, auto_triggers, scenes, chapters,
+            llm_call=_boss_llm,
+        )
     else:
         f_boss = None
     if l3_characters:
@@ -443,9 +448,7 @@ print(f"  L3 scene_intents: {list(l3_data.get('scene_intents', {}).keys())}")
 # ============================================================
 # CELL 14 (code)
 # ============================================================
-# ═══ Step 3.5 ∥ Phase 1: 依赖图 + 风格预判 (并行) ═══
-weapon_names = [f"{w.name} — {w.description}" if w.description else w.name for w in wl.list_all()]
-enemy_names = [f"{e.name} — {e.description}" if e.description else e.name for e in el.list_all()]
+# ═══ Step 3.5: 依赖图 ═══
 stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
 import json as _json
@@ -495,21 +498,12 @@ def _run_step35():
             return dep_graph
     return None
 
-scene_intents_p1 = l3_data.get("scene_intents", {})
-with ThreadPoolExecutor(max_workers=2) as ex:
-    f35 = ex.submit(_run_step35)
-    f_p1 = ex.submit(do_json_call,
-        "phase_1", "phase1_style_preview",
-        build_phase1_prompt,
-        chapters, scene_intents_p1, weapon_names, enemy_names,
-        system_prompt=PHASE1_SYSTEM
-    )
-    dep_graph = f35.result()
-    phase1 = f_p1.result()
+dep_graph = _run_step35()
 
-phase1_clean = {"enemies": phase1.get("enemies", []),
-                "weapons": phase1.get("weapons", [])}
-print(f"Phase 1 完成: {len(phase1_clean['enemies'])} 敌人类型, {len(phase1_clean['weapons'])} 武器类型")
+# Enemy/weapon constraints now come from Step 1a (merged Phase 1)
+phase1_clean = {"enemies": step1a.get("enemies", []),
+                "weapons": step1a.get("weapons", [])}
+print(f"Step 1a 约束: {len(phase1_clean['enemies'])} 敌人类型, {len(phase1_clean['weapons'])} 武器类型")
 
 # ── Phase 2: 精简标准化 (依赖 Phase 1 约束) ──
 scene_intents_s4 = l3_data.get("scene_intents", {})

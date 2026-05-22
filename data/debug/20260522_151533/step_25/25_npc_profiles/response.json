@@ -1,0 +1,65 @@
+{
+  "npc_profiles": {
+    "老赵": {
+      "name": "老赵",
+      "role": "胆小惜命的本地向导",
+      "what_they_can_do": "提供星陨村的历史背景、地理信息与密道传说；反复劝玩家离开，强调“没人出来过”；在遭遇恐怖事件时可能因恐惧而逃跑；作为普通人参照物，凸显超自然事件的恐怖；可能在结局以外部视角烘托灾难规模。",
+      "interaction_triggers": [
+        "调查员与在场的老赵交谈时"
+      ],
+      "personality_notes": "焦躁不安，反复叨念要离开，因恐惧而手指发抖，乡情牵挂但惜命胜过一切。说话风格急促、消极，充满警告。",
+      "appearance": "向导老赵站在车旁，脸色苍白，不停地吸烟枪，手指微微发抖。",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
+    },
+    "王大柱": {
+      "name": "王大柱",
+      "role": "坚毅的退伍军人，团队护卫与战术核心",
+      "what_they_can_do": "提供战斗与防御能力；在碉楼围攻等战斗中担任战术指挥，稳定团队士气；优先保护雇主和团队生存；可能主动承担玉刀代价或献祭，体现无畏与牺牲精神。",
+      "interaction_triggers": [],
+      "personality_notes": "沉稳、实用主义，责任感强；说话简洁果断，注重行动。虽无畏却隐含悲情色彩。",
+      "appearance": "无提供",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
+    },
+    "林晓雯": {
+      "name": "林晓雯",
+      "role": "理性至上的法医学生，科学分析者",
+      "what_they_can_do": "进行医学检定与线索分析（如检查尸体、霉菌）；试图用科学解释超自然现象；当证据无可辩驳时认知逐渐崩溃；在抉择时倾向最小牺牲方案，展现专业冷静下的勇气。",
+      "interaction_triggers": [],
+      "personality_notes": "理性、爱分析，起初质疑一切超常现象；说话逻辑严密，常引用科学知识，但后期可能因冲击而动摇。",
+      "appearance": "无提供",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
+    },
+    "陈瑞明": {
+      "name": "陈瑞明",
+      "role": "求知欲旺盛的考古学家，古文字与仪式专家",
+      "what_they_can_do": "解读古文、古卷与仪式内容；推动封印线索的破解；自我牺牲倾向强烈，可能成为献祭封印的主要候选人；笨拙但真挚地关心同伴，为恐怖氛围注入人性温暖。",
+      "interaction_triggers": [],
+      "personality_notes": "学者型，逐渐从学术兴奋转向悲壮使命感；说话常引经据典，略显笨拙但真诚。",
+      "appearance": "无提供",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
+    },
+    "明觉": {
+      "name": "明觉",
+      "role": "濒死的疯僧，关键情报传递者",
+      "what_they_can_do": "用断续的呓语透露三件法器的位置与功能、马德胜的堕落、法器合一的危险，以及碉楼暗格藏有古代封印方法的线索；提醒“你身上有玉刀的气味！小心！它想要回去！”；留下桦树皮速记索引；死后若尸体未被处理可能异变，焚化可阻止。",
+      "interaction_triggers": [
+        "调查员靠近盘坐在血壁画前的明觉时",
+        "调查员注意到明觉身侧地上的桦树皮时",
+        "调查员在明觉死后决定焚毁其遗体时"
+      ],
+      "personality_notes": "因窥见真相而精神崩溃，仅存一线清醒用于传递警告；说话断续、呓语般，充满绝望与紧迫感。",
+      "appearance": "一个骨瘦如柴的僧人，僧袍破烂，皮肤布满黑紫斑痕，眼眶深陷如骷髅。",
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false
+    }
+  }
+}

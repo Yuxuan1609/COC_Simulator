@@ -90,56 +90,79 @@ def log_skill_result(text: str, log_path: str | None = None):
 
 # ── 场景上下文（确定性，不依赖 LLM）──
 
-def _build_scene_context(world: ScenarioWorld) -> str:
-    """Get current scene position, description, and exits. Entities are listed separately."""
-    node = world._current_node()
-    if not node:
-        return "未知地点"
-
-    exits = world.get_possible_exits()
+def _build_scene_context(snap: dict) -> str:
+    """Get current scene position, description, and exits from snapshot."""
     exit_list = "\n".join([
-        f"  → {e.target}：{e.method}" for e in exits
+        f"  → {e['target']}：{e['method']}" for e in snap.get("exits", [])
     ]) or "（无）"
-
-    return f"""【当前位置】{world.current_location}
-【场景描述】{node.description}
+    return f"""【当前位置】{snap['location']}
+【场景描述】{snap['description']}
 
 【可移动方向】
 {exit_list}"""
 
-def _build_player_skills(world: ScenarioWorld) -> str:
-    """构建玩家技能列表（从 Investigator.skills）"""
-    if not world.player or not world.player.skills:
-        return "（无技能数据）"
-    return ", ".join(f"{s.name}={s.value}" for s in world.player.skills)
 
-
-def _build_investigator_info(world: ScenarioWorld) -> str:
-    """构建调查员信息（name + description + appearance）"""
-    p = world.player
-    if not p:
+def _build_investigator_info(snap: dict) -> str:
+    """构建调查员基本信息（从 snapshot player 字段）"""
+    p = snap.get("player", {})
+    if not p or not p.get("name"):
         return ""
-    parts = []
-    name = getattr(p, 'name', '') or getattr(p, 'character_name', '')
-    if name:
-        parts.append(f"  姓名：{name}")
-    desc = getattr(p, 'personal_description', '') or getattr(p, 'description', '')
-    if desc:
-        parts.append(f"  描述：{desc}")
-    app = getattr(p, 'appearance', '')
-    if app:
-        parts.append(f"  外貌：{app}")
-    if not parts:
-        return ""
+    parts = [f"  姓名：{p['name']}"]
+    if p.get("description"):
+        parts.append(f"  描述：{p['description']}")
     return "【调查员】\n" + "\n".join(parts) + "\n"
 
 
+def _build_player_state(snap: dict) -> str:
+    """构建调查员状态块（HP/SAN/武器/物品）"""
+    p = snap.get("player", {})
+    if not p:
+        return ""
+    lines = ["【调查员状态】"]
+    lines.append(f"  HP={p.get('hp', '?')} SAN={p.get('san', '?')} MP={p.get('mp', '?')}")
+    if p.get("weapons"):
+        lines.append(f"  武器：{', '.join(p['weapons'])}")
+    inv = p.get("inventory", "")
+    if inv and inv != "（未持有物品）":
+        lines.append(f"  物品：{inv}")
+    return "\n".join(lines) + "\n"
 
-def _build_world_state(world: ScenarioWorld) -> str:
-    """从 world 获取当前状态摘要"""
-    triggered = [eid for eid, t in world.triggered_events.items() if t]
-    completed_entities = [eid for eid, s in world.runtime_state.items() if s.completed]
-    flags_str = ", ".join(completed_entities) or "（无）"
+
+def _build_scene_state(snap: dict) -> str:
+    """构建场景现状（NPC/敌人/武器）"""
+    parts = []
+    npcs = snap.get("npcs_in_scene", [])
+    if npcs:
+        parts.append(f"  NPC：{', '.join(n['name'] for n in npcs)}")
+    enemies = snap.get("enemies_in_scene", [])
+    if enemies:
+        parts.append(f"  敌人：{', '.join(e['enemy_ref'] for e in enemies)}")
+    weps = snap.get("scene_weapons", [])
+    if weps:
+        parts.append(f"  场景武器：{', '.join(w['weapon_ref'] for w in weps)}")
+    if not parts:
+        return ""
+    return "【场景现状】\n" + "\n".join(parts) + "\n"
+
+
+def _build_time_block(snap: dict) -> str:
+    """构建时间上下文块"""
+    t = snap.get("time", {})
+    if not t:
+        return ""
+    lines = [f"【时间】第{t.get('day', 0)}天 {t.get('time_of_day', '')}（累计{t.get('game_time', 0)}分钟）"]
+    ctx = t.get("time_context", "")
+    if ctx:
+        lines.append(ctx)
+    return "\n".join(lines) + "\n"
+
+
+def _build_world_state(snap: dict) -> str:
+    """从 snapshot 获取当前状态摘要"""
+    runtime = snap.get("runtime", {})
+    triggered = runtime.get("triggered_events", [])
+    completed = runtime.get("completed", [])
+    flags_str = ", ".join(completed) or "（无）"
     return f"""已触发事件：{triggered or '（无）'}
 世界标记：{flags_str}"""
 
@@ -324,7 +347,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             from scenario_core import parse_hard_requirement
             met = parse_hard_requirement(hard, world.runtime_state)
         else:
-            met = world._are_requirements_met(entity)
+            met = world.are_entity_requirements_met(entity)
         return hard, soft, met
 
     def _fmt_inter(entity) -> str:
@@ -386,14 +409,17 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
 
 def build_keeper_parse_prompt(world, user_input: str) -> str:
     """Keeper step 1: match player input against ALL entities, evaluate NL requirements."""
-    scene_ctx = _build_scene_context(world)
-    state = _build_world_state(world)
+    snap = world.build_snapshot()
+    scene_ctx = _build_scene_context(snap)
+    state = _build_world_state(snap)
     context = world.memory.get_context()
-    inv_info = _build_investigator_info(world)
+    inv_info = _build_investigator_info(snap)
+    player_state = _build_player_state(snap)
+    scene_state = _build_scene_state(snap)
+    time_block = _build_time_block(snap)
 
     trig_scene, nontrig_scene, trig_events, nontrig_events = _build_entity_lines(world)
 
-    # Scene entities section — AUTO_TRIGGER + INTERACT
     scene_entity_parts = []
     if trig_scene:
         scene_entity_parts.append("【可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(trig_scene))
@@ -401,7 +427,6 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
         scene_entity_parts.append("【暂不可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(nontrig_scene))
     scene_entity_text = "\n\n".join(scene_entity_parts) if scene_entity_parts else "（无）"
 
-    # Events section — global, not scene-bound
     event_parts = []
     if trig_events:
         event_parts.append("【可触发 — EVENT】\n" + "\n".join(trig_events))
@@ -419,10 +444,14 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 {state}
 
 {inv_info}
+{player_state}
+{scene_state}
 {scene_ctx}
-
+{time_block}
+【场景实体】
 {scene_entity_text}
 
+【全局事件】
 {event_text}
 
 【玩家输入】
@@ -465,7 +494,10 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 
 def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
     """Keeper step 3: describe and enrich entity results. No trigger evaluation."""
-    state = _build_world_state(world)
+    snap = world.build_snapshot()
+    state = _build_world_state(snap)
+    scene_state = _build_scene_state(snap)
+    time_block = _build_time_block(snap)
 
     entities_text = ""
     for e in judged_entities:
@@ -482,9 +514,11 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 【世界状态】
 {state}
 
-【当前场景】{world.current_location}
-{world.get_current_description()}
+【当前场景】{snap['location']}
+{snap['description']}
 
+{scene_state}
+{time_block}
 【玩家输入】{user_input}
 
 【本轮已触发实体】
@@ -506,17 +540,13 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 
 直接输出 JSON。
 """
-    time_block = ""
-    if world and hasattr(world, 'time_context') and world.time_context:
-        time_block = f"\n【时间感知】当前时间：第{world.day}天 {world.time_of_day}（累计{world.game_time}分钟）\n{world.time_context}\n"
-    prompt += time_block
     _show_prompt("Keeper Enrich", prompt)
     return prompt
 
 
 # ── Narrator prompt ──
 
-def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: str = "") -> str:
+def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_input: str = "") -> str:
     """Narrator: converts NarratorBrief + L1 context into immersive narrative."""
     entity_outcomes = ""
     flavor_outcomes = ""
@@ -530,6 +560,8 @@ def build_narrator_prompt(brief, l1_scene=None, inv_info: str = "", user_input: 
 
     l1_ctx = _build_l1l3_context(l1_scene=l1_scene,
                                   scene_name=brief.scene_snapshot.location)
+
+    inv_info = _build_investigator_info(snap) if snap else ""
 
     prompt = f"""{l1_ctx}
 
