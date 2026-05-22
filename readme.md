@@ -166,6 +166,7 @@
 - **`rules.py`**：纯函数规则引擎 —— 掷骰生成、衍生属性计算、技能点分配、年龄修正、信用评级、DB 计算
 - **`serialization.py`**：JSON 序列化/反序列化
 - `combat_check()` / `damage_roll()` 已由 `src/game/combat.py` 的 CombatSystem 接管，旧方法待清理
+- **默认测试角色卡**：`investigator/Sothoth_character` — 测试时使用的预设调查员，可针对性利用其角色特性（属性、技能、物品等）进行测试
 
 ### `src/module_designer/` — 三层信息引擎
 
@@ -228,7 +229,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | O3 | Move 限制条件未强制执行 | ✅ FIXED — `ScenarioWorld.move()` 检查 edge.requirement（hard: entity IDs + AND/OR，soft: LLM parse 评估），不满足返回阻塞消息 |
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
 | O5 | 时间系统 | ⚠ 部分实现 — TimeAgent prompt 未传入玩家输入，other 行为未接入。需修复 |
-| O6 | Harness 整合 | `game_loop_harness` / `escalation_harness` / `combat_harness` 三个集成测试文件合并为统一的 mock-LLM 端到端测试 |
+| O6 | Harness 整合 | ⚠ 部分实现 — 新增 `test_harness_parallel.py`（16 case 并行真实 LLM）+ `test_harness_stability.py`（2 case 串行稳定性）。旧 `game_loop_harness.py` 仍存在（绕过 Keeper 走旧 pipeline，待迁移或删除） |
 | O7 | 世界状态类 & 调查员类 | ✅ FIXED — ScenarioWorld 重构为 Facade + GameClock + EnemyManager/NPCManager/BossManager 组合模式；@markup 解析迁至 `game/side_effects.py`；Keeper 接管 time_costs/comms_interval/apply_side_effects。详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md` |
 ## 设计文档
 
@@ -259,12 +260,17 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `tests/test_library.py` | 18 case — WeaponLibrary/EnemyLibrary + flag 解析 | 单元（确定） |
 | `tests/test_author_flow.py` + `tests/test_intent_detector.py` | 11 case — Detector→Author→Keeper 全链路（全 mock） | 单元 |
 | `tests/test_escalation_harness.py` | 5 case — 正常/flavor/Patch/Reject/StructuralEdit | 集成（真实 LLM） |
-| `tests/game_loop_harness.py` | 7 轮 parse→judge→enrich→narrate | 集成（真实 LLM） |
-| 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer | 单元 + 集成 |
+| `tests/test_escalation_real.py` | 5 case — 真实 LLM 升级流测试，含完整 prompt/response 日志 | 集成（真实 LLM） |
+| `tests/test_harness_parallel.py` | **NEW** — 16 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局，含 `--mock` 模式 | 集成（真实 LLM） |
+| `tests/test_harness_stability.py` | **NEW** — 2 case 串行稳定性测试（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
+| `tests/game_loop_harness.py` | ⚠ 已弃用 — 7 轮旧 pipeline（绕过 Keeper.process_turn，使用废弃的 `apply_side_effects`），待迁移到新 harness | 集成（真实 LLM） |
+| 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup, test_clock | 单元 + 集成 |
 
 **测试说明**：
 - 测试数据：`data/modules/常暗之厢/l*_test.json`（测试房间 + 原模组内容），`start_node` 已切到「测试房间」。正式需切回正式 JSON。
-- Game Loop Harness：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
+- **新 Parallel Harness**：`python tests/test_harness_parallel.py`（16 case 并行），`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
+- **新 Stability Harness**：`python tests/test_harness_stability.py`（2 case 串行），日志 → `data/debug/test_stability/<ts>/`
+- Game Loop Harness（旧）：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
 - **测试模组**：`test_story.txt` — 极小模组「林中小屋」(~180 字，2 场景 / 1 NPC / 1 Boss / 1 普通敌人)，用于快速验证管线。在 `notebooks/parser_layered.ipynb` Cell 2 中切 `SOURCE_FILE` 即可使用，2-3 分钟跑完全管线。
 
 ## @markup 副效果系统（7 种）
