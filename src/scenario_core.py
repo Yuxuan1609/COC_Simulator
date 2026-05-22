@@ -624,7 +624,8 @@ class ScenarioWorld:
                  enemy_library: Any = None,
                  weapon_library: Any = None,
                  boss_library: Any = None,
-                 boss_encounters: list | None = None):
+                 boss_encounters: list | None = None,
+                 npc_profiles: dict | None = None):
         from game.clock import GameClock
         from game.enemy_manager import EnemyManager
         from game.npc_manager import NPCManager
@@ -641,6 +642,8 @@ class ScenarioWorld:
         self.memory = MemoryManager()
         self.enemies = EnemyManager(enemy_library) if enemy_library else None
         self.npcs = NPCManager()
+        if npc_profiles:
+            self.npcs.init_from_profiles(npc_profiles)
         self.bosses = BossManager(boss_library, boss_encounters or []) if boss_library else None
 
         # 本体状态
