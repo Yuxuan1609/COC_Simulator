@@ -19,14 +19,14 @@
 │   ├── templates/
 │   │   ├── l1_template.json                 # L1 玩家可见层模板
 │   │   ├── l2_template.json                 # L2 KP 守秘人层模板
-│   │   └── l3_template.json                 # L3 设计者层模板
+│   │   ├── l3_template.json                 # L3 设计者层模板
+│   │   ├── scene.json                       # 场景模板
+│   │   └── event.json                       # 事件模板
 │   ├── modules/
-│   │   └── 常暗之厢/
-│   │       ├── l1_player.json               # L1 玩家可见层（LLM 生成）
-│   │       ├── l2_keeper.json               # L2 KP 守秘人层（LLM 生成，游戏循环直接消费）
-│   │       └── l3_designer.json             # L3 设计者层（LLM 生成）
-│   └── output/
-│       └── archive/                         # 旧 pipeline 输出存档
+│   │   ├── 常暗之厢/                           # 主测试模组
+│   │   ├── 深渊之口/                           # 新模组
+│   │   ├── test/                              # 单元测试用模组
+│   │   └── supplements/                       # 补充管线输出（Author StructuralEdit）
 ├── src/
 │   ├── scenario_core.py                     # 数据类、有向图、世界状态 Facade、记忆管理、Entity/##GRADED##/##END_
 │   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
@@ -70,11 +70,13 @@
 │       ├── models.py                        # 数据类 + 技能检定 + 战斗预留 + ItemManager + modify_stat
 │       ├── rules.py                         # COC 7th 规则引擎（纯函数）
 │       └── serialization.py                 # JSON 序列化 / 反序列化
-├── frontend/                                # 车卡前端页面
-│   ├── server.py                            # 本地服务器 + LLM 描述生成 API
+├── frontend/
+│   ├── server.py                            # 车卡服务器 + LLM 描述生成 API
 │   ├── character.html                       # 5 步车卡向导
 │   ├── character.css                        # COC 1920s 美学风格
-│   └── character.js                         # 车卡交互逻辑（含 /llm 触发）
+│   ├── character.js                         # 车卡交互逻辑（含 /llm 触发）
+│   ├── game_server.py                       # 游戏循环 Web 服务器
+│   └── game.html                            # 游戏循环 Web 前端
 ├── run_pipeline.py                          # 管线 CLI 入口（配置向导 + 手动/自动模式）
 ├── notebooks/
 │   ├── notebook_simplified.ipynb            # 主游戏循环（导入 src/ 模块）
@@ -165,7 +167,7 @@
 - **`models.py`**：`Stats`（8 项核心属性 + LUCK）、`DerivedStats`、`Skill`（45 项 COC 标准技能）、`Occupation`、`Weapon`、`InventoryItem`、`ItemManager`、`Investigator`（主类，含 `check_skill()` / `modify_stat()` / `add_weapon()` / `item_manager`）
 - **`rules.py`**：纯函数规则引擎 —— 掷骰生成、衍生属性计算、技能点分配、年龄修正、信用评级、DB 计算
 - **`serialization.py`**：JSON 序列化/反序列化
-- `combat_check()` / `damage_roll()` 已由 `src/game/combat.py` 的 CombatSystem 接管，旧方法待清理
+- `combat_check()` / `damage_roll()` 已由 `src/game/combat.py` 的 CombatSystem 接管，旧 stub 已移除
 - **默认测试角色卡**：`investigator/Sothoth_character` — 测试时使用的预设调查员，可针对性利用其角色特性（属性、技能、物品等）进行测试
 
 ### `src/module_designer/` — 三层信息引擎
@@ -188,37 +190,14 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 ### `game_loop.py` — 入口
 
-- `init_game()`：加载 L1/L2/L3 JSON + EnemyLibrary/WeaponLibrary/BossLibrary + BossManager/NPCManager → 构建 DirectedGraph → ScenarioWorld → 初始化 Keeper/Narrator/Author
+- `init_game()`：加载 L1/L2/L3 JSON + EnemyLibrary/WeaponLibrary/BossLibrary → 构建 DirectedGraph → ScenarioWorld（初始化 GameClock/EnemyManager/NPCManager/BossManager）→ Keeper/Narrator/Author
 - `run_turn()`：驱动回合，处理 debug 命令 → `keeper.process_turn()` → 检测 `combat_init` → `CombatSystem.run_combat()` → `narrator.narrate()` → 返回 `{brief, narrative, full, combat, standoff_prompt}`
 - `continue_standoff()`：处理对峙阶段的玩家回避尝试 → 检测结果调用 CombatSystem → 返回 `{avoided, combat_init, message, combat_narrative}`
-
-## 待实现
-
-| 功能 | 状态 | 说明 |
-|------|------|------|
-| 作者介入机制 (Escalation) | ⚠ 已实现，提示词待精修 | Parse other → IntentDetect(并行) → Author (Patch/StructuralEdit/Reject) → 补充管线。Patch 和 StructuralEdit 的轻量级 LLM 提示词需精修。`scene_context` 字段随 NPC/时间/Boss 系统上线待补全。Author 人设（`DEFAULT_AUTHOR_PERSONA`）可手动修改，位于 `src/game/agents/author.py`。详见 `docs/superpowers/specs/2026-05-19-escalation-redesign.md` |
-| 战斗系统 — 进入/脱出 | ✅ 已实现 | SpawnEnemy→EnemyManager→LLM 检测+对峙→CombatInit。详见 `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md` |
-| 战斗系统 — 回合制核心 | ✅ 已接入 | `src/game/combat.py`：CombatSystem 已实现伤害掷骰/D100 检定/先攻/逐轮处理，`run_turn()` 和 `continue_standoff()` 中自动调用 |
-| 武器获取系统 | ✅ 已实现 | grant_weapon → SceneWeapon 场景放置 → search 发现 → 确认拾取 → Investigator.add_weapon |
-| 物品管理 | ✅ 已实现 | ItemManager（Investigator），item_gain(quantity) / consume_item（严格+LLM 模糊匹配） |
-| 属性变化 | ✅ 已实现 | StatChange → Investigator.modify_stat(int/dice formula) + LLM narrative 描述更新 |
-| NPC / 同伴系统 | ✅ 已实现 | NPCManager 全量管理：LLM 对话（态度/记忆上下文注入）、被动跟随（@npc_follow markup）、5级态度状态机。架构预留半主动 hook。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
-| Boss/剧情敌人 | ✅ 已实现 | 独立 bosses.json 库，`type="boss_encounter"` Entity（engage_type 硬性过滤），BossManager 信息挂钩+CombatSystem LLM 路径。特殊机制走自然语言 `boss_mechanics` 字段。详见 `docs/superpowers/specs/2026-05-20-boss-npc-design.md` |
-| 前端 UI + 随材 | TODO | **升级功能点**：游戏循环 Web 前端的视觉升级（场景插图、角色立绘、战斗动画）、音效/BGM 随材集成、移动端适配。当前 `frontend/game.html` 为纯功能界面 |
-| 时间系统 | ⚠ 已实现，有已知问题 | 三层架构：`GameClock`（确定性分钟计时器 + `day`/`hour`/`time_of_day`）+ `TimeAgent`（LLM 轻量时间评估器）+ `Author`（叙事时间压力管理）。设计文档：`docs/superpowers/specs/2026-05-19-time-system-design.md` **已知问题：1) TimeAgent prompt 未传入玩家本轮输入 2) other 行为未接入 TimeAgent** |
 
 ### 已知缺口
 
 | # | 问题 | 状态 |
 |---|------|------|
-| G1 | Judge 需求检查仅 `flag:` 前缀 | ✅ FIXED — dependency_graph + runtime_state + parse_hard_requirement |
-| G2 | `from_dict` 未更新 Entity 格式 | ✅ FIXED |
-| G3 | Escalation 递归无深度保护 | ✅ FIXED — MAX_ESCALATION_DEPTH=3 |
-| G4 | `run_turn` 输出格式 | ✅ FIXED |
-| G5 | 结局检测未接入 | ✅ FIXED |
-| G6 | Keeper 无单元测试 | ✅ DONE |
-| G7 | CombatSystem 未接入 game_loop | ✅ FIXED — `run_turn()` 和 `continue_standoff()` 中检测 `CombatInit` → `CombatSystem.run_combat()` → `EnemyManager.exit_combat()` |
-| G8 | `Investigator.combat_check/damage_roll` 仍 raise NotImplementedError | ✅ FIXED — 旧 stub 已移除，战斗逻辑已由 `CombatSystem` 完全接管 |
 | G9 | `item_manager` 未序列化 | ⚠ KNOWN — `to_dict`/`from_dict` 不包含 ItemManager。游戏过程中通过 `@item_gain` 获得的物品在存档/读档后丢失。`equipment` 字段仅为向后兼容保留的空壳 |
 | G10 | 子系统 (clock/enemies/npcs/bosses) 未序列化 | ⚠ KNOWN — `to_dict`/`from_dict` 不包含 GameClock、EnemyManager、NPCManager、BossManager。存档/读档后游戏时间、敌人位置、NPC 态度、Boss 状态丢失 |
 
@@ -226,13 +205,10 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 | # | 问题 | 说明 |
 |---|------|------|
-| O1 | Escalation 每回合 LLM 调用 | ✅ 已解决 — 改为 Parse other → IntentDetect 按需触发 |
-| O2 | Memory 压缩阻塞 LLM 调用 | ✅ FIXED — 改为 daemon Thread 后台执行，不阻塞 turn 返回 |
-| O3 | Move 限制条件未强制执行 | ✅ FIXED — `ScenarioWorld.move()` 检查 edge.requirement（hard: entity IDs + AND/OR，soft: LLM parse 评估），不满足返回阻塞消息 |
 | O4 | Author Patch/StructuralEdit 提示词 | 轻量级生成质量不稳定，需精修 prompt 模板 |
-| O5 | 时间系统 | ⚠ 部分实现 — TimeAgent prompt 未传入玩家输入，other 行为未接入。需修复 |
-| O6 | Harness 整合 | ⚠ 部分实现 — 新增 `test_harness_parallel.py`（16 case 并行真实 LLM）+ `test_harness_stability.py`（2 case 串行稳定性）。旧 `game_loop_harness.py` 仍存在（绕过 Keeper 走旧 pipeline，待迁移或删除） |
-| O7 | 世界状态类 & 调查员类 | ⚠ 架构已重构，序列化待修复 — ScenarioWorld 重构为 Facade + GameClock + EnemyManager/NPCManager/BossManager 组合模式；@markup 解析迁至 `game/side_effects.py`；Keeper 接管 time_costs/comms_interval/apply_side_effects。详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md`。**子系统序列化 (G9/G10) 待后续修复** |
+| O5 | 时间系统 | ⚠ 部分实现 — TimeAgent prompt 未传入玩家输入，other 行为未接入 |
+| O6 | Harness 整合 | ⚠ 部分实现 — `test_harness_parallel.py`（16 case）+ `test_harness_stability.py`（2 case）。旧 `game_loop_harness.py` 仍存在（绕过 Keeper 走旧 pipeline，待迁移或删除） |
+| O7 | 世界状态类 & 调查员类 | ⚠ 架构已重构，序列化待修复 — 详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md`。子系统序列化 (G9/G10) 待后续修复 |
 ## 设计文档
 
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
@@ -266,14 +242,13 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `tests/test_harness_parallel.py` | **NEW** — 16 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局，含 `--mock` 模式 | 集成（真实 LLM） |
 | `tests/test_harness_stability.py` | **NEW** — 2 case 串行稳定性测试（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
 | `tests/game_loop_harness.py` | ⚠ 已弃用 — 7 轮旧 pipeline（绕过 Keeper.process_turn，使用废弃的 `apply_side_effects`），待迁移到新 harness | 集成（真实 LLM） |
-| 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup, test_clock | 单元 + 集成 |
+| 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup | 单元 + 集成 |
 
 **测试说明**：
-- 测试数据：`data/modules/常暗之厢/l*_test.json`（测试房间 + 原模组内容），`start_node` 已切到「测试房间」。正式需切回正式 JSON。
-- **新 Parallel Harness**：`python tests/test_harness_parallel.py`（16 case 并行），`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
-- **新 Stability Harness**：`python tests/test_harness_stability.py`（2 case 串行），日志 → `data/debug/test_stability/<ts>/`
+- 测试数据：`data/modules/test/l*_test.json` 及 `data/modules/常暗之厢/l*_test.json`
+- **Parallel Harness**：`python tests/test_harness_parallel.py`（16 case 并行），`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
+- **Stability Harness**：`python tests/test_harness_stability.py`（2 case 串行），日志 → `data/debug/test_stability/<ts>/`
 - Game Loop Harness（旧）：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
-- **测试模组**：`test_story.txt` — 极小模组「林中小屋」(~180 字，2 场景 / 1 NPC / 1 Boss / 1 普通敌人)，用于快速验证管线。在 `notebooks/parser_layered.ipynb` Cell 2 中切 `SOURCE_FILE` 即可使用，2-3 分钟跑完全管线。
 
 ## @markup 副效果系统（7 种）
 
@@ -333,8 +308,7 @@ python run_pipeline.py --config config.json --start-from step_3a  # 断点续跑
 ### 前端车卡（调查员创建）
 
 ```bash
-启动角色卡.bat                                   # Windows 一键启动
-python frontend/server.py                        # 手动启动 → localhost:8080/character.html
+python frontend/server.py                        # localhost:8080/character.html
 ```
 
 ### 游戏循环
@@ -385,7 +359,7 @@ pyinstaller -F --noconsole --name "TRPG助手" \
   --add-data "logs;logs" \
   --hidden-import openai \
   --hidden-import IPython \
-  frontend/launcher.py
+  run_game.py
 ```
 
 - API Key：`.env` 不打包，首次启动引导用户在 Web 界面配置
