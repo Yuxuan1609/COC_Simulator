@@ -537,11 +537,9 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 - **模组 clues_and_items（clues=剧情物品/线索，items=非剧情普通物品，需结合精修模组原文和常识判断）中标记为初始可见/场景内放置的物品，必须生成为进入场景时的 auto_trigger（requirement 留空），trigger 为"玩家进入此场景时"，result 描述玩家自动感知到该物品的存在。无需检定即可获取的物品直接以 result 表达获取；需要检定的以 graded_result 表达**
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
 - **必须生成一个 AT_WORLD（id="AT_WORLD", scene="world", type="无", difficulty="None", based_on=""）用于世界初始化。trigger 为"模组开始时自动触发"，result 为"世界环境初始化"。side_effects 中使用 @标记 声明初始配置：
-  · @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=N) — 初始敌人配置。enemy_ref 必须来自下方敌人约束列表
-  · @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=N) — 初始散落武器。weapon_ref 必须来自下方武器约束列表
-  · @item_gain(item_name="物品名", quantity=N) — 初始剧情物品放置
-  · 同一 @标记可多次出现（如多个场景放置敌人/武器），quantity 表示该位置的生成数量
-  · 初始配置只声明模组开始时的默认状态，运行时动态生成由 game loop 处理
+  · 描述：1调查员初始时身上带着什么
+         2哪个场景散布着什么武器
+         3哪个场景可能会有什么敌人，有多少
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -572,10 +570,10 @@ def build_step2b_at_prompt(
 已知互动（auto_trigger 可基于这些互动派生，based_on 指向其 ID；非派生 AT 留空）:
 {interaction_list}
 
-## 敌人约束（AT_WORLD 中 @spawn_enemy 的 enemy_ref 必须来自此列表，总调用次数不超过对应 max_count）
+## 敌人约束
 {enemy_list if enemy_list else "（无约束）"}
 
-## 武器约束（AT_WORLD 中 @grant_weapon 的 weapon_ref 必须来自此列表，总调用次数不超过对应 max_count）
+## 武器约束
 {weapon_list if weapon_list else "（无约束）"}
 
 输出格式:
