@@ -72,10 +72,9 @@ class Judge:
 
     # ── Internal ──
 
-    def _set_completion_flag(self, entity: Entity):
-        """Mark entity completed in runtime_state."""
-        state = self.world.get_runtime_state(entity.id)
-        state.completed = True
+    def _set_completion_flag(self, entity: Entity, tier: str = ""):
+        """Mark entity completed in runtime_state with optional result tier."""
+        self.world.mark_completed(entity.id, tier)
 
     def _find_entity_by_id(self, entity_id: str):
         """Find an entity by ID across graph (scenes + events)."""
@@ -89,14 +88,7 @@ class Judge:
 
     def _is_entity_completed(self, entity) -> bool:
         """Check if an entity has been completed/triggered via runtime_state."""
-        if entity.entity_type == "event":
-            return self.world.is_event_triggered(entity.id)
-        state = self.world.runtime_state.get(entity.id)
-        if state:
-            return state.completed
-        scene = entity.scene or ""
-        done = self.world.completed_interactions.get(scene, set())
-        return entity.name in done
+        return self.world.is_entity_completed(entity.id)
 
     def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None, player_input: str = "") -> ActionOutcome:
         """Run entity through gate and execute."""
@@ -242,7 +234,7 @@ class Judge:
             self.world.triggered_events[entity.id] = True
 
         # Set completion flag
-        self._set_completion_flag(entity)
+        self._set_completion_flag(entity, skill_tier)
 
         # Resolve side effects
         side_effects = []
