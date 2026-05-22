@@ -324,7 +324,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             from scenario_core import parse_hard_requirement
             met = parse_hard_requirement(hard, world.runtime_state)
         else:
-            met = world._are_requirements_met(entity)
+            met = world.are_entity_requirements_met(entity)
         return hard, soft, met
 
     def _fmt_inter(entity) -> str:

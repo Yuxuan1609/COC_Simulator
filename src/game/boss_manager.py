@@ -72,3 +72,15 @@ class BossManager:
         if not self._active_boss_id:
             return None
         return combat_result.outcome
+
+    def to_dict(self) -> dict:
+        return {
+            "active_boss_id": self._active_boss_id,
+            "encounters": self._encounters,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict, boss_library: BossLibrary) -> "BossManager":
+        mgr = cls(boss_library, data.get("encounters", []))
+        mgr._active_boss_id = data.get("active_boss_id")
+        return mgr

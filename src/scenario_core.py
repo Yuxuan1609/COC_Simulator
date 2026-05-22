@@ -622,50 +622,83 @@ class ScenarioWorld:
                  background_story: str = "",
                  wr0_enabled: bool = False,
                  enemy_library: Any = None,
-                 weapon_library: Any = None):
+                 weapon_library: Any = None,
+                 boss_library: Any = None,
+                 boss_encounters: list | None = None):
+        from game.clock import GameClock
+        from game.enemy_manager import EnemyManager
+        from game.npc_manager import NPCManager
+        from game.boss_manager import BossManager
+
         self.graph = graph
         self.current_location = start_node
         self.player: 'InvestigatorType | None' = None
-
-        # 背景故事（模组设定，供叙事阶段参考）
         self.background_story = background_story
         self.wr0_enabled = wr0_enabled
 
-        # 事件追踪
+        # 子系统
+        self.clock = GameClock()
+        self.memory = MemoryManager()
+        self.enemies = EnemyManager(enemy_library) if enemy_library else None
+        self.npcs = NPCManager()
+        self.bosses = BossManager(boss_library, boss_encounters or []) if boss_library else None
+
+        # 本体状态
+        self.scene_weapons: dict[str, list[SceneWeapon]] = {}
+        self.weapon_library = weapon_library
+
         self.triggered_events: Dict[str, bool] = {
             eid: False for eid in graph.get_all_event_ids()
         }
-
-        # 每个场景已完成动作名
         self.completed_interactions: Dict[str, Set[str]] = {}
 
-        # L2 dependency graph + per-entity runtime state (replaces flags)
         self.runtime_state: Dict[str, NodeRuntimeState] = {}
         self.dependency_graph: Dict[str, Any] = {}
 
+    # ── 向后兼容属性 — 代理到 clock ──
 
-        # 记忆管理器
-        self.memory = MemoryManager()
+    @property
+    def game_time(self) -> int:
+        return self.clock.game_time
 
-        # NPC 运行时状态
-        self.npc_states: Dict[str, str] = {}
+    @property
+    def day(self) -> int:
+        return self.clock.day
 
-        # Time system — minute clock
-        self.game_time: int = 0
-        self._last_comms_time: int = 0
-        self.comms_interval: int = 15
-        self.time_context: str = ""
+    @property
+    def hour(self) -> int:
+        return self.clock.hour
 
-        # Weapon tracking
-        self.scene_weapons: dict[str, list[SceneWeapon]] = {}
-        self.weapon_library: Any = weapon_library
+    @property
+    def time_of_day(self) -> str:
+        return self.clock.time_of_day
 
-        # Enemy tracking
-        if enemy_library is not None:
-            from game.enemy_manager import EnemyManager
-            self.enemy_manager = EnemyManager(enemy_library)
-        else:
-            self.enemy_manager = None
+    @property
+    def time_context(self) -> str:
+        return self.clock.time_context
+
+    @time_context.setter
+    def time_context(self, value: str):
+        self.clock.time_context = value
+
+    def advance_time(self, minutes: int):
+        self.clock.advance_time(minutes)
+        # Auto-inject time flags into runtime_state
+        for flag, value in self.clock.get_time_flags().items():
+            state = self.get_runtime_state(flag)
+            state.completed = value
+
+    def get_time_flags(self) -> dict:
+        return self.clock.get_time_flags()
+
+    @property
+    def enemy_manager(self):
+        """向后兼容 — 代理到 self.enemies。"""
+        return self.enemies
+
+    @enemy_manager.setter
+    def enemy_manager(self, value):
+        self.enemies = value
 
     # ── Dependency graph & runtime state ──
 
@@ -719,6 +752,20 @@ class ScenarioWorld:
 
         return True, ""
 
+    def mark_completed(self, entity_id: str, tier: str = ""):
+        """Mark entity as completed in runtime state with optional result tier."""
+        state = self.get_runtime_state(entity_id)
+        state.completed = True
+        if tier:
+            state.result_tier = tier
+
+    def is_entity_completed(self, entity_id: str) -> bool:
+        """Check if entity is completed. Checks runtime_state first, falls back to triggered_events."""
+        state = self.runtime_state.get(entity_id)
+        if state and state.completed:
+            return True
+        return self.triggered_events.get(entity_id, False)
+
     # ── 背景故事 ──
 
     def set_background(self, text: str):
@@ -762,7 +809,7 @@ class ScenarioWorld:
         done = self.completed_interactions.get(self.current_location, set())
         return interaction_name in done
 
-    def _are_requirements_met(self, entity) -> bool:
+    def are_entity_requirements_met(self, entity) -> bool:
         """Check if entity prerequisites are satisfied via runtime_state.
         For '||' separated requirements, only checks the hard part (before ||)."""
         if hasattr(entity, 'requirement'):
@@ -809,7 +856,7 @@ class ScenarioWorld:
         lines.append("═══ 可执行动作 ═══")
         if available:
             for i, inter in enumerate(available, 1):
-                hint = " [需要前置]" if not self._are_requirements_met(inter) else ""
+                hint = " [需要前置]" if not self.are_entity_requirements_met(inter) else ""
                 lines.append(f"  {i}. {inter.summary()}{hint} —— {inter.trigger}")
         else:
             lines.append("  （无新增可执行动作）")
@@ -841,7 +888,7 @@ class ScenarioWorld:
             "interactions": [
                 {"type": i.type, "name": i.name, "trigger": i.trigger,
                  "completed": i.name in done,
-                 "requirements_met": self._are_requirements_met(i)}
+                 "requirements_met": self.are_entity_requirements_met(i)}
                 for i in interactions
             ],
             "triggered_events": [eid for eid, t in self.triggered_events.items() if t],
@@ -887,44 +934,11 @@ class ScenarioWorld:
     # ── NPC 运行时状态 ──
 
     def set_npc_state(self, npc_name: str, state: str):
-        """更新 NPC 运行时状态"""
-        self.npc_states[npc_name] = state
+        self.npcs.set_state(npc_name, state)
 
     def get_npc_state(self, npc_name: str) -> str:
-        """查询 NPC 运行时状态"""
-        return self.npc_states.get(npc_name, "未知")
-
-    # ── 时间钟（分钟粒度）──
-
-    @property
-    def day(self) -> int:
-        return self.game_time // 1440
-
-    @property
-    def hour(self) -> int:
-        return (self.game_time % 1440) // 60
-
-    @property
-    def time_of_day(self) -> str:
-        h = self.hour
-        if h < 5:   return "夜间"
-        if h < 8:   return "早晨"
-        if h < 17:  return "白天"
-        if h < 20:  return "黄昏"
-        return "夜间"
-
-    def get_time_flags(self) -> dict:
-        return {
-            f"day:{self.day}": True,
-            f"time:{self.time_of_day}": True,
-        }
-
-    def advance_time(self, delta_minutes: int):
-        """Advance the clock by N minutes. Auto-injects time flags into runtime_state."""
-        self.game_time += delta_minutes
-        for flag, value in self.get_time_flags().items():
-            state = self.get_runtime_state(flag)
-            state.completed = value
+        npc = self.npcs.get(npc_name)
+        return npc.state if npc else "未知"
 
     def apply_world_update(self, abstract: str):
         """应用世界更新结果"""
