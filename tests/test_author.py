@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, "src")
 from game.agents.author import Author
-from game.messages import EscalationRequest
+from game.messages import AuthorRequest
 
 
 def test_author_initializes():
@@ -37,13 +37,12 @@ def test_author_builds_prompt():
         "world_rules": [],
     })()
     author = Author(l3_data)
-    req = EscalationRequest(
-        trigger="uncovered_action", severity=0.8,
-        player_input="我想跳车",
-        world_context={"location": "6号车厢"},
-        unmatched_intent="跳车",
-        reason="No entity matches"
+    req = AuthorRequest(
+        other_texts=["我想跳车"],
+        intent="jump_off_train",
+        reasoning="No entity matches 跳车",
+        scene_context={"location": "6号车厢"},
     )
     prompt = author._build_prompt(req)
-    assert "uncovered_action" in prompt
+    assert "jump_off_train" in prompt
     assert "跳车" in prompt
