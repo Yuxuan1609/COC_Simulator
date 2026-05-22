@@ -649,6 +649,8 @@ class ScenarioWorld:
         # 本体状态
         self.scene_weapons: dict[str, list[SceneWeapon]] = {}
         self.weapon_library = weapon_library
+        self.time_costs: dict = {}
+        self.comms_interval: int = 15
 
         self.triggered_events: Dict[str, bool] = {
             eid: False for eid in graph.get_all_event_ids()

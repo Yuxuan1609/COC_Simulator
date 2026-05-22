@@ -367,7 +367,7 @@ def test_build_scene_context_for_author():
     world = _make_test_world()
     world.wr0_enabled = True
     from game.npc_manager import NPC
-    world.npcs._npcs["乘务员"] = NPC(name="乘务员", state="清醒")
+    world.npcs._npcs["乘务员"] = NPC(name="乘务员", state="清醒", scene="测试房间")
     world.runtime_state["I1"] = NodeRuntimeState(completed=True, result_tier="regular")
 
     keeper = Keeper(world)
