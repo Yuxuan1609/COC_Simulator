@@ -35,23 +35,10 @@ class Keeper:
     def __init__(
         self,
         world: ScenarioWorld,
-        dependency_graph: dict | None = None,
         phase1: dict | None = None,
-        npc_profiles: dict[str, Any] | None = None,
-        boss_manager: Any = None,
-        npc_manager: Any = None,
-        time_costs: dict | None = None,
-        comms_interval: int = 15,
     ):
         self.world = world
-        # dependency_graph is now owned by world; keep reference here for backward compat
-        self.dependency_graph = dependency_graph or {}
         self.phase1 = phase1 or {}
-        self.npc_profiles = npc_profiles or {}
-        self.boss_manager = boss_manager
-        self.npc_manager = npc_manager
-        self.time_costs = time_costs or {}
-        self.comms_interval = comms_interval
         self._last_comms_time = 0
 
         self.intent_detector = IntentDetector()
@@ -73,12 +60,12 @@ class Keeper:
         self._warnings.clear()
 
         # NPC interaction routing: if user input targets a known NPC, route to NPCManager
-        if self.npc_manager:
-            npcs_present = self.npc_manager.get_in_scene(self.world.current_location)
+        if self.world.npcs:
+            npcs_present = self.world.npcs.get_in_scene(self.world.current_location)
             for npc in npcs_present:
                 # Simple heuristic: NPC name or role keywords in user input
                 if npc.name in raw:
-                    response = self.npc_manager.talk_to(npc.name, raw, lambda prompt, **kw: call_deepseek(prompt, **kw))
+                    response = self.world.npcs.talk_to(npc.name, raw, lambda prompt, **kw: call_deepseek(prompt, **kw))
                     return {"brief": response, "narrative": response, "full": response}
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
@@ -242,12 +229,12 @@ class Keeper:
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
 
         # Boss "at" check: after scene change
-        if self.boss_manager:
-            at_bosses = self.boss_manager.check_by_engage_type("at", scene=self.world.current_location)
+        if self.world.bosses:
+            at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
             for boss_entity in at_bosses:
                 if self._check_boss_requirements(boss_entity):
-                    combat_init = self.boss_manager.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.boss_manager.set_active(boss_entity["id"])
+                    combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.world.bosses.set_active(boss_entity["id"])
                     return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
@@ -355,9 +342,9 @@ class Keeper:
                 from game.agents.time_agent import TimeAgent
                 ta = TimeAgent()
                 tc_guideline = ""
-                if self.time_costs:
+                if self.world.time_costs:
                     import json as _json
-                    tc_guideline = _json.dumps(self.time_costs, ensure_ascii=False)
+                    tc_guideline = _json.dumps(self.world.time_costs, ensure_ascii=False)
                 recent = self.world.memory.raw_history[-3:] if self.world.memory.raw_history else []
                 recent_summary = "; ".join(
                     (r.get("user_input", "") or "")[:80] for r in recent
@@ -385,7 +372,7 @@ class Keeper:
 
         # TimePressure comms dispatch (at most 1 per turn)
         tp = author.time_pressure if author else None
-        if tp and self.world.clock.game_time - self._last_comms_time >= self.comms_interval:
+        if tp and self.world.clock.game_time - self._last_comms_time >= self.world.comms_interval:
             self._last_comms_time = self.world.clock.game_time
             try:
                 recent = self.world.memory.raw_history[-5:] if self.world.memory.raw_history else []
@@ -476,12 +463,12 @@ class Keeper:
                 message=f"⚠ {w}"))
 
         # Boss "event" check: after judge completes
-        if self.boss_manager:
-            event_bosses = self.boss_manager.check_by_engage_type("event")
+        if self.world.bosses:
+            event_bosses = self.world.bosses.check_by_engage_type("event")
             for boss_entity in event_bosses:
                 if self._check_boss_requirements(boss_entity):
-                    combat_init = self.boss_manager.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.boss_manager.set_active(boss_entity["id"])
+                    combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.world.bosses.set_active(boss_entity["id"])
                     return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 5: Curate
@@ -694,7 +681,7 @@ class Keeper:
             tr = entity.extra["time_range"]
             return (tr.get("min", 3) + tr.get("max", 10)) // 2
         category = self._infer_time_category(entity)
-        defaults = self.time_costs or {"search": 10, "move": 3, "dialogue": 5, "combat_round": 1, "other": 3}
+        defaults = self.world.time_costs or {"search": 10, "move": 3, "dialogue": 5, "combat_round": 1, "other": 3}
         return defaults.get(category, 5)
 
     def _infer_time_category(self, entity) -> str:
