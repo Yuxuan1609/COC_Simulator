@@ -227,6 +227,9 @@ class Keeper:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
+            # Time advancement for "other" actions
+            other_default = (self.world.time_costs or {}).get("other", 3)
+            self.world.clock.advance_time(other_default)
 
         # Boss "at" check: after scene change
         if self.world.bosses:
@@ -358,6 +361,7 @@ class Keeper:
                     current_scene=self.world.current_location,
                     scene_description=self.world.get_current_description(),
                     time_costs_guideline=tc_guideline,
+                    current_input=raw,
                 )
                 if result.get("time_delta", 0) > 0:
                     self.world.clock.advance_time(result["time_delta"])

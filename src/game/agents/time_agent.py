@@ -18,17 +18,20 @@ class TimeAgent:
         current_scene: str,
         scene_description: str,
         time_costs_guideline: str,
+        current_input: str = "",
     ) -> str:
+        input_block = f"\n玩家本轮输入：{current_input}" if current_input else ""
         return f"""你是 TRPG 时间叙事引导者。基于当前游戏状态，评估时间推进的节奏和叙事影响。
 
 当前时间：累计{game_time}分钟 (第{day}天 {time_of_day} {hour}时)
-玩家最近行动：{recent_actions}
+玩家最近行动：{recent_actions}{input_block}
 当前场景：{current_scene}
 场景描述：{scene_description}
 时间消耗参考：{time_costs_guideline}
 
 评估要点：
-- 玩家刚刚的动作消耗了多少时间？节奏需要加速还是减速？
+- 玩家本轮行动消耗了多少时间？节奏需要加速还是减速？
+- 尤其是自由动作（交谈、思考、观察、即兴行为等未触发实体的输入），评估其自然耗时
 - 时间变化是否影响场景氛围或实体可见性？
 - 是否有需要 day/time_of_day 变更的重大时间跳跃？
 
@@ -37,8 +40,8 @@ class TimeAgent:
 
 time_delta 是额外推进的分钟数（如"睡觉"跳8小时），默认 0。narrative_hint 具体而非泛泛。signal_hint 仅在时间压力相关信号出现时填写。"""
 
-    def assess(self, **kwargs) -> dict:
-        prompt = self.build_prompt(**kwargs)
+    def assess(self, current_input: str = "", **kwargs) -> dict:
+        prompt = self.build_prompt(current_input=current_input, **kwargs)
         _show_prompt("TimeAgent", prompt)
         try:
             response = call_deepseek(

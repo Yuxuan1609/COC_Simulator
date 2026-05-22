@@ -207,7 +207,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 |---|----|------|------|
 | **1** | O6 | Harness 整合 — 集成测试 + LLM 模拟真人测试 | 整合现有 harness（parallel 16 case / stability 2 case / escalation 5 case）为统一测试入口。加入 LLM-as-player 模式：模拟真人的探索/对话/战斗行为，自动驱动多轮回合，检测异常路径（卡关、死循环、叙事断裂）。旧 `game_loop_harness.py` 待迁移 |
 | **2** | O4 | 基于 Escalation 修改轻量级管线 | Author Patch/StructuralEdit 轻量级 LLM 提示词质量不稳定。需结合 escalation 的 real-LLM 测试结果精修 prompt 模板，提升 Patch 命中率和 StructuralEdit 生成质量 |
-| 3 | O5 | 时间系统 | TimeAgent prompt 未传入玩家输入，other 行为未接入 |
+| 3 | O5 | 时间系统 | ✅ 已修复 — TimeAgent 接收本轮玩家输入评估自然耗时；other 行为接入时间推进（默认 3 分钟）。如有重大时间跳跃（如睡觉）需后续处理 |
 | 4 | O7 | 世界状态类 & 调查员类序列化 | 详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md`。子系统序列化 (G9/G10) 待修复 |
 ## 设计文档
 
