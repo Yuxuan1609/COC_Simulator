@@ -5,7 +5,8 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from scenario_core import ScenarioWorld, Entity, parse_markup_all
+from scenario_core import ScenarioWorld, Entity
+from game.side_effects import parse_markup_all
 from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,

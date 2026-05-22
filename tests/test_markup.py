@@ -1,7 +1,7 @@
 # tests/test_markup.py
 import sys
 sys.path.insert(0, "src")
-from scenario_core import parse_markup, parse_markup_all, ItemGain, StatChange, SpawnEnemy, GrantWeapon, NPCStateChange
+from game.side_effects import parse_markup, parse_markup_all, ItemGain, StatChange, SpawnEnemy, GrantWeapon, NPCStateChange
 
 
 def test_parse_spawn_enemy():
