@@ -922,6 +922,36 @@ class ScenarioWorld:
                     results.append((event.name, event.impact))
         return results
 
+    def build_snapshot(self) -> dict:
+        """Pure data assembly — single source of truth for all prompt builders."""
+        return {
+            "location": self.current_location,
+            "description": self.get_current_description(),
+            "exits": [
+                {"target": e.target, "method": e.method}
+                for e in self.get_possible_exits()
+            ],
+            "time": self.clock.to_dict(),
+            "player": self.player.build_snapshot() if self.player else {},
+            "npcs_in_scene": self.npcs.get_in_scene_snapshot(self.current_location),
+            "enemies_in_scene": (
+                self.enemies.get_active_in_scene_snapshot(self.current_location)
+                if self.enemies else []
+            ),
+            "boss_active": self.bosses.active_snapshot() if self.bosses else None,
+            "scene_weapons": [
+                {"weapon_ref": sw.weapon_ref, "quantity": sw.quantity}
+                for sw in self.scene_weapons.get(self.current_location, [])
+            ],
+            "runtime": {
+                "completed": [
+                    eid for eid, s in self.runtime_state.items() if s.completed
+                ],
+                "triggered_events": [
+                    eid for eid, t in self.triggered_events.items() if t
+                ],
+            },
+        }
 
     # ── NPC 运行时状态 ──
 
