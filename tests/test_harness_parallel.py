@@ -287,16 +287,17 @@ def _setup_mocks(case_dir, parse_seq):
 # ═══════════════════════════════════════════════════════════════
 
 def _run_turns(game, inputs, case_dir):
-    """Run a sequence of turns through run_turn(). Return list of result dicts."""
-    from game_loop import run_turn
+    """Run a sequence of turns through run_turn(). Detects standoff and routes to continue_standoff."""
+    from game_loop import run_turn, continue_standoff
     results = []
-    for i, user_input in enumerate(inputs):
+    i = 0
+    while i < len(inputs):
         t0 = time.perf_counter()
-        turn_result = run_turn(game, user_input)
+        turn_result = run_turn(game, inputs[i])
         elapsed = time.perf_counter() - t0
 
         entry = {
-            "turn": i + 1, "input": user_input, "elapsed": round(elapsed, 1),
+            "turn": i + 1, "input": inputs[i], "elapsed": round(elapsed, 1),
             "brief": str(turn_result.get("brief", ""))[:300],
             "ending": turn_result.get("ending"),
             "combat_outcome": turn_result.get("combat", {}).get("outcome") if turn_result.get("combat") else None,
@@ -304,9 +305,34 @@ def _run_turns(game, inputs, case_dir):
             "has_standoff": turn_result.get("standoff_prompt") is not None,
             "skill_results": turn_result.get("skill_results"),
         }
+
+        standoff_prompt = turn_result.get("standoff_prompt")
+        if standoff_prompt and i + 1 < len(inputs):
+            i += 1
+            standoff_input = inputs[i]
+            t0 = time.perf_counter()
+            standoff_result = continue_standoff(game["keeper"], standoff_input)
+            elapsed_s = time.perf_counter() - t0
+
+            entry["standoff_input"] = standoff_input
+            entry["standoff_result"] = {
+                "avoided": standoff_result.get("avoided"),
+                "message": str(standoff_result.get("message", ""))[:200],
+                "skill_detail": standoff_result.get("skill_detail"),
+            }
+            entry["elapsed"] = round(entry["elapsed"] + elapsed_s, 1)
+
+            if standoff_result.get("combat_init"):
+                entry["combat_outcome"] = standoff_result.get("combat_outcome")
+                entry["combat"] = {
+                    "outcome": standoff_result.get("combat_outcome"),
+                    "narrative": standoff_result.get("combat_narrative", ""),
+                }
+
         with open(os.path.join(case_dir, f"turn_{i + 1:02d}.json"), "w", encoding="utf-8") as f:
             json.dump(entry, f, ensure_ascii=False, indent=2)
         results.append(entry)
+        i += 1
     return results
 
 
@@ -610,7 +636,7 @@ def run_all(mock_mode=False, case_filter=None):
         cases_to_run = [(k, v) for k, v in cases_to_run if k in filters]
 
     mode_label = "MOCK" if mock_mode else "REAL-LLM"
-    print(f"Parallel Test Harness — {len(cases_to_run)} cases [{mode_label}]")
+    print(f"Parallel Test Harness -- {len(cases_to_run)} cases [{mode_label}]")
     print(f"Output: {OUT_ROOT}")
     print()
 

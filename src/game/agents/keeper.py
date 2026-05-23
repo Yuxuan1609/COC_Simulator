@@ -299,7 +299,8 @@ class Keeper:
                 json_mode=True,
                 model="deepseek-v4-flash",
                 reasoning_effort="low",
-                system="你是 COC 7th KP 助理，负责判断是否进入战斗。",
+                system="你是 COC 7th KP 助理，负责根据玩家行为和场景内敌人习性判断是否进入回合制战斗。"
+                       "\n\n输出 JSON：{\"enter_combat\": true/false, \"enemy_instance_ids\": [...], \"reasoning\": \"简述理由\"}。直接输出 JSON。",
                 fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
             )
 
@@ -627,8 +628,18 @@ class Keeper:
             response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                                      reasoning_effort="max",
                                      system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
-                                            "你可以根据经验和对COC规则的理解，判断玩家输入触发了哪些交互、"
-                                            "自动事件或移动行为，并评估软性叙事条件是否满足。",
+                                            "\n\n你的任务是为玩家输入匹配结构化的游戏内容。"
+                                            "\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。"
+                                            "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other)。"
+                                            "\n如有「条件=」字段需评估是否满足，不满足则排除。"
+                                            "\n\n行为优先级："
+                                            "\n- 有明确对应实体时优先返回实体，无明确目标时返回 search"
+                                            "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个"
+                                            "\n- auto_trigger 必须在 actions 列表最前面"
+                                            "\n- move 指移动到其他场景，other 泛指其他行为"
+                                            "\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。"
+                                            "\n直接输出 JSON，不要额外文字。"
+                                            "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ...]}",
                                      fallback_schema={"actions": []})
             data = json.loads(response) if isinstance(response, str) else response
         except Exception as e:
@@ -644,8 +655,12 @@ class Keeper:
         try:
             response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                                      system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
-                                            "你可以根据检定结果和场景上下文，将零散的实体触发结果转化为流畅沉浸的叙事，"
-                                            "依据成功或失败调整描述的清晰度和影响力。",
+                                            "\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。"
+                                            "\n\n叙事规则："
+                                            "\n- success=true → 结果清晰明确地整合，玩家能感知发生了什么"
+                                            "\n- success=false → 若 result 已含明确失败后果（扣血/惩罚/敌人出现），直接保留原文整合，不得改为晦涩模糊；仅当 result 为简单「检定失败」类通用文字时才描述为晦涩、模糊、似错觉或微不足道的细节"
+                                            "\n- 提供 reasoning 简短说明整合逻辑"
+                                            "\n\n输出格式：{\"results\": \"合并叙事\", \"reasoning\": \"整合逻辑\", \"emphasis_hint\": \"叙事方向\"}。直接输出 JSON。",
                                      fallback_schema={
                                          "results": {},
                                          "reasoning": "",

@@ -26,15 +26,10 @@ class TimeAgent:
 本轮行动：
 {actions_text or '（无）'}
 
-评估要点：
-- 综合所有行动评估本轮总耗时，行动越复杂、越仔细耗时越久
-- 如有 time_range 建议，以此为参考范围
-- 自由动作（交谈、思考、观察等未触发实体的输入）评估其自然耗时
-
 返回 JSON：
 {{"time_delta": 0, "narrative_hint": "时间相关的叙事提示（可为空）"}}
 
-time_delta 是本轮总推进分钟数，默认 0。narrative_hint 具体而非泛泛。"""
+time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
 
     def assess(self, actions: list[dict] | None = None, current_input: str = "", **kwargs) -> dict:
         prompt = self.build_prompt(
@@ -48,7 +43,9 @@ time_delta 是本轮总推进分钟数，默认 0。narrative_hint 具体而非�
                 prompt,
                 json_mode=True,
                 model="deepseek-v4-flash",
-                system="你是 COC 7th KP 时间推进的判断者。",
+                system="你是 COC 7th KP 时间推进的判断者。基于玩家本轮所有行动评估时间消耗。"
+                       "\n\n评估要点：综合所有行动评估总耗时（越复杂越久）；如有 time_range 建议以此为参考；自由动作评估其自然耗时。"
+                       "\n\n输出格式：{\"time_delta\": 0, \"narrative_hint\": \"\"}。直接输出 JSON。",
                 max_tokens=300,
                 fallback_schema={"time_delta": 0, "narrative_hint": ""},
                 thinking=False,

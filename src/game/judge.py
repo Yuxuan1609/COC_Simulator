@@ -9,6 +9,11 @@ if TYPE_CHECKING:
 
 from game.side_effects import parse_markup_all
 from scenario_core import resolve_graded_result
+
+_MARKUP_STRIP_RE = _re.compile(
+    r'\s*@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
+    r'\([^)]*\)'
+)
 from .messages import ActionIntent, ActionOutcome
 from prompts import log_skill_result, _build_scene_context
 
@@ -169,6 +174,9 @@ class Judge:
         has_graded = "##GRADED##" in result_text
         if skill_tier:
             result_text = resolve_graded_result(entity, skill_tier)
+
+        # Strip @markup from result text — deterministic side effects, LLM doesn't need them
+        result_text = _MARKUP_STRIP_RE.sub("", result_text).strip()
 
         # Use resolved graded text as the primary message (not raw D100 string)
         if has_graded:

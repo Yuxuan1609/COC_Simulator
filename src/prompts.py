@@ -8,6 +8,7 @@ Prompt 构建器 —— 为 LLM 调用链构建结构化 prompt。
 from __future__ import annotations
 import json
 import os
+import re
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -356,7 +357,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         status = "（已完成）" if entity.name in done else ""
         _, soft, _ = _split_req(entity)
         parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
-                 f"trigger=\"{entity.trigger}\"", f"条件=\"{soft}\""]
+                 f"trigger=\"{entity.trigger}\""]
+        if soft:
+            parts.append(f"条件=\"{soft}\"")
         if status:
             parts.append(status)
         return "  [INTERACT] " + " ".join(parts)
@@ -364,8 +367,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     def _fmt_at(entity) -> str:
         """Format an auto-trigger entity. No trigger/skill; condition covers it."""
         _, soft, _ = _split_req(entity)
-        parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
-                 f"条件=\"{soft}\""]
+        parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
+        if soft:
+            parts.append(f"条件=\"{soft}\"")
         return "  [AUTO_TRIGGER] " + " ".join(parts)
 
     if node:
@@ -393,7 +397,8 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         parts = [f"id={ev.id}", f"name=\"{ev.name}\"",
                  f"trigger=\"{ev.trigger}\""]
         hard, soft, met = _split_req(ev)
-        parts.append(f"条件=\"{soft}\"")
+        if soft:
+            parts.append(f"条件=\"{soft}\"")
         line = "  [EVENT] " + " ".join(parts)
         if hard:
             overall_met = met
@@ -457,11 +462,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 【玩家输入】
 {user_input}
 
-实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。
-硬性条件（flag/依赖关系）已由系统判定完成。你只需：
-1. 判断玩家意图匹配了哪些可触发实体或者其他行为包括(move/search/other)。如有「条件=」字段（软性条件/自然语言描述），评估是否满足，不满足的排除。
-
-返回 JSON：
+返回 JSON（直接输出，不要额外文字）：
 {{
   "actions": [
     {{"type": "auto_trigger", "id": "AT1"}},
@@ -472,25 +473,17 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     {{"type": "other", "text": "唱了一首歌"}}
   ]
 }}
-
-规则：
-- 玩家输入有明确对应的entity优先返回entity结果，之后再考虑search/move/other
-- 对当前场景整体没有明确指定对象的搜索、探查、感知行为属于search不触发entity
-- 一般来讲玩家一个动作（注意不是一轮输入）只匹配一个结果，但也允许同时匹配多个结果的特殊情况，你可以基于具体文字发挥
-- move指移动到别的场景，other泛指所有其他行为
-- auto_trigger 必须排在列表最前面
-- id 必须从上述实体列表中精确复制
-- move：target 填可移动方向中列出的目标
-- other：text 用自然语言简述玩家意图
-- 只考虑可触发的entity
-- 如有「条件=」字段，评估是否满足，不满足的排除（硬性条件系统已处理）
-- 直接输出 JSON，不要额外文字
 """
     _show_prompt("Keeper Parse", prompt)
     return prompt
 
 
 # ── Keeper: Enrich (Step 3) ──
+
+_STRIP_MARKUP_RE = re.compile(
+    r'\s*@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
+    r'\([^)]*\)'
+)
 
 def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
     """Keeper step 3: describe and enrich entity results. No trigger evaluation."""
@@ -501,9 +494,11 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 
     entities_text = ""
     for e in judged_entities:
+        # Strip @markup from result — the LLM doesn't need to see side effects
+        clean_result = _STRIP_MARKUP_RE.sub("", e['result']).strip()
         entities_text += (
             f"  [{e['entity_type']}] id={e['id']} name=\"{e['name']}\" "
-            f"result=\"{e['result']}\" success={e['success']}"
+            f"result=\"{clean_result}\" success={e['success']}"
         )
         if e.get('skill_tier'):
             entities_text += f" skill_tier={e['skill_tier']}"
@@ -524,14 +519,7 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 【本轮已触发实体】
 {entities_text or '（无）'}
 
-请为以上已触发实体做叙事整合：
-1. 将所有实体（auto_trigger / interaction / event）的结果合并润色，统一为流畅连贯的叙事
-2. 根据 success 调整叙事：
-   - success=true → 结果被清晰、明确地描述并整合进叙事，玩家能确切感知到发生了什么
-   - success=false → 如果实体的 result 已经包含明确的失败后果描述（如扣血、惩罚、敌人出现等具象结果），则直接保留原文整合进叙事，不得改为晦涩模糊。仅当 result 为简单的"检定失败"类通用文字时，才将其描述为晦涩、模糊、仿佛是错觉或微不足道的细节。
-3. 提供 reasoning：简短说明本轮整合的逻辑（为什么这样合并/改写）
-
-返回 JSON：
+请为以上已触发实体做叙事整合。返回 JSON：
 {{
   "results": "本轮所有实体结果合并润色后的连贯叙事",
   "reasoning": "简短说明整合逻辑",
@@ -591,20 +579,10 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 }}
 
 规则：
-- **你的任务是讲述，唯一的讲述根据是结合【实体行动结果】和【场景感知信息】回复用户的输入，严禁出现任何其他实质性内容**
-- brief 与 narrative 必须严格呼应，brief "简洁、清晰、客观的概述事实，narrative 基于结果进行文学性展开
-- scene_update：判断本轮行动是否导致场景可见变化（物品移动、门打开、血迹、光源、NPC出现/消失等）。有变化则输出更新后的完整场景描述；无变化则为空字符串 ""
-- 仅当本轮行动确实改变了场景时才填写 scene_update
-- 「即兴行为」不导致场景变化，不填写 scene_update
-- 不要给出前文没有的实质性信息
-- **禁止在【实体行动结果】未提及获得/找到/发现物品时，在叙事中描述玩家获得/找到/发现了物品。物品的获取必须严格依据实体行动结果中记录的内容**
-- 以上下文语境和场景氛围为准
-- 叙事强调指明了本轮的叙事方向，是叙事的核心重点
-- 【场景感知信息】虽非本轮事件的直接结果，但构成当前场景的完整感知背景，必须一并融入叙事，不可只聚焦行动结果而忽略场景氛围
-- 「即兴行为」仅为叙述性描写，不对世界产生任何实际影响——场景状态、物品位置、
-  NPC状态等均不因其改变。描述时作为短暂的、无后果的角色动作自然融入叙事，
-  一带而过即可，不做展开
-直接输出 JSON。
+- 仅以【实体行动结果】和【场景感知信息】为依据回复用户的输入，严禁出现其他实质性内容
+- 【场景感知信息】构成当前场景的完整感知背景，必须一并融入叙事
+- 「即兴行为」仅为叙述性描写，不对世界产生任何实际影响，一带而过即可
+- 直接输出 JSON。
 """
     _show_prompt("Narrator", prompt)
     return prompt
