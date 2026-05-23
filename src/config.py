@@ -28,6 +28,11 @@ AT_WORLD_ENABLED = True
 INJECT_L3_WR0 = True
 """管线是否向 L3 的 world_rules 注入 WR0 条目。"""
 
+COMBAT_LLM_ENHANCEMENT = False
+"""战斗系统 LLM 增强开关（预留）。开启后每轮战斗叙事由 LLM 生成，
+战斗总结由 LLM 汇总（调用 build_combat_narrative_prompt）。
+当前仅影响战斗叙事输出管线，不影响战斗机制本身。"""
+
 
 # ═══════════════════════════════════════════════════════════════
 # 游戏循环阈值

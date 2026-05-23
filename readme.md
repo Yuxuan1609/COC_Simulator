@@ -233,6 +233,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 |----|------|------|
 | U1 | Author 的 "other 行为" 缺乏意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。当前 IntentDetector 只判断"是否有意图"但不评分"意图对应哪个实体/是否需要检定"，导致 detect 的 false positive 触发不必要的 Author 调用。建议引入二次确认（如 Keeper 反问玩家"你要实际尝试吗？"）或实体匹配置信度阈值 |
 | U2 | 缺少技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，但限制未来多人扩展 |
+| U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative`。`CombatSystem.__init__` 已接收 `llm_enhancement` 参数并预留 `_generate_combat_narrative()` 方法。当前仅输出确定性 per-action 文本 |
+| U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换，改写 `llm.py` 的 API 调用方式 |
 
 ## 设计文档
 
