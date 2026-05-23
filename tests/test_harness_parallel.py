@@ -52,13 +52,46 @@ def _init_game_instance():
 
 
 # ═══════════════════════════════════════════════════════════════
-#  LLM logging
+#  LLM logging — agent-named files + full sub-agent coverage
 # ═══════════════════════════════════════════════════════════════
+
+def _identify_agent(prompt: str, kw: dict = None) -> str:
+    """Return agent label from prompt fingerprint."""
+    p = prompt or ""
+    # Order matters: check most specific first
+    if "为玩家的输入匹配结构化的内容" in p:
+        return "Keeper_Parse"
+    if "请为以上已触发实体做叙事整合" in p:
+        return "Keeper_Enrich"
+    if "请以TRPG主持人身份生成沉浸式叙事" in p:
+        return "Narrator"
+    if "你是 TRPG 时间推进的判断者" in p:
+        return "TimeAgent"
+    if "请判断是否有敌人应进入战斗" in p:
+        return "CombatEntry"
+    if "判断以下玩家行为是纯角色扮演" in p:
+        return "IntentDetector"
+    if "玩家在面对敌人时试图避免战斗" in p or "你打算如何避免与" in p:
+        return "Standoff"
+    if "请判断背包中是否有物品与" in p:
+        return "ConsumeFuzzy"
+    if "你是TRPG模组写作者" in p and "description" in p:
+        return "Author"
+    if "请将以下游戏历史压缩为简洁摘要" in p or "压缩" in p:
+        return "MemoryCompress"
+    system = (kw or {}).get("system", "")
+    if "你是一个TRPG游戏状态监控者" in system:
+        return "IntentDetector"
+    if "TRPG规则辅助裁判" in system:
+        return "TraitEnhance"
+    return "LLM_Unknown"
+
 
 def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
     """Wrap LLM calls with prompt/response logging. If mock_mode, use deterministic mocks."""
     import llm as _llm
     _REAL_CALL = _llm.call_deepseek
+    _REAL_PENALTY = _llm.evaluate_failure_penalty
 
     os.makedirs(case_dir, exist_ok=True)
     log_dir = os.path.join(case_dir, "_llm_logs")
@@ -72,13 +105,15 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
     def _logging_wrapper(prompt, json_mode=True, **kw):
         call_counter[0] += 1
         n = call_counter[0]
+        agent = _identify_agent(prompt, kw)
+        prefix = f"{n:03d}_{agent}"
         t0 = time.perf_counter()
 
-        with open(os.path.join(log_dir, f"{n:02d}_prompt.txt"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir, f"{prefix}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
         system = kw.get("system", "")
         if system:
-            with open(os.path.join(log_dir, f"{n:02d}_system.txt"), "w", encoding="utf-8") as f:
+            with open(os.path.join(log_dir, f"{prefix}_system.txt"), "w", encoding="utf-8") as f:
                 f.write(system)
 
         allowed = {"json_mode", "model", "system", "reasoning_effort",
@@ -89,18 +124,58 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
         elapsed = time.perf_counter() - t0
         ext = "json" if json_mode else "txt"
         content = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2)
-        with open(os.path.join(log_dir, f"{n:02d}_response.{ext}"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir, f"{prefix}_response.{ext}"), "w", encoding="utf-8") as f:
             f.write(content)
+        with open(os.path.join(log_dir, "_timing.txt"), "a", encoding="utf-8") as f:
+            f.write(f"{prefix} | {elapsed:.1f}s\n")
 
         return response
 
+    def _logged_trait_enhancement(**kw):
+        call_counter[0] += 1
+        n = call_counter[0]
+        prefix = f"{n:03d}_TraitEnhance"
+        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in kw.items() if k != "graded_tiers"},
+                      f, ensure_ascii=False, indent=2)
+        d, v = kw.get("dice_roll", 50), kw.get("skill_value", 50)
+        pi = kw.get("player_input", "") or ""
+        if "#必成" in pi:
+            result = {"tier": "extreme", "detail_override": None, "reason": "TEST_RULE: force_success"}
+        elif "#必败" in pi:
+            result = {"tier": "failure", "detail_override": None, "reason": "TEST_RULE: force_fail"}
+        elif d == 1:
+            result = {"tier": "extreme", "detail_override": None, "reason": "critical"}
+        elif d >= 96:
+            result = {"tier": "failure", "detail_override": None, "reason": "fumble"}
+        else:
+            tier = "extreme" if d <= max(v // 5, 1) else "hard" if d <= max(v // 2, 1) else "regular" if d <= v else "failure"
+            result = {"tier": tier, "detail_override": None, "reason": "mock"}
+        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        return result
+
+    def _logged_failure_penalty(**kw):
+        call_counter[0] += 1
+        n = call_counter[0]
+        prefix = f"{n:03d}_FailurePenalty"
+        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in kw.items() if k != "graded_on_failure"},
+                      f, ensure_ascii=False, indent=2)
+        result = _REAL_PENALTY(**kw)
+        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        return result
+
     patches = [
         patch("game.agents.keeper.call_deepseek", _logging_wrapper),
+        patch("game.agents.narrator.call_deepseek", _logging_wrapper),
+        patch("game.agents.time_agent.call_deepseek", _logging_wrapper),
         patch("game.intent_detector.call_deepseek", _logging_wrapper),
         patch("game.agents.author.call_deepseek", _logging_wrapper),
         patch("llm.call_deepseek", _logging_wrapper),
-        patch("llm.evaluate_trait_enhancement",
-              lambda **kw: {"tier": kw.get("current_tier", "regular"), "detail_override": None, "reason": "logged"}),
+        patch("llm.evaluate_trait_enhancement", _logged_trait_enhancement),
+        patch("llm.evaluate_failure_penalty", _logged_failure_penalty),
     ]
     for p in patches:
         p.start()
@@ -116,37 +191,87 @@ def _setup_mocks(case_dir, parse_seq):
     log_dir = os.path.join(case_dir, "_llm_logs")
     os.makedirs(log_dir, exist_ok=True)
     turn_idx = [0]
+    call_n = [0]
 
     def _mock_call_deepseek(prompt, json_mode=True, **kw):
-        n = turn_idx[0] + 1
-        with open(os.path.join(log_dir, f"{n:02d}_prompt.txt"), "w", encoding="utf-8") as f:
+        call_n[0] += 1
+        n = call_n[0]
+        agent = _identify_agent(prompt, kw)
+        prefix = f"{n:03d}_{agent}"
+        with open(os.path.join(log_dir, f"{prefix}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
+        system = kw.get("system", "")
+        if system:
+            with open(os.path.join(log_dir, f"{prefix}_system.txt"), "w", encoding="utf-8") as f:
+                f.write(system)
 
         if json_mode:
-            result = {"actions": [], "results": {}, "reasoning": "", "emphasis_hint": ""}
-            # Parse-like call
-            if "【世界状态】" in prompt or "当前场景" in prompt[:300]:
+            is_parse = agent == "Keeper_Parse"
+            result = {}
+            if is_parse:
                 t = min(turn_idx[0], len(parse_seq) - 1)
                 result = {"actions": parse_seq[t]}
                 turn_idx[0] += 1
+            elif agent == "Keeper_Enrich":
+                result = {"results": "（润色合并）", "reasoning": "mock", "emphasis_hint": ""}
+            elif agent == "CombatEntry":
+                result = {"enter_combat": True, "enemy_instance_ids": [], "reasoning": "mock"}
+            elif agent in ("Narrator",):
+                result = {"brief": "测试摘要", "narrative": "测试叙事文本", "scene_update": ""}
+            else:
+                result = {"actions": [], "results": {}, "reasoning": "", "emphasis_hint": ""}
             response = json.dumps(result, ensure_ascii=False)
         else:
             response = "（测试叙事文本）"
 
         ext = "json" if json_mode else "txt"
-        with open(os.path.join(log_dir, f"{n:02d}_response.{ext}"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir, f"{prefix}_response.{ext}"), "w", encoding="utf-8") as f:
             f.write(response)
         return response
 
+    def _mock_trait(**kw):
+        call_n[0] += 1
+        n = call_n[0]
+        prefix = f"{n:03d}_TraitEnhance"
+        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in kw.items() if k != "graded_tiers"}, f, ensure_ascii=False, indent=2)
+        pi = kw.get("player_input", "") or ""
+        d, v = kw.get("dice_roll", 50), kw.get("skill_value", 50)
+        if "#必成" in pi:
+            result = {"tier": "extreme", "detail_override": None, "reason": "TEST_RULE: force_success"}
+        elif "#必败" in pi:
+            result = {"tier": "failure", "detail_override": None, "reason": "TEST_RULE: force_fail"}
+        elif d == 1:
+            result = {"tier": "extreme", "detail_override": None, "reason": "critical"}
+        elif d >= 96:
+            result = {"tier": "failure", "detail_override": None, "reason": "fumble"}
+        else:
+            tier = "extreme" if d <= max(v // 5, 1) else "hard" if d <= max(v // 2, 1) else "regular" if d <= v else "failure"
+            result = {"tier": tier, "detail_override": None, "reason": "mock"}
+        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        return result
+
+    def _mock_penalty(**kw):
+        call_n[0] += 1
+        n = call_n[0]
+        prefix = f"{n:03d}_FailurePenalty"
+        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in kw.items() if k != "graded_on_failure"}, f, ensure_ascii=False, indent=2)
+        result = {"narrative": "mock 失败惩罚", "markup_effects": []}
+        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        return result
+
     patches = [
         patch("game.agents.keeper.call_deepseek", _mock_call_deepseek),
+        patch("game.agents.narrator.call_deepseek", _mock_call_deepseek),
+        patch("game.agents.time_agent.call_deepseek", _mock_call_deepseek),
         patch("game.intent_detector.call_deepseek", _mock_call_deepseek),
         patch("game.agents.author.call_deepseek", _mock_call_deepseek),
         patch("llm.call_deepseek", _mock_call_deepseek),
-        patch("llm.evaluate_trait_enhancement",
-              lambda **kw: {"tier": "regular", "detail_override": None, "reason": "mock"}),
-        patch("llm.evaluate_failure_penalty",
-              lambda **kw: {"narrative": "mock 失败惩罚", "markup_effects": []}),
+        patch("llm.evaluate_trait_enhancement", _mock_trait),
+        patch("llm.evaluate_failure_penalty", _mock_penalty),
     ]
     for p in patches:
         p.start()
@@ -175,6 +300,7 @@ def _run_turns(game, inputs, case_dir):
             "brief": str(turn_result.get("brief", ""))[:300],
             "ending": turn_result.get("ending"),
             "combat_outcome": turn_result.get("combat", {}).get("outcome") if turn_result.get("combat") else None,
+            "combat": turn_result.get("combat"),
             "has_standoff": turn_result.get("standoff_prompt") is not None,
             "skill_results": turn_result.get("skill_results"),
         }
@@ -297,14 +423,35 @@ def case_standoff(game, case_dir, mock=False):
 
 def case_combat_entry(game, case_dir, mock=False):
     world = game["keeper"].world
-    # Directly spawn a hostile-only enemy (Clicker has no [avoidable])
+    from game.combat import CombatSystem
+    from game.messages import CombatInit
+    combat_triggered = False
+    combat_outcome = ""
+    combat_data = {}
     if world.enemies:
-        world.enemies.spawn("Clicker", "测试房间", 1)
-    results = _run_turns(game, ["准备战斗！"], case_dir)
-    combat = any(r.get("combat_outcome") for r in results)
-    has_combat_init = any("combat" in str(r) for r in results)
-    return {"verdict": "PASS" if (combat or has_combat_init) else "SOFT_PASS",
-            "combat_triggered": combat, "results": results}
+        inst = world.enemies.spawn("TestDummy", "测试房间", 1)
+        if inst:
+            combat_init = CombatInit(
+                enemies=[inst], player=world.player,
+                scene=world.current_location, initiative_context="测试战斗"
+            )
+            cs = CombatSystem()
+            result = cs.run_combat(combat_init)
+            combat_outcome = result.outcome
+            combat_data = {
+                "outcome": result.outcome,
+                "defeated_instance_ids": result.defeated_instance_ids,
+                "rounds": result.rounds,
+                "narrative": result.narrative,
+                "player_hp": result.player_hp,
+                "player_san": result.player_san,
+            }
+            combat_triggered = True
+    if combat_data:
+        with open(os.path.join(case_dir, "combat_log.json"), "w", encoding="utf-8") as f:
+            json.dump(combat_data, f, ensure_ascii=False, indent=2)
+    return {"verdict": "PASS" if (combat_triggered and combat_outcome == "win") else "SOFT_PASS",
+            "combat_outcome": combat_outcome, "combat_rounds": combat_data.get("rounds", 0)}
 
 def case_item_effect(game, case_dir, mock=False):
     world = game["keeper"].world
@@ -329,10 +476,44 @@ def case_ending(game, case_dir, mock=False):
     results = _run_turns(game, ["拿起桌上的镜子仔细端详"], case_dir)
     has_ending = any(r.get("ending") for r in results)
     it3_done = world.is_entity_completed("IT3")
+    ending_name = ""
+    if results and results[-1].get("ending"):
+        ending_name = str(results[-1]["ending"].get("name", ""))
     return {"verdict": "PASS" if (has_ending or it3_done) else "SOFT_PASS",
             "ending_triggered": has_ending,
-            "ending_name": str(results[-1].get("ending", {}).get("name", "")) if results else "",
+            "ending_name": ending_name,
             "IT3_completed": it3_done, "results": results}
+
+
+def case_interaction_repeated_failure(game, case_dir, mock=False):
+    world = game["keeper"].world
+    # IT8: 考古学 base=1, always fails → tests penalty escalation over 3 turns
+    # #必败 forces failure deterministically (via TEST_RULES in character description)
+    results = _run_turns(game, [
+        "仔细观察墙壁上的模糊刻痕 #必败",
+        "再看一眼墙壁上的刻痕 #必败",
+        "最后尝试辨认墙上铭文 #必败",
+    ], case_dir)
+    it8_state = world.get_runtime_state("IT8")
+    escalated = it8_state.escalated_difficulty
+    retries = it8_state.retries
+    # After 3 failures: retries>=3, difficulty escalated, penalty fired (retries>=2 triggers LLM)
+    penalty_fired = retries >= 3
+    difficulty_escalated = bool(escalated)
+    # Check penalty narrative appeared in skill_results or brief text
+    has_penalty_text = any(
+        "惩罚" in str(r.get("skill_results", [])) or
+        "惩罚" in str(r.get("brief", ""))
+        for r in results
+    )
+    all_pass = (penalty_fired and difficulty_escalated and has_penalty_text)
+    return {"verdict": "PASS" if all_pass else "SOFT_PASS",
+            "IT8_retries": retries,
+            "escalated_difficulty": escalated,
+            "penalty_fired": penalty_fired,
+            "difficulty_escalated": difficulty_escalated,
+            "has_penalty_text": has_penalty_text,
+            "results": results}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -352,10 +533,11 @@ CASE_REGISTRY = {
     "move":                       ("10_move",                     case_move,                       "IT4 unlock → move to 6号车厢",              [["用尽全力去撞开那扇铁门"], ["去6号车厢"]]),
     "move_blocked":               ("11_move_blocked",             case_move_blocked,               "move without IT4 → blocked",               [["去6号车厢"]]),
     "standoff":                   ("12_standoff",                 case_standoff,                   "IT5 spawn → avoidable enemy → standoff",   [["用力敲击铁门，大声呼喊！"], ["试图悄悄绕过深潜者"]]),
-    "combat_entry":               ("13_combat_entry",             case_combat_entry,               "direct spawn Clicker → combat_init",       [["准备战斗！"]]),
+    "combat_entry":               ("13_combat_entry",             case_combat_entry,               "TestDummy(HP≈5)→1-2轮快杀, combat_log输出",  []),
     "item_effect":                ("14_item_effect",              case_item_effect,                "IT7: @item_gain + @consume_item",           [["检查房间角落的急救箱，使用找到的药品"]]),
     "stat_change":                ("15_stat_change",              case_stat_change,                "IT6: @stat_change SAN -5",                  [["长时间凝视镜子中的裂痕，试图理解里面的异常"]]),
     "ending":                     ("16_ending",                   case_ending,                     "IT3 → E_TEST_END 结局触发",                 [["拿起桌上的镜子仔细端详"]]),
+    "repeated_failure":           ("17_repeated_failure",         case_interaction_repeated_failure,"IT8: 3次#必败 → 惩罚系统(难度递增+LLM惩罚)",  [["仔细观察墙壁上的模糊刻痕 #必败"], ["再看一眼墙壁上的刻痕 #必败"], ["最后尝试辨认墙上铭文 #必败"]]),
 }
 
 MOCK_PARSE_MAP = {
@@ -371,10 +553,11 @@ MOCK_PARSE_MAP = {
     "move":                       [[{"type": "interaction", "id": "IT4"}], [{"type": "move", "target": "6号车厢"}]],
     "move_blocked":               [[{"type": "move", "target": "6号车厢"}]],
     "standoff":                   [[{"type": "interaction", "id": "IT5"}], [{"type": "other", "text": "试图绕过"}]],
-    "combat_entry":               [[{"type": "other", "text": "准备战斗"}]],
+    "combat_entry":               [],
     "item_effect":                [[{"type": "interaction", "id": "IT7"}]],
     "stat_change":                [[{"type": "interaction", "id": "IT6"}]],
     "ending":                     [[{"type": "interaction", "id": "IT3"}]],
+    "repeated_failure":           [[{"type": "interaction", "id": "IT8"}], [{"type": "interaction", "id": "IT8"}], [{"type": "interaction", "id": "IT8"}]],
 }
 
 

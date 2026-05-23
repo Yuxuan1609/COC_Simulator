@@ -170,6 +170,10 @@ class Judge:
         if skill_tier:
             result_text = resolve_graded_result(entity, skill_tier)
 
+        # Use resolved graded text as the primary message (not raw D100 string)
+        if has_graded:
+            skill_message = result_text
+
         if not skill_passed:
             # Failure penalty: retry tracking + difficulty escalation via runtime_state
             state = self.world.get_runtime_state(entity.id)

@@ -178,6 +178,29 @@
       "description": "被铜镜吞噬了全部记忆和身份的矿工。眼神空洞，瞳孔被灰白色薄膜覆盖。身体机能还在，但意识已经完全消失，沦为行尸走肉。"
     },
     {
+      "name": "TestDummy",
+      "type": "人类",
+      "attributes": {
+        "STR": 30,
+        "CON": 10,
+        "SIZ": 40,
+        "DEX": 30,
+        "POW": 10
+      },
+      "armor": "无",
+      "attacks": [
+        {
+          "name": "徒手",
+          "damage": "1D3",
+          "notes": "弱攻击，测试用"
+        }
+      ],
+      "special_abilities": [],
+      "san_loss": "0/1",
+      "combat_behavior": "测试用低血量敌人。HP≈5，1-2轮可击杀。不会逃跑。",
+      "description": "测试用靶子敌人，CON=10/SIZ=40 → HP≈5，用于快速验证战斗系统。"
+    },
+    {
       "name": "触手侍僧",
       "type": "人类（异化）",
       "attributes": {

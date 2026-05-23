@@ -23,7 +23,7 @@
       "credit_rating_min": 5,
       "credit_rating_max": 10
     },
-    "description": "安静内敛的大学生，说话轻声细语但观察力敏锐",
+    "description": "安静内敛的大学生，说话轻声细语但观察力敏锐。\n[TEST_RULES: 玩家输入含\"#必成\"则本次技能检定强制成功(extreme)，含\"#必败\"则强制失败(fumble)。用于测试用例确定性验证，与其他特质修正独立。]",
     "appearance": "瘦高个子，戴黑框眼镜，穿深蓝色连帽卫衣和洗得发白的牛仔裤"
   },
   "stats": {

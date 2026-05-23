@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 from investigator.models import (
-    Stats, DerivedStats, Skill, Occupation, Weapon, Investigator,
+    Stats, DerivedStats, Skill, Occupation, Weapon, Investigator, ItemManager,
 )
 
 
@@ -85,7 +85,8 @@ def to_dict(inv: Investigator) -> dict:
                 for w in inv.weapons
             ],
         },
-        "equipment": list(inv.equipment),
+        "equipment": list(getattr(inv, 'equipment', [])),
+        "item_manager": inv.item_manager.to_dict() if inv.item_manager._items else {},
         "backstory": inv.backstory,
     }
 
@@ -164,6 +165,9 @@ def from_dict(data: dict) -> Investigator:
         appearance=personal.get("appearance", ""),
         personal_description=personal.get("description", ""),
     )
+    im_data = data.get("item_manager", {})
+    if im_data:
+        inv.item_manager = ItemManager.from_dict(im_data)
     return inv
 
 

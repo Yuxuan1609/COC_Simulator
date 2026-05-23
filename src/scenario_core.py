@@ -513,7 +513,7 @@ class RequirementResolver:
 #  Requirement string parser (AND/OR logic)
 # ═══════════════════════════════════════════════════════════════
 
-_ENTITY_ID_PATTERN = re.compile(r'^[IEA]+\d+[a-z]?$')
+_ENTITY_ID_PATTERN = re.compile(r'^[A-Z][A-Z_]+\d+[a-z]?$')
 
 
 def _extract_entity_id(text: str) -> str | None:
@@ -651,6 +651,7 @@ class ScenarioWorld:
         self.weapon_library = weapon_library
         self.time_costs: dict = {}
         self.comms_interval: int = 15
+        self.npc_states: dict[str, str] = {}
 
         self.triggered_events: Dict[str, bool] = {
             eid: False for eid in graph.get_all_event_ids()
@@ -1000,6 +1001,16 @@ class ScenarioWorld:
             "modified_descriptions": modified_descriptions,
             "npc_states": dict(self.npc_states),
             "wr0_enabled": self.wr0_enabled,
+            "clock": self.clock.to_dict(),
+            "enemies": self.enemies.to_dict() if self.enemies else None,
+            "npcs": self.npcs.to_dict() if hasattr(self, 'npcs') else {},
+            "bosses": self.bosses.to_dict() if self.bosses else None,
+            "scene_weapons": {
+                scene: [{"weapon_ref": sw.weapon_ref, "quantity": sw.quantity}
+                        for sw in weps]
+                for scene, weps in self.scene_weapons.items()
+            },
+            "memory": self.memory.to_dict(),
         }
 
     @classmethod
@@ -1027,6 +1038,11 @@ class ScenarioWorld:
             if nid in graph.nodes:
                 graph.nodes[nid].description = desc
         world.memory = MemoryManager.from_dict(data.get("memory", {}))
+        # 恢复 clock（无外部依赖）
+        clock_data = data.get("clock")
+        if clock_data:
+            from game.clock import GameClock
+            world.clock = GameClock.from_dict(clock_data)
         return world
 
     def save_state(self, path: str):
@@ -1058,6 +1074,45 @@ class ScenarioWorld:
         world_data = data["world"]
         world_data["memory"] = data.get("memory", {})
         world = cls.from_dict(world_data, graph)
+        # 恢复子系统
+        clock_data = world_data.get("clock")
+        if clock_data:
+            from game.clock import GameClock
+            world.clock = GameClock.from_dict(clock_data)
+        enemies_data = world_data.get("enemies")
+        if enemies_data:
+            try:
+                from game.enemy_manager import EnemyManager
+                if world.enemy_manager and world.enemy_manager.library:
+                    world.enemy_manager = EnemyManager.from_dict(enemies_data, world.enemy_manager.library)
+                else:
+                    world.enemy_manager = EnemyManager.from_dict(enemies_data, None)
+            except Exception:
+                pass
+        npcs_data = world_data.get("npcs")
+        if npcs_data:
+            try:
+                from game.npc_manager import NPCManager
+                world.npcs = NPCManager()
+                world.npcs.from_dict(npcs_data, getattr(world, '_npc_profiles', {}))
+            except Exception:
+                pass
+        bosses_data = world_data.get("bosses")
+        if bosses_data:
+            try:
+                from game.boss_manager import BossManager
+                if world.bosses and world.bosses.library:
+                    world.bosses = BossManager.from_dict(bosses_data, world.bosses.library)
+                else:
+                    world.bosses = BossManager.from_dict(bosses_data, None)
+            except Exception:
+                pass
+        scene_weapons_data = world_data.get("scene_weapons", {})
+        for scene, weps in scene_weapons_data.items():
+            world.scene_weapons[scene] = [
+                SceneWeapon(weapon_ref=w["weapon_ref"], scene=scene, quantity=w.get("quantity", 1))
+                for w in weps
+            ]
         # 恢复调查员
         ps = data.get("player_snapshot")
         if ps is not None:

@@ -170,6 +170,7 @@ class Investigator:
 
         self.skills: List[Skill] = skills or []
         self.weapons: List[Weapon] = weapons or []
+        self.equipment: List[str] = equipment or []
         self.item_manager: ItemManager = ItemManager()
 
         self.backstory = backstory

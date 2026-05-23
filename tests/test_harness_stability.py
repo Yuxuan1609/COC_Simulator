@@ -53,11 +53,48 @@ def _init_game():
 #  LLM logging wrapper
 # ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+#  LLM logging — agent-named files + full sub-agent coverage
+# ═══════════════════════════════════════════════════════════════
+
+def _identify_agent(prompt: str, kw: dict = None) -> str:
+    """Return agent label from prompt fingerprint."""
+    p = prompt or ""
+    if "为玩家的输入匹配结构化的内容" in p:
+        return "Keeper_Parse"
+    if "请为以上已触发实体做叙事整合" in p:
+        return "Keeper_Enrich"
+    if "请以TRPG主持人身份生成沉浸式叙事" in p:
+        return "Narrator"
+    if "你是 TRPG 时间推进的判断者" in p:
+        return "TimeAgent"
+    if "请判断是否有敌人应进入战斗" in p:
+        return "CombatEntry"
+    if "判断以下玩家行为是纯角色扮演" in p:
+        return "IntentDetector"
+    if "玩家在面对敌人时试图避免战斗" in p or "你打算如何避免与" in p:
+        return "Standoff"
+    if "请判断背包中是否有物品与" in p:
+        return "ConsumeFuzzy"
+    if "你是TRPG模组写作者" in p and "description" in p:
+        return "Author"
+    if "请将以下游戏历史压缩为简洁摘要" in p or "压缩" in p:
+        return "MemoryCompress"
+    system = (kw or {}).get("system", "")
+    if "你是一个TRPG游戏状态监控者" in system:
+        return "IntentDetector"
+    if "TRPG规则辅助裁判" in system:
+        return "TraitEnhance"
+    return "LLM_Unknown"
+
+
 def _setup_llm_logging(case_dir, case_name):
     """Patch all LLM call sites to log prompts/responses per turn."""
     from unittest.mock import patch
     import llm as _llm
     _REAL_CALL = _llm.call_deepseek
+    _REAL_TRAIT = _llm.evaluate_trait_enhancement
+    _REAL_PENALTY = _llm.evaluate_failure_penalty
 
     call_counter = [0]
     log_dir = os.path.join(case_dir, "_llm_logs")
@@ -66,16 +103,17 @@ def _setup_llm_logging(case_dir, case_name):
     def _logging_wrapper(prompt, json_mode=True, **kw):
         call_counter[0] += 1
         n = call_counter[0]
+        agent = _identify_agent(prompt, kw)
+        prefix = f"{n:03d}_{agent}"
         t0 = time.perf_counter()
 
-        with open(os.path.join(log_dir, f"{n:02d}_prompt.txt"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir, f"{prefix}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
         system = kw.get("system", "")
         if system:
-            with open(os.path.join(log_dir, f"{n:02d}_system.txt"), "w", encoding="utf-8") as f:
+            with open(os.path.join(log_dir, f"{prefix}_system.txt"), "w", encoding="utf-8") as f:
                 f.write(system)
 
-        # Only pass kwargs that call_deepseek actually accepts
         allowed = {"json_mode", "model", "system", "reasoning_effort",
                    "fallback_schema", "thinking", "temperature", "max_tokens"}
         filtered = {k: v for k, v in kw.items() if k in allowed}
@@ -85,19 +123,45 @@ def _setup_llm_logging(case_dir, case_name):
 
         ext = "json" if json_mode else "txt"
         content = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2)
-        with open(os.path.join(log_dir, f"{n:02d}_response.{ext}"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir, f"{prefix}_response.{ext}"), "w", encoding="utf-8") as f:
             f.write(content)
 
         with open(os.path.join(log_dir, "_timing.txt"), "a", encoding="utf-8") as f:
-            f.write(f"call_{n:02d}: {elapsed:.1f}s model={model or 'default'} json={json_mode}\n")
+            f.write(f"{prefix}: {elapsed:.1f}s\n")
 
         return response
 
+    def _logged_trait_enhancement(**kw):
+        call_counter[0] += 1
+        n = call_counter[0]
+        prefix = f"{n:03d}_TraitEnhance"
+        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in kw.items() if k != "graded_tiers"}, f, ensure_ascii=False, indent=2)
+        result = _REAL_TRAIT(**kw)
+        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        return result
+
+    def _logged_failure_penalty(**kw):
+        call_counter[0] += 1
+        n = call_counter[0]
+        prefix = f"{n:03d}_FailurePenalty"
+        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in kw.items() if k != "graded_on_failure"}, f, ensure_ascii=False, indent=2)
+        result = _REAL_PENALTY(**kw)
+        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        return result
+
     patches = [
         patch("game.agents.keeper.call_deepseek", _logging_wrapper),
+        patch("game.agents.narrator.call_deepseek", _logging_wrapper),
+        patch("game.agents.time_agent.call_deepseek", _logging_wrapper),
         patch("game.intent_detector.call_deepseek", _logging_wrapper),
         patch("game.agents.author.call_deepseek", _logging_wrapper),
         patch("llm.call_deepseek", _logging_wrapper),
+        patch("llm.evaluate_trait_enhancement", _logged_trait_enhancement),
+        patch("llm.evaluate_failure_penalty", _logged_failure_penalty),
     ]
     for p in patches:
         p.start()

@@ -208,10 +208,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 ### 已知缺口
 
-| # | 问题 | 状态 |
-|---|------|------|
-| G9 | `item_manager` 未序列化 | ⚠ KNOWN — `to_dict`/`from_dict` 不包含 ItemManager。游戏过程中通过 `@item_gain` 获得的物品在存档/读档后丢失。`equipment` 字段仅为向后兼容保留的空壳 |
-| G10 | 子系统 (clock/enemies/npcs/bosses) 未序列化 | ⚠ KNOWN — `to_dict`/`from_dict` 不包含 GameClock、EnemyManager、NPCManager、BossManager。存档/读档后游戏时间、敌人位置、NPC 态度、Boss 状态丢失 |
+> G9/G10 已于 2026-05-23 修复。移入测试表。
 
 ### 待优化（按优先级）
 
@@ -263,6 +260,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | `tests/test_harness_parallel.py` | **NEW** — 16 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局，含 `--mock` 模式 | 集成（真实 LLM） |
 | `tests/test_harness_stability.py` | **NEW** — 2 case 串行稳定性测试（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
 | `tests/test_failure_penalty.py` | **NEW** — 2 case 失败惩罚链路：Judge 生成→Keeper 保留→Narrator 接收，全 mock | 单元 |
+| `tests/test_save_load_roundtrip.py` | **NEW** — 存档/读档全量 roundtrip：ItemManager/GameClock/EnemyManager/NPCManager/Memory | 集成 |
 | `tests/game_loop_harness.py` | ⚠ 已弃用 — 7 轮旧 pipeline（绕过 Keeper.process_turn，使用废弃的 `apply_side_effects`），待迁移到新 harness | 集成（真实 LLM） |
 | 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup | 单元 + 集成 |
 
