@@ -248,6 +248,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 - ScenarioWorld 重构: `docs/superpowers/specs/2026-05-22-world-refactor-design.md`
 - **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md` — 每个模块标注文件-类/函数-功能拆解，供快速定位代码
 - **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md` — 三层架构说明、源文档写法、@markup 系统、敌人/Boss/NPC 设计、叙事线/时间压力配置、写作检查清单
+- **战斗系统详解**: `docs/combat-system.md` — CombatSystem 回合制逻辑、回避/逃跑/攻击的动作互作用、伤害计算链、LLM 增强预留接口
 
 ## 测试
 
