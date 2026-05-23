@@ -650,6 +650,18 @@ class ScenarioWorld:
         # 本体状态
         self.scene_weapons: dict[str, list[SceneWeapon]] = {}
         self.weapon_library = weapon_library
+
+        # 从 graph nodes 加载 L2 定义的 scene_weapons → world.scene_weapons
+        for node_id, node in graph.nodes.items():
+            if node.scene_weapons:
+                self.scene_weapons[node_id] = [
+                    SceneWeapon(
+                        weapon_ref=sw["weapon_ref"],
+                        scene=node_id,
+                        quantity=sw.get("quantity", 1),
+                    )
+                    for sw in node.scene_weapons
+                ]
         self.time_costs: dict = {}
         self.comms_interval: int = COMMS_INTERVAL_MINUTES
         self.npc_states: dict[str, str] = {}

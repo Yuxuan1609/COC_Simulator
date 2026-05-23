@@ -178,18 +178,47 @@ class Keeper:
                             msg = "\n".join(lines)
                         else:
                             msg = "（仔细查看四周，没有特别的发现）"
-                        # Weapon discovery: check if scene has weapons
-                        scene_weps = self.world.scene_weapons.get(
-                            self.world.current_location, []
-                        )
-                        if scene_weps:
-                            wep_names = "、".join(
-                                f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
-                                for sw in scene_weps
-                            )
-                            msg += f'\n\n（你发现了 {wep_names}。输入"拾取 <武器名>"来获得它）'
                     else:
                         msg = "（你环顾四周，但昏暗的光线让你无法看清任何有用的东西）"
+                    # Weapon discovery: always check scene weapons (visible even on failed search)
+                    scene_weps = self.world.scene_weapons.get(
+                        self.world.current_location, []
+                    )
+                    if scene_weps:
+                        wep_names = "、".join(
+                            f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
+                            for sw in scene_weps
+                        )
+                        # Handle pickup intent embedded in search input
+                        picked_up = False
+                        for sw in list(scene_weps):
+                            if sw.weapon_ref.lower() in raw.lower() and \
+                               ("拾取" in raw or "捡" in raw or "拿" in raw):
+                                if self.world.weapon_library:
+                                    lib_wep = self.world.weapon_library.get(sw.weapon_ref)
+                                    if lib_wep:
+                                        from investigator.models import Weapon
+                                        skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
+                                        damage = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
+                                        inv_wep = Weapon(
+                                            name=sw.weapon_ref, skill_name=skill or "格斗",
+                                            damage=damage or "1D6+DB",
+                                        )
+                                        self.world.player.add_weapon(inv_wep)
+                                        picked_up = True
+                                del self.world.scene_weapons[self.world.current_location]
+                                msg = f"你拾起了{sw.weapon_ref}。"
+                                # Add pickup as separate outcome for enrich/narrator
+                                all_outcomes.append(ActionOutcome(
+                                    intent=ActionIntent(action="pickup", target=sw.weapon_ref),
+                                    success=True,
+                                    message=f"你拾起了{sw.weapon_ref}。",
+                                    entity_id="WEAPON_PICKUP",
+                                    entity_type="interaction",
+                                ))
+                                break
+                        if not picked_up:
+                            msg += f'\n\n（你发现了 {wep_names}。输入"拾取 <武器名>"来获得它）'
                 else:
                     msg = "（仔细查看四周，没有特别的发现）"
                 all_outcomes.append(ActionOutcome(
@@ -876,6 +905,16 @@ class Keeper:
             scene_weapons=scene_data.get("scene_weapons", []),
             extra=scene_data.get("extra", {}),
         )
+
+        # Sync scene_weapons from graph node → world.scene_weapons
+        raw_weapons = scene_data.get("scene_weapons", [])
+        if raw_weapons:
+            from game.side_effects import SceneWeapon as SW
+            self.world.scene_weapons[scene_name] = [
+                SW(weapon_ref=sw["weapon_ref"], scene=scene_name,
+                   quantity=sw.get("quantity", 1))
+                for sw in raw_weapons
+            ]
 
     def _execute_entity_direct(self, entity: Entity) -> ActionOutcome:
         if entity.entity_type == "event":
