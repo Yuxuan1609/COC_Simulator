@@ -11,6 +11,7 @@ from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput, CombatInit
 from game.combat import CombatSystem
+from config import WR0_ENABLED
 
 
 
@@ -89,7 +90,7 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
 
 def init_game(l2_path: str, l1_path: str, l3_path: str,
                start_node: str = "6号车厢",
-               wr0_enabled: bool = False) -> dict[str, Any]:
+               wr0_enabled: bool = WR0_ENABLED) -> dict[str, Any]:
     """Initialize all agents and world state from JSON files.
 
     Returns dict with keys: keeper, narrator, author, l3_data.

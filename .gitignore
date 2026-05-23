@@ -3,6 +3,7 @@ logs/
 *.bak
 .ipynb_checkpoints/
 .env
+src/config_llm.py
 data/saves/*.json
 .claude/worktrees/
 data/debug/

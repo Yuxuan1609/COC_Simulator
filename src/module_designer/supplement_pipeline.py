@@ -16,6 +16,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from llm import call_deepseek
+from utils import get_coc_skill_names
 
 
 def run_supplement_pipeline(
@@ -215,7 +216,7 @@ def _step_2a_entities(shared: dict, base_l3: dict) -> dict:
     One LLM call covers what the main pipeline does in Step 2 (entity generation)
     + Phase 2 (@markup standardization) + Step 3 (dedup/conflict check).
     """
-    skills = "会计、人类学、估价、考古学、魅惑、攀爬、计算机使用、信用评级、克苏鲁神话、乔装、闪避、汽车驾驶、电气维修、电子学、话术、急救、历史、恐吓、跳跃、法律、图书馆使用、聆听、锁匠、机械维修、医学、博物学、导航、神秘学、操作重型机械、说服、驾驶、精神分析、心理学、读唇、潜行、侦查、生存、游泳、投掷、追踪、驯兽"
+    skills = "、".join(get_coc_skill_names())
 
     prompt = f"""你是TRPG模组创作者。基于已有叙事和L3设计，生成新场景的全部entity。
 

@@ -22,6 +22,8 @@ from ..curator import Curator
 from ..intent_detector import IntentDetector
 from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt
 from llm import call_deepseek
+from config import MAX_ESCALATION_DEPTH, INTENT_COOLDOWN_WINDOW
+from config_llm import LLM_FLASH_MODEL, RE_COMBAT_ENTRY, RE_KEEPER_PARSE
 
 
 class Keeper:
@@ -29,8 +31,6 @@ class Keeper:
 
     Must never: output directly to player.
     """
-
-    MAX_ESCALATION_DEPTH = 3
 
     def __init__(
         self,
@@ -48,11 +48,11 @@ class Keeper:
         self.turn_number = 0
         self._warnings: list[str] = []  # per-turn LLM error warnings surfaced to player
         self._recent_intents: list[str] = []  # last N intent strings for duplicate suppression
-        self._intent_cooldown: int = 3
+        self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
         """Execute full turn: parse → judge → enrich → curate."""
-        if _depth >= self.MAX_ESCALATION_DEPTH:
+        if _depth >= MAX_ESCALATION_DEPTH:
             # Guard against infinite recursion — re-execute deterministically
             return self._process_deterministic_only(turn_input)
         self.turn_number += 1
@@ -297,8 +297,8 @@ class Keeper:
                 call_deepseek,
                 combat_prompt,
                 json_mode=True,
-                model="deepseek-v4-flash",
-                reasoning_effort="low",
+                model=LLM_FLASH_MODEL,
+                reasoning_effort=RE_COMBAT_ENTRY,
                 system="你是 COC 7th KP 助理，负责根据玩家行为和场景内敌人习性判断是否进入回合制战斗。"
                        "\n\n输出 JSON：{\"enter_combat\": true/false, \"enemy_instance_ids\": [...], \"reasoning\": \"简述理由\"}。直接输出 JSON。",
                 fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
@@ -509,7 +509,7 @@ class Keeper:
         if self.world.memory.should_compress():
             from threading import Thread
             t = Thread(target=self.world.memory.compress, args=(
-                lambda p: call_deepseek(p, json_mode=False, model="deepseek-v4-flash",
+                lambda p: call_deepseek(p, json_mode=False, model=LLM_FLASH_MODEL,
                                         system="你是一个擅长总结和提炼信息的助手。请将游戏历史压缩为简洁摘要，"
                                                "保留关键事件、重要细节和当前状态，去除冗余对话。"),
             ), daemon=True)
@@ -534,7 +534,7 @@ class Keeper:
         # Step 1: Semantic match (LLM, flash)
         match_prompt = build_standoff_match_prompt(player_input)
         try:
-            raw = call_deepseek(match_prompt, json_mode=True, model="deepseek-v4-flash",
+            raw = call_deepseek(match_prompt, json_mode=True, model=LLM_FLASH_MODEL,
                                system="你是 COC 7th KP 助理，将玩家输入匹配到对应技能。",
                                fallback_schema={"matched": False, "skill_name": "", "reason": ""})
             match_data = json.loads(raw) if isinstance(raw, str) else raw
@@ -625,22 +625,24 @@ class Keeper:
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
         try:
-            response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                                     reasoning_effort="max",
-                                     system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
-                                            "\n\n你的任务是为玩家输入匹配结构化的游戏内容。"
-                                            "\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。"
-                                            "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other)。"
-                                            "\n如有「条件=」字段需评估是否满足，不满足则排除。"
-                                            "\n\n行为优先级："
-                                            "\n- 有明确对应实体时优先返回实体，无明确目标时返回 search"
-                                            "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个"
-                                            "\n- auto_trigger 必须在 actions 列表最前面"
-                                            "\n- move 指移动到其他场景，other 泛指其他行为"
-                                            "\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。"
-                                            "\n直接输出 JSON，不要额外文字。"
-                                            "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ...]}",
-                                     fallback_schema={"actions": []})
+            response = call_deepseek(
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                reasoning_effort=RE_KEEPER_PARSE,
+                system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
+                       "\n\n你的任务是为玩家输入匹配结构化的游戏内容。"
+                       "\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。"
+                       "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other)。"
+                       "\n如有「条件=」字段需评估是否满足，不满足则排除。"
+                       "\n\n行为优先级："
+                       "\n- 有明确对应实体时优先返回实体，无明确目标时返回 search"
+                       "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个"
+                       "\n- auto_trigger 必须在 actions 列表最前面"
+                       "\n- move 指移动到其他场景，other 泛指其他行为"
+                       "\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。"
+                       "\n直接输出 JSON，不要额外文字。"
+                       "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ...]}",
+                fallback_schema={"actions": []},
+            )
             data = json.loads(response) if isinstance(response, str) else response
         except Exception as e:
             self._warnings.append(f"意图解析失败（{e}），将你的输入作为即兴行为处理。")
@@ -653,7 +655,7 @@ class Keeper:
     def _enrich(self, judged_entities, user_input) -> dict:
         prompt = build_keeper_enrich_prompt(self.world, judged_entities, user_input)
         try:
-            response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
+            response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
                                      system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
                                             "\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。"
                                             "\n\n叙事规则："
@@ -926,7 +928,7 @@ class Keeper:
                                 prompt = build_consume_item_fuzzy_prompt(
                                     target=effect.item_name, quantity=effect.quantity, held_items=held)
                                 result = call_deepseek(
-                                    prompt, json_mode=True, model="deepseek-v4-flash",
+                                    prompt, json_mode=True, model=LLM_FLASH_MODEL,
                                     system="你是 COC 7th KP 助理。",
                                     fallback_schema={"matched": False, "item_name": "", "reason": ""})
                                 if isinstance(result, str):
@@ -979,7 +981,7 @@ class Keeper:
                                 inv_desc=self.world.player.personal_description or self.world.player.appearance or "",
                                 stat_name=effect.stat_name, delta=str(effect.delta), narrative=effect.narrative)
                             result = call_deepseek(
-                                prompt, json_mode=True, model="deepseek-v4-flash",
+                                prompt, json_mode=True, model=LLM_FLASH_MODEL,
                                 system="你是 COC 7th KP 助理，负责更新调查员描述。",
                                 fallback_schema={"description": self.world.player.personal_description or ""})
                             if isinstance(result, str):

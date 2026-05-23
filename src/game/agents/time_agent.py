@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from llm import call_deepseek
 from prompts import _show_prompt
+from config_llm import LLM_FLASH_MODEL, RE_TIME_AGENT
 
 
 class TimeAgent:
@@ -42,7 +43,7 @@ time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
             response = call_deepseek(
                 prompt,
                 json_mode=True,
-                model="deepseek-v4-flash",
+                model=LLM_FLASH_MODEL,
                 system="你是 COC 7th KP 时间推进的判断者。基于玩家本轮所有行动评估时间消耗。"
                        "\n\n评估要点：综合所有行动评估总耗时（越复杂越久）；如有 time_range 建议以此为参考；自由动作评估其自然耗时。"
                        "\n\n输出格式：{\"time_delta\": 0, \"narrative_hint\": \"\"}。直接输出 JSON。",

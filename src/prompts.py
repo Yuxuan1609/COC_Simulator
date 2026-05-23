@@ -11,6 +11,8 @@ import os
 import re
 from typing import TYPE_CHECKING, Optional
 
+from config import SHOW_NON_TRIGGERABLE
+
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld
     from module_designer.l1_player import SceneL1
@@ -318,7 +320,7 @@ def parse_narrative_output(response: dict | str) -> tuple[str, str, str]:
 
 # ── Keeper: Parse (Step 1) ──
 
-_SHOW_NON_TRIGGERABLE = True  # 设为 False 则不展示不可触发项
+
 
 def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str]]:
     """Build triggerable / non-triggerable entity lists for current scene + events.
@@ -428,14 +430,14 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     scene_entity_parts = []
     if trig_scene:
         scene_entity_parts.append("【可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(trig_scene))
-    if _SHOW_NON_TRIGGERABLE and nontrig_scene:
+    if SHOW_NON_TRIGGERABLE and nontrig_scene:
         scene_entity_parts.append("【暂不可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(nontrig_scene))
     scene_entity_text = "\n\n".join(scene_entity_parts) if scene_entity_parts else "（无）"
 
     event_parts = []
     if trig_events:
         event_parts.append("【可触发 — EVENT】\n" + "\n".join(trig_events))
-    if _SHOW_NON_TRIGGERABLE and nontrig_events:
+    if SHOW_NON_TRIGGERABLE and nontrig_events:
         event_parts.append("【暂不可触发 — EVENT】\n" + "\n".join(nontrig_events))
     event_text = "\n\n".join(event_parts) if event_parts else "（无）"
 
@@ -825,19 +827,9 @@ def build_combat_entry_prompt(
     return prompt
 
 
-_COC_SKILL_NAMES = [
-    "会计", "人类学", "估价", "考古学", "魅惑", "攀爬", "计算机使用",
-    "信用评级", "克苏鲁神话", "乔装", "闪避", "汽车驾驶", "电气维修",
-    "电子学", "话术", "急救", "历史", "恐吓", "跳跃", "法律",
-    "图书馆使用", "聆听", "锁匠", "机械维修", "医学", "博物学",
-    "导航", "神秘学", "操作重型机械", "说服", "驾驶", "精神分析",
-    "心理学", "读唇", "潜行", "侦查", "生存", "游泳", "投掷",
-    "追踪", "驯兽",
-]
-
-
 def build_standoff_match_prompt(player_input: str) -> str:
-    skill_list = "、".join(_COC_SKILL_NAMES)
+    from utils import get_coc_skill_names
+    skill_list = "、".join(get_coc_skill_names())
     prompt = f"""你是 COC 7th KP 助理。玩家在面对敌人时试图避免战斗。
 
 玩家输入："{player_input}"

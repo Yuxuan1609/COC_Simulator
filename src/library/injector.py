@@ -2,6 +2,8 @@
 from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 
+from config import OFFLINE_INJECTION_ENABLED, RUNTIME_INJECTION_ENABLED
+
 if TYPE_CHECKING:
     from library.weapons import WeaponLibrary
     from library.enemies import EnemyLibrary
@@ -19,8 +21,8 @@ class ContentInjector:
         self,
         weapon_lib: "WeaponLibrary",
         enemy_lib: "EnemyLibrary",
-        offline_enabled: bool = True,
-        runtime_enabled: bool = True,
+        offline_enabled: bool = OFFLINE_INJECTION_ENABLED,
+        runtime_enabled: bool = RUNTIME_INJECTION_ENABLED,
     ):
         self.weapons = weapon_lib
         self.enemies = enemy_lib

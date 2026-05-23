@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING
 import random
 
+from config import JUDGMENT_TIER2_ENABLED
+
 if TYPE_CHECKING:
     from library.enemies import LibraryEnemy, SpecialAbility
     from library.weapons import LibraryWeapon
@@ -30,7 +32,7 @@ class JudgmentEngine:
     - tier2_enabled: 可开关，决定是否调用 LLM 增强
     """
 
-    def __init__(self, tier2_enabled: bool = True):
+    def __init__(self, tier2_enabled: bool = JUDGMENT_TIER2_ENABLED):
         self.tier2_enabled = tier2_enabled
 
     # ── Tier 1: 确定性 ──

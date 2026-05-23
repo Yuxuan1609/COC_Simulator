@@ -6,6 +6,7 @@ import json
 from ..messages import AuthorRequest, ModulePatch, StructuralEdit
 from prompts import build_author_prompt
 from llm import call_deepseek
+from config_llm import LLM_FLASH_MODEL, RE_AUTHOR
 
 
 DEFAULT_AUTHOR_PERSONA = (
@@ -44,8 +45,8 @@ class Author:
 
         prompt = self._build_prompt(request)
         response = call_deepseek(
-            prompt, json_mode=True, model="deepseek-v4-flash",
-            reasoning_effort="max",
+            prompt, json_mode=True, model=LLM_FLASH_MODEL,
+            reasoning_effort=RE_AUTHOR,
             system="你是一个优秀的TRPG模组创作者，擅长根据游戏中突发情况动态扩展模组内容。"
                    "你的创作应与既有风格保持一致。",
             fallback_schema={
@@ -93,7 +94,6 @@ class Author:
             return {"should_press": False, "urgency_update": None, "reason": "", "signal": ""}
 
         from prompts import build_time_pressure_assess_prompt
-        from llm import call_deepseek
         import json as _json
 
         prompt = build_time_pressure_assess_prompt(
@@ -110,7 +110,7 @@ class Author:
         )
         try:
             response = call_deepseek(
-                prompt, json_mode=True, model="deepseek-v4-flash",
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 system="你是 COC 7th 模组的时间压力管理者。",
                 fallback_schema={"should_press": False, "urgency_update": None, "reason": "", "signal": ""},
             )

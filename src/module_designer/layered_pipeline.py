@@ -20,6 +20,7 @@ import os
 from typing import Optional, TYPE_CHECKING
 
 from module_designer.layered_schema import validate_all, SchemaReport
+from config import PIPELINE_MAX_RETRIES, INJECT_L3_WR0
 
 if TYPE_CHECKING:
     from library.injector import ContentInjector
@@ -303,9 +304,9 @@ def run_pipeline(
     weapon_lib=None,
     enemy_lib=None,
     boss_lib=None,
-    max_retries: int = 3,
+    max_retries: int = PIPELINE_MAX_RETRIES,
     verbose: bool = True,
-    inject_l3_wr0: bool = True,
+    inject_l3_wr0: bool = INJECT_L3_WR0,
 ) -> PipelineResult:
     """执行完整的四步渐进式解析管线."""
     from module_designer.layered_parser import (

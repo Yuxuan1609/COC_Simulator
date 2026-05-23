@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from llm import call_deepseek
+from config_llm import LLM_FLASH_MODEL, RE_INTENT_DETECTOR
 from .messages import IntentResult
 
 
@@ -20,8 +21,8 @@ class IntentDetector:
 
         prompt = self._build_prompt(other_text, world_snapshot)
         response = call_deepseek(
-            prompt, json_mode=True, model="deepseek-v4-flash",
-            reasoning_effort="low",
+            prompt, json_mode=True, model=LLM_FLASH_MODEL,
+            reasoning_effort=RE_INTENT_DETECTOR,
             system="你是一个TRPG游戏状态监控者。判断玩家输入是否有值得KP关注的叙事意图。",
             fallback_schema={"has_intent": False, "intent": "", "reasoning": ""},
         )

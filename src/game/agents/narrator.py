@@ -5,6 +5,7 @@ from typing import Any
 from ..messages import NarratorBrief
 from prompts import build_narrator_prompt, parse_narrative_output
 from llm import call_deepseek
+from config_llm import LLM_FLASH_MODEL, RE_NARRATOR
 
 
 class Narrator:
@@ -28,8 +29,8 @@ class Narrator:
 
         prompt = self._build_prompt(brief, l1_scene=l1_scene, snap=snap,
                                     user_input=user_input)
-        response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                                 reasoning_effort="max",
+        response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                                 reasoning_effort=RE_NARRATOR,
                                  system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。"
                                         "\n\n你的任务是结合实体行动结果和场景感知信息，为玩家输入生成沉浸式叙事。"
                                         "\n\n输出规则："

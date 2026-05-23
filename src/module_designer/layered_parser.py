@@ -19,6 +19,8 @@ import json
 import os
 from typing import Callable
 
+from config import PIPELINE_MAX_RETRIES
+
 
 # ═══════════════════════════════════════════════════════════════
 #  Utility
@@ -146,7 +148,7 @@ def _with_fallback(
     parse_fn: Callable[[], dict],
     required_keys: list[str],
     fallback_data: dict,
-    max_retries: int = 3,
+    max_retries: int = PIPELINE_MAX_RETRIES,
     verbose: bool = True,
     step_name: str = "",
 ) -> dict:

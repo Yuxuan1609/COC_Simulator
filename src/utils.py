@@ -148,3 +148,14 @@ def load_skill_checks(path: str | None = None) -> list:
         path = os.path.normpath(path)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+_COC_SKILL_NAMES_CACHE: list[str] | None = None
+
+
+def get_coc_skill_names() -> list[str]:
+    """获取全部 COC 7th 标准技能名列表（缓存，从 data/skill_checks.json 读取）。"""
+    global _COC_SKILL_NAMES_CACHE
+    if _COC_SKILL_NAMES_CACHE is None:
+        _COC_SKILL_NAMES_CACHE = [s["name"] for s in load_skill_checks()]
+    return _COC_SKILL_NAMES_CACHE

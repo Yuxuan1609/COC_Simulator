@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from investigator.models import Investigator as InvestigatorType
 from dataclasses import dataclass, field
 from module_designer.dependency_graph import DependencyNode, DependencyEdge
+from config import COMMS_INTERVAL_MINUTES, WR0_ENABLED
 
 from game.side_effects import (
     ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon,
@@ -620,7 +621,7 @@ class ScenarioWorld:
 
     def __init__(self, graph: DirectedGraph, start_node: str,
                  background_story: str = "",
-                 wr0_enabled: bool = False,
+                 wr0_enabled: bool = WR0_ENABLED,
                  enemy_library: Any = None,
                  weapon_library: Any = None,
                  boss_library: Any = None,
@@ -650,7 +651,7 @@ class ScenarioWorld:
         self.scene_weapons: dict[str, list[SceneWeapon]] = {}
         self.weapon_library = weapon_library
         self.time_costs: dict = {}
-        self.comms_interval: int = 15
+        self.comms_interval: int = COMMS_INTERVAL_MINUTES
         self.npc_states: dict[str, str] = {}
 
         self.triggered_events: Dict[str, bool] = {
@@ -1155,6 +1156,7 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
                 else:
                     try:
                         from llm import call_deepseek
+                        from config_llm import LLM_FLASH_MODEL
                         from prompts import build_consume_item_fuzzy_prompt
                         held = im.describe()
                         if held and held != "（未持有物品）":
@@ -1164,7 +1166,7 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
                                 held_items=held,
                             )
                             result = call_deepseek(
-                                prompt, json_mode=True, model="deepseek-v4-flash",
+                                prompt, json_mode=True, model=LLM_FLASH_MODEL,
                                 system="你是 COC 7th KP 助理。",
                                 fallback_schema={"matched": False, "item_name": "", "reason": ""},
                             )
@@ -1223,6 +1225,7 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
                 if effect.narrative and hasattr(world.player, 'personal_description'):
                     try:
                         from llm import call_deepseek
+                        from config_llm import LLM_FLASH_MODEL
                         from prompts import build_stat_narrative_prompt
                         prompt = build_stat_narrative_prompt(
                             inv_desc=world.player.personal_description or world.player.appearance or "",
@@ -1231,7 +1234,7 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
                             narrative=effect.narrative,
                         )
                         result = call_deepseek(
-                            prompt, json_mode=True, model="deepseek-v4-flash",
+                            prompt, json_mode=True, model=LLM_FLASH_MODEL,
                             system="你是 COC 7th KP 助理，负责更新调查员描述。",
                             fallback_schema={"description": world.player.personal_description or ""},
                         )

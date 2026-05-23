@@ -2,6 +2,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 
+from config import NPC_MEMORY_CAP
+
 
 @dataclass
 class NPC:
@@ -92,7 +94,7 @@ class NPCManager:
             response = f"（{npc.name} 沉默不语。）"
 
         npc.memory.append(f"玩家：「{player_input}」→ 回复：「{response}」")
-        if len(npc.memory) > 20:
+        if len(npc.memory) > NPC_MEMORY_CAP:
             npc.memory = npc.memory[-20:]
         return response
 
