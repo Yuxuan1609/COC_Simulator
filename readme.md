@@ -164,6 +164,7 @@ parse → judge 之后、curate → narrator 之前的软缓冲层。职责是**
 - 伤害掷骰（1D6+DB 等公式）、护甲减免、D100 技能检定（格斗/射击/闪避）
 - 先攻排序、逐轮处理、玩家/敌人动作编排
 - 10 个单元测试（`tests/test_combat.py`），combat harness 集成测试（`tests/test_combat_harness.py`）
+- **TODO**: 战斗 LLM 增强（`COMBAT_LLM_ENHANCEMENT` 开关在 `src/config.py`，# 174 `_generate_combat_narrative()` 为占位；`_resolve_boss_action_stub` 当前镜像常规敌人逻辑，未来接入 `boss_mechanics` 做 LLM 行为决策）
 
 **Boss 战斗系统**：
 
@@ -177,7 +178,7 @@ Boss 与普通敌人（Enemy）并行管理，但设计上独立：
 | 实例 | 持久化 `EnemyInstance`（注册到 EnemyManager） | 瞬态 `EnemyInstance`（战斗后丢弃） |
 | 击败状态 | `EnemyManager._dead` | `runtime_state[boss_id].completed` |
 | 战斗 | `CombatSystem.run_combat()` | 复用 `CombatSystem.run_combat()` |
-| 特殊机制 | `combat_behavior` 字段 | `boss_mechanics` 字段（LLM 增强预留） |
+| 特殊机制 | `combat_behavior` 字段 | `boss_mechanics` 字段（**TODO: LLM 增强暂未实现**） |
 
 **Boss 事件流**：`keeper.process_turn()` 内
 1. **`at` 触发**（场景进入后）→ 依赖图事件触发后立即检查
