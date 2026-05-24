@@ -49,14 +49,38 @@ class Keeper:
         self._warnings: list[str] = []  # per-turn LLM error warnings surfaced to player
         self._recent_intents: list[str] = []  # last N intent strings for duplicate suppression
         self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
+        self._standoff_pending: dict | None = None
+        self._weapon_offer: dict | None = None  # pending weapon pickup offer {weapon_ref, scene}
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
         """Execute full turn: parse → judge → enrich → curate."""
+        raw = turn_input.raw_text
+
+        # Pending weapon offer check: yes/no, does NOT consume a turn
+        if self._weapon_offer:
+            answer = raw.strip().lower()
+            pickup = any(kw in answer for kw in ("是", "yes", "y", "拾取", "捡", "拿"))
+            wo = self._weapon_offer
+            self._weapon_offer = None
+            if pickup and self.world.weapon_library:
+                lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
+                if lib_wep:
+                    from investigator.models import Weapon
+                    skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
+                    damage = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
+                    inv_wep = Weapon(
+                        name=wo["weapon_ref"], skill_name=skill or "格斗",
+                        damage=damage or "1D6+DB",
+                    )
+                    self.world.player.add_weapon(inv_wep)
+                    self.world.scene_weapons.pop(wo["scene"], None)
+                    return {"brief": f"你拾起了{wo['weapon_ref']}。", "weapon_pickup": True}
+            return {"brief": f"你忽略了{wo['weapon_ref']}。", "weapon_pickup": False}
+
         if _depth >= MAX_ESCALATION_DEPTH:
             # Guard against infinite recursion — re-execute deterministically
             return self._process_deterministic_only(turn_input)
         self.turn_number += 1
-        raw = turn_input.raw_text
         self._warnings.clear()
 
         # NPC interaction routing: if user input targets a known NPC, route to NPCManager
@@ -219,7 +243,8 @@ class Keeper:
                                 ))
                                 break
                         if not picked_up:
-                            msg += f'\n\n（你发现了 {wep_names}。输入"拾取 <武器名>"来获得它）'
+                            msg += f'\n\n（你发现了 {wep_names}。是否拾取？（是/否））'
+                            self._weapon_offer = {"weapon_ref": scene_weps[0].weapon_ref, "scene": self.world.current_location}
                 else:
                     msg = "（仔细查看四周，没有特别的发现）"
                 all_outcomes.append(ActionOutcome(
