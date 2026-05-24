@@ -52,13 +52,21 @@ def _init_game_instance():
 
 
 # ═══════════════════════════════════════════════════════════════
-#  LLM logging — agent-named files + full sub-agent coverage
+#  LLM logging — single global patch with thread-local routing
 # ═══════════════════════════════════════════════════════════════
+
+import threading as _threading
+
+_llm_tls = _threading.local()           # thread-local: current case_dir
+_llm_global_call_counter = [0]          # monotonic counter across all cases
+_llm_per_case_counters: dict[str, list] = {}  # case_dir -> [counter]
+_llm_patches_started = False
+_llm_patch_stoppers = []
+
 
 def _identify_agent(prompt: str, kw: dict = None) -> str:
     """Return agent label from prompt fingerprint."""
     p = prompt or ""
-    # Order matters: check most specific first
     if "为玩家的输入匹配结构化的内容" in p:
         return "Keeper_Parse"
     if "请为以上已触发实体做叙事整合" in p:
@@ -87,24 +95,34 @@ def _identify_agent(prompt: str, kw: dict = None) -> str:
     return "LLM_Unknown"
 
 
-def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
-    """Wrap LLM calls with prompt/response logging. If mock_mode, use deterministic mocks."""
+def _llm_init_global_patch():
+    """Apply a single global patch on llm.call_deepseek + penalty.
+    Thread-safe — reads case_dir from thread-local. Only call once."""
+    global _llm_patches_started, _llm_patch_stoppers
+    if _llm_patches_started:
+        return
+    _llm_patches_started = True
+
     import llm as _llm
     _REAL_CALL = _llm.call_deepseek
     _REAL_PENALTY = _llm.evaluate_failure_penalty
-
-    os.makedirs(case_dir, exist_ok=True)
-    log_dir = os.path.join(case_dir, "_llm_logs")
-    os.makedirs(log_dir, exist_ok=True)
-
-    if mock_mode and mock_parse_seq:
-        return _setup_mocks(case_dir, mock_parse_seq)
-
-    call_counter = [0]
+    _REAL_TRAIT = _llm.evaluate_trait_enhancement
 
     def _logging_wrapper(prompt, json_mode=True, **kw):
-        call_counter[0] += 1
-        n = call_counter[0]
+        case_dir = getattr(_llm_tls, 'case_dir', None)
+        if not case_dir:
+            return _REAL_CALL(prompt, json_mode=json_mode, **kw)
+
+        log_dir = os.path.join(case_dir, "_llm_logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Per-case counter
+        if case_dir not in _llm_per_case_counters:
+            _llm_per_case_counters[case_dir] = [0]
+        _llm_per_case_counters[case_dir][0] += 1
+        n = _llm_per_case_counters[case_dir][0]
+        _llm_global_call_counter[0] += 1
+
         agent = _identify_agent(prompt, kw)
         prefix = f"{n:03d}_{agent}"
         t0 = time.perf_counter()
@@ -122,6 +140,7 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
         filtered["json_mode"] = json_mode
         response = _REAL_CALL(prompt, **filtered)
         elapsed = time.perf_counter() - t0
+
         ext = "json" if json_mode else "txt"
         content = response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2)
         with open(os.path.join(log_dir, f"{prefix}_response.{ext}"), "w", encoding="utf-8") as f:
@@ -132,32 +151,43 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
         return response
 
     def _logged_trait_enhancement(**kw):
-        call_counter[0] += 1
-        n = call_counter[0]
+        case_dir = getattr(_llm_tls, 'case_dir', None)
+        if not case_dir:
+            return _REAL_TRAIT(**kw)
+
+        log_dir = os.path.join(case_dir, "_llm_logs")
+        os.makedirs(log_dir, exist_ok=True)
+        if case_dir not in _llm_per_case_counters:
+            _llm_per_case_counters[case_dir] = [0]
+        _llm_per_case_counters[case_dir][0] += 1
+        n = _llm_per_case_counters[case_dir][0]
+
         prefix = f"{n:03d}_TraitEnhance"
         with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in kw.items() if k != "graded_tiers"},
                       f, ensure_ascii=False, indent=2)
-        d, v = kw.get("dice_roll", 50), kw.get("skill_value", 50)
-        pi = kw.get("player_input", "") or ""
-        if "#必成" in pi:
-            result = {"tier": "extreme", "detail_override": None, "reason": "TEST_RULE: force_success"}
-        elif "#必败" in pi:
-            result = {"tier": "failure", "detail_override": None, "reason": "TEST_RULE: force_fail"}
-        elif d == 1:
-            result = {"tier": "extreme", "detail_override": None, "reason": "critical"}
-        elif d >= 96:
-            result = {"tier": "failure", "detail_override": None, "reason": "fumble"}
-        else:
-            tier = "extreme" if d <= max(v // 5, 1) else "hard" if d <= max(v // 2, 1) else "regular" if d <= v else "failure"
-            result = {"tier": tier, "detail_override": None, "reason": "mock"}
+        # Call REAL trait enhancement LLM
+        t0 = time.perf_counter()
+        result = _REAL_TRAIT(**kw)
+        elapsed = time.perf_counter() - t0
         with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(log_dir, "_timing.txt"), "a", encoding="utf-8") as f:
+            f.write(f"{prefix} | {elapsed:.1f}s\n")
         return result
 
     def _logged_failure_penalty(**kw):
-        call_counter[0] += 1
-        n = call_counter[0]
+        case_dir = getattr(_llm_tls, 'case_dir', None)
+        if not case_dir:
+            return _REAL_PENALTY(**kw)
+
+        log_dir = os.path.join(case_dir, "_llm_logs")
+        os.makedirs(log_dir, exist_ok=True)
+        if case_dir not in _llm_per_case_counters:
+            _llm_per_case_counters[case_dir] = [0]
+        _llm_per_case_counters[case_dir][0] += 1
+        n = _llm_per_case_counters[case_dir][0]
+
         prefix = f"{n:03d}_FailurePenalty"
         with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in kw.items() if k != "graded_on_failure"},
@@ -167,7 +197,7 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
             json.dump(result, f, ensure_ascii=False, indent=2)
         return result
 
-    patches = [
+    ps = [
         patch("game.agents.keeper.call_deepseek", _logging_wrapper),
         patch("game.agents.narrator.call_deepseek", _logging_wrapper),
         patch("game.agents.time_agent.call_deepseek", _logging_wrapper),
@@ -177,37 +207,53 @@ def _setup_llm_logging(case_dir, mock_mode=False, mock_parse_seq=None):
         patch("llm.evaluate_trait_enhancement", _logged_trait_enhancement),
         patch("llm.evaluate_failure_penalty", _logged_failure_penalty),
     ]
-    for p in patches:
+    for p in ps:
         p.start()
-
-    def stop():
-        for p in patches:
-            p.stop()
-    return stop
+    _llm_patch_stoppers = ps
 
 
-def _setup_mocks(case_dir, parse_seq):
-    """Mock all LLM calls with deterministic responses. parse_seq = list of per-turn parse actions."""
+def _setup_mock_mode(case_dir, parse_seq):
+    """Mock mode logger using thread-local routing."""
     log_dir = os.path.join(case_dir, "_llm_logs")
     os.makedirs(log_dir, exist_ok=True)
     turn_idx = [0]
     call_n = [0]
 
     def _mock_call_deepseek(prompt, json_mode=True, **kw):
+        case_dir_tls = getattr(_llm_tls, 'case_dir', None)
+        if not case_dir_tls:
+            agent = _identify_agent(prompt, kw)
+            if json_mode:
+                is_parse = agent == "Keeper_Parse"
+                if is_parse:
+                    t = min(turn_idx[0], len(parse_seq) - 1)
+                    result = {"actions": parse_seq[t]}
+                    turn_idx[0] += 1
+                elif agent == "Keeper_Enrich":
+                    result = {"results": "（润色合并）", "reasoning": "mock", "emphasis_hint": ""}
+                elif agent == "CombatEntry":
+                    result = {"enter_combat": True, "enemy_instance_ids": [], "reasoning": "mock"}
+                elif agent == "Narrator":
+                    result = {"brief": "测试摘要", "narrative": "测试叙事文本", "scene_update": ""}
+                else:
+                    result = {"actions": [], "results": {}, "reasoning": "", "emphasis_hint": ""}
+                return json.dumps(result, ensure_ascii=False)
+            return "（测试叙事文本）"
+
+        log_dir_tls = os.path.join(case_dir_tls, "_llm_logs")
+        os.makedirs(log_dir_tls, exist_ok=True)
         call_n[0] += 1
         n = call_n[0]
         agent = _identify_agent(prompt, kw)
         prefix = f"{n:03d}_{agent}"
-        with open(os.path.join(log_dir, f"{prefix}_prompt.txt"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir_tls, f"{prefix}_prompt.txt"), "w", encoding="utf-8") as f:
             f.write(prompt)
         system = kw.get("system", "")
         if system:
-            with open(os.path.join(log_dir, f"{prefix}_system.txt"), "w", encoding="utf-8") as f:
+            with open(os.path.join(log_dir_tls, f"{prefix}_system.txt"), "w", encoding="utf-8") as f:
                 f.write(system)
-
         if json_mode:
             is_parse = agent == "Keeper_Parse"
-            result = {}
             if is_parse:
                 t = min(turn_idx[0], len(parse_seq) - 1)
                 result = {"actions": parse_seq[t]}
@@ -216,24 +262,26 @@ def _setup_mocks(case_dir, parse_seq):
                 result = {"results": "（润色合并）", "reasoning": "mock", "emphasis_hint": ""}
             elif agent == "CombatEntry":
                 result = {"enter_combat": True, "enemy_instance_ids": [], "reasoning": "mock"}
-            elif agent in ("Narrator",):
+            elif agent == "Narrator":
                 result = {"brief": "测试摘要", "narrative": "测试叙事文本", "scene_update": ""}
             else:
                 result = {"actions": [], "results": {}, "reasoning": "", "emphasis_hint": ""}
             response = json.dumps(result, ensure_ascii=False)
         else:
             response = "（测试叙事文本）"
-
         ext = "json" if json_mode else "txt"
-        with open(os.path.join(log_dir, f"{prefix}_response.{ext}"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir_tls, f"{prefix}_response.{ext}"), "w", encoding="utf-8") as f:
             f.write(response)
         return response
 
     def _mock_trait(**kw):
         call_n[0] += 1
+        case_dir_tls = getattr(_llm_tls, 'case_dir', case_dir)
+        log_dir_tls = os.path.join(case_dir_tls, "_llm_logs")
+        os.makedirs(log_dir_tls, exist_ok=True)
         n = call_n[0]
         prefix = f"{n:03d}_TraitEnhance"
-        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir_tls, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in kw.items() if k != "graded_tiers"}, f, ensure_ascii=False, indent=2)
         pi = kw.get("player_input", "") or ""
         d, v = kw.get("dice_roll", 50), kw.get("skill_value", 50)
@@ -248,22 +296,25 @@ def _setup_mocks(case_dir, parse_seq):
         else:
             tier = "extreme" if d <= max(v // 5, 1) else "hard" if d <= max(v // 2, 1) else "regular" if d <= v else "failure"
             result = {"tier": tier, "detail_override": None, "reason": "mock"}
-        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir_tls, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         return result
 
     def _mock_penalty(**kw):
         call_n[0] += 1
+        case_dir_tls = getattr(_llm_tls, 'case_dir', case_dir)
+        log_dir_tls = os.path.join(case_dir_tls, "_llm_logs")
+        os.makedirs(log_dir_tls, exist_ok=True)
         n = call_n[0]
         prefix = f"{n:03d}_FailurePenalty"
-        with open(os.path.join(log_dir, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir_tls, f"{prefix}_input.json"), "w", encoding="utf-8") as f:
             json.dump({k: v for k, v in kw.items() if k != "graded_on_failure"}, f, ensure_ascii=False, indent=2)
         result = {"narrative": "mock 失败惩罚", "markup_effects": []}
-        with open(os.path.join(log_dir, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(log_dir_tls, f"{prefix}_response.json"), "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         return result
 
-    patches = [
+    ps = [
         patch("game.agents.keeper.call_deepseek", _mock_call_deepseek),
         patch("game.agents.narrator.call_deepseek", _mock_call_deepseek),
         patch("game.agents.time_agent.call_deepseek", _mock_call_deepseek),
@@ -273,15 +324,13 @@ def _setup_mocks(case_dir, parse_seq):
         patch("llm.evaluate_trait_enhancement", _mock_trait),
         patch("llm.evaluate_failure_penalty", _mock_penalty),
     ]
-    for p in patches:
+    for p in ps:
         p.start()
-
-    def stop():
-        for p in patches:
-            p.stop()
-    return stop
+    return ps
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Case definitions
 # ═══════════════════════════════════════════════════════════════
 #  Case definitions
 # ═══════════════════════════════════════════════════════════════
@@ -598,8 +647,15 @@ def _run_single_case(case_key, mock_mode=False):
     case_dir = os.path.join(OUT_ROOT, label)
     os.makedirs(case_dir, exist_ok=True)
 
-    mock_seq = MOCK_PARSE_MAP.get(case_key) if mock_mode else None
-    stop_logging = _setup_llm_logging(case_dir, mock_mode=mock_mode, mock_parse_seq=mock_seq)
+    # Set thread-local case_dir so global logging wrapper routes here
+    _llm_tls.case_dir = case_dir
+
+    # For mock mode, apply per-case mock patches (will be stopped in finally)
+    _mock_stoppers = None
+    if mock_mode:
+        mock_seq = MOCK_PARSE_MAP.get(case_key)
+        if mock_seq:
+            _mock_stoppers = _setup_mock_mode(case_dir, mock_seq)
 
     try:
         t0 = time.perf_counter()
@@ -616,7 +672,10 @@ def _run_single_case(case_key, mock_mode=False):
             "details": {k: v for k, v in result.items() if k not in ("results",)},
         }
     finally:
-        stop_logging()
+        if _mock_stoppers:
+            for p in _mock_stoppers:
+                p.stop()
+        _llm_tls.case_dir = None
 
     with open(os.path.join(case_dir, "_summary.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
@@ -640,6 +699,10 @@ def run_all(mock_mode=False, case_filter=None):
     print(f"Parallel Test Harness -- {len(cases_to_run)} cases [{mode_label}]")
     print(f"Output: {OUT_ROOT}")
     print()
+
+    # Init global LLM logging patch once (real-LLM mode only; mock mode applies per-case)
+    if not mock_mode:
+        _llm_init_global_patch()
 
     summaries = {}
     with ThreadPoolExecutor(max_workers=8) as executor:

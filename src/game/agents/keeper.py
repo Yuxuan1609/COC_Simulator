@@ -166,6 +166,9 @@ class Keeper:
                             log_skill_result(skill_detail)
                             tier = new_tier
                             ok = (tier != "failure")
+                        trait_enh = enh  # store for ActionOutcome
+                    else:
+                        trait_enh = None
                     if ok:
                         interactions = self.world.get_available_interactions()
                         done = self.world.completed_interactions.get(self.world.current_location, set())
@@ -224,7 +227,8 @@ class Keeper:
                     intent=ActionIntent(action="search"), success=True, message=msg,
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
-                    skill_detail=skill_detail if self.world.player else ""))
+                    skill_detail=skill_detail if self.world.player else "",
+                    enhancement=trait_enh))
                 enrich_input.actions.append({
                     "type": "search",
                     "name": "搜索",
@@ -698,12 +702,14 @@ class Keeper:
                        "\n\n你的任务是为玩家输入匹配结构化的游戏内容。"
                        "\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。"
                        "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other)。"
-                       "\n如有「条件=」字段需评估是否满足，不满足则排除。"
+                       "\n只考虑可触发的entity，包括场景实体和全局事件。"
+                       "\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。"
                        "\n\n行为优先级："
-                       "\n- 有明确对应实体时优先返回实体，无明确目标时返回 search"
-                       "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个"
+                       "\n- 有明确对应实体时优先返回实体"
+                       "\n- 玩家行为泛指搜索整个场景时返回 search，玩家想要明确移动到另一个场景时返回 move"
+                       "\n- 其他情况下返回 other"
+                       "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作，动作应该按照常识理解"
                        "\n- auto_trigger 必须在 actions 列表最前面"
-                       "\n- move 指移动到其他场景，other 泛指其他行为"
                        "\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。"
                        "\n直接输出 JSON，不要额外文字。"
                        "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ...]}",

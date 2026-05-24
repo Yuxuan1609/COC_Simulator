@@ -262,13 +262,16 @@ def run_turn(game: dict, user_input: str,
     if hasattr(brief, 'action_outcomes'):
         for o in brief.action_outcomes:
             if o.skill_tier and o.entity_id:
-                skill_results.append({
+                entry = {
                     "entity_id": o.entity_id,
                     "entity_type": o.entity_type,
                     "tier": o.skill_tier,
                     "success": o.success,
-                    "detail": o.skill_detail,
-                })
+                    "raw_check": o.skill_detail,
+                }
+                if o.enhancement:
+                    entry["enhancement"] = o.enhancement
+                skill_results.append(entry)
 
     try:
         snap = world.build_snapshot()
