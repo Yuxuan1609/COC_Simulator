@@ -11,6 +11,10 @@ import sys, os, json
 from datetime import datetime
 import time
 
+# Fix Unicode output on Windows
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -298,7 +302,7 @@ def run_all(case_filter=None):
     if case_filter:
         cases = [(c, d) for c, d in cases if c["name"].startswith(case_filter)]
 
-    print(f"Stability Test Harness — {len(cases)} case(s)")
+    print(f"Stability Test Harness -- {len(cases)} case(s)")
     print(f"Output: {OUT_ROOT}")
     print()
 

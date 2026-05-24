@@ -307,6 +307,7 @@ def run_turn(game: dict, user_input: str,
         "ending": ending,
         "scene_update": scene_update,
         "game_over": ending.get("game_over", False) if ending else False,
+        "time_agent": result.get("time_agent"),
     }
 
 

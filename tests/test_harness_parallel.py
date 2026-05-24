@@ -304,6 +304,7 @@ def _run_turns(game, inputs, case_dir):
             "combat": turn_result.get("combat"),
             "has_standoff": turn_result.get("standoff_prompt") is not None,
             "skill_results": turn_result.get("skill_results"),
+            "time_agent": turn_result.get("time_agent"),
         }
 
         standoff_prompt = turn_result.get("standoff_prompt")
