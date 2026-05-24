@@ -15,7 +15,7 @@ from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
     CombatEntryCheck, StandoffMatch, CombatInit,
-    TimeCommsPacket,
+    TimeCommsPacket, EnrichInput,
 )
 from ..judge import Judge
 from ..curator import Curator
@@ -85,8 +85,7 @@ class Keeper:
 
         # Step 2: Judge (deterministic) — flag check, skill check, ##GRADED##
         all_outcomes = []
-        judged_entities = []  # for enrich prompt
-        action_summaries: list[dict] = []  # collected for TimeAgent
+        enrich_input = EnrichInput()
         for entry in parse_result:
             entry_type = entry.get("type", "")
             if entry_type in ("auto_trigger", "interaction", "event"):
@@ -102,7 +101,7 @@ class Keeper:
                 self._apply_side_effects(outcome.side_effects)
                 if outcome.success:
                     tr = entity.extra.get("time_range") if entity.extra else None
-                    action_summaries.append({
+                    enrich_input.actions.append({
                         "type": entity.entity_type,
                         "name": entity.name,
                         "success": True,
@@ -110,7 +109,7 @@ class Keeper:
                         "time_category": self._infer_time_category(entity),
                     })
                 all_outcomes.append(outcome)
-                judged_entities.append({
+                enrich_input.entities.append({
                     "entity_type": entity.entity_type,
                     "id": entity.id,
                     "name": entity.name,
@@ -128,7 +127,7 @@ class Keeper:
                 ))
                 self._apply_side_effects(result.side_effects)
                 if result.success:
-                    action_summaries.append({
+                    enrich_input.actions.append({
                         "type": "move",
                         "name": f"移动到{target}",
                         "success": True,
@@ -226,7 +225,7 @@ class Keeper:
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
                     skill_detail=skill_detail if self.world.player else ""))
-                action_summaries.append({
+                enrich_input.actions.append({
                     "type": "search",
                     "name": "搜索",
                     "success": True,
@@ -262,7 +261,7 @@ class Keeper:
                             message=f"你拾起了{sw.weapon_ref}。",
                         ))
                         picked_up = True
-                        action_summaries.append({
+                        enrich_input.actions.append({
                             "type": "other",
                             "name": f"拾取{sw.weapon_ref}",
                             "success": True,
@@ -274,7 +273,7 @@ class Keeper:
                     all_outcomes.append(ActionOutcome(
                         intent=ActionIntent(action="other"), success=True,
                         message=f"（{text}）"))
-                    action_summaries.append({
+                    enrich_input.actions.append({
                         "type": "other",
                         "name": text,
                         "success": True,
@@ -285,7 +284,7 @@ class Keeper:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
-                action_summaries.append({
+                enrich_input.actions.append({
                     "type": "other",
                     "name": entry.get("text", ""),
                     "success": True,
@@ -338,14 +337,14 @@ class Keeper:
         enrich_future = None
         ta_future = None
         enrich_executor = None
-        if judged_entities or action_summaries:
-            n_workers = (1 if judged_entities else 0) + (1 if action_summaries else 0)
+        if enrich_input.entities or enrich_input.actions:
+            n_workers = (1 if enrich_input.entities else 0) + (1 if enrich_input.actions else 0)
             enrich_executor = ThreadPoolExecutor(max_workers=n_workers) if n_workers > 0 else None
             if enrich_executor:
-                if judged_entities:
-                    enrich_future = enrich_executor.submit(self._enrich, judged_entities, raw)
-                if action_summaries:
-                    ta_future = enrich_executor.submit(self._run_time_agent, action_summaries, raw)
+                if enrich_input.entities:
+                    enrich_future = enrich_executor.submit(self._enrich, enrich_input.entities, raw)
+                if enrich_input.actions:
+                    ta_future = enrich_executor.submit(self._run_time_agent, enrich_input.actions, raw)
 
         # Step 3.5: Collect enrich + TA results
         if enrich_future:

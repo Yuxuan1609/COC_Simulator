@@ -134,3 +134,13 @@ class TimeCommsPacket:
     current_scene: str = ""
     player_actions: str = ""   # recent actions summary (≤200 chars)
     world_state: str = ""      # world state overview (≤200 chars)
+
+
+@dataclass
+class EnrichInput:
+    """Typed intermediate structure for parse→enrich→curate pipeline (O8).
+    
+    Replaces bare list[dict] for judged_entities and action_summaries.
+    """
+    entities: list[dict] = field(default_factory=list)  # judged entity records
+    actions: list[dict] = field(default_factory=list)    # TimeAgent action summaries

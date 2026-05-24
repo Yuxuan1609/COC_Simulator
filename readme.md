@@ -215,11 +215,11 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | P | # | 问题 | 说明 |
 |---|----|------|------|
 | **1** | O6 | Harness 整合 — 集成测试 + LLM 模拟真人测试 | 整合现有 harness（parallel 17 case / stability 2 case / escalation 5 case）为统一测试入口。加入 LLM-as-player 模式：模拟真人的探索/对话/战斗行为，自动驱动多轮回合，检测异常路径（卡关、死循环、叙事断裂）。旧 `game_loop_harness.py` 待迁移 |
-| **2** | O4 | 基于 Escalation 修改轻量级管线 | Author Patch/StructuralEdit 轻量级 LLM 提示词质量不稳定。需结合 escalation 的 real-LLM 测试结果精修 prompt 模板，提升 Patch 命中率和 StructuralEdit 生成质量 |
+| **2** | O4 | 基于 Escalation 修改轻量级管线 | ✅ 已实现 — Author Patch/StructuralEdit 管线完整可运行（`author.py:handle_request()` → `build_author_prompt()` → `supplement_pipeline.run_supplement_pipeline()` 4 步 LLM）。Keeper 集成完整（`process_turn` → Author → 递归）。待优化：LLM prompt 模板精修提升 Patch 命中率 |
 | **3** | O5 | 时间系统 | ✅ 已修复 — `_resolve_time_delta` 移除，改为每轮单次 TimeAgent 调用（与 enrich 并行）。TA 接收本轮所有 action 摘要 + time_range + 玩家输入，统一评估总耗时。日志写入 `logs/<ts>/TimeAgent.txt` |
-| **4** | O7 | 世界状态类 & 调查员类序列化 | 详见 `docs/superpowers/specs/2026-05-22-world-refactor-design.md`。子系统序列化 (G9/G10) 待修复 |
-| **5** | O8 | parse → enrich → curate 链路缺少明确中间结构 | `judged_entities` / `action_summaries` 在 `process_turn` 中为局部裸 list[dict] 自由漂浮，无类型约束。建议引入 `EnrichInput` dataclass 封装传给 enrich 的完整上下文，降低未来管线修改引入 bug 的风险 |
-| 6 | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | `prompts.py:891-914` 定义了 `build_combat_narrative_prompt()` 但项目中无任何地方调用。`CombatSystem.run_combat()` 返回 `CombatResult` 时未填充 `narrative` 字段。Per-action 叙事存在于 `state.log`（每轮 `CombatAction.narrative`）但未汇总生成战斗级总结叙事 |
+| 4 | O7 | 世界状态类 & 调查员类序列化 | ✅ 已修复（G9/G10 于 2026-05-23 修复）— 所有子系统（GameClock/EnemyManager/NPCManager/BossManager/MemoryManager/ItemManager）均实现 `to_dict()`/`from_dict()`，`test_save_load_roundtrip.py` 覆盖全量往返测试 |
+| 5 | O8 | parse → enrich → curate 链路缺少明确中间结构 | ✅ 已修复 — 引入 `EnrichInput` dataclass（`messages.py`），封装 `entities: list[dict]` + `actions: list[dict]`，替代 `process_turn` 中的裸 `list[dict]` 局部变量。`keeper.py` 全部引用已迁移 |
+| 6 | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位。开启后调用 `build_combat_narrative_prompt()` → LLM 填充 `CombatResult.narrative`。当前输出确定性 per-action 文本 |
 | 7 | O10 | Standoff 流程未接入 Harness | ✅ 已修复 — `_run_turns()` 检测 `standoff_prompt` 后自动消耗下一个玩家输入调用 `continue_standoff()`，记录对峙结果。详见 `tests/test_harness_parallel.py:289` |
 | 8 | O11 | System Prompt 过于简略 — 稳定规则应从 User Prompt 迁移 | ✅ 已修复 — Keeper Parse/Enrich、Narrator、CombatEntry、TimeAgent 的 system prompt 已扩充，包含角色定义 + 任务描述 + 输出规则 + 输出格式。User prompt 中移除了冗余规则，仅保留动态数据和 JSON 格式示例 |
 | 9 | O12 | 条件="" 字段造成 Token 噪声 | ✅ 已修复 — `_build_entity_lines()` 中 `_fmt_inter`、`_fmt_at` 和事件格式化均改为仅当条件非空时才渲染 `条件="..."` 字段 |
