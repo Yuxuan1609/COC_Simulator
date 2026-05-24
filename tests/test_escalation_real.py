@@ -202,24 +202,33 @@ _LLM_CALL_COUNTER = [0]
 
 def _classify_call(system: str) -> str:
     """Return a descriptive label for this LLM call based on system prompt."""
-    if "解析助手" in system or "KP助理" in system:
+    s = system or ""
+    if "意图匹配" in s and "游戏实体" in s:
         return "01_parse"
-    if "游戏状态监控" in system:
+    if "解析助手" in s or "KP助理" in s:
+        return "01_parse"
+    if "游戏状态监控" in s:
         return "02_detector"
-    if "模组创作者" in system and "写出自然" in system:
+    if "模组创作者" in s and "写出自然" in s:
         return "04_step1_narrative"
-    if "模组标准化助手" in system:
+    if "模组标准化助手" in s:
         return "05_step2a_entities"
-    if "生成玩家可见" in system:
+    if "生成玩家可见" in s:
         return "05_step2b_l1"
-    if "模组设计者" in system and "L3" in system:
+    if "模组设计者" in s and "L3" in s:
         return "05_step2c_l3"
-    if "模组创作者" in system and "风格" in system:
+    if "模组创作者" in s and "风格" in s:
         return "03_author"
-    if "跑团KP" in system or "叙事" in system:
-        return "06_narrator"
-    if "KP" in system or "enrich" in system.lower() or "叙事增强" in system:
+    if "叙事整合" in s:
         return "07_enrich"
+    if "战斗" in s and "进入" in s:
+        return "07_combat_entry"
+    if "时间推进" in s:
+        return "07_time_agent"
+    if ("KP" in s or "跑团" in s) and "叙事" in s and "整合" not in s:
+        return "06_narrator"
+    if "TRPG规则辅助" in s:
+        return "07_trait_enhance"
     return "08_llm"
 
 
