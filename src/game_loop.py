@@ -287,7 +287,7 @@ def run_turn(game: dict, user_input: str,
         narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
         scene_update = ""
 
-    ending = result.get("ending_name")
+    ending = result.get("ending")  # {name, narrative, game_over} or None
     standoff = result.get("standoff_prompt")
     full_text = f"{narrative_brief}"
     if combat_narrative:
@@ -304,8 +304,9 @@ def run_turn(game: dict, user_input: str,
         } if combat_result_outcome else None,
         "standoff_prompt": standoff,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "ending": {"name": ending, "narrative": result.get("ending_narrative", "")} if ending else None,
+        "ending": ending,
         "scene_update": scene_update,
+        "game_over": ending.get("game_over", False) if ending else False,
     }
 
 

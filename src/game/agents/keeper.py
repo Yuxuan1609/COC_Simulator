@@ -292,6 +292,28 @@ class Keeper:
                     "time_category": "other",
                 })
 
+        # Deterministic event auto-trigger: after judge, fire events whose dependencies just satisfied
+        dep_graph = self.world.dependency_graph if hasattr(self.world, 'dependency_graph') else {}
+        for edge in dep_graph.get("edges", dep_graph.get("dependency_edges", [])):
+            if edge.get("dep_type") == "interaction":
+                source_id = edge.get("source", "")
+                target_id = edge.get("target", "")
+                if self.world.is_entity_completed(target_id):
+                    # Source is an event that should auto-fire when target completes
+                    source_entity = self.world.graph.events.get(source_id)
+                    if source_entity and not self.world.is_event_triggered(source_id):
+                        outcome = self.judge._execute_entity(source_entity, intent=ActionIntent(action="event"), player_input=raw)
+                        self._apply_side_effects(outcome.side_effects)
+                        all_outcomes.append(outcome)
+                        enrich_input.entities.append({
+                            "entity_type": "event",
+                            "id": source_entity.id,
+                            "name": source_entity.name,
+                            "result": outcome.message,
+                            "success": outcome.success,
+                            "skill_tier": outcome.skill_tier,
+                        })
+
         # Boss "at" check: after scene change
         if self.world.bosses:
             at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
@@ -503,15 +525,29 @@ class Keeper:
                                 intent=ActionIntent(action="other"), success=True,
                                 message=f"（你尝试了，但{rejection_msg}）"))
 
-        # Ending detection
+        # Ending detection — scan outcomes for ##END_ markers + L3 ending_conditions lookup
+        # TODO: 跨模组结局 — 当支持多模组串联时，结局可能需要在模组间传递状态或触发不同后续。
+        # 当前实现仅查询当前 L3 的 ending_conditions。跨模组时需要合并多个 L3 或增加全局结局表。
         from scenario_core import has_ending as _has_ending
-        ending_name = None
-        ending_narrative = None
+        ending_result = None
         for o in all_outcomes:
             en, ed = _has_ending(o.message)
             if en:
-                ending_name = en
-                ending_narrative = ed
+                # Look up L3 ending_conditions for rich narrative (match by id or name)
+                full_narrative = ed or ""
+                if author and hasattr(author, 'l3_data') and author.l3_data:
+                    ec = author.l3_data.get("ending_conditions", [])
+                    for ec_item in ec:
+                        eid = ec_item.get("id", "")
+                        ename = ec_item.get("name", eid)
+                        if eid == en or ename == en:
+                            full_narrative = ec_item.get("narrative", ed)
+                            break
+                ending_result = {
+                    "name": en,
+                    "narrative": full_narrative,
+                    "game_over": True,
+                }
                 break
 
         # Inject LLM error warnings as player-visible outcomes
@@ -544,7 +580,7 @@ class Keeper:
             t.start()
 
         return {"brief": brief,
-                "ending_name": ending_name, "ending_narrative": ending_narrative,
+                "ending": ending_result,
                 "combat_entry": combat_entry,
                 "standoff_prompt": standoff_prompt,
                 "combat_init": combat_init_result}
@@ -736,7 +772,7 @@ class Keeper:
         ambient = [a.message for a in at_results]
         brief = self.curator.assemble(all_outcomes, ambient, "")
         return {"brief": brief,
-                "ending_name": None, "ending_narrative": None}
+                "ending": None}
 
     def _build_world_snapshot(self) -> dict:
         """Lightweight snapshot for IntentDetector. Delegates to World."""

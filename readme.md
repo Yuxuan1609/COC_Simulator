@@ -224,7 +224,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | 8 | O11 | System Prompt 过于简略 — 稳定规则应从 User Prompt 迁移 | ✅ 已修复 — Keeper Parse/Enrich、Narrator、CombatEntry、TimeAgent 的 system prompt 已扩充，包含角色定义 + 任务描述 + 输出规则 + 输出格式。User prompt 中移除了冗余规则，仅保留动态数据和 JSON 格式示例 |
 | 9 | O12 | 条件="" 字段造成 Token 噪声 | ✅ 已修复 — `_build_entity_lines()` 中 `_fmt_inter`、`_fmt_at` 和事件格式化均改为仅当条件非空时才渲染 `条件="..."` 字段 |
 | 10 | O13 | @grant_weapon 副效果未接入游戏循环 | ✅ 已修复（2026-05-23）。两处 fix：(1) `ScenarioWorld.__init__()` 从 graph nodes 加载 L2 `scene_weapons` → `world.scene_weapons`。(2) `Keeper._load_scene_into_graph()` 动态场景时同步武器。(3) Search handler 中武器发现移出 `if ok` 分支——即使侦查失败也能看到场景武器。(4) Search handler 新增拾取意图检测，LLM 误分类为 search 时仍能触发 `add_weapon()` |
-| 11 | O14 | 结局事件系统未实施 | 结局事件（如 `E_TEST_END`）的定义和触发条件已在 L2/L3 中配置，但 trigger 机制尚未接入游戏循环。实施后：当 IT3 完成时检测 `E_TEST_END` 条件，弹出固定结局叙事（`l3_test.json` 中的 `ending_conditions`），游戏结束 |
+| 11 | O14 | 结局事件系统未实施 | ✅ 已修复 — `keeper.py` 中 Judge 完成后通过 dependency_graph 自动检测并触发依赖事件的结局（如 IT3 完成 → E_TEST_END 自动触发）。`##END_` 标记检测后从 L3 `ending_conditions` 查找完整叙事。`game_loop.py` 返回 `game_over=True`，前端可据此显示结局并退出。**TODO**：跨模组时结局需合并多 L3 或全局结局表 |
 
 
 ### 待升级（不优先）
