@@ -137,6 +137,7 @@ class Keeper:
             elif entry_type == "search":
                 # Search always performs a 侦查 (Spot Hidden) check.
                 # No dependency check, no flag update, no enrich.
+                trait_enh = None
                 if self.world.player:
                     ok, skill_msg, tier = self.world.player.check_skill("侦查", "regular")
                     skill_detail = (
@@ -166,9 +167,7 @@ class Keeper:
                             log_skill_result(skill_detail)
                             tier = new_tier
                             ok = (tier != "failure")
-                        trait_enh = enh  # store for ActionOutcome
-                    else:
-                        trait_enh = None
+                        trait_enh = enh
                     if ok:
                         interactions = self.world.get_available_interactions()
                         done = self.world.completed_interactions.get(self.world.current_location, set())
