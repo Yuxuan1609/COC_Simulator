@@ -374,6 +374,7 @@ class Keeper:
 
         # Step 3.5: Collect enrich + TA results
         ta_result = None
+        enrichment = None
         if enrich_future:
             enrichment = enrich_future.result()
             emphasis = enrichment.get("emphasis_hint", "")
@@ -589,7 +590,8 @@ class Keeper:
                 "combat_entry": combat_entry,
                 "standoff_prompt": standoff_prompt,
                 "combat_init": combat_init_result,
-                "time_agent": ta_result}
+                "time_agent": ta_result,
+                "enrich": enrichment}
 
     def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""

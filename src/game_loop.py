@@ -11,7 +11,16 @@ from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
 from game.messages import TurnInput, CombatInit
 from game.combat import CombatSystem
+from game.turn_logger import TurnLogger
 from config import WR0_ENABLED
+
+_turn_logger: TurnLogger | None = None
+
+
+def set_turn_logger(logger: TurnLogger):
+    """Set the global turn logger (called from harness or main entry)."""
+    global _turn_logger
+    _turn_logger = logger
 
 
 
@@ -285,6 +294,15 @@ def run_turn(game: dict, user_input: str,
         )
         if scene_update:
             world.apply_scene_update(scene_update)
+
+        # TurnLogger: record player input + enrich + narrator output
+        if _turn_logger:
+            _turn_logger.log(
+                player_input=user_input,
+                enrich_result=result.get("enrich"),
+                narrator_brief=narrative_brief,
+                narrator_narrative=narrative,
+            )
     except Exception as e:
         narrative_brief = display_brief or "（处理中）"
         narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"

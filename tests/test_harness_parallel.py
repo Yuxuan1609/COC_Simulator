@@ -650,6 +650,12 @@ def _run_single_case(case_key, mock_mode=False):
     # Set thread-local case_dir so global logging wrapper routes here
     _llm_tls.case_dir = case_dir
 
+    # TurnLogger: record per-turn enrich + narrator to case_dir/turn_logs/
+    from game.turn_logger import TurnLogger
+    from game_loop import set_turn_logger
+    tl = TurnLogger(log_dir=os.path.join(case_dir, "turn_logs"))
+    set_turn_logger(tl)
+
     # For mock mode, apply per-case mock patches (will be stopped in finally)
     _mock_stoppers = None
     if mock_mode:
