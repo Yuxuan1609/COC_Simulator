@@ -128,7 +128,7 @@
 - **Curator**（`curator.py`）：策展器 — outcomes + ambient → NarratorBrief
 - **CombatSystem**（`combat.py`）：COC 7th 回合制战斗，独立于 Keeper 管线。接收 CombatInit，返回 CombatResult
 - **EnemyManager**（`enemy_manager.py`）：纯追踪层 — 敌人实例管理、位置/状态/flag 查询、combat entry 上下文
-- **BossManager**（`boss_manager.py`）：Boss 信息管理 — 不参与 spawn，从 L2 预设 `boss_encounters` + `BossLibrary` 构造 CombatInit，特殊机制走自然语言 `boss_mechanics`
+- **BossManager**（`boss_manager.py`）：Boss 信息管理 — 不参与 spawn，从 L2 预设 `boss_encounters` + `BossLibrary` 构造 CombatInit。Boss 作为独立子系统，与 Enemy 并行但不注册到 EnemyManager。Boss 战斗复用 CombatSystem（`_resolve_boss_action_stub` 为未来 LLM 增强预留），接入点纯确定性（`engage_type: "at"/"event"` 自动触发），接出后标记 `runtime_state` completed。Boss ID 自动注册到 `dependency_graph` 和 `runtime_state`，支持其他 entity 通过依赖边引用 Boss 击败状态。序列化完整支持 `to_dict()/from_dict()`（含 `library` 属性代理 `_library`）
 - **NPCManager**（`npc_manager.py`）：NPC 全量管理 — LLM 对话（态度/记忆上下文注入）、5 级态度状态机、被动跟随（`@npc_follow` markup）、初始化从 L2 `npc_profiles`
 - **Combat Entry Detection**（keeper.py 内）：确定性闸门（active enemy in range）→ LLM 判定（flash，与 enrich 并行）→ CombatEntryCheck
 - **对峙阶段**（keeper.py 内）：avoidable 敌人 → 语义匹配 LLM → D100 检定 → trait enhancement
@@ -164,6 +164,29 @@ parse → judge 之后、curate → narrator 之前的软缓冲层。职责是**
 - 伤害掷骰（1D6+DB 等公式）、护甲减免、D100 技能检定（格斗/射击/闪避）
 - 先攻排序、逐轮处理、玩家/敌人动作编排
 - 10 个单元测试（`tests/test_combat.py`），combat harness 集成测试（`tests/test_combat_harness.py`）
+
+**Boss 战斗系统**：
+
+Boss 与普通敌人（Enemy）并行管理，但设计上独立：
+
+| 维度 | Enemy | Boss |
+|------|-------|------|
+| 管理器 | `EnemyManager` | `BossManager` |
+| 生成 | `spawn()` / `@spawn_enemy` | 无 spawn，纯自动触发 |
+| 触发 | LLM 判定 → 对峙 | 确定性 `at`/`event` 触发 |
+| 实例 | 持久化 `EnemyInstance`（注册到 EnemyManager） | 瞬态 `EnemyInstance`（战斗后丢弃） |
+| 击败状态 | `EnemyManager._dead` | `runtime_state[boss_id].completed` |
+| 战斗 | `CombatSystem.run_combat()` | 复用 `CombatSystem.run_combat()` |
+| 特殊机制 | `combat_behavior` 字段 | `boss_mechanics` 字段（LLM 增强预留） |
+
+**Boss 事件流**：`keeper.process_turn()` 内
+1. **`at` 触发**（场景进入后）→ 依赖图事件触发后立即检查
+2. **`event` 触发**（回合处理末尾）→ Judge / Enrich / Author 之后检查
+3. 触发条件满足 → `BossManager.build_combat_init()` 创建瞬态 `EnemyInstance` → `set_active()` → 返回 `CombatInit`
+4. `game_loop.run_turn()` 检测到 `combat_init` → 运行 `CombatSystem.run_combat()`
+5. 战斗结果 → `win` 则 `world.mark_completed(boss_id)` → `set_active(None)`
+
+**Boss 依赖图集成**：`ScenarioWorld._register_boss_nodes()` 在 `load_dependency_graph()` 后自动将 `boss_encounters` 中的每个 Boss ID 注册到 `dependency_graph.nodes` 和 `runtime_state`。其他 entity 可通过依赖边引用 Boss 击败状态（`{source: "I_SOMETHING", target: "BOSS_ID", dep_type: "boss"}`）
 
 ### `src/library/` — 武器/敌人资源库
 

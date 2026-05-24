@@ -326,11 +326,12 @@ class CombatSystem:
         Actual LLM integration deferred to later phase.
         """
         attack = self._select_enemy_attack(enemy)
+        attack_name = attack.get("name", "攻击") if isinstance(attack, dict) else getattr(attack, "name", "攻击")
         action = CombatAction(
             actor=enemy.instance_id,
             action_type="attack",
-            weapon=attack.name,
-            skill_name=attack.name,
+            weapon=attack_name,
+            skill_name=attack_name,
             target="player",
         )
         enemy_attrs = getattr(enemy, 'attributes', {})
@@ -340,7 +341,7 @@ class CombatSystem:
 
         if getattr(state, '_player_dodging', False):
             action.success = False
-            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack.name}被你闪开了。"
+            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack_name}被你闪开了。"
             state._player_dodging = False
             return action
 
@@ -350,17 +351,18 @@ class CombatSystem:
         if action.success:
             en_str = enemy_attrs.get("STR", 50)
             en_siz = enemy_attrs.get("SIZ", 50)
-            damage = _roll_damage(attack.damage, en_str, en_siz)
+            damage_formula = attack.get("damage", "1D3") if isinstance(attack, dict) else getattr(attack, "damage", "1D3")
+            damage = _roll_damage(damage_formula, en_str, en_siz)
             action.damage = damage
             action.hp_before = state.player_hp
             state.player_hp = max(0, state.player_hp - damage)
             action.hp_after = state.player_hp
             action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', 'Boss')}用{attack.name}击中了你！"
+                f"{getattr(enemy, 'enemy_ref', 'Boss')}用{attack_name}击中了你！"
                 f"造成{damage}点伤害。"
             )
         else:
-            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack.name}未能命中你。"
+            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack_name}未能命中你。"
 
         return action
 
@@ -370,11 +372,12 @@ class CombatSystem:
             return self._resolve_boss_action_stub(state, enemy, player)
 
         attack = self._select_enemy_attack(enemy)
+        attack_name = attack.get("name", "攻击") if isinstance(attack, dict) else getattr(attack, "name", "攻击")
         action = CombatAction(
             actor=enemy.instance_id,
             action_type="attack",
-            weapon=attack.name,
-            skill_name=attack.name,
+            weapon=attack_name,
+            skill_name=attack_name,
             target="player",
         )
 
@@ -386,7 +389,7 @@ class CombatSystem:
         if getattr(state, '_player_dodging', False):
             action.success = False
             action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', '敌人')}的{attack.name}被你闪开了。"
+                f"{getattr(enemy, 'enemy_ref', '敌人')}的{attack_name}被你闪开了。"
             )
             state._player_dodging = False
             return action
@@ -397,18 +400,19 @@ class CombatSystem:
         if action.success:
             en_str = enemy_attrs.get("STR", 50)
             en_siz = enemy_attrs.get("SIZ", 50)
-            damage = _roll_damage(attack.damage, en_str, en_siz)
+            damage_formula = attack.get("damage", "1D3") if isinstance(attack, dict) else getattr(attack, "damage", "1D3")
+            damage = _roll_damage(damage_formula, en_str, en_siz)
             action.damage = damage
             action.hp_before = state.player_hp
             state.player_hp = max(0, state.player_hp - damage)
             action.hp_after = state.player_hp
             action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', '敌人')}用{attack.name}击中了你！"
+                f"{getattr(enemy, 'enemy_ref', '敌人')}用{attack_name}击中了你！"
                 f"造成{damage}点伤害。"
             )
         else:
             action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', '敌人')}的{attack.name}未能命中你。"
+                f"{getattr(enemy, 'enemy_ref', '敌人')}的{attack_name}未能命中你。"
             )
 
         return action

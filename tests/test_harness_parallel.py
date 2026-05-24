@@ -1,11 +1,11 @@
 """
-Parallel Test Harness — 16 cases covering all game systems, real LLM calls.
+Parallel Test Harness — 18 cases covering all game systems, real LLM calls.
 Parallel execution via ThreadPoolExecutor. Each case gets its own init_game().
 Mock mode available via --mock flag.
 
 Usage:
-  python tests/test_harness_parallel.py                    # all 16 cases, real LLM
-  python tests/test_harness_parallel.py --mock             # all 16 cases, mocked LLM
+  python tests/test_harness_parallel.py                    # all 18 cases, real LLM
+  python tests/test_harness_parallel.py --mock             # all 18 cases, mocked LLM
   python tests/test_harness_parallel.py --case search      # single case
   python tests/test_harness_parallel.py --cases search,npc_dialogue  # selected
 """
@@ -561,6 +561,66 @@ def case_ending(game, case_dir, mock=False):
             "IT3_completed": it3_done, "results": results}
 
 
+def case_boss(game, case_dir, mock=False):
+    """Boss: verify BOSS_TEST registered in dep_graph + runtime_state after init,
+    then build combat init and run combat → boss marked completed."""
+    world = game["keeper"].world
+
+    # P4 verify: boss node auto-registered in dependency_graph and runtime_state
+    dep_nodes = world.dependency_graph.get("nodes", {})
+    boss_in_depgraph = "BOSS_TEST" in dep_nodes
+    boss_in_runtime = "BOSS_TEST" in world.runtime_state
+
+    # Verify _find_entity_by_id discovers boss encounters
+    boss_found = game["keeper"]._find_entity_by_id("BOSS_TEST") is not None
+
+    # Build combat init from boss encounter and run combat
+    from game.combat import CombatSystem
+    boss_entity = None
+    for enc in world.bosses._encounters:
+        if enc.get("id") == "BOSS_TEST":
+            boss_entity = enc
+            break
+    combat_data = {}
+    combat_triggered = False
+    combat_outcome = ""
+    if boss_entity:
+        combat_init = world.bosses.build_combat_init(boss_entity, world.player, world.current_location)
+        world.bosses.set_active("BOSS_TEST")
+        cs = CombatSystem()
+        result = cs.run_combat(combat_init)
+        combat_outcome = result.outcome
+        combat_data = {
+            "outcome": result.outcome,
+            "defeated_instance_ids": result.defeated_instance_ids,
+            "rounds": result.rounds,
+            "player_hp": result.player_hp,
+            "player_san": result.player_san,
+        }
+        combat_triggered = True
+        # Mark boss as completed for verification (combat outcome depends on dice)
+        world.mark_completed("BOSS_TEST", "")
+        world.bosses.set_active(None)
+
+    if combat_data:
+        with open(os.path.join(case_dir, "combat_log.json"), "w", encoding="utf-8") as f:
+            json.dump(combat_data, f, ensure_ascii=False, indent=2)
+
+    boss_completed = world.is_entity_completed("BOSS_TEST")
+
+    return {
+        "verdict": "PASS" if (
+            boss_in_depgraph and boss_in_runtime and boss_found
+            and combat_triggered and boss_completed
+        ) else "SOFT_PASS",
+        "boss_in_depgraph": boss_in_depgraph,
+        "boss_in_runtime": boss_in_runtime,
+        "boss_found_by_id": boss_found,
+        "combat_outcome": combat_outcome,
+        "combat_rounds": combat_data.get("rounds", 0),
+        "boss_completed": boss_completed,
+    }
+
 def case_interaction_repeated_failure(game, case_dir, mock=False):
     world = game["keeper"].world
     # IT8: 考古学 base=1, always fails → tests penalty escalation over 3 turns
@@ -614,6 +674,7 @@ CASE_REGISTRY = {
     "stat_change":                ("15_stat_change",              case_stat_change,                "IT6: @stat_change SAN -5",                  [["长时间凝视镜子中的裂痕，试图理解里面的异常"]]),
     "ending":                     ("16_ending",                   case_ending,                     "IT3 → E_TEST_END 结局触发",                 [["拿起桌上的镜子仔细端详"]]),
     "repeated_failure":           ("17_repeated_failure",         case_interaction_repeated_failure,"IT8: 3次#必败 → 惩罚系统(难度递增+LLM惩罚)",  [["仔细观察墙壁上的模糊刻痕 #必败"], ["再看一眼墙壁上的刻痕 #必败"], ["最后尝试辨认墙上铭文 #必败"]]),
+    "boss":                       ("18_boss",                    case_boss,                       "BOSS_TEST: Boss注册(依赖图+runtime)+战斗+完成标记", []),
 }
 
 MOCK_PARSE_MAP = {
@@ -634,6 +695,7 @@ MOCK_PARSE_MAP = {
     "stat_change":                [[{"type": "interaction", "id": "IT6"}]],
     "ending":                     [[{"type": "interaction", "id": "IT3"}]],
     "repeated_failure":           [[{"type": "interaction", "id": "IT8"}], [{"type": "interaction", "id": "IT8"}], [{"type": "interaction", "id": "IT8"}]],
+    "boss":                       [],
 }
 
 

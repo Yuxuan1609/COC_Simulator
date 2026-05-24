@@ -65,6 +65,10 @@ class BossManager:
     def active_boss_id(self, value: str | None):
         self._active_boss_id = value
 
+    @property
+    def library(self):
+        return self._library
+
     def set_active(self, boss_id: str | None):
         self.active_boss_id = boss_id
 

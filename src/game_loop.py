@@ -262,6 +262,8 @@ def run_turn(game: dict, user_input: str,
             # Boss post-combat resolution
             if world.bosses and world.bosses.active_boss_id:
                 world.bosses.resolve_outcome(combat_result)
+                if combat_result.outcome == "win":
+                    world.mark_completed(world.bosses.active_boss_id, "")
                 world.bosses.set_active(None)
         except Exception:
             combat_result_outcome = "error"

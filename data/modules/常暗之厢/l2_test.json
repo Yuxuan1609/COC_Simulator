@@ -756,6 +756,17 @@
       "appearance": "三十岁左右的男性电车乘务员，身穿标准铁路制服，腿部有严重的撕裂伤，脸色苍白。目前因失血与疼痛陷入休克，毫无反应。"
     }
   },
+  "boss_encounters": [
+    {
+      "id": "BOSS_TEST",
+      "type": "boss_encounter",
+      "engage_type": "event",
+      "boss_ref": "食尸鬼（艾米丽的丈夫）",
+      "scene": "",
+      "requirements": "NEVER_TRIGGER || soft",
+      "description": "测试用Boss遭遇——食尸鬼突然从黑暗中扑出！"
+    }
+  ],
   "dependency_graph": {
     "nodes": {
       "IT1": {"entity_id": "IT1", "entity_type": "interaction", "name": ""},

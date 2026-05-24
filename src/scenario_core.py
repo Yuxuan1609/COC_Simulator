@@ -728,6 +728,27 @@ class ScenarioWorld:
         for eid in nodes:
             if eid not in self.runtime_state:
                 self.runtime_state[eid] = NodeRuntimeState()
+        self._register_boss_nodes()
+
+    def _register_boss_nodes(self):
+        """Register boss encounter IDs in dependency_graph and runtime_state
+        so other entities can reference them as dependencies."""
+        if not self.bosses:
+            return
+        for enc in self.bosses._encounters:
+            boss_id = enc.get("id", "")
+            if not boss_id:
+                continue
+            if "nodes" not in self.dependency_graph:
+                self.dependency_graph["nodes"] = {}
+            if boss_id not in self.dependency_graph["nodes"]:
+                self.dependency_graph["nodes"][boss_id] = {
+                    "entity_id": boss_id,
+                    "entity_type": "boss",
+                    "name": enc.get("description", "")[:40]
+                }
+            if boss_id not in self.runtime_state:
+                self.runtime_state[boss_id] = NodeRuntimeState()
 
     def get_runtime_state(self, entity_id: str) -> NodeRuntimeState:
         """Get or create runtime state for an entity."""

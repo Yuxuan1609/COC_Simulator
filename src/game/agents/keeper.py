@@ -348,7 +348,7 @@ class Keeper:
             for boss_entity in at_bosses:
                 if self._check_boss_requirements(boss_entity):
                     combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.world.bosses.set_active(boss_entity["id"])
+                    self.world.bosses.set_active(boss_entity.get("id", boss_entity.get("boss_ref", "unknown")))
                     return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
@@ -592,7 +592,7 @@ class Keeper:
             for boss_entity in event_bosses:
                 if self._check_boss_requirements(boss_entity):
                     combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.world.bosses.set_active(boss_entity["id"])
+                    self.world.bosses.set_active(boss_entity.get("id", boss_entity.get("boss_ref", "unknown")))
                     return {"combat_init": combat_init, "brief": "", "narrative": ""}
 
         # Step 5: Curate
@@ -772,7 +772,7 @@ class Keeper:
             return {"results": {}, "reasoning": "", "emphasis_hint": ""}
 
     def _find_entity_by_id(self, entity_id: str):
-        """Find entity by ID across graph (scenes + events)."""
+        """Find entity by ID across graph (scenes + events + boss encounters)."""
         if entity_id in self.world.graph.events:
             return self.world.graph.events[entity_id]
         node = self.world._current_node()
@@ -785,6 +785,18 @@ class Keeper:
             for e in node.interactions + node.auto_triggers:
                 if e.id == entity_id:
                     return e
+        # Boss encounters
+        if self.world.bosses:
+            for enc in self.world.bosses._encounters:
+                if enc.get("id") == entity_id:
+                    library_boss = self.world.bosses.library.get(enc.get("boss_ref", ""))
+                    return {
+                        "id": enc.get("id"),
+                        "entity_type": "boss",
+                        "name": enc.get("description", "")[:40],
+                        "data": enc,
+                        "library": library_boss,
+                    }
         return None
 
     def _process_deterministic_only(self, turn_input: TurnInput) -> dict:
