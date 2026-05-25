@@ -92,6 +92,22 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
             return {"brief": str(s), "narrative": str(s), "full": str(s)}
         return {"brief": "用法：/inject [toggle|status]", "narrative": "用法错误", "full": "用法错误"}
 
+    if cmd == "/health":
+        from monitor.health import PipelineHealth
+        from llm import get_sensor
+        sensor = get_sensor()
+        if sensor:
+            health = PipelineHealth(sensor)
+            snap = health.snapshot()
+            lines = ["Pipeline Health:"]
+            lines.append(f"  Uptime: {snap['uptime_seconds']}s")
+            lines.append(f"  Total calls: {snap['total_calls']} / Failures: {snap['total_failures']} / Slow: {snap['total_slow']}")
+            for agent, stats in snap.get("agents", {}).items():
+                lines.append(f"  {agent}: {stats['calls']} calls, {stats['failures']} fail, "
+                           f"{stats['avg_ms']}ms avg, {stats['slow_rate']:.0%} slow")
+            return {"brief": "\n".join(lines), "narrative": "\n".join(lines), "full": "\n".join(lines)}
+        return {"brief": "Monitor not initialized.", "narrative": "监控未初始化", "full": "监控未初始化"}
+
     return None
 
 
