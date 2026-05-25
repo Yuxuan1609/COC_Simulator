@@ -208,6 +208,7 @@ class NPCManager:
         """
         from prompts import build_npc_parse_prompt, build_keeper_enrich_prompt
         from game.messages import ActionIntent, ActionOutcome, EnrichInput
+        from scenario_core import Entity as EntityCls
 
         npc = self._npcs.get(npc_name)
         if not npc:
@@ -250,7 +251,6 @@ class NPCManager:
         all_outcomes: list[ActionOutcome] = []
         enrich_input = EnrichInput()
         for entity in matched_entities:
-            from scenario_core import Entity as EntityCls
             ent = EntityCls(
                 id=entity.get("id", ""),
                 entity_type=entity.get("entity_type", "interaction"),
