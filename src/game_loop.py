@@ -316,6 +316,15 @@ def run_turn(game: dict, user_input: str,
     if combat_narrative:
         full_text += f"\n\n---\n⚔ 战斗回合\n{combat_narrative}"
     full_text += f"\n\n\n{narrative}"
+
+    # NPC visible output
+    npcs_visible = {"in_scene": [], "following": []}
+    npc_events_out = result.get("npc_events", [])
+    if world.npcs:
+        in_scene = world.npcs.get_in_scene(world.current_location)
+        npcs_visible["in_scene"] = [n.name for n in in_scene if n.state not in ("dead", "left")]
+        npcs_visible["following"] = [n.name for n in world.npcs.get_following()]
+
     return {
         "brief": narrative_brief,
         "narrative": narrative,
@@ -331,6 +340,8 @@ def run_turn(game: dict, user_input: str,
         "scene_update": scene_update,
         "game_over": ending.get("game_over", False) if ending else False,
         "time_agent": result.get("time_agent"),
+        "npcs_visible": npcs_visible,
+        "npc_events": npc_events_out,
     }
 
 
