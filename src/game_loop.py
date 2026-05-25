@@ -332,6 +332,14 @@ def run_turn(game: dict, user_input: str,
         narrative = result.get("narrative", "") or ""
         scene_update = ""
 
+    # Surface pending weapon offer to player (narrator may omit the pickup prompt)
+    if keeper._weapon_offer:
+        wo = keeper._weapon_offer
+        wp_text = f"（你发现了{wo['weapon_ref']}。是否拾取？（是/否））"
+        narrative = (narrative or "") + ("\n\n" if narrative else "") + wp_text
+        if not narrative_brief:
+            narrative_brief = wp_text
+
     ending = result.get("ending")  # {name, narrative, game_over} or None
     standoff = result.get("standoff_prompt")
     full_text = f"{narrative_brief}"
