@@ -1,8 +1,8 @@
 """TimeAgent — LLM sub-agent for time narrative guidance."""
 from __future__ import annotations
-import json
+import json, os
 from llm import call_deepseek
-from prompts import _show_prompt
+from prompts import _show_prompt, _log_dir as _prompt_log_dir
 from config_llm import LLM_FLASH_MODEL, RE_TIME_AGENT
 
 
@@ -14,6 +14,17 @@ class TimeAgent:
         from monitor.policies import TimeAgentPolicy
         from llm import _init_sensor
         self.monitor = AgentMonitor("TimeAgent", _init_sensor(), TimeAgentPolicy())
+
+    def _log_response(self, content: str):
+        """Write response directly to timeagent.txt."""
+        d = _prompt_log_dir
+        if not d:
+            return
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "timeagent.txt"), "a", encoding="utf-8") as f:
+            f.write("\n--- Response ---\n")
+            f.write(content)
+            f.write("\n\n")
 
     def build_prompt(
         self,
@@ -49,7 +60,7 @@ time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
         _show_prompt("TimeAgent", prompt)
         try:
             response = self.monitor.call(
-                lambda p, **kw: call_deepseek(p, _label="timeagent", **kw),
+                lambda p, **kw: call_deepseek(p, **kw),
                 prompt,
                 json_mode=True,
                 model=LLM_FLASH_MODEL,
@@ -60,6 +71,8 @@ time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
                 fallback_schema={"time_delta": 0, "narrative_hint": ""},
                 thinking=False,
             )
-            return json.loads(response) if isinstance(response, str) else response
+            result = json.loads(response) if isinstance(response, str) else response
+            self._log_response(json.dumps(result, ensure_ascii=False, indent=2))
+            return result
         except Exception:
             return {"time_delta": 0, "narrative_hint": ""}

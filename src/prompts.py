@@ -50,7 +50,7 @@ def _sanitize_label(label: str) -> str:
     return ''.join(c if c.isalnum() or c == '_' else '_' for c in s)
 
 
-def _show_prompt(label: str, content: str, log_dir: str | None = None):
+def _show_prompt(label: str, content: str, log_dir: str | None = None, system: str | None = None):
     """将 prompt 写入日志目录下的独立文件（如已配置）。"""
     d = log_dir or _log_dir
     if not d:
@@ -64,6 +64,8 @@ def _show_prompt(label: str, content: str, log_dir: str | None = None):
         f.write(f"{'='*60}\n")
         f.write(f"=== Round {_current_round} | {label} ===\n")
         f.write(f"{'='*60}\n")
+        if system:
+            f.write(f"--- SYSTEM ---\n{system}\n\n--- USER ---\n")
         f.write(content)
         f.write("\n\n")
 
@@ -516,7 +518,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
   ]
 }}
 """
-    _show_prompt("Keeper Parse", prompt)
+    _show_prompt("Keeper Parse", prompt, system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。\n\n你的任务是为玩家输入匹配结构化的游戏内容。\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other/npc_interact)。\n只考虑可触发的entity，包括场景实体和全局事件。\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。\n\n行为优先级：\n- 有明确对应实体时优先返回实体\n- 玩家行为泛指搜索整个场景时返回 search，玩家想要明确移动到另一个场景时返回 move\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问/请求帮助时，返回 npc_interact，npc_name 填 NPC 名称\n- 其他情况下返回 other\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作，动作应该按照常识理解\n- auto_trigger 必须在 actions 列表最前面\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。\n直接输出 JSON，不要额外文字。\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}")
     return prompt
 
 
@@ -570,7 +572,7 @@ def build_keeper_enrich_prompt(world, judged_entities, user_input) -> str:
 
 直接输出 JSON。
 """
-    _show_prompt("Keeper Enrich", prompt)
+    _show_prompt("Keeper Enrich", prompt, system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。\n\n叙事规则：\n- success=true → 结果清晰明确地整合，玩家能感知发生了什么\n- success=false → 若 result 已含明确失败后果（扣血/惩罚/敌人出现），直接保留原文整合，不得改为晦涩模糊；仅当 result 为简单「检定失败」类通用文字时才描述为晦涩、模糊、似错觉或微不足道的细节\n- 提供 reasoning 简短说明整合逻辑\n\n输出格式：{\"results\": \"合并叙事\", \"reasoning\": \"整合逻辑\", \"emphasis_hint\": \"叙事方向\"}。直接输出 JSON。")
     return prompt
 
 
@@ -626,7 +628,7 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 - 「即兴行为」仅为叙述性描写，不对世界产生任何实际影响，一带而过即可
 - 直接输出 JSON。
 """
-    _show_prompt("Narrator", prompt)
+    _show_prompt("Narrator", prompt, system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。\n\n你的任务是将本轮实体行动结果整合为简洁的简报和沉浸式的环境叙事。直接输出 JSON。")
     return prompt
 
 

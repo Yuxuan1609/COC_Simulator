@@ -259,8 +259,6 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
     filtered_auto_triggers = []
 
     for e in interactions:
-        if _is_follow_event(e):
-            continue
         eid = e.get("id", "")
         if entity_bindings and eid in entity_bindings:
             npc_name = entity_bindings[eid]
@@ -276,8 +274,6 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
             filtered_interactions.append(e)
 
     for e in auto_triggers:
-        if _is_follow_event(e):
-            continue
         eid = e.get("id", "")
         if entity_bindings and eid in entity_bindings:
             npc_name = entity_bindings[eid]

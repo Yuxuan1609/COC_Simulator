@@ -382,7 +382,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - **模组中提到的可获取物品（clues_and_items 章节：clues 为剧情关键物品/线索，items 为非剧情普通物品，需结合精修模组原文和常识判断）必须在对应场景的 entity 中通过 result 或 graded_result 明确表达为可获取状态，确保每个物品都有对应的 entity 承载其获取路径**
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称，不允许自创或使用别名**
 - NPC互动是否生成 entity 的判断标准：entity 必须有可感知的游戏机制后果——技能检定、物品给予/消耗、属性变化、NPC状态变更（受伤/死亡等）、触发新的事件、场景永久性变化。单纯的NPC对话/交谈/打听消息（无机制后果的信息传递）不生成 entity，由运行时 NPC 对话系统处理。
-- NPC 跟随/离开/加入队伍不生成 entity（由运行时 NPC 跟随机制处理，条件由 npc_profile 的 can_follow + follow_requirements 控制）。entity 中不出现 NPC 跟随/离开玩家的描述。
+- NPC 跟随/离开/加入队伍可以生成 entity。对于 can_follow=true 的 NPC，生成一个 interaction entity，trigger 为"你请求 NPC 跟随"，result 为 "@npc_follow(npc_name=\"NPC名\", follow=true)"，side_effects 留空。需要前置条件则在 requirement 中描述。
 - 仅输出 JSON，不要任何解释性文字
 
 从精修模组文本中提取每个场景的全部可执行互动，以及场景间的通行路径。
@@ -479,7 +479,7 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
 - 与NPC的纯粹对话/交谈不生成 event（NPC对话由运行时NPC系统处理）。只有涉及实质性世界影响的NPC互动才可生成 event。
-- NPC 跟随/离开不生成 event。
+- NPC 跟随/离开可以生成 event 或 auto_trigger。对于 can_follow=true 的 NPC，可生成对应的 entity，result 中使用 @npc_follow 标记。
 - 仅输出 JSON，不要任何解释性文字
 
 从精修模组文本中提取所有全局事件。
@@ -579,7 +579,7 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
          2哪个场景散布着什么武器
          3哪个场景可能会有什么敌人，有多少
 - 与NPC的纯粹对话/交谈不生成 auto_trigger（NPC对话由运行时NPC系统处理）。只有涉及实质性世界影响的NPC互动才可生成 auto_trigger。
-- NPC 跟随/离开不生成 auto_trigger。
+- NPC 跟随/离开可以生成 event 或 auto_trigger。对于 can_follow=true 的 NPC，可生成对应的 entity，result 中使用 @npc_follow 标记。
 - 仅输出 JSON，不要任何解释性文字
 
 从精修模组文本中生成所有自动触发事件，包括一个世界初始化自动触发（AT_WORLD）。

@@ -829,6 +829,26 @@ class Keeper:
             self._pending_move = None
         if self._pending_side_effects:
             self._apply_side_effects(list(self._pending_side_effects))
+        # ── Inject NPC follow entity for NPCs that just started following ──
+        for npc in self.world.npcs._npcs.values():
+            if not npc.following or npc.scene != self.world.current_location:
+                continue
+            if not npc.can_follow:
+                continue
+            follow_eid = f"EVT_NPC_FOLLOW_{npc.name}"
+            node = self.world._current_node()
+            if node and follow_eid not in {e.id for e in node.interactions}:
+                from scenario_core import Entity
+                req_text = npc.follow_requirements if npc.follow_requirements else "NPC愿意跟随"
+                node.interactions.append(Entity(
+                    id=follow_eid, entity_type="interaction",
+                    name=f"{npc.name}开始跟随你",
+                    scene=self.world.current_location, type="无",
+                    requirement=req_text,
+                    trigger=f"你请求{npc.name}跟随你一起行动",
+                    result=f"{npc.name}加入了你的队伍，你可以随时与其交谈",
+                    side_effects=[], difficulty="None",
+                ))
 
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
@@ -873,7 +893,7 @@ class Keeper:
         prompt = build_keeper_enrich_prompt(self.world, judged_entities, user_input)
         try:
             response = self.monitor.call(
-                lambda p, **kw: call_deepseek(p, _label="keeper_enrich", **kw),
+                lambda p, **kw: call_deepseek(p, **kw),
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
                        "\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。"
@@ -887,10 +907,25 @@ class Keeper:
                     "reasoning": "",
                     "emphasis_hint": "",
                 })
-            return json.loads(response) if isinstance(response, str) else response
+            result = json.loads(response) if isinstance(response, str) else response
+            self._log_agent_response("keeper_enrich", result)
+            return result
         except Exception as e:
             self._warnings.append(f"叙事润色失败（{e}），结果将以原始形式呈现。")
             return {"results": {}, "reasoning": "", "emphasis_hint": ""}
+
+    def _log_agent_response(self, filename: str, data: dict):
+        """Write agent response directly to log file, bypassing global label."""
+        import os as _os
+        from prompts import _log_dir as _prompt_log_dir
+        d = _prompt_log_dir
+        if not d:
+            return
+        _os.makedirs(d, exist_ok=True)
+        with open(_os.path.join(d, f"{filename}.txt"), "a", encoding="utf-8") as f:
+            f.write("\n--- Response ---\n")
+            f.write(json.dumps(data, ensure_ascii=False, indent=2))
+            f.write("\n\n")
 
     def _find_entity_by_id(self, entity_id: str):
         """Find entity by ID across graph (scenes + events + boss encounters)."""

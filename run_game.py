@@ -53,7 +53,7 @@ def run_game(character_path: str = None):
         l2_path="data/modules/常暗更新/l2_keeper.json",
         l1_path="data/modules/常暗更新/l1_player.json",
         l3_path="data/modules/常暗更新/l3_designer.json",
-        start_node="6号车厢",
+        start_node="5号车厢",
     )
 
     keeper = game["keeper"]
