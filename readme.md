@@ -249,6 +249,11 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | 9 | O12 | 条件="" 字段造成 Token 噪声 | ✅ 已修复 — `_build_entity_lines()` 中 `_fmt_inter`、`_fmt_at` 和事件格式化均改为仅当条件非空时才渲染 `条件="..."` 字段 |
 | 10 | O13 | @grant_weapon 副效果未接入游戏循环 | ✅ 已修复（2026-05-23）。两处 fix：(1) `ScenarioWorld.__init__()` 从 graph nodes 加载 L2 `scene_weapons` → `world.scene_weapons`。(2) `Keeper._load_scene_into_graph()` 动态场景时同步武器。(3) Search handler 中武器发现移出 `if ok` 分支——即使侦查失败也能看到场景武器。(4) Search handler 新增拾取意图检测，LLM 误分类为 search 时仍能触发 `add_weapon()` |
 | 11 | O14 | 结局事件系统未实施 | ✅ 已修复 — `keeper.py` 中 Judge 完成后通过 dependency_graph 自动检测并触发依赖事件的结局（如 IT3 完成 → E_TEST_END 自动触发）。`##END_` 标记检测后从 L3 `ending_conditions` 查找完整叙事。`game_loop.py` 返回 `game_over=True`，前端可据此显示结局并退出。**TODO**：跨模组时结局需合并多 L3 或全局结局表 |
+| 14 | O15 | NPC 态度层级复杂影响 | hostile/wary/neutral/friendly/trusting 五级态度 -> 信息透露量 / 检定难度 / 战斗触发。当前仅注入 prompt 供 LLM 自行解读 |
+| 15 | O16 | 世界状态更新纳入 NPC 关键事件 | NPC 跟随/死亡/态度转变等事件纳入 dependency graph 和 world.runtime_state 追踪 |
+| 16 | O17 | 半主动 NPC ambient triggers | NPCManager 预留 get_ambient_triggers() hook，未来对接 AutoTrigger 系统实现 NPC 主动行为 |
+| 17 | O18 | requirement 确定性 NPC 状态语法 | 如 NPC:name.attitude=friendly 形式的硬性条件解析 |
+| 18 | O19 | NPC bound entity 跨场景激活 | 当前 source_scene 精确匹配过于粗糙——NPC 移动后原场景 entity 仍应可选，部分 AT 应跨场景生效。需细化绑定实体的可用性规则 |
 
 
 ### 待升级（不优先）
@@ -459,3 +464,13 @@ pyinstaller -F --noconsole --name "TRPG助手" \
 - API Key：`.env` 不打包，首次启动引导用户在 Web 界面配置
 - 杀软误报：`--onedir`（文件夹分发）误报率低于 `--onefile`
 - 跨平台：Windows/macOS/Linux 分别需在对应系统打包
+
+## NPC-Entity 分离 (2026-05-25)
+
+- **模组生成**：NPC 相关 entity 从 scene 剥离绑定到 NPC profile（`bound_interactions` / `bound_auto_triggers`），保留 entity ID 和 source_scene。Step 2a/2b prompt 排除纯 NPC 对话和跟随事件。
+- **运行时**：NPC 对话走独立 turn — talk_to(状态门+交互触发条件) → NPC parse(bound entities) → judge → enrich → curate，game_loop 统一 narrate。flash LLM 判定对话意图防止误触发。NPC AT 条件满足时动态注入主 parse。
+- **独立输出**：`run_turn()` 返回 `npcs_visible` (in_scene/following) 和 `npc_events` (固定预料通知)。
+  - `NPC:XXX 可交互` 始终渲染
+- **NPC 跟随**：两种触发源（@npc_follow markup + 玩家请求），统一检查 `can_follow` + `follow_requirements` + 存活状态。跟随变化走固定预料。
+- **设计文档**：`docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
+- **实现计划**：`docs/superpowers/plans/2026-05-25-npc-entity-separation-plan.md`
