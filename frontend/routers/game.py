@@ -66,11 +66,25 @@ async def game_page(request: Request):
 
 @router.post("/api/game/turn")
 async def process_turn(user_input: str = Form(...)):
+    import asyncio
+    import traceback
     from game_loop import run_turn
     game = get_game()
 
     _push_progress("parse", "running")
-    turn = run_turn(game, user_input)
+
+    # Run blocking LLM call in thread pool to avoid blocking event loop
+    loop = asyncio.get_event_loop()
+    try:
+        turn = await loop.run_in_executor(None, run_turn, game, user_input)
+    except Exception as e:
+        traceback.print_exc()
+        _push_progress("complete", "")
+        return HTMLResponse(
+            f'<div class="msg-narrative px-3 py-2 text-red-400 border-l-3 border-red-500 bg-[#1a0a0a]">'
+            f'错误: {e}</div>'
+        )
+
     _push_progress("parse", "done")
     _push_progress("judge", "done")
     _push_progress("enrich", "done")
@@ -84,9 +98,20 @@ async def process_turn(user_input: str = Form(...)):
 
     narrative_html = ""
     if brief:
-        narrative_html += f'<div class="msg-brief px-3 py-2 text-sm text-gray-500 border-l-2 border-gray-600 mb-2">{brief}</div>'
+        narrative_html += (
+            f'<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 '
+            f'border-gray-600 mb-2">{brief}</div>'
+        )
     if narrative:
-        narrative_html += f'<div class="msg-narrative px-3 py-2 text-parchment border-l-3 border-aged-gold bg-[#1a1410] narrative-flash">{narrative}</div>'
+        narrative_html += (
+            f'<div class="msg-narrative px-3 py-2 text-parchment border-l-3 '
+            f'border-aged-gold bg-[#1a1410] narrative-flash">{narrative}</div>'
+        )
+    if not narrative_html:
+        narrative_html = (
+            f'<div class="msg-brief px-3 py-2 text-sm text-gray-500">'
+            f'（没有返回叙事内容）</div>'
+        )
 
     return HTMLResponse(narrative_html)
 

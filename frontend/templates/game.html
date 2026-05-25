@@ -241,34 +241,70 @@
     }
   }
 
+  // ── Chat history accumulator ──
+  let chatMessages = [];
+
+  function addToHistory(userMsg, responseHtml) {
+    if (userMsg) {
+      chatMessages.push(
+        '<div class="msg-brief px-3 py-2 text-sm text-gray-500 border-l-2 border-gray-700 mb-2">' +
+        '&gt; ' + userMsg + '</div>'
+      );
+    }
+    if (responseHtml) {
+      chatMessages.push(responseHtml);
+    }
+    // Keep at most 200 messages
+    if (chatMessages.length > 200) chatMessages = chatMessages.slice(-200);
+    // Sync to expanded panel if visible
+    const panel = document.getElementById('chat-history');
+    if (panel) panel.innerHTML = chatMessages.join('');
+  }
+
   // ── Send turn ──
   async function sendTurn() {
     const compactInput = document.getElementById('user-input');
     const expandedInput = document.getElementById('user-input-expanded');
     const text = (compactInput.value || expandedInput.value).trim();
     if (!text) return;
-    compactInput.value = '';
-    expandedInput.value = '';
+
+    // Determine which input is active (visible)
+    const barHidden = document.getElementById('narrative-bar').style.display === 'none';
+    const activeInput = barHidden ? expandedInput : compactInput;
+    const inactiveInput = barHidden ? compactInput : expandedInput;
+
+    activeInput.value = '';
+    inactiveInput.value = '';
     compactInput.disabled = true;
+    expandedInput.disabled = true;
     document.getElementById('step-indicator').innerHTML = 'parse ...';
+
+    // Show user message in compact bar while waiting
+    document.getElementById('compact-narrative').innerHTML =
+      '<span class="text-gray-500">' + text + '</span>';
+
     try {
       const formData = new FormData();
       formData.append('user_input', text);
       const resp = await fetch('/api/game/turn', { method: 'POST', body: formData });
       const html = await resp.text();
       document.getElementById('compact-narrative').innerHTML = html;
+      addToHistory(text, html);
+
+      // Scroll expanded panel if visible
       const chatHistory = document.getElementById('chat-history');
-      if (chatHistory && !document.getElementById('chat-panel').classList.contains('hidden')) {
-        chatHistory.insertAdjacentHTML('beforeend', html);
+      if (chatHistory) {
         chatHistory.scrollTop = chatHistory.scrollHeight;
       }
+
       htmx.ajax('GET', '/api/game/player-status', '#hud-stats');
       htmx.ajax('GET', '/api/game/scene', '#hud-scene');
     } catch(e) {
-      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">网络错误</span>';
+      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">网络错误: ' + e.message + '</span>';
     }
     compactInput.disabled = false;
-    compactInput.focus();
+    expandedInput.disabled = false;
+    activeInput.focus();
   }
 
   // ── Enter key ──
