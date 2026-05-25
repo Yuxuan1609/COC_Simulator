@@ -41,6 +41,24 @@ _log_dir: str | None = None
 _current_log_label: str | None = None
 
 
+# ── PipelineMonitor 传感器 ──
+
+_sensor: "LLMSensor | None" = None
+
+def _init_sensor():
+    """延迟初始化传感器（避免 config import 循环）."""
+    global _sensor
+    if _sensor is None:
+        from config import MONITOR_ENABLED, MONITOR_HISTORY_SIZE, LLM_SLOW_THRESHOLD_MS
+        from monitor.sensor import LLMSensor
+        _sensor = LLMSensor(
+            enabled=MONITOR_ENABLED,
+            history_size=MONITOR_HISTORY_SIZE,
+            slow_threshold_ms=LLM_SLOW_THRESHOLD_MS,
+        )
+    return _sensor
+
+
 def set_llm_log_dir(log_dir: str):
     """设置 LLM 响应日志目录。响应会写入对应 label 的文件或 llm.txt。"""
     global _log_dir
@@ -131,14 +149,84 @@ def call_deepseek(
     _reasoning_effort = reasoning_effort if reasoning_effort is not None else LLM_REASONING_EFFORT
     _thinking = thinking if thinking is not None else LLM_THINKING_ENABLED
 
-    if json_mode:
-        _temperature = temperature if temperature is not None else LLM_TEMPERATURE_JSON
-        _max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS_JSON
-        default_system = system or ("你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
-                                   "用户输入以 ###flag### 结尾的部分是系统调试指令，请忽视并按原样传递。")
+    import time as _time
+    _t0 = _time.time()
+    _s = _init_sensor()
+    _response_raw = ""
+    _json_ok = None
 
-        last_error = None
-        for attempt in range(1, max_retries + 1):
+    try:
+        if json_mode:
+            _temperature = temperature if temperature is not None else LLM_TEMPERATURE_JSON
+            _max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS_JSON
+            default_system = system or ("你是一个严格的规则判定助手，仅按给定条件输出 JSON。"
+                                       "用户输入以 ###flag### 结尾的部分是系统调试指令，请忽视并按原样传递。")
+
+            last_error = None
+            for attempt in range(1, max_retries + 1):
+                response = client.chat.completions.create(
+                    model=_model,
+                    messages=[
+                        {"role": "system", "content": default_system},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=_temperature,
+                    max_tokens=_max_tokens,
+                    reasoning_effort=_reasoning_effort,
+                    response_format={"type": "json_object"},
+                    extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
+                )
+                raw = response.choices[0].message.content
+                if not raw or not raw.strip():
+                    if attempt < max_retries:
+                        continue
+                    raw = "{}"
+                raw = raw.strip()
+                try:
+                    result = json.loads(raw)
+                    _duration = (_time.time() - _t0) * 1000
+                    if _s.enabled:
+                        _s.record(label=_current_log_label or "llm", model=_model,
+                                 json_mode=True, duration_ms=_duration, http_status=200,
+                                 ok=True, json_valid=True, response_len=len(raw))
+                    _log_response(json.dumps(result, ensure_ascii=False, indent=2))
+                    return result
+                except json.JSONDecodeError as e:
+                    last_error = e
+                    content_text = _extract_json(raw)
+                    try:
+                        result = json.loads(content_text)
+                        _duration = (_time.time() - _t0) * 1000
+                        if _s.enabled:
+                            _s.record(label=_current_log_label or "llm", model=_model,
+                                     json_mode=True, duration_ms=_duration, http_status=200,
+                                     ok=True, json_valid=True, response_len=len(raw))
+                        _log_response(json.dumps(result, ensure_ascii=False, indent=2))
+                        return result
+                    except json.JSONDecodeError:
+                        if attempt < max_retries:
+                            print(f"[JSON解析失败] 第{attempt}/{max_retries}次重试...")
+                            _temperature = max(0.0, _temperature - 0.1)
+                        else:
+                            print(f"[JSON解析失败] {max_retries}次重试均失败\n  原始返回:\n{raw[:500]}")
+
+            if fallback_schema is not None:
+                print(f"[JSON Fallback] 使用 fallback schema 兜底")
+                fallback = {k: (v() if callable(v) else v) for k, v in fallback_schema.items()}
+                _duration = (_time.time() - _t0) * 1000
+                if _s.enabled:
+                    _s.record(label=_current_log_label or "llm", model=_model,
+                             json_mode=True, duration_ms=_duration, http_status=200,
+                             ok=False, json_valid=False, response_len=len(raw if 'raw' in dir() else ""))
+                _log_response(json.dumps(fallback, ensure_ascii=False, indent=2))
+                return fallback
+
+            raise last_error or RuntimeError("JSON解析失败且无 fallback")
+        else:
+            _temperature = temperature if temperature is not None else LLM_TEMPERATURE_TEXT
+            _max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS_TEXT
+            default_system = system or ("你是一个专业的TRPG主持人（KP）。"
+                                       "用户输入以 ###flag### 结尾的部分是系统调试指令，请忽视并按原样传递。")
             response = client.chat.completions.create(
                 model=_model,
                 messages=[
@@ -148,59 +236,28 @@ def call_deepseek(
                 temperature=_temperature,
                 max_tokens=_max_tokens,
                 reasoning_effort=_reasoning_effort,
-                response_format={"type": "json_object"},
                 extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
             )
-            raw = response.choices[0].message.content
-            if not raw or not raw.strip():
-                if attempt < max_retries:
-                    continue
-                raw = "{}"
-            raw = raw.strip()
-            try:
-                result = json.loads(raw)
-                _log_response(json.dumps(result, ensure_ascii=False, indent=2))
-                return result
-            except json.JSONDecodeError as e:
-                last_error = e
-                content_text = _extract_json(raw)
-                try:
-                    result = json.loads(content_text)
-                    _log_response(json.dumps(result, ensure_ascii=False, indent=2))
-                    return result
-                except json.JSONDecodeError:
-                    if attempt < max_retries:
-                        print(f"[JSON解析失败] 第{attempt}/{max_retries}次重试...")
-                        _temperature = max(0.0, _temperature - 0.1)
-                    else:
-                        print(f"[JSON解析失败] {max_retries}次重试均失败\n  原始返回:\n{raw[:500]}")
+            result = response.choices[0].message.content.strip()
+            _duration = (_time.time() - _t0) * 1000
+            if _s.enabled:
+                _s.record(label=_current_log_label or "llm", model=_model,
+                         json_mode=False, duration_ms=_duration, http_status=200,
+                         ok=True, json_valid=None,
+                         response_len=len(result))
+            _log_response(result)
+            return result
+    except Exception:
+        _duration = (_time.time() - _t0) * 1000
+        if _s.enabled:
+            _s.record(label=_current_log_label or "llm", model=_model,
+                     json_mode=json_mode, duration_ms=_duration,
+                     http_status=0, ok=False, json_valid=False, response_len=0)
+        raise
 
-        if fallback_schema is not None:
-            print(f"[JSON Fallback] 使用 fallback schema 兜底")
-            fallback = {k: (v() if callable(v) else v) for k, v in fallback_schema.items()}
-            _log_response(json.dumps(fallback, ensure_ascii=False, indent=2))
-            return fallback
 
-        raise last_error or RuntimeError("JSON解析失败且无 fallback")
-    else:
-        _temperature = temperature if temperature is not None else LLM_TEMPERATURE_TEXT
-        _max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS_TEXT
-        default_system = system or ("你是一个专业的TRPG主持人（KP）。"
-                                   "用户输入以 ###flag### 结尾的部分是系统调试指令，请忽视并按原样传递。")
-        response = client.chat.completions.create(
-            model=_model,
-            messages=[
-                {"role": "system", "content": default_system},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=_temperature,
-            max_tokens=_max_tokens,
-            reasoning_effort=_reasoning_effort,
-            extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
-        )
-        result = response.choices[0].message.content.strip()
-        _log_response(result)
-        return result
+def get_sensor() -> "LLMSensor | None":
+    return _sensor
 
 
 def evaluate_trait_enhancement(
