@@ -136,13 +136,13 @@ def _build_scene_state(snap: dict) -> str:
     parts = []
     npcs = snap.get("npcs_in_scene", [])
     if npcs:
-        parts.append(f"  NPC：{', '.join(n['name'] for n in npcs)}")
+        parts.append(f"  NPC：{'、'.join(n['name'] for n in npcs)}")
     enemies = snap.get("enemies_in_scene", [])
     if enemies:
-        parts.append(f"  敌人：{', '.join(e['enemy_ref'] for e in enemies)}")
+        parts.append(f"  敌人：{'、'.join(e['enemy_ref'] for e in enemies)}")
     weps = snap.get("scene_weapons", [])
     if weps:
-        parts.append(f"  场景武器：{', '.join(w['weapon_ref'] for w in weps)}")
+        parts.append(f"  场景武器：{'、'.join(w['weapon_ref'] for w in weps)}")
     if not parts:
         return ""
     return "【场景现状】\n" + "\n".join(parts) + "\n"

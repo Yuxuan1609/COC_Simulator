@@ -22,7 +22,11 @@ class TurnLogger:
 
     def log(self, player_input: str, enrich_result: dict | None,
             narrator_brief: str, narrator_narrative: str):
-        """Record one turn. enrich_result may be None if enrich was skipped."""
+        """Record one turn. enrich_result may be None if enrich was skipped.
+
+        Writes both a per-turn file (turn_NN.json) and appends to a merged
+        log (turn_log.jsonl) with turn separation.
+        """
         self.turn_number += 1
         entry = {
             "turn": self.turn_number,
@@ -33,6 +37,11 @@ class TurnLogger:
                 "narrative": narrator_narrative,
             },
         }
+        # Per-turn individual file
         path = os.path.join(self.log_dir, f"turn_{self.turn_number:02d}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(entry, f, ensure_ascii=False, indent=2)
+        # Merged log (JSONL: one JSON object per line)
+        merged_path = os.path.join(self.log_dir, "turn_log.jsonl")
+        with open(merged_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")

@@ -28,6 +28,10 @@ _os.makedirs(_log_dir, exist_ok=True)
 set_prompt_log_dir(_log_dir)
 set_llm_log_dir(_log_dir)
 
+from game.turn_logger import TurnLogger
+from game_loop import set_turn_logger
+set_turn_logger(TurnLogger(log_dir=_log_dir))
+
 # ═══════════════════════════════════════════════════════════════
 #  武器/敌人库初始化
 # ═══════════════════════════════════════════════════════════════

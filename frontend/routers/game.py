@@ -40,6 +40,10 @@ def get_game() -> dict:
         set_prompt_log_dir(log_dir)
         set_llm_log_dir(log_dir)
 
+        from game.turn_logger import TurnLogger
+        from game_loop import set_turn_logger
+        set_turn_logger(TurnLogger(log_dir=log_dir))
+
         g = init_game(
             l2_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l2_test.json"),
             l1_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l1_test.json"),
@@ -219,6 +223,10 @@ async def init_game_api(
     os.makedirs(log_dir, exist_ok=True)
     set_prompt_log_dir(log_dir)
     set_llm_log_dir(log_dir)
+
+    from game.turn_logger import TurnLogger
+    from game_loop import set_turn_logger
+    set_turn_logger(TurnLogger(log_dir=log_dir))
 
     # Determine start scene: L3.start_scene > L3.scene_intents first key > L2 first scene
     start_node = _resolve_start_scene(l2_path, l3_path)
