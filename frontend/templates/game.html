@@ -288,6 +288,12 @@
       formData.append('user_input', text);
       const resp = await fetch('/api/game/turn', { method: 'POST', body: formData });
       const html = await resp.text();
+      if (!resp.ok) {
+        document.getElementById('compact-narrative').innerHTML =
+          '<span class="text-red-400">服务器错误 (' + resp.status + '): ' + html + '</span>';
+        throw new Error('Server error: ' + resp.status);
+      }
+      console.log('[sendTurn] status:', resp.status, 'body length:', html.length);
       document.getElementById('compact-narrative').innerHTML = html;
       addToHistory(text, html);
 
@@ -331,6 +337,8 @@
     ws.onmessage = function(e) {
       const data = JSON.parse(e.data);
       const indicator = document.getElementById('step-indicator');
+      // Ignore heartbeat keep-alive messages
+      if (data.step === 'heartbeat') return;
       if (data.step === 'complete') {
         indicator.innerHTML = '<span class="text-aged-gold">完成</span>';
       } else {

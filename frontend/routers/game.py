@@ -69,7 +69,15 @@ async def process_turn(user_input: str = Form(...)):
     import asyncio
     import traceback
     from game_loop import run_turn
-    game = get_game()
+
+    try:
+        game = get_game()
+    except Exception as e:
+        traceback.print_exc()
+        return HTMLResponse(
+            f'<div class="msg-narrative px-3 py-2 text-red-400 border-l-2 '
+            f'border-red-500 bg-[#1a0a0a]">游戏引擎错误: {e}</div>'
+        )
 
     _push_progress("parse", "running")
 
@@ -104,7 +112,7 @@ async def process_turn(user_input: str = Form(...)):
         )
     if narrative:
         narrative_html += (
-            f'<div class="msg-narrative px-3 py-2 text-parchment border-l-3 '
+            f'<div class="msg-narrative px-3 py-2 text-parchment border-l-2 '
             f'border-aged-gold bg-[#1a1410] narrative-flash">{narrative}</div>'
         )
     if not narrative_html:
