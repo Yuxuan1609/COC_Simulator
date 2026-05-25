@@ -805,6 +805,20 @@ def save_pipeline_result(result: PipelineResult, module_dir: str) -> None:
     print(f"  L2 → {path}")
 
     # L3
+    # Auto-populate start_scene if not already set
+    if "start_scene" not in result.l3_data or not result.l3_data["start_scene"]:
+        # Derive from L2 scenes (first key) or L3 scene_intents (first key)
+        l3_si = result.l3_data.get("scene_intents", {})
+        l2_scenes = result.l2_data.get("scenes", {})
+        candidates = []
+        if isinstance(l3_si, dict) and l3_si:
+            candidates.append(next(iter(l3_si.keys())))
+        if isinstance(l2_scenes, dict) and l2_scenes:
+            first = next(iter(l2_scenes.keys()))
+            if first not in candidates:
+                candidates.append(first)
+        if candidates:
+            result.l3_data["start_scene"] = candidates[0]
     path = os.path.join(module_dir, "l3_designer.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(result.l3_data, f, ensure_ascii=False, indent=2)

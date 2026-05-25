@@ -187,12 +187,15 @@ async def init_game_api(
     set_prompt_log_dir(log_dir)
     set_llm_log_dir(log_dir)
 
+    # Determine start scene: L3.start_scene > L3.scene_intents first key > L2 first scene
+    start_node = _resolve_start_scene(l2_path, l3_path)
+
     try:
         g = init_game(
             l2_path=str(PROJECT_ROOT / l2_path),
             l1_path=str(PROJECT_ROOT / l1_path),
             l3_path=str(PROJECT_ROOT / l3_path),
-            start_node="测试房间",
+            start_node=start_node,
         )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -215,6 +218,52 @@ async def init_game_api(
         "san": inv.derived.SAN,
         "name": inv.name,
     }
+
+
+def _resolve_start_scene(l2_path: str, l3_path: str) -> str:
+    """Determine the starting scene for game init.
+
+    Priority:
+    1. L3 JSON top-level 'start_scene' field
+    2. L3 JSON module_meta.start_scene
+    3. First key in L3 scene_intents dict
+    4. First key in L2 scenes dict
+    5. Fallback: "测试房间"
+    """
+    import json as _json
+    l2_full = PROJECT_ROOT / l2_path
+    l3_full = PROJECT_ROOT / l3_path
+
+    # Try L3 first
+    if l3_full.exists():
+        try:
+            l3 = _json.loads(l3_full.read_text(encoding="utf-8"))
+            # Check top-level start_scene
+            if isinstance(l3, dict):
+                if "start_scene" in l3 and l3["start_scene"]:
+                    return l3["start_scene"]
+                # Check module_meta.start_scene
+                meta = l3.get("module_meta", {})
+                if isinstance(meta, dict) and meta.get("start_scene"):
+                    return meta["start_scene"]
+                # First scene_intents key
+                si = l3.get("scene_intents", {})
+                if isinstance(si, dict) and si:
+                    return next(iter(si.keys()))
+        except Exception:
+            pass
+
+    # Try L2 scenes dict
+    if l2_full.exists():
+        try:
+            l2 = _json.loads(l2_full.read_text(encoding="utf-8"))
+            scenes = l2.get("scenes", {})
+            if isinstance(scenes, dict) and scenes:
+                return next(iter(scenes.keys()))
+        except Exception:
+            pass
+
+    return "测试房间"
 
 
 def _make_default_inv():
