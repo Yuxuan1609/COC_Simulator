@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}TRPG 助手 — 启动{% endblock %}
+{% block body %}
+<div class="min-h-screen bg-[#0d0d0d] flex">
+  {# Left: Navigation #}
+  <nav class="w-56 border-r border-gray-800 bg-[#0f0f0f] flex flex-col p-4 gap-3">
+    <h1 class="text-lg text-aged-gold font-bold tracking-wider border-b border-gray-800 pb-3">TRPG 助手</h1>
+    <a href="/character" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded border border-transparent hover:border-gray-700">
+      创建调查员
+    </a>
+    <a href="/game" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded border border-transparent hover:border-gray-700">
+      开始游戏
+    </a>
+    <a href="/editor" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded border border-transparent hover:border-gray-700">
+      JSON 编辑器
+    </a>
+  </nav>
+
+  {# Right: Content area — two tabs #}
+  <div class="flex-1 overflow-y-auto p-6">
+    <div id="launcher-content"
+         hx-get="/launcher/tabs/module-gen"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <p class="text-gray-500 text-sm">加载中...</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

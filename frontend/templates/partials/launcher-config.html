@@ -1,0 +1,74 @@
+<div>
+  <div class="flex gap-4 mb-6">
+    <button class="px-4 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#0f0f0f]"
+            hx-get="/launcher/tabs/module-gen" hx-target="#launcher-content" hx-swap="innerHTML">
+      模组生成
+    </button>
+    <button class="px-4 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#0f0f0f]"
+            hx-get="/launcher/tabs/config" hx-target="#launcher-content" hx-swap="innerHTML">
+      参数配置
+    </button>
+  </div>
+
+  <h2 class="text-xl text-aged-gold mb-4">参数配置</h2>
+
+  <form hx-post="/api/config/save" hx-target="#config-result" hx-swap="innerHTML"
+        class="space-y-4 max-w-xl">
+    <div>
+      <label class="block text-sm text-gray-400 mb-1">模型</label>
+      <select name="model" class="w-full bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+        <option value="deepseek-v4-pro" {{ 'selected' if config.model == 'deepseek-v4-pro' }}>deepseek-v4-pro</option>
+        <option value="deepseek-v4-flash" {{ 'selected' if config.model == 'deepseek-v4-flash' }}>deepseek-v4-flash</option>
+      </select>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <label class="flex items-center gap-2 text-sm text-gray-400">
+        <input type="checkbox" name="thinking" {{ 'checked' if config.thinking }} class="accent-aged-brown">
+        Thinking 模式
+      </label>
+      <select name="reasoning_effort" class="bg-[#0d0d0d] border border-gray-700 rounded px-2 py-1 text-xs text-gray-300">
+        <option value="low" {{ 'selected' if config.reasoning_effort == 'low' }}>low</option>
+        <option value="medium" {{ 'selected' if config.reasoning_effort == 'medium' }}>medium</option>
+        <option value="high" {{ 'selected' if config.reasoning_effort == 'high' }}>high</option>
+        <option value="max" {{ 'selected' if config.reasoning_effort == 'max' }}>max</option>
+      </select>
+    </div>
+
+    <div>
+      <label class="block text-sm text-gray-400 mb-1">Flash 模型</label>
+      <input type="text" name="flash_model" value="{{ config.flash_model }}"
+             class="w-full bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">LLM 超时 (ms)</label>
+        <input type="number" name="llm_timeout_ms" value="{{ config.llm_timeout_ms }}"
+               class="w-full bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1">慢调用阈值 (ms)</label>
+        <input type="number" name="llm_slow_threshold_ms" value="{{ config.llm_slow_threshold_ms }}"
+               class="w-full bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <label class="flex items-center gap-2 text-sm text-gray-400">
+        <input type="checkbox" name="combat_llm_enhancement" {{ 'checked' if config.combat_llm_enhancement }} class="accent-aged-brown">
+        Combat LLM 增强
+      </label>
+      <label class="flex items-center gap-2 text-sm text-gray-400">
+        <input type="checkbox" name="debug_mode" {{ 'checked' if config.debug_mode }} class="accent-aged-brown">
+        调试模式
+      </label>
+    </div>
+
+    <button type="submit"
+            class="px-6 py-2 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30">
+      保存配置
+    </button>
+    <span id="config-result" class="text-sm text-gray-500"></span>
+  </form>
+</div>
