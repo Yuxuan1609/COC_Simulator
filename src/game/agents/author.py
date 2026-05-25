@@ -35,16 +35,27 @@ class Author:
         else:
             self.time_pressure = None
         self.history: list[dict] = []  # {intent, level, justification, turn}
+        from monitor.agent_monitor import AgentMonitor
+        from monitor.policies import AuthorPolicy
+        from llm import _init_sensor
+        self.monitor = AgentMonitor("Author", _init_sensor(), AuthorPolicy())
 
     def handle_request(self, request: AuthorRequest, turn_number: int = 0) -> ModulePatch | StructuralEdit:
         """Process an AuthorRequest. Returns ModulePatch (patch or reject) or StructuralEdit."""
+        if self.monitor.degraded:
+            from monitor.policies import AuthorPolicy
+            policy = AuthorPolicy()
+            if policy.on_degrade().get("reject_all_structural"):
+                return ModulePatch(entities=[], scene_descriptions={},
+                                  justification="REJECTED: 系统降级，暂不接受结构性扩展")
         self.history.append({
             "intent": request.intent,
             "turn": turn_number,
         })
 
         prompt = self._build_prompt(request)
-        response = call_deepseek(
+        response = self.monitor.call(
+            lambda p, **kw: call_deepseek(p, **kw),
             prompt, json_mode=True, model=LLM_FLASH_MODEL,
             reasoning_effort=RE_AUTHOR,
             system="你是一个优秀的TRPG模组创作者，擅长根据游戏中突发情况动态扩展模组内容。"

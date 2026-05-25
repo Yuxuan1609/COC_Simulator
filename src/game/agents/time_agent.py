@@ -9,6 +9,12 @@ from config_llm import LLM_FLASH_MODEL, RE_TIME_AGENT
 class TimeAgent:
     """LLM sub-agent: evaluates time consumption for the current turn's actions."""
 
+    def __init__(self):
+        from monitor.agent_monitor import AgentMonitor
+        from monitor.policies import TimeAgentPolicy
+        from llm import _init_sensor
+        self.monitor = AgentMonitor("TimeAgent", _init_sensor(), TimeAgentPolicy())
+
     def build_prompt(
         self,
         actions: list[dict],
@@ -33,6 +39,8 @@ class TimeAgent:
 time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
 
     def assess(self, actions: list[dict] | None = None, current_input: str = "", **kwargs) -> dict:
+        if self.monitor.degraded:
+            return {"time_delta": 0, "narrative_hint": ""}
         prompt = self.build_prompt(
             actions=actions or [],
             current_input=current_input,
@@ -40,7 +48,8 @@ time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
         )
         _show_prompt("TimeAgent", prompt)
         try:
-            response = call_deepseek(
+            response = self.monitor.call(
+                lambda p, **kw: call_deepseek(p, **kw),
                 prompt,
                 json_mode=True,
                 model=LLM_FLASH_MODEL,

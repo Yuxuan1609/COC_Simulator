@@ -14,13 +14,24 @@ class IntentDetector:
     Uses flash model with minimal prompt for fast yes/no + one-line description.
     """
 
+    def __init__(self):
+        from monitor.agent_monitor import AgentMonitor
+        from monitor.policies import IntentDetectorPolicy
+        from llm import _init_sensor
+        self.monitor = AgentMonitor("IntentDetector", _init_sensor(), IntentDetectorPolicy())
+
     def detect(self, other_text: str, world_snapshot: dict) -> IntentResult:
         """Judge whether 'other' text warrants Author attention."""
         if not other_text or not other_text.strip():
             return IntentResult(needs_author=False)
 
+        if self.monitor.degraded:
+            return IntentResult(needs_author=True,
+                              intent="降级默认", reasoning="系统降级，默认触发 Author")
+
         prompt = self._build_prompt(other_text, world_snapshot)
-        response = call_deepseek(
+        response = self.monitor.call(
+            lambda p, **kw: call_deepseek(p, **kw),
             prompt, json_mode=True, model=LLM_FLASH_MODEL,
             reasoning_effort=RE_INTENT_DETECTOR,
             system="你是一个TRPG游戏状态监控者。判断玩家输入是否有值得KP关注的叙事意图。",
