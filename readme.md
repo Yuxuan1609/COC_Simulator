@@ -89,11 +89,7 @@
 │   │       ├── step-indicator.html            #   WebSocket 驱动的处理步骤指示器
 │   │       └── help-*.html                    #   上下文相关用户指南
 │   └── static/
-│       ├── tailwind.css                       #   Tailwind 独立构建（生产环境）
-│       └── fonts/                             #   捆绑的 Noto Serif SC 字体
-├── (旧 frontend 文件待 v2 完成迁移后删除:
-│   character.html, character.css, character.js,
-│   game.html, json-editor.html, server.py, game_server.py)
+│       └── fonts/                             #   捆绑的 Noto Serif SC 字体（生产环境用）
 ├── run_pipeline.py                          # 管线 CLI 入口（配置向导 + 手动/自动模式）
 ├── notebooks/
 │   ├── notebook_simplified.ipynb            # 主游戏循环（导入 src/ 模块）
@@ -421,18 +417,14 @@ python run_pipeline.py --config config.json     # 从配置文件
 python run_pipeline.py --config config.json --start-from step_3a  # 断点续跑
 ```
 
-### 前端车卡（调查员创建）
+### 前端车卡（调查员创建） + 游戏 + 编辑器
 
 ```bash
-uvicorn frontend.server:app --reload             # 开发模式 → localhost:8080/character
-```
-
-### 游戏循环
-
-```bash
-uvicorn frontend.server:app --reload             # 开发模式 → localhost:8080/game
+uvicorn frontend.server:app --reload             # 开发模式 → localhost:8080
 python run_game.py                               # 生产模式（含自动打开浏览器）
 ```
+
+浏览器打开 `http://localhost:8080` 进入启动页面，可选择车卡（`/character`）、游戏（`/game`）、编辑器（`/editor`）。
 
 Jupyter 交互：`notebooks/notebook_simplified.ipynb`
 
@@ -450,15 +442,6 @@ Jupyter 交互：`notebooks/notebook_simplified.ipynb`
 | `/charsave` / `/charload` | 调查员长期存档 |
 | `/inject [toggle\|status]` | 运行时注入状态 |
 | `/help` | 帮助 |
-
-### Web 前端
-
-```bash
-uvicorn frontend.server:app --reload --port 8080    # 开发模式（v2 FastAPI）
-python frontend/server.py                           # 生产模式（自动打开浏览器）
-```
-
-浏览器打开 `http://localhost:8080` 进入启动页面（Launcher），可选择进入车卡、游戏或编辑器。
 
 ## 公开发行打包
 
@@ -487,7 +470,7 @@ pyinstaller -F --noconsole --name "TRPG助手" \
 
 ## Frontend v2 重构 (2026-05-25)
 
-> 正在开发中。将当前的 vanilla HTML/CSS/JS + `http.server` 原型重写为 FastAPI + HTMX + Tailwind CSS。
+> ✅ 已完成。vanilla HTML/CSS/JS + `http.server` 原型已替换为 FastAPI + HTMX + Tailwind CSS。
 
 ### 技术栈
 
@@ -519,8 +502,6 @@ pyinstaller -F --noconsole --name "TRPG助手" \
 frontend/          ← 表示层（导入 src/）
 src/               ← 游戏引擎（不导入 frontend/）
 ```
-
-旧文件（`character.html/css/js`, `game.html`, `json-editor.html`, `server.py`, `game_server.py`）在 v2 迁移完成后删除。
 
 ## NPC-Entity 分离 (2026-05-25)
 
