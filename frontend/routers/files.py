@@ -35,17 +35,17 @@ async def list_files(
     base = _safe_dir(dir)
     items = list(base.iterdir())
     dirs = sorted(
-        [{"name": d.name, "path": str(d.relative_to(PROJECT_ROOT)), "ext": d.suffix}
+        [{"name": d.name, "path": d.relative_to(PROJECT_ROOT).as_posix(), "ext": d.suffix}
          for d in items if d.is_dir() and not d.name.startswith(".")],
         key=lambda x: x["name"],
     )
     files = sorted(
-        [{"name": f.name, "path": str(f.relative_to(PROJECT_ROOT)), "ext": f.suffix}
+        [{"name": f.name, "path": f.relative_to(PROJECT_ROOT).as_posix(), "ext": f.suffix}
          for f in items if f.is_file() and f.suffix in ALLOWED_EXTENSIONS],
         key=lambda x: x["name"],
     )
-    parent = str(base.parent.relative_to(PROJECT_ROOT)) if base != PROJECT_ROOT else None
-    current = str(base.relative_to(PROJECT_ROOT))
+    parent = base.parent.relative_to(PROJECT_ROOT).as_posix() if base != PROJECT_ROOT else None
+    current = base.relative_to(PROJECT_ROOT).as_posix()
 
     if format == "json":
         return {"dirs": dirs, "files": files, "parent": parent, "current": current}
