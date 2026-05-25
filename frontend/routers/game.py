@@ -7,7 +7,7 @@ import queue
 import threading
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 router = APIRouter(tags=["game"])
 
@@ -74,7 +74,7 @@ async def process_turn(user_input: str = Form(...)):
     _push_progress("parse", "running")
 
     # Run blocking LLM call in thread pool to avoid blocking event loop
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         turn = await loop.run_in_executor(None, run_turn, game, user_input)
     except Exception as e:

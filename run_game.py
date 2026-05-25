@@ -236,12 +236,9 @@ def _print_skill_result(sr):
 
 
 if __name__ == "__main__":
-    import uvicorn
-    import webbrowser
-    import os
-    port = 8080
-    url = f"http://localhost:{port}"
-    print(f"  TRPG Assistant v2.0 → {url}")
-    if not os.environ.get("NO_BROWSER"):
-        webbrowser.open(url)
-    uvicorn.run("frontend.server:app", host="127.0.0.1", port=port, log_level="info")
+    import argparse
+    parser = argparse.ArgumentParser(description="TRPG 调查员助手 — 命令行游戏")
+    parser.add_argument("--character", "-c", type=str, default=None,
+                        help="调查员角色卡路径（默认：investigator/test_character.json）")
+    args = parser.parse_args()
+    run_game(character_path=args.character)

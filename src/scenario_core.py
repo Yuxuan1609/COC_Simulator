@@ -540,6 +540,10 @@ def parse_hard_requirement(hard: str, runtime_state: dict) -> bool:
     if not hard or not hard.strip():
         return True
 
+    # Sentinel keywords that always evaluate to False
+    if hard.strip().upper() in ("NEVER_TRIGGER", "NEVER"):
+        return False
+
     # Step 1: split top-level AND (respecting parenthesized groups)
     and_parts = _split_top_level(hard, "AND")
 

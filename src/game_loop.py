@@ -300,30 +300,36 @@ def run_turn(game: dict, user_input: str,
                     entry["enhancement"] = o.enhancement
                 skill_results.append(entry)
 
-    try:
-        snap = world.build_snapshot()
-        narrative_brief, narrative, scene_update = narrator.narrate(
-            brief, snap=snap, user_input=user_input)
-        # Record brief to memory after narrator generates the final brief text
-        world.memory.add_record(
-            user_input, "narrated", "",
-            narrative_brief, location=world.current_location,
-            success=True,
-        )
-        if scene_update:
-            world.apply_scene_update(scene_update)
-
-        # TurnLogger: record player input + enrich + narrator output
-        if _turn_logger:
-            _turn_logger.log(
-                player_input=user_input,
-                enrich_result=result.get("enrich"),
-                narrator_brief=narrative_brief,
-                narrator_narrative=narrative,
+    if hasattr(brief, 'scene_snapshot'):
+        try:
+            snap = world.build_snapshot()
+            narrative_brief, narrative, scene_update = narrator.narrate(
+                brief, snap=snap, user_input=user_input)
+            # Record brief to memory after narrator generates the final brief text
+            world.memory.add_record(
+                user_input, "narrated", "",
+                narrative_brief, location=world.current_location,
+                success=True,
             )
-    except Exception as e:
-        narrative_brief = display_brief or "（处理中）"
-        narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
+            if scene_update:
+                world.apply_scene_update(scene_update)
+
+            # TurnLogger: record player input + enrich + narrator output
+            if _turn_logger:
+                _turn_logger.log(
+                    player_input=user_input,
+                    enrich_result=result.get("enrich"),
+                    narrator_brief=narrative_brief,
+                    narrator_narrative=narrative,
+                )
+        except Exception as e:
+            narrative_brief = display_brief or "（处理中）"
+            narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
+            scene_update = ""
+    else:
+        # Keeper returned early with plain-text brief/narrative (boss trigger, weapon pickup, etc.)
+        narrative_brief = display_brief or result.get("narrative", "") or "（处理中）"
+        narrative = result.get("narrative", "") or ""
         scene_update = ""
 
     ending = result.get("ending")  # {name, narrative, game_over} or None
