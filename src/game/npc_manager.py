@@ -37,16 +37,15 @@ class NPCManager:
     }
 
     def _check_follow_conditions(self, npc: NPC, world) -> tuple[bool, str]:
-        """Check if NPC can follow. Returns (can_follow, reason_if_not)."""
+        """Check if NPC can follow. Returns (can_follow, reason_if_not).
+
+        Simplified: only checks can_follow + state. follow_requirements is stored
+        as text from Step 1a for future LLM-based soft evaluation (TODO).
+        """
         if not npc.can_follow:
             return False, f"{npc.name} 不愿意跟随你"
         if npc.state in ("dead", "left"):
             return False, f"{npc.name} 无法跟随（{npc.state}）"
-        if npc.follow_requirements:
-            from scenario_core import parse_hard_requirement
-            met = parse_hard_requirement(npc.follow_requirements, world.runtime_state)
-            if not met:
-                return False, f"跟随条件尚未满足（{npc.follow_requirements}）"
         return True, ""
 
     # ── 初始化 ──

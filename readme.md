@@ -505,11 +505,13 @@ src/               ← 游戏引擎（不导入 frontend/）
 
 ## NPC-Entity 分离 (2026-05-25)
 
-- **模组生成**：NPC 相关 entity 从 scene 剥离绑定到 NPC profile（`bound_interactions` / `bound_auto_triggers`），保留 entity ID 和 source_scene。Step 2a/2b prompt 排除纯 NPC 对话和跟随事件。
-- **运行时**：NPC 对话走独立 turn — talk_to(状态门+交互触发条件) → NPC parse(bound entities) → judge → enrich → curate，game_loop 统一 narrate。flash LLM 判定对话意图防止误触发。NPC AT 条件满足时动态注入主 parse。
+- **NPC 场景分配**：Step 1a `characters` 输出 `scenes`（首次出现的主要场景）、`can_follow`（bool）、`follow_condition`（文本描述）。管线后处理注入到 `npc_profiles[].scene` / `.can_follow` / `.follow_requirements`。
+- **NPC 实体绑定**：新增 Step 2.5b（LLM，与 Step 3a ∥ 2.5 并行），用 LLM 判定每个 entity 归属哪个 NPC，替代原确定性子串匹配。Binding 结果传入 `_bind_npc_entities()` 优先使用，fallback 到确定性匹配。
+- **模组生成 prompt**：Step 2a/2b prompt 排除纯 NPC 对话和跟随事件。Step 2.5b prompt 传入完整 entity 列表 + characters 用于归属判定。
+- **运行时**：NPC 对话走独立 turn — talk_to(状态门+交互触发条件) → NPC parse(bound entities) → judge → enrich → curate，game_loop 统一 narrate。flash LLM 判定对话意图防止误触发。NPC AT 条件满足时动态注入主 parse，注入的 AT 标记为 `[NPC_AT]` 并在 parse prompt 中显示为独立 `【NPC 专属实体】` 区块。
 - **独立输出**：`run_turn()` 返回 `npcs_visible` (in_scene/following) 和 `npc_events` (固定预料通知)。
-  - `NPC:XXX 可交互` 始终渲染
-- **NPC 跟随**：两种触发源（@npc_follow markup + 玩家请求），统一检查 `can_follow` + `follow_requirements` + 存活状态。跟随变化走固定预料。
+- **NPC 跟随（简化）**：两种触发源（@npc_follow markup + 玩家请求），统一检查 `can_follow` + 存活状态。`follow_requirements` 保留为 Step 1a 生成的文本描述供将来 LLM 评估（TODO），当前运行时不做确定性求值。
+- **run_pipeline.py CLI**：LLM call 日志目录使用语义化步骤名（如 `step1a_structured_extract`）替代编号。Step 3a+2.5+2.5b 三路并行。
 - **设计文档**：`docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
 - **实现计划**：`docs/superpowers/plans/2026-05-25-npc-entity-separation-plan.md`
 

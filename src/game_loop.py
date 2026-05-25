@@ -182,14 +182,8 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     boss_library = BossLibrary("data/library/core/bosses.json")
     boss_encounters = l2.get("boss_encounters", [])
 
-    # Prepare NPC profiles (scene assignment from L2 data)
+    # Prepare NPC profiles (scene assignment now from Step 1a in pipeline)
     npc_profiles = l2.get("npc_profiles", {})
-    for scene_name, scene_data in l2_scenes.items():
-        for npc_data in scene_data.get("npcs", []):
-            name = npc_data.get("name", "")
-            if name in npc_profiles:
-                if "scene" not in npc_profiles[name] or not npc_profiles[name]["scene"]:
-                    npc_profiles[name] = {**npc_profiles[name], "scene": scene_name}
 
     world = ScenarioWorld(graph, start_node=start_node,
                           wr0_enabled=wr0_enabled,
@@ -342,9 +336,13 @@ def run_turn(game: dict, user_input: str,
 
     ending = result.get("ending")  # {name, narrative, game_over} or None
     standoff = result.get("standoff_prompt")
-    full_text = f"{narrative_brief}"
+    npc_events_out = result.get("npc_events", [])
+
+    full_text = narrative_brief or ""
     if combat_narrative:
         full_text += f"\n\n---\n⚔ 战斗回合\n{combat_narrative}"
+    if npc_events_out:
+        full_text += f"\n[NPC] {'；'.join(npc_events_out)}"
     full_text += f"\n\n\n{narrative}"
 
     # NPC visible output

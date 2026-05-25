@@ -755,6 +755,7 @@ class Keeper:
         """Inject condition-satisfied NPC auto-triggers into current node."""
         if not self.world.npcs:
             return
+        self.world._npc_injected_at_ids.clear()
         for npc in self.world.npcs._npcs.values():
             for at in npc.bound_auto_triggers:
                 at_scene = at.get("source_scene", "")
@@ -781,6 +782,7 @@ class Keeper:
                             difficulty=at.get("difficulty", ""),
                             extra=at.get("extra"),
                         ))
+                        self.world._npc_injected_at_ids.add(eid)
 
     # ── Internal ──
 

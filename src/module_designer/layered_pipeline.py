@@ -225,15 +225,21 @@ def _get_pipeline_version() -> str:
 
 
 def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
-                       npc_profiles: dict) -> tuple[list[dict], list[dict], dict]:
-    """Scan entities for NPC name references -> strip from scene -> bind to NPC profile.
+                       npc_profiles: dict,
+                       entity_bindings: dict | None = None) -> tuple[list[dict], list[dict], dict]:
+    """Scan entities for NPC ownership -> strip from scene -> bind to NPC profile.
     Preserves entity IDs. Tags each bound entity with source_scene.
+
+    If entity_bindings is provided (LLM output from Step 2.5b), use it as the
+    source of truth for NPC ownership. Fall back to deterministic substring
+    matching when bindings is None.
     """
     npc_names = set(npc_profiles.keys())
     if not npc_names:
         return interactions, auto_triggers, npc_profiles
 
     def _references_npc(entity: dict) -> str | None:
+        """Only used as fallback when entity_bindings is not provided."""
         fields = " ".join([
             entity.get("name", ""), entity.get("trigger", ""), entity.get("result", ""),
         ])
@@ -255,8 +261,12 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
     for e in interactions:
         if _is_follow_event(e):
             continue
-        npc_name = _references_npc(e)
-        if npc_name:
+        eid = e.get("id", "")
+        if entity_bindings and eid in entity_bindings:
+            npc_name = entity_bindings[eid]
+        else:
+            npc_name = _references_npc(e) if entity_bindings is None else None
+        if npc_name and npc_name in npc_names:
             e_copy = dict(e)
             e_copy["source_scene"] = e.get("scene", "")
             npc_profiles.setdefault(npc_name, {})
@@ -268,8 +278,12 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
     for e in auto_triggers:
         if _is_follow_event(e):
             continue
-        npc_name = _references_npc(e)
-        if npc_name:
+        eid = e.get("id", "")
+        if entity_bindings and eid in entity_bindings:
+            npc_name = entity_bindings[eid]
+        else:
+            npc_name = _references_npc(e) if entity_bindings is None else None
+        if npc_name and npc_name in npc_names:
             e_copy = dict(e)
             e_copy["source_scene"] = e.get("scene", "")
             npc_profiles.setdefault(npc_name, {})
@@ -373,6 +387,7 @@ def run_pipeline(
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
         parse_step35, parse_step25,
+        parse_step25b,
         parse_step2_boss,
         _merge_phase2_fields, _slim_entity,
     )
@@ -538,10 +553,10 @@ def run_pipeline(
         print(f"  Step 2b 完成: {len(events)} events, {len(auto_triggers)} auto_triggers")
         print(f"  Step 2c 完成: {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
 
-    # ── Step 3a ∥ Step 2.5 (并行) ──────────────────────────────
+    # ── Step 3a ∥ Step 2.5 ∥ Step 2.5b (并行) ─────────────────
     if verbose:
         print("═" * 50)
-        print("[Step 3a + Step 2.5] L2 依赖解析 ∥ NPC 行为描述 (并行)...")
+        print("[Step 3a + Step 2.5 + Step 2.5b] L2 依赖解析 ∥ NPC 行为描述 ∥ NPC 实体归属判定 (并行)...")
 
     def _do_step3a():
         ending_conditions = l3_data.get("ending_conditions", [])
@@ -553,7 +568,14 @@ def run_pipeline(
             return {"npc_profiles": {}}
         return parse_step25(l3_characters, l1_data, interactions, auto_triggers, llm_json)
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    def _do_step25b():
+        step1_characters = step1a.get("characters", [])
+        if not step1_characters:
+            return {"entity_bindings": {}}
+        return parse_step25b(step1_characters, interactions, auto_triggers, llm_json)
+
+    n_workers = 1 + (1 if l3_data.get("characters") else 0) + (1 if step1a.get("characters") else 0)
+    with ThreadPoolExecutor(max_workers=n_workers) as ex:
         f3a = ex.submit(lambda: _with_fallback(
             _do_step3a, ["interactions"],
             {"interactions": interactions, "events": events, "auto_triggers": auto_triggers},
@@ -564,28 +586,59 @@ def run_pipeline(
             {"npc_profiles": {}},
             max_retries, verbose, "Step 2.5",
         ))
+        f25b = ex.submit(lambda: _with_fallback(
+            _do_step25b, ["entity_bindings"],
+            {"entity_bindings": {}},
+            max_retries, verbose, "Step 2.5b",
+        ))
         step3a = f3a.result()
         step25 = f25.result()
+        step25b = f25b.result()
 
     interactions = step3a.get("interactions", interactions)
     events = step3a.get("events", events)
     auto_triggers = step3a.get("auto_triggers", auto_triggers)
     npc_profiles = step25.get("npc_profiles", {})
+    entity_bindings = step25b.get("entity_bindings", {})
+
+    # Inject scene + can_follow + follow_condition from Step 1a characters into npc_profiles
+    step1a_characters = step1a.get("characters", [])
+    char_name_to_meta = {
+        c["name"]: {"scenes": c.get("scenes", []), "can_follow": c.get("can_follow", False),
+                    "follow_condition": c.get("follow_condition", "")}
+        for c in step1a_characters if isinstance(c, dict)
+    }
+    for npc_name, profile in npc_profiles.items():
+        meta = char_name_to_meta.get(npc_name, {})
+        if meta.get("scenes"):
+            profile["scene"] = meta["scenes"][0]
+            profile["all_scenes"] = list(meta["scenes"])
+        if "can_follow" in meta:
+            profile["can_follow"] = bool(meta["can_follow"])
+        if meta.get("follow_condition"):
+            profile["follow_requirements"] = meta["follow_condition"]
+    if verbose and char_name_to_meta:
+        assigned = sum(1 for p in npc_profiles.values() if p.get("scene"))
+        print(f"  [NPC Scene] {assigned}/{len(npc_profiles)} NPCs assigned scene from Step 1a")
 
     interactions, auto_triggers, npc_profiles = _bind_npc_entities(
         interactions, auto_triggers, npc_profiles,
+        entity_bindings=entity_bindings if entity_bindings else None,
     )
     if verbose:
         bound_count = sum(
             len(p.get("bound_interactions", [])) + len(p.get("bound_auto_triggers", []))
             for p in npc_profiles.values()
         )
-        print(f"  [NPC Bind] {bound_count} entities bound to NPCs")
+        bind_source = "LLM" if entity_bindings else "deterministic"
+        print(f"  [NPC Bind] {bound_count} entities bound to NPCs ({bind_source})")
 
     if step3a.get("_fallback"):
         result.fallbacks.append("Step 3a")
     if step25.get("_fallback"):
         result.fallbacks.append("Step 2.5")
+    if step25b.get("_fallback"):
+        result.fallbacks.append("Step 2.5b")
 
     if verbose:
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")

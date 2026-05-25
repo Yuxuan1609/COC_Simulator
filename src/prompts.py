@@ -322,15 +322,21 @@ def parse_narrative_output(response: dict | str) -> tuple[str, str, str]:
 
 
 
-def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str]]:
+def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str]]:
     """Build triggerable / non-triggerable entity lists for current scene + events.
 
-    Returns (triggerable_scene, non_triggerable_scene, triggerable_events, non_triggerable_events).
+    Returns (triggerable_scene, non_triggerable_scene, triggerable_npc,
+             non_triggerable_npc, triggerable_events, non_triggerable_events).
+    NPC-injected ATs are separated from scene ATs for prompt clarity.
     """
     node = world._current_node()
 
     trig_scene = []
     nontrig_scene = []
+    trig_npc = []
+    nontrig_npc = []
+
+    npc_injected_ids = getattr(world, '_npc_injected_at_ids', set())
 
     def _split_req(entity) -> tuple[str, str, bool]:
         """Split entity requirement by ||: hard (before) | soft (after).
@@ -366,22 +372,29 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             parts.append(status)
         return "  [INTERACT] " + " ".join(parts)
 
-    def _fmt_at(entity) -> str:
-        """Format an auto-trigger entity. No trigger/skill; condition covers it."""
+    def _fmt_at(entity, prefix: str = "[AUTO_TRIGGER]") -> str:
+        """Format an auto-trigger entity."""
         _, soft, _ = _split_req(entity)
         parts = [f"id={entity.id}", f"name=\"{entity.name}\""]
         if soft:
             parts.append(f"条件=\"{soft}\"")
-        return "  [AUTO_TRIGGER] " + " ".join(parts)
+        return f"  {prefix} " + " ".join(parts)
 
     if node:
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
-            line = _fmt_at(at)
-            if met:
-                trig_scene.append(line)
+            is_npc = at.id in npc_injected_ids
+            line = _fmt_at(at, "[NPC_AT]" if is_npc else "[AUTO_TRIGGER]")
+            if is_npc:
+                if met:
+                    trig_npc.append(line)
+                else:
+                    nontrig_npc.append(line)
             else:
-                nontrig_scene.append(line)
+                if met:
+                    trig_scene.append(line)
+                else:
+                    nontrig_scene.append(line)
         for inter in node.interactions:
             _, _, met = _split_req(inter)
             line = _fmt_inter(inter)
@@ -411,7 +424,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         else:
             nontrig_events.append(line)
 
-    return trig_scene, nontrig_scene, trig_events, nontrig_events
+    return trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events
 
 
 def build_keeper_parse_prompt(world, user_input: str) -> str:
@@ -425,7 +438,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     scene_state = _build_scene_state(snap)
     time_block = _build_time_block(snap)
 
-    trig_scene, nontrig_scene, trig_events, nontrig_events = _build_entity_lines(world)
+    trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events = _build_entity_lines(world)
 
     scene_entity_parts = []
     if trig_scene:
@@ -433,6 +446,13 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     if SHOW_NON_TRIGGERABLE and nontrig_scene:
         scene_entity_parts.append("【暂不可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(nontrig_scene))
     scene_entity_text = "\n\n".join(scene_entity_parts) if scene_entity_parts else "（无）"
+
+    npc_entity_parts = []
+    if trig_npc:
+        npc_entity_parts.append("【可触发 — NPC 专属】\n" + "\n".join(trig_npc))
+    if SHOW_NON_TRIGGERABLE and nontrig_npc:
+        npc_entity_parts.append("【暂不可触发 — NPC 专属】\n" + "\n".join(nontrig_npc))
+    npc_entity_text = "\n\n".join(npc_entity_parts) if npc_entity_parts else ""
 
     event_parts = []
     if trig_events:
@@ -458,6 +478,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 【场景实体】
 {scene_entity_text}
 
+{"【NPC 专属实体】\n" + npc_entity_text if npc_entity_text else ""}
 【全局事件】
 {event_text}
 

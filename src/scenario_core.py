@@ -669,6 +669,7 @@ class ScenarioWorld:
         self.time_costs: dict = {}
         self.comms_interval: int = COMMS_INTERVAL_MINUTES
         self.npc_states: dict[str, str] = {}
+        self._npc_injected_at_ids: set[str] = set()  # Track ATs injected from NPC bound_auto_triggers
 
         self.triggered_events: Dict[str, bool] = {
             eid: False for eid in graph.get_all_event_ids()

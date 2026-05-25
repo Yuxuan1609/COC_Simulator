@@ -203,8 +203,20 @@ STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
   "module_meta": {"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数", "estimated_duration": 240, "comms_interval": 10, "starting_time_of_day": "夜间"},
   "scenes": ["场景中文名", ...],
   "characters": [
-    {"name": "角色中文名", "id": "NPC_1"},
-    {"name": "角色中文名", "id": "NPC_2"}
+    {
+      "name": "角色中文名",
+      "id": "NPC_1",
+      "scenes": ["场景A", "场景B"],
+      "can_follow": true,
+      "follow_condition": "跟随的前置条件（自然语言描述，如"需要先救下该角色""无条件"等）"
+    },
+    {
+      "name": "角色中文名",
+      "id": "NPC_2",
+      "scenes": ["场景A"],
+      "can_follow": false,
+      "follow_condition": ""
+    }
   ],
   "boss_encounters": [
     {
@@ -230,6 +242,9 @@ STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
 6. 识别模组文档中提到的Boss、大怪、强敌，不为普通怪物——Boss是剧情核心敌人、需要特殊机制或为最终战。boss_ref 必须从 Boss 库中选择，若模组Boss不在库中则选择最接近的库中名称。提取后写入boss_encounters。
 7. 设定模组开始时的时段（凌晨/早晨/白天/黄昏/夜间），写入 module_meta.starting_time_of_day。基于模组文本中描述的时间氛围判断。
 8. enemy_ref 和 weapon_ref 必须从可用库中选择，不允许自创。数量约束宽松，只需符合背景；若模组未提及敌人/武器，返回空列表。
+9. characters[].scenes：该NPC在模组中首次出现或主要所在的场景名（使用scenes列表中的中文名）。只填NPC实际出场的场景，不推测后续可能的去向。
+10. characters[].can_follow：判断 NPC 是否可能跟随调查员行动。若NPC行动能力/性格/处境允许（非锁在固定位置、无强制离开理由、愿意协助），设为 true。
+11. characters[].follow_condition：can_follow=true 时，描述跟随需满足的具体前置条件（自然语言）。无条件则写"无条件"。can_follow=false 时留空字符串。
 """
 
 
@@ -848,6 +863,80 @@ def parse_step25(
 ) -> dict:
     prompt = build_step25_prompt(l3_characters, l1_data, interactions, auto_triggers)
     return llm_call(prompt, system=STEP25_SYSTEM)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Step 2.5b: NPC Entity Binding (LLM)
+# ═══════════════════════════════════════════════════════════════
+
+STEP25B_SYSTEM = """你是一个 TRPG 实体归属判断助手。
+你的任务是：判断每个 L2 entity 是否属于某个 NPC，区分 NPC 专属互动、场景通用互动和 NPC 跟随事件。
+
+术语：interaction、auto_trigger 统称为 entity。
+
+判断标准：
+- 若 entity 的触发/结果/名称明确涉及某个 NPC（该 NPC 是互动的对象或主体），标记该 entity 属于该 NPC
+- 若 entity 描述的是场景通用互动（不特指某个 NPC），标记为 scene
+- 若 entity 描述的是 NPC 跟随/离开/加入队伍行为，标记为 follow
+- 一个 entity 最多属于一个 NPC
+
+输出格式:
+{
+  "entity_bindings": {
+    "I1": "老赵",
+    "I2": null,
+    "I5": "明觉",
+    "AT2": null,
+    "AT5": "老赵"
+  }
+}
+
+规则：
+- value 为 NPC 名称时：该 entity 绑定到对应 NPC
+- value 为 null 时：该 entity 不属于任何 NPC（场景通用互动）
+- 仅输出 JSON，不要任何解释性文字
+- binding 中只需列出 NPC 相关的 entity（value 非 null），场景通用 entity 可忽略"""
+
+
+def build_step25b_prompt(
+    characters: list[dict],
+    interactions: list[dict],
+    auto_triggers: list[dict],
+) -> str:
+    char_list = json.dumps(characters, ensure_ascii=False, indent=2)
+    entity_list = []
+    for e in interactions:
+        entity_list.append({
+            "id": e.get("id", ""),
+            "scene": e.get("scene", ""),
+            "name": e.get("name", ""),
+            "trigger": e.get("trigger", "")[:80],
+            "result": e.get("result", "")[:120],
+        })
+    for e in auto_triggers:
+        entity_list.append({
+            "id": e.get("id", ""),
+            "scene": e.get("scene", ""),
+            "name": e.get("name", ""),
+            "trigger": e.get("trigger", "")[:80],
+            "result": e.get("result", "")[:120],
+        })
+
+    return f"""## NPC 角色列表
+{char_list}
+
+## L2 Entity 列表
+{json.dumps(entity_list, ensure_ascii=False, indent=2)}"""
+
+
+def parse_step25b(
+    characters: list[dict],
+    interactions: list[dict],
+    auto_triggers: list[dict],
+    llm_call,
+) -> dict:
+    prompt = build_step25b_prompt(characters, interactions, auto_triggers)
+    return llm_call(prompt, system=STEP25B_SYSTEM)
 
 
 # ═══════════════════════════════════════════════════════════════
