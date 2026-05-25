@@ -143,21 +143,20 @@
   </div>
 
   <div id="narrative-bar"
-       class="absolute bottom-0 left-0 right-0 z-20 bg-[#0a0806]/95 border-t border-aged-brown/30 p-3 cursor-pointer"
-       onclick="togglePanel(true)">
+       class="absolute bottom-0 left-0 right-0 z-20 bg-[#0a0806]/95 border-t border-aged-brown/30 p-3">
     <div id="compact-narrative" class="text-sm text-parchment leading-relaxed line-clamp-2 mb-2">
       <span class="text-gray-400">游戏就绪。输入 /help 查看命令。</span>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3" onclick="event.stopPropagation()">
       <input type="text" id="user-input"
              placeholder="输入你的行动..."
              class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none"
-             autocomplete="off">
+             autocomplete="off" onclick="event.stopPropagation()">
       <button onclick="event.stopPropagation(); sendTurn()"
               class="px-4 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
         行动
       </button>
-      <span class="text-[10px] text-gray-500 ml-2">▲ 展开</span>
+      <span class="text-[10px] text-gray-500 ml-2 cursor-pointer" onclick="event.stopPropagation(); togglePanel(true)">▲ 展开</span>
     </div>
   </div>
 
@@ -215,6 +214,10 @@
       document.getElementById('game-screen').style.display = '';
       document.getElementById('user-input').focus();
 
+      // Show initial system message in compact narrative
+      document.getElementById('compact-narrative').innerHTML =
+        '<span class="text-aged-gold">' + data.location + '</span> — 游戏已就绪';
+
       // Start WebSocket
       connectWS();
     } catch(e) {
@@ -225,12 +228,15 @@
   // ── Panel toggle ──
   function togglePanel(show) {
     const panel = document.getElementById('chat-panel');
+    const bar = document.getElementById('narrative-bar');
     const image = document.getElementById('scene-image');
     if (show) {
       panel.classList.remove('hidden');
+      if (bar) bar.style.display = 'none';
       if (image) image.style.filter = 'brightness(0.4)';
     } else {
       panel.classList.add('hidden');
+      if (bar) bar.style.display = '';
       if (image) image.style.filter = '';
     }
   }
