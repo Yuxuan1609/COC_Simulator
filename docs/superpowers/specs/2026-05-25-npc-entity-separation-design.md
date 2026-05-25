@@ -220,6 +220,7 @@ NPC follow/leave 的 entity 在管线后处理中被筛掉（见 2.2），不会
 - 半主动 NPC ambient triggers 系统
 - requirement 确定性 NPC 状态检查语法（`NPC:name.attitude=X`）
 - 多调查员 NPC 战斗参与
+- NPC bound entity 跨场景激活细化：当前 source_scene 精确匹配较粗糙——NPC 移动后原场景 entity 是否仍可选、部分 AT 是否应跨场景生效，需要更细粒度的激活规则
 
 ## 6. 实施步骤
 

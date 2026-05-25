@@ -675,6 +675,7 @@ git commit -m "feat: add _bind_npc_entities deterministic post-processing"
 | 15 | O16 | 世界状态更新纳入 NPC 关键事件 | NPC 跟随/死亡/态度转变等纳入 dependency graph 和 runtime_state |
 | 16 | O17 | 半主动 NPC ambient triggers | NPCManager 预留 hook，未来对接 AutoTrigger 系统 |
 | 17 | O18 | requirement 确定性 NPC 状态语法 | 如 NPC:name.attitude=friendly 形式的硬性条件解析 |
+| 18 | O19 | NPC bound entity 跨场景激活 | 当前 source_scene 精确匹配过于粗糙——NPC 移动后原场景 entity 仍应可选，部分 AT 应跨场景生效。需细化绑定实体的可用性规则 |
 ```
 
 - [ ] **Step 2: Commit**
