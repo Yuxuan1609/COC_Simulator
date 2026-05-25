@@ -5,5 +5,6 @@
 - 测试 harness 输出路径：`data/debug/test_harness/<timestamp>/`
 - prompt 日志路径：`logs/` 或 test harness 的 `_prompt_log.txt`
 - 测试输出的 log 文件不入 git 版本管理
-- **测试策略**：不做单元测试。只保留端到端测试（test_harness_stability.py、test_escalation_real.py、test_harness_parallel.py）和局部端到端测试。以真实 LLM 调用结果为准，不以单元测试为基准
-- **修改规则**：同一个问题如果改到第 2 次还没解决，必须停下来。不要继续之前的思路，不要想当然。要一步一步地测试，必要时添加 prompt 或中间输出文件来定位问题，同时审视之前的思路是否正确
+- **测试策略**：不只做单元测试。更重视端到端测试（test_harness_stability.py、test_escalation_real.py、test_harness_parallel.py）和局部端到端测试。以真实 LLM 调用结果为准，不以单元测试为基准
+- **修改规则**：同一个问题如果改到第 2 次还没解决，必须停下来。不要继续之前的思路，不要想当然。要一步一步地测试，必要时添加 print结果 或中间输出文件来定位问题，同时审视之前的思路是否正确
+- **修改追溯**：做完一个修改之后，要适当追溯上下游可能受影响的部分，确认没有引入新的问题，和潜在原样
