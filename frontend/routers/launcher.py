@@ -91,3 +91,42 @@ async def save_config(
 @router.get("/api/config/load")
 async def load_config():
     return _load_config()
+
+
+@router.post("/api/pipeline/start")
+async def start_pipeline(
+    source: str = Form(...),
+    module_name: str = Form(...),
+    output_dir: str = Form("data/modules/"),
+    start_from: str = Form("step_1a"),
+):
+    import subprocess
+    import sys
+    import threading
+
+    source_path = PROJECT_ROOT / source
+    if not source_path.exists():
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(f"源文件不存在: {source}", status_code=400)
+
+    cmd = [
+        sys.executable, str(PROJECT_ROOT / "run_pipeline.py"),
+        "--auto",
+        "--docx", str(source_path),
+        "--module", module_name,
+        "--start-from", start_from,
+    ]
+    def run_pipeline():
+        subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+
+    thread = threading.Thread(target=run_pipeline, daemon=True)
+    thread.start()
+
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        '<div class="text-sm text-aged-gold mt-4">'
+        f'  <p>✓ 管线已启动 — 模组: {module_name}</p>'
+        f'  <p class="text-xs text-gray-500 mt-1">输出目录: {output_dir}</p>'
+        f'  <p class="text-xs text-gray-500">可在控制台查看进度输出</p>'
+        '</div>'
+    )

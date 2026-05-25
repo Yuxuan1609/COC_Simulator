@@ -112,3 +112,41 @@ async def roll_stats():
     )
     derived = f'<div class="grid grid-cols-4 gap-2 text-xs"><div>HP {hp}</div><div>MP {mp}</div><div>SAN {san}</div><div>DODGE {dodge}</div><div>DB {db}</div><div>BUILD {build}</div></div>'
     return HTMLResponse(f'<div class="grid grid-cols-3 gap-3">{cells}</div><div class="mt-4 p-3 bg-[#1a150c] border border-[#3a2810] rounded">{derived}</div>')
+
+
+@router.post("/generate-description")
+async def generate_description(type: str = Form(...), prompt: str = Form(...)):
+    from llm import call_deepseek
+    if type == "appearance":
+        system = "你是一个COC 7th TRPG角色外貌描述生成器。根据用户提供的关键词生成一段简洁的外貌描述（150字以内）。仅输出描述文本。"
+    else:
+        system = "你是一个COC 7th TRPG角色个人描述生成器。根据用户提供的关键词生成一段简洁的角色个人描述（150字以内）。仅输出描述文本。"
+    try:
+        result = call_deepseek(prompt, json_mode=False, system=system,
+                              model="deepseek-v4-flash", thinking=False,
+                              max_tokens=300, temperature=0.7, max_retries=1)
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(str(result).strip())
+    except Exception as e:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(f"[生成失败: {e}]", status_code=500)
+
+
+@router.post("/export")
+async def export_character(
+    name: str = Form(""), age: int = Form(20), gender: str = Form(""),
+    occupation: str = Form(""), appearance: str = Form(""),
+    description: str = Form(""), backstory: str = Form(""),
+):
+    import json as _json
+    from datetime import datetime as _dt
+    data = {
+        "meta": {"version": "1.0", "created_at": _dt.now().isoformat(), "rules_edition": "COC7"},
+        "personal": {"name": name, "age": age, "gender": gender, "occupation": occupation,
+                     "appearance": appearance, "description": description},
+        "backstory": backstory,
+    }
+    content = _json.dumps(data, ensure_ascii=False, indent=2)
+    from fastapi.responses import Response
+    return Response(content=content, media_type="application/json",
+                    headers={"Content-Disposition": f"attachment; filename={name or 'character'}_character.json"})

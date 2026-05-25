@@ -236,4 +236,12 @@ def _print_skill_result(sr):
 
 
 if __name__ == "__main__":
-    run_game()
+    import uvicorn
+    import webbrowser
+    import os
+    port = 8080
+    url = f"http://localhost:{port}"
+    print(f"  TRPG Assistant v2.0 → {url}")
+    if not os.environ.get("NO_BROWSER"):
+        webbrowser.open(url)
+    uvicorn.run("frontend.server:app", host="127.0.0.1", port=port, log_level="info")
