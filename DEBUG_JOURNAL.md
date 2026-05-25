@@ -33,3 +33,66 @@
 - **症状**：`keeper.py:286` 报 `UnboundLocalError: ActionOutcome`
 - **根因**：`process_turn()` 函数体内有 `from game.messages import ActionOutcome`，Python 编译时将整个函数内的 `ActionOutcome` 视为局部变量，import 之前的引用报错
 - **解决**：删除函数内 import，模块顶部已有
+
+## 7. 失败惩罚叙事在 enrich 管道中丢失
+- **症状**：多次检定失败后 LLM 生成了惩罚叙事（扣血/刷怪/叙事文本），但玩家看不到惩罚反馈
+- **根因**：两层 bug — (a) `judged_entities` 只收集 `success=True` 的实体，失败实体不进入 enrich；(b) `all_outcomes[0].message` 被 enrich 结果无条件覆写，当失败实体排在首位时惩罚叙事被擦除
+- **解决**：(a) `judged_entities` 改为收集所有实体（含 failure）；(b) enrich 覆写规则改为只覆盖第一个成功且非 AT 的 outcome
+- **关联**：`src/game/agents/keeper.py:113-121, 325-332`；`src/prompts.py:530`（enrich 指示词更新）
+
+## 8. ##GRADED## 结果未传递到 enrich
+- **症状**：enrich prompt 中 entity 的 result 显示 `"考古学检定：D100=62/1 > 失败"`（裸 D100 字符串），而非模组预设的 `on_failure` 分级文本
+- **根因**：`judge.py:127` 把 `skill_message` 设为 `skill_result`（D100 原始字符串），而 `line 171` 正确解析的 `result_text`（`resolve_graded_result` 输出）被丢弃——成功分支用了 `result_text`，失败分支用了 `skill_result`
+- **解决**：在 `resolve_graded_result` 后添加 `if has_graded: skill_message = result_text`，使失败路径也使用分级文本
+- **关联**：`src/game/judge.py:174-175`
+
+## 9. @markup 泄漏到 LLM prompt
+- **症状**：含 inline markup 的 entity（如 IT5 的 `@spawn_enemy(enemy_ref="深潜者", ...)`）把这些语法传给 enrich LLM
+- **根因**：`entity.result` 和 `entity.side_effects` 是两条并行路径——side_effects 被 parse_markup_all 解析执行，但 result 中的 @markup 原样保留
+- **解决**：两层防护 — (a) judge 层面：`result_text = _MARKUP_STRIP_RE.sub("", result_text)` 从源头清除；(b) enrich prompt 层面：同样 strip 作为防御
+- **关联**：`src/game/judge.py:174`；`src/prompts.py:506`
+
+## 10. EnemyAttack 被当 dict 访问
+- **症状**：`combat.py` 执行时报 `'EnemyAttack' object has no attribute 'get'`
+- **根因**：`EnemyAttack` 是 dataclass（有 `.name`, `.damage` 属性），但 `combat.py` 多处用 `attack['name']`、`attack.get('weight')` 等 dict 方式访问
+- **解决**：`attack['name']` → `attack.name`；`a.get('weight', 1)` → `getattr(a, 'weight', 1)`
+- **关联**：`src/game/combat.py:294, 309-310, 320-388`
+
+## 11. Mock patch 未覆盖 Narrator/TimeAgent 的 call_deepseek
+- **症状**：mock 模式下 test harness 日志缺失 Narrator 和 TimeAgent 调用，且测试耗时异常（10-30s per case）
+- **根因**：Narrator 和 TimeAgent 在模块顶部用 `from llm import call_deepseek` 导入，`patch("llm.call_deepseek", ...)` 只替换模块属性，已导入的本地引用不受影响——导致这两个 agent 绕过 mock 进行了真实 API 调用
+- **解决**：在 patches 列表中新增 `patch("game.agents.narrator.call_deepseek", ...)` 和 `patch("game.agents.time_agent.call_deepseek", ...)`
+- **关联**：`tests/test_harness_parallel.py`；`tests/test_harness_stability.py`
+
+## 12. G9/G10 子系统未序列化
+- **症状**：存档/读档后 ItemManager（物品）、GameClock（时间）、EnemyManager（敌人位置）、NPCManager（态度）、BossManager（状态）全部丢失
+- **根因**：`ScenarioWorld.to_dict()` 和 `from_dict()` 只序列化了核心状态字段，子系统全部跳过；`Investigator` 的 `to_dict()` 也未包含 `item_manager`
+- **解决**：扩展 `to_dict()` 输出 clock/enemies/npcs/bosses/scene_weapons/memory；`load_state()` 中逐一恢复（含 library 缺失降级处理）；investigator 序列化新增 `item_manager` 字段
+- **关联**：`src/scenario_core.py:976-1070`；`src/investigator/serialization.py:88, 168-170`；`tests/test_save_load_roundtrip.py`
+- **教训**：改完一个之后翻其他文件看是否有同样的 import-in-function 模式——果然 judge.py 也有
+
+## 7. Enrich results 类型不一致导致 TypeError
+- **症状**：`keeper.py:284` 报 `TypeError: string indices must be integers, not 'str'`
+- **根因**：Enrich prompt 输出 `"results": "整合后的叙事"`（单一合并字符串），但代码期望 `"results": {"I1": "..."}`（per-entity dict）。Python 的 `"I1" in "整合后的叙事"` 是合法子串检查，不会报错，因此偶然命中时 `"整合后的叙事"["I1"]` 才爆 TypeError
+- **解决**：`isinstance(results, dict)` 守卫——字符串直接跳过 per-entity 分配；后续改为 string results 走 `all_outcomes[0].message = results` 简单路径
+
+## 8. auto_trigger 结果在 flavor_outcomes 和 ambient_changes 中重复
+- **症状**：Narrator prompt 的 `【即兴行为】` 和 `【环境变化】` 显示完全相同的文本，LLM 将其当作两份独立内容生成重复叙事
+- **根因**：`keeper.py:100` 把 AT 的 `intent.action` 设成 `"other"`，导致 AT outcome 同时进入 `flavor_outcomes`（prompts.py 按 `action=="other"` 过滤）和 `ambient_changes`（keeper.py 按 `entity_type=="auto_trigger"` 过滤）
+- **解决**：在 `prompts.py` 的 flavor_outcomes 过滤中加入 `o.entity_type != "auto_trigger"`，同时省略空 `flavor_outcomes` 时整个 `【即兴行为】` 段落
+
+## 9. evaluate_trait_enhancement 多行 f-string 被 edit 工具截断
+- **症状**：特质增强 Prompt 只剩第一行"你是 TRPG 规则辅助裁判..."，LLM 收不到参赛信息、检定详情等关键上下文，但不会直接报错（因为仍是一个合法 f-string），只在日志中才能发现
+- **根因**：`edit` 工具的 `oldString` 参数匹配多行 f-string 时只覆盖了第一行 `prompt = f"""..."""`，替换后整段 prompt 被截断。更危险的是——Python 语法仍然合法，不会报 SyntaxError，是一种静默破坏
+- **解决**：重新编辑，`oldString` 精确匹配截断态的完整第一行+闭合 `"""`，`newString` 提供完整 prompt。**此事发生两次**——第一次修复后被后续 commit 无意中重新截断（第二次修改 `set_log_label` 时再次使用了匹配第一行的 `oldString`）
+- **教训**：对多行 f-string 使用 edit 时，`oldString` 必须包含足够长的唯一上下文；修改后立即 `python -m py_compile` + 随机读几行确认内容没有被阉割
+
+## 10. Enrich prompt f-string 中未转义花括号导致 NameError
+- **症状**：`run_game.py` 运行时 `NameError: name '整合后���' is not defined`
+- **根因**：Enrich prompt 的 JSON 输出示例中有 `"results": {整合后的叙事}` 被 Python f-string 当作变量引用求值
+- **解决**：加引号改为 `"results": "整合后的叙事"`
+
+## 11. 日志系统重构：response 未按 agent 分文件
+- **症状**：所有 LLM response 写入单一 `llm.txt`，不同 agent 的 prompt 和 response 分在两个文件里，排查时需要手动拼接
+- **根因**：`_log_response` 始终写 `llm.txt`
+- **解决**：引入 `_current_log_label` 全局变量 + `set_log_label()` 函数。`_show_prompt` 在写 prompt 前设置 label，`_log_response` 按 label 写入对应文件。`evaluate_trait_enhancement` 不走 `call_deepseek` 所以需要手动 `set_log_label("skill_checks")`
