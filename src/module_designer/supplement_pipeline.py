@@ -159,6 +159,7 @@ def run_supplement_pipeline(
     world_snapshot: dict | None = None,
     output_dir: str = "",
     module_name: str = "",
+    enemy_names: list[str] | None = None,
 ) -> dict:
     """Run lightweight supplement pipeline. Returns {"l1": ..., "l2": ..., "l3": ..., "output_dir": ...}."""
 
@@ -172,7 +173,8 @@ def run_supplement_pipeline(
 
     # Step 1: narrative-driven scene planning
     plan = _step_1_narrative(player_intent, reasoning, base_l3,
-                             entry_scene, exit_scene, world_snapshot)
+                             entry_scene, exit_scene, world_snapshot,
+                             enemy_names=enemy_names or [])
     scene_names = plan.get("scene_names", [])
     exit_scene = plan.get("exit_scene", exit_scene)
     story = plan.get("story", "")
@@ -296,6 +298,7 @@ def _build_l3_context(l3: dict, current_scene: str = "") -> str:
 def _step_1_narrative(
     player_intent: str, reasoning: str, base_l3: dict,
     entry_scene: str, exit_scene: str, world_snapshot: dict,
+    enemy_names: list[str] | None = None,
 ) -> dict:
     """Step 1: structured supplement planning — overview, scenes, narrative lines, driving force."""
 
@@ -305,13 +308,17 @@ def _step_1_narrative(
     ws_desc = world_snapshot.get("scene_description", "")
     ws_npc = world_snapshot.get("npc_states", {})
 
+    enemy_text = ""
+    if enemy_names:
+        enemy_text = f"\n【可用敌人库（enemies_involved 必须从此列表选择）】\n{', '.join(enemy_names)}"
+
     prompt = f"""{l3_ctx}
 
 【当前世界状态】
   位置: {ws_location}
   场景描述: {ws_desc}
   NPC: {json.dumps(ws_npc, ensure_ascii=False)}
-
+{enemy_text}
 【玩家意图】
   玩家想做什么: {player_intent}
   升级原因: {reasoning}
@@ -331,30 +338,31 @@ def _step_1_narrative(
     scene_names = [s.get("name", "") for s in plan.get("scenes", []) if s.get("name")]
     exit_scene = plan.get("exit_scene", exit_scene)
 
-    # Assemble backward-compatible story string for Step 2 consumers
+    # Assemble markdown story for Step 2 consumers
     story_parts = []
     overview = plan.get("overview", "")
     if overview:
-        story_parts.append(f"【综述】{overview}")
+        story_parts.append(f"## 综述\n{overview}")
     for s in plan.get("scenes", []):
         sname = s.get("name", "")
         sdesc = s.get("description", "")
         interactions = s.get("available_interactions", [])
-        story_parts.append(f"【{sname}】{sdesc}")
-        for ia in interactions:
-            story_parts.append(f"  - {ia}")
+        if sname:
+            story_parts.append(f"## {sname}\n{sdesc}")
+            for ia in interactions:
+                story_parts.append(f"- {ia}")
     nl_lines = plan.get("narrative_lines", [])
     if nl_lines:
-        story_parts.append("【叙事线】")
+        story_parts.append("## 叙事线")
         for nl in nl_lines:
-            story_parts.append(f"  - {nl.get('name', '')}: {nl.get('outline', '')}")
+            story_parts.append(f"- **{nl.get('name', '')}**: {nl.get('outline', '')}")
     df = plan.get("driving_force", "")
     if df:
-        story_parts.append(f"【驱动力】{df}")
+        story_parts.append(f"## 驱动力\n{df}")
     enemies = plan.get("enemies_involved", [])
     if enemies:
-        story_parts.append(f"【涉及敌人】{', '.join(enemies)}")
-    story = "\n".join(story_parts)
+        story_parts.append(f"## 涉及敌人\n{', '.join(enemies)}")
+    story = "\n\n".join(story_parts)
 
     plan["scene_names"] = scene_names
     plan["exit_scene"] = exit_scene

@@ -920,6 +920,12 @@ class Keeper:
         """Run supplement pipeline and integrate results into world graph."""
         try:
             from module_designer.supplement_pipeline import run_supplement_pipeline
+            enemy_names = []
+            if self.world.enemies:
+                try:
+                    enemy_names = [e.name for e in self.world.enemies._library.list_all()]
+                except Exception:
+                    pass
             result = run_supplement_pipeline(
                 player_intent=intent,
                 reasoning=reasoning,
@@ -928,6 +934,7 @@ class Keeper:
                 exit_scene=structural_edit.exit_scene,
                 world_snapshot=self._build_world_snapshot(),
                 module_name="",
+                enemy_names=enemy_names,
             )
 
             l2 = result["l2"]
