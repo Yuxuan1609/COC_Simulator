@@ -153,13 +153,17 @@ def _push_progress(step: str, status: str):
             pass
 
 
-@router.post("/api/game/init")
+@router.post("/api/game/init", response_class=HTMLResponse)
 async def init_game_api(
-    l1_path: str = Form(...),
-    l2_path: str = Form(...),
-    l3_path: str = Form(...),
-    start_node: str = Form(...),
+    request: Request,
+    l1_path: str = Form(""),
+    l2_path: str = Form(""),
+    l3_path: str = Form(""),
+    start_node: str = Form("测试房间"),
     char_path: str = Form(""),
+    weapon_path: str = Form(""),
+    enemy_path: str = Form(""),
+    boss_path: str = Form(""),
 ):
     global _game_instance
     import os
@@ -170,21 +174,38 @@ async def init_game_api(
     from prompts import set_prompt_log_dir
     from llm import set_llm_log_dir
 
+    # Default paths if empty
+    if not l2_path:
+        l2_path = "data/modules/常暗之厢/l2_test.json"
+    if not l1_path:
+        l1_path = "data/modules/常暗之厢/l1_test.json"
+    if not l3_path:
+        l3_path = "data/modules/常暗之厢/l3_test.json"
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = str(PROJECT_ROOT / f"logs/prompt_log_{timestamp}")
     os.makedirs(log_dir, exist_ok=True)
     set_prompt_log_dir(log_dir)
     set_llm_log_dir(log_dir)
 
-    g = init_game(
-        l2_path=str(PROJECT_ROOT / l2_path),
-        l1_path=str(PROJECT_ROOT / l1_path),
-        l3_path=str(PROJECT_ROOT / l3_path),
-        start_node=start_node,
-    )
+    try:
+        g = init_game(
+            l2_path=str(PROJECT_ROOT / l2_path),
+            l1_path=str(PROJECT_ROOT / l1_path),
+            l3_path=str(PROJECT_ROOT / l3_path),
+            start_node=start_node,
+        )
+    except Exception as e:
+        return HTMLResponse(f'<div class="text-red-400 text-sm p-4">初始化失败: {e}</div>')
 
     if char_path and os.path.exists(str(PROJECT_ROOT / char_path)):
-        inv = load_investigator(str(PROJECT_ROOT / char_path))
+        try:
+            inv = load_investigator(str(PROJECT_ROOT / char_path))
+        except Exception:
+            inv = Investigator(name="调查员", age=25, gender="男")
+            inv.stats = roll_stats()
+            inv.skills = create_skill_list()
+            inv.derived = calc_derived(inv.stats, inv.age)
     else:
         inv = Investigator(name="调查员", age=25, gender="男")
         inv.stats = roll_stats()
@@ -194,5 +215,11 @@ async def init_game_api(
     g["keeper"].world.set_player(inv)
     _game_instance = g
 
-    from fastapi.responses import PlainTextResponse
-    return PlainTextResponse("游戏已初始化 ✓")
+    # Return the game screen HTML (replaces setup form via HTMX)
+    return templates.TemplateResponse("partials/game-screen.html", {
+        "request": request,
+        "location": g["keeper"].world.current_location,
+        "hp": inv.derived.HP,
+        "san": inv.derived.SAN,
+        "name": inv.name,
+    })

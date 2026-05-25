@@ -1,72 +1,195 @@
 {% extends "base.html" %}
 {% block title %}TRPG 游戏{% endblock %}
 {% block body %}
-<div class="h-screen flex flex-col bg-black relative overflow-hidden" id="game-root">
 
-  {# Full-screen background image #}
+{# ═══════════════════════════════════════════
+   SETUP SCREEN — shown before game starts
+   ═══════════════════════════════════════════ #}
+<div id="game-setup" class="h-screen flex bg-[#0d0d0d]">
+  {# Left sidebar: navigation #}
+  <nav class="w-56 border-r border-gray-800 bg-[#0f0f0f] flex flex-col p-4 gap-3">
+    <h1 class="text-lg text-aged-gold font-bold tracking-wider border-b border-gray-800 pb-3">游戏设置</h1>
+    <a href="/" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded">
+      ← 返回启动页
+    </a>
+  </nav>
+
+  {# Right: setup form #}
+  <div class="flex-1 overflow-y-auto p-6">
+    <h2 class="text-xl text-aged-gold mb-6 border-b border-gray-800 pb-3">选择游戏配置</h2>
+
+    <form id="init-form" class="space-y-5 max-w-2xl"
+          hx-post="/api/game/init"
+          hx-target="#game-setup"
+          hx-swap="outerHTML">
+
+      {# ── Module files ── #}
+      <fieldset class="border border-gray-700 rounded-lg p-4">
+        <legend class="text-sm text-aged-gold px-2">模组文件</legend>
+
+        <div class="space-y-3">
+          {% for label, id, placeholder in [
+            ('L2 KP 守秘人层', 'l2-path', 'data/modules/常暗之厢/l2_test.json'),
+            ('L1 玩家可见层', 'l1-path', 'data/modules/常暗之厢/l1_test.json'),
+            ('L3 设计者层', 'l3-path', 'data/modules/常暗之厢/l3_test.json'),
+          ] %}
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">{{ label }}</label>
+            <div class="flex gap-2">
+              <input type="text" id="{{ id }}" name="{{ id.replace('-', '_') }}" placeholder="{{ placeholder }}"
+                     class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
+              <button type="button"
+                      hx-get="/api/files?dir=data/modules&target_input={{ id }}"
+                      hx-target="#file-browser-content"
+                      hx-swap="innerHTML"
+                      onclick="document.getElementById('file-modal').classList.remove('hidden')"
+                      class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#1a150c]">
+                浏览
+              </button>
+            </div>
+          </div>
+          {% endfor %}
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">起始场景</label>
+            <input type="text" name="start_node" value="测试房间" placeholder="测试房间"
+                   class="w-full bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
+          </div>
+        </div>
+      </fieldset>
+
+      {# ── Investigator ── #}
+      <fieldset class="border border-gray-700 rounded-lg p-4">
+        <legend class="text-sm text-aged-gold px-2">调查员角色卡</legend>
+        <div>
+          <div class="flex gap-2">
+            <input type="text" id="char-path" name="char_path" placeholder="investigator/test_character.json"
+                   class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
+            <button type="button"
+                    hx-get="/api/files?dir=investigator&target_input=char-path"
+                    hx-target="#file-browser-content"
+                    hx-swap="innerHTML"
+                    onclick="document.getElementById('file-modal').classList.remove('hidden')"
+                    class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#1a150c]">
+              浏览
+            </button>
+            <a href="/character" class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold bg-[#1a150c]">
+              + 新建
+            </a>
+          </div>
+          <p class="text-[10px] text-gray-600 mt-1">留空则自动创建默认调查员</p>
+        </div>
+      </fieldset>
+
+      {# ── Standard libraries ── #}
+      <fieldset class="border border-gray-700 rounded-lg p-4">
+        <legend class="text-sm text-aged-gold px-2">标准库（可选，留空使用默认）</legend>
+        <div class="grid grid-cols-3 gap-3">
+          {% for label, id, placeholder in [
+            ('武器库', 'weapon-path', 'data/library/core/weapons.json'),
+            ('敌人库', 'enemy-path', 'data/library/core/enemies.json'),
+            ('Boss 库', 'boss-path', 'data/library/core/bosses.json'),
+          ] %}
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">{{ label }}</label>
+            <div class="flex gap-1">
+              <input type="text" id="{{ id }}" name="{{ id.replace('-', '_') }}" placeholder="{{ placeholder }}"
+                     class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-2 py-1.5 text-xs text-gray-200 focus:border-aged-gold focus:outline-none">
+              <button type="button"
+                      hx-get="/api/files?dir=data/library/core&target_input={{ id }}"
+                      hx-target="#file-browser-content"
+                      hx-swap="innerHTML"
+                      onclick="document.getElementById('file-modal').classList.remove('hidden')"
+                      class="px-2 py-1.5 border border-gray-600 rounded text-[10px] text-gray-400 hover:text-aged-gold bg-[#1a150c]">
+                ...
+              </button>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <button type="submit"
+              class="px-8 py-2.5 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30 font-bold tracking-wider">
+        开始游戏
+      </button>
+      <span id="init-error" class="text-red-500 text-sm"></span>
+    </form>
+
+    {# File browser modal #}
+    <div id="file-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
+         onclick="if(event.target===this)this.classList.add('hidden')">
+      <div class="bg-[#141414] border border-gray-600 rounded-lg p-4 w-[550px] max-h-[70vh] overflow-y-auto file-listing-container">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-sm text-gray-400">选择文件</span>
+          <button class="text-gray-500 hover:text-gray-300 text-lg"
+                  onclick="document.getElementById('file-modal').classList.add('hidden')">&times;</button>
+        </div>
+        <div id="file-browser-content">
+          <p class="text-sm text-gray-600">加载中...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ═══════════════════════════════════════════
+   GAME SCREEN — replaced by setup form submit
+   ═══════════════════════════════════════════ #}
+<div id="game-screen" style="display:none" class="h-screen flex flex-col bg-black relative overflow-hidden">
+
   <div id="scene-image" class="absolute inset-0 image-crossfade bg-gradient-to-b from-[#1a1410] via-[#2a1a0a] to-[#1a1410] z-0">
   </div>
 
-  {# HUD overlay — top left #}
   <div id="hud" class="absolute top-3 left-3 z-20 bg-black/70 border border-white/10 rounded px-3 py-2 backdrop-blur-sm">
-    <div id="hud-scene" class="text-sm font-bold text-aged-brown">
-    </div>
-    <div id="hud-stats" class="mt-0.5">
-    </div>
+    <div id="hud-scene" class="text-sm font-bold text-aged-brown"></div>
+    <div id="hud-stats" class="mt-0.5"></div>
   </div>
 
-  {# Step indicator — top right #}
-  <div id="step-indicator" class="absolute top-3 right-3 z-20 bg-black/50 rounded px-2 py-1 text-[10px] font-mono text-gray-600">
-  </div>
+  <div id="step-indicator" class="absolute top-3 right-3 z-20 bg-black/50 rounded px-2 py-1 text-[10px] font-mono text-gray-600"></div>
 
-  {# Help button #}
-  <button id="help-toggle" class="absolute top-12 right-3 z-20 text-gray-600 hover:text-aged-gold text-xs"
-          onclick="document.getElementById('help-panel').classList.toggle('hidden')">
-    ? 帮助
-  </button>
+  <button id="help-toggle" class="absolute top-12 right-3 z-20 text-gray-500 hover:text-aged-gold text-xs"
+          onclick="document.getElementById('help-panel').classList.toggle('hidden')">? 帮助</button>
 
-  {# Help panel (hidden) #}
-  <div id="help-panel" class="hidden absolute top-20 right-3 z-20 bg-black/90 border border-gray-700 rounded p-3 w-56 text-xs text-gray-500">
-    <b class="text-gray-400">命令</b><br>
+  <div id="help-panel" class="hidden absolute top-20 right-3 z-20 bg-black/90 border border-gray-700 rounded p-3 w-56 text-xs text-gray-400">
+    <b class="text-gray-300">命令</b><br>
     /scene | /char | /flags | /events<br>
     /do &lt;动作&gt; | /trigger &lt;E1&gt;<br>
     /save &lt;槽位&gt; | /load &lt;槽位&gt;<br>
     /reset | /help
   </div>
 
-  {# Compact narrative bar — bottom #}
   <div id="narrative-bar"
        class="absolute bottom-0 left-0 right-0 z-20 bg-[#0a0806]/95 border-t border-aged-brown/30 p-3 cursor-pointer"
        onclick="togglePanel(true)">
     <div id="compact-narrative" class="text-sm text-parchment leading-relaxed line-clamp-2 mb-2">
+      <span class="text-gray-500">游戏初始化中...</span>
     </div>
     <div class="flex items-center gap-3">
       <input type="text" id="user-input"
              placeholder="输入你的行动..."
-             class="flex-1 bg-transparent border-none text-sm text-gray-400 placeholder-gray-700 focus:outline-none"
+             class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none"
              autocomplete="off">
       <button onclick="event.stopPropagation(); sendTurn()"
               class="px-4 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
         行动
       </button>
-      <span class="text-[10px] text-gray-600 ml-2">▲ 展开</span>
+      <span class="text-[10px] text-gray-500 ml-2">▲ 展开</span>
     </div>
   </div>
 
-  {# Expanded chat panel (slide-up, hidden by default) #}
   <div id="chat-panel"
        class="absolute bottom-0 left-0 right-0 z-30 bg-[#0a0806]/98 border-t-2 border-aged-gold hidden flex flex-col"
        style="height:65%">
     <div class="flex justify-between items-center px-4 py-2 border-b border-gray-800 text-xs">
       <span class="text-aged-brown">会话记录</span>
-      <button class="text-gray-500 hover:text-gray-300" onclick="togglePanel(false)">▼ 收起</button>
+      <button class="text-gray-400 hover:text-gray-200" onclick="togglePanel(false)">▼ 收起</button>
     </div>
-    <div id="chat-history" class="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-    </div>
+    <div id="chat-history" class="flex-1 overflow-y-auto px-4 py-3 space-y-2"></div>
     <div class="px-4 py-2 border-t border-gray-800 flex gap-2">
       <input type="text" id="user-input-expanded"
              placeholder="输入你的行动..."
-             class="flex-1 bg-transparent border-none text-sm text-gray-400 placeholder-gray-700 focus:outline-none"
+             class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none"
              autocomplete="off">
       <button onclick="sendTurn()"
               class="px-6 py-2 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
@@ -78,22 +201,20 @@
 </div>
 
 <script>
+  // Panel toggle
   function togglePanel(show) {
     const panel = document.getElementById('chat-panel');
     const image = document.getElementById('scene-image');
     if (show) {
       panel.classList.remove('hidden');
-      image.style.filter = 'brightness(0.4)';
+      if (image) image.style.filter = 'brightness(0.4)';
     } else {
       panel.classList.add('hidden');
-      image.style.filter = '';
+      if (image) image.style.filter = '';
     }
   }
-  document.getElementById('scene-image').addEventListener('click', function(e) {
-    if (!document.getElementById('chat-panel').classList.contains('hidden')) {
-      togglePanel(false);
-    }
-  });
+
+  // Send turn
   async function sendTurn() {
     const compactInput = document.getElementById('user-input');
     const expandedInput = document.getElementById('user-input-expanded');
@@ -110,28 +231,34 @@
       const html = await resp.text();
       document.getElementById('compact-narrative').innerHTML = html;
       const chatHistory = document.getElementById('chat-history');
-      if (!document.getElementById('chat-panel').classList.contains('hidden')) {
+      if (chatHistory && !document.getElementById('chat-panel').classList.contains('hidden')) {
         chatHistory.insertAdjacentHTML('beforeend', html);
         chatHistory.scrollTop = chatHistory.scrollHeight;
       }
       htmx.ajax('GET', '/api/game/player-status', '#hud-stats');
       htmx.ajax('GET', '/api/game/scene', '#hud-scene');
     } catch(e) {
-      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-500">网络错误</span>';
+      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">网络错误</span>';
     }
     compactInput.disabled = false;
     compactInput.focus();
   }
-  document.getElementById('user-input').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') sendTurn();
+
+  // Enter key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && (e.target.id === 'user-input' || e.target.id === 'user-input-expanded')) {
+      sendTurn();
+    }
   });
-  document.getElementById('user-input-expanded').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') sendTurn();
-  });
+
   document.addEventListener('DOMContentLoaded', function() {
-    htmx.ajax('GET', '/api/game/player-status', '#hud-stats');
-    htmx.ajax('GET', '/api/game/scene', '#hud-scene');
+    // Close file modal when file selected (pickFile in file-listing.html sets input and closes)
+    window._filePickerCallback = function(path) {
+      document.getElementById('file-modal').classList.add('hidden');
+    };
   });
+
+  // WebSocket connect
   (function connectWS() {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(protocol + '//' + location.host + '/api/game/progress');

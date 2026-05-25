@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 ALLOWED_EXTENSIONS = {".json", ".docx", ".txt", ".pdf", ".md"}
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# ── Jinja2 (reuse server's template engine path) ──
+from fastapi.templating import Jinja2Templates
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 def _safe_dir(directory: str) -> Path:
@@ -20,7 +26,12 @@ def _safe_dir(directory: str) -> Path:
 
 
 @router.get("")
-async def list_files(dir: str = Query(default="data")):
+async def list_files(
+    request: Request,
+    dir: str = Query(default="data"),
+    format: str = Query(default="html"),
+    target_input: str = Query(default=""),
+):
     base = _safe_dir(dir)
     items = list(base.iterdir())
     dirs = sorted(
@@ -35,4 +46,15 @@ async def list_files(dir: str = Query(default="data")):
     )
     parent = str(base.parent.relative_to(PROJECT_ROOT)) if base != PROJECT_ROOT else None
     current = str(base.relative_to(PROJECT_ROOT))
-    return {"dirs": dirs, "files": files, "parent": parent, "current": current}
+
+    if format == "json":
+        return {"dirs": dirs, "files": files, "parent": parent, "current": current}
+
+    return templates.TemplateResponse("partials/file-listing.html", {
+        "request": request,
+        "dirs": dirs,
+        "files": files,
+        "parent": parent,
+        "current": current,
+        "target_input": target_input,
+    })

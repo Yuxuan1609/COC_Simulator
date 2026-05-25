@@ -1,10 +1,10 @@
 <div>
   <div class="flex gap-4 mb-6">
-    <button class="px-4 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#0f0f0f]"
+    <button class="px-4 py-1.5 text-sm border border-gray-700 rounded hover:text-aged-gold hover:border-aged-gold bg-[#0f0f0f]"
             hx-get="/launcher/tabs/module-gen" hx-target="#launcher-content" hx-swap="innerHTML">
       模组生成
     </button>
-    <button class="px-4 py-1.5 text-sm border border-gray-700 rounded text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#0f0f0f]"
+    <button class="px-4 py-1.5 text-sm border border-gray-700 rounded hover:text-aged-gold hover:border-aged-gold bg-[#0f0f0f]"
             hx-get="/launcher/tabs/config" hx-target="#launcher-content" hx-swap="innerHTML">
       参数配置
     </button>
@@ -16,16 +16,16 @@
         class="space-y-4 max-w-2xl">
     {# Source document #}
     <div>
-      <label class="block text-sm text-gray-400 mb-1">源文档</label>
+      <label class="block text-sm text-gray-300 mb-1">源文档 (.docx / .txt)</label>
       <div class="flex gap-2">
-        <input type="text" name="source" placeholder="data/常暗之厢.docx"
-               class="flex-1 bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300 focus:border-aged-gold focus:outline-none">
+        <input type="text" id="pipeline-source" name="source" placeholder="data/常暗之厢.docx"
+               class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
         <button type="button"
-                hx-get="/api/files?dir=data"
-                hx-target="#file-browser-modal"
+                hx-get="/api/files?dir=data&target_input=pipeline-source"
+                hx-target="#file-browser-content"
                 hx-swap="innerHTML"
                 onclick="document.getElementById('file-modal').classList.remove('hidden')"
-                class="px-3 py-1.5 border border-gray-700 rounded text-xs text-gray-500 hover:text-aged-gold">
+                class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#1a150c]">
           浏览...
         </button>
       </div>
@@ -33,22 +33,22 @@
 
     {# Module name #}
     <div>
-      <label class="block text-sm text-gray-400 mb-1">模组名称</label>
+      <label class="block text-sm text-gray-300 mb-1">模组名称</label>
       <input type="text" name="module_name" placeholder="例如：常暗之厢"
-             class="w-full bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+             class="w-full bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
     </div>
 
     {# Output directory #}
     <div>
-      <label class="block text-sm text-gray-400 mb-1">输出目录</label>
+      <label class="block text-sm text-gray-300 mb-1">输出目录</label>
       <input type="text" name="output_dir" value="data/modules/"
-             class="w-full bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+             class="w-full bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
     </div>
 
     {# Pipeline steps #}
     <div>
-      <label class="block text-sm text-gray-400 mb-1">管线步骤</label>
-      <select name="start_from" class="bg-[#0d0d0d] border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300">
+      <label class="block text-sm text-gray-300 mb-1">管线步骤</label>
+      <select name="start_from" class="bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200">
         <option value="step_1a">完整生成（从 Step 1a 开始）</option>
         <option value="step_2a">从 Step 2a 续跑</option>
         <option value="step_3a">从 Step 3a 续跑</option>
@@ -62,13 +62,19 @@
     </button>
   </form>
 
-  {# Progress area #}
   <div id="pipeline-progress" class="mt-6"></div>
 
-  {# File browser modal (hidden by default) #}
+  {# File browser modal #}
   <div id="file-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
        onclick="if(event.target===this)this.classList.add('hidden')">
-    <div id="file-browser-modal" class="bg-[#141414] border border-gray-700 rounded-lg p-4 w-[500px] max-h-[70vh] overflow-y-auto">
+    <div class="bg-[#141414] border border-gray-600 rounded-lg p-4 w-[550px] max-h-[70vh] overflow-y-auto file-listing-container">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-sm text-gray-400">选择文件</span>
+        <button class="text-gray-500 hover:text-gray-300 text-lg" onclick="document.getElementById('file-modal').classList.add('hidden')">&times;</button>
+      </div>
+      <div id="file-browser-content">
+        <p class="text-sm text-gray-600">加载中...</p>
+      </div>
     </div>
   </div>
 </div>
