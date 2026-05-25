@@ -35,20 +35,58 @@ COMBAT_LLM_ENHANCEMENT = False
 
 
 # ═══════════════════════════════════════════════════════════════
-# 管线监控（U5 — 待实施）
+# 管线监控（U5）
 # ═══════════════════════════════════════════════════════════════
 
+MONITOR_ENABLED = True
+"""监控总开关。False 时 LLMSensor 零开销跳过所有记录。"""
+
+MONITOR_HISTORY_SIZE = 200
+"""LLMSensor 环形缓冲最大记录数。"""
+
+# ── 降级阈值 ──
+
 LLM_SLOW_THRESHOLD_MS = 8000
-"""LLM 调用慢阈值（毫秒）。超过此阈值的调用记录 warning。"""
+"""LLM 调用慢阈值（毫秒）。超过此阈值的调用记录 slow。"""
 
 LLM_TIMEOUT_MS = 45000
-"""LLM 调用超时阈值（毫秒）。超时后触发降级策略。"""
+"""LLM 调用超时阈值（毫秒）。超时后触发 on_timeout 降级。"""
 
 LLM_MAX_CONSECUTIVE_FAILURES = 3
-"""连续失败上限。达到后降级到确定性逻辑或 flash 模型。"""
+"""连续失败次数阈值。达到后触发 on_consecutive_failures 降级。"""
 
-PIPELINE_MONITOR_ENABLED = False
-"""管线运行时监控开关（U5）。开启后记录每次 LLM 调用的耗时/成败/响应质量。"""
+LLM_DEGRADE_RECOVERY_COUNT = 5
+"""降级后恢复所需连续成功次数。"""
+
+LLM_SLOW_RATE_THRESHOLD = 0.5
+"""近 10 次慢调用比例阈值。超过后预防性降级。"""
+
+# ── 降级策略集中化配置 ──
+
+DEGRADE_POLICY: dict[str, dict] = {
+    "keeper": {
+        "fallback_model": "deepseek-v4-flash",
+        "skip_enrich": True,
+        "skip_combat_entry": True,
+        "skip_intent_detect": True,
+    },
+    "narrator": {
+        "fallback_model": "deepseek-v4-flash",
+        "thinking": False,
+        "reasoning_effort": "low",
+    },
+    "author": {
+        "fallback_model": "deepseek-v4-flash",
+        "reject_all_structural": True,
+    },
+    "time_agent": {
+        "skip": True,
+    },
+    "intent_detector": {
+        "default_result": True,
+    },
+}
+"""每个 Agent 的降级行为参数。DegradationPolicy 实现类在 init 时读取。"""
 
 
 # ═══════════════════════════════════════════════════════════════
