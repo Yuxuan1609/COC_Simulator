@@ -46,6 +46,13 @@ NPC 名称匹配规则：精确名称匹配（不区分全角/半角空格），
 
 **关键约束**：entity 从 scene 剥离绑定到 NPC 时，`id` 字段保持不变。依赖图中的 edge 通过 entity ID 引用，改变 ID 会导致依赖链失效。
 
+绑定 entity 需保留来源信息：
+```python
+bound_interactions: list[dict]   # 每个 entity 保留原始字段 + "source_scene": "场景名"
+bound_auto_triggers: list[dict]  # 每个 entity 保留原始字段 + "source_scene": "场景名"
+```
+`source_scene` 记录 entity 原本所在的场景（interaction/AT）或标记为 `"global"`（event）。运行时 NPC turn 仅激活当前场景匹配的 bound entity。
+
 ### 2.3 NPCProfile 新增字段
 
 ```python
