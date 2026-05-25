@@ -71,28 +71,28 @@
 - **关联**：`src/scenario_core.py:976-1070`；`src/investigator/serialization.py:88, 168-170`；`tests/test_save_load_roundtrip.py`
 - **教训**：改完一个之后翻其他文件看是否有同样的 import-in-function 模式——果然 judge.py 也有
 
-## 7. Enrich results 类型不一致导致 TypeError
+## 13. Enrich results 类型不一致导致 TypeError
 - **症状**：`keeper.py:284` 报 `TypeError: string indices must be integers, not 'str'`
 - **根因**：Enrich prompt 输出 `"results": "整合后的叙事"`（单一合并字符串），但代码期望 `"results": {"I1": "..."}`（per-entity dict）。Python 的 `"I1" in "整合后的叙事"` 是合法子串检查，不会报错，因此偶然命中时 `"整合后的叙事"["I1"]` 才爆 TypeError
 - **解决**：`isinstance(results, dict)` 守卫——字符串直接跳过 per-entity 分配；后续改为 string results 走 `all_outcomes[0].message = results` 简单路径
 
-## 8. auto_trigger 结果在 flavor_outcomes 和 ambient_changes 中重复
+## 14. auto_trigger 结果在 flavor_outcomes 和 ambient_changes 中重复
 - **症状**：Narrator prompt 的 `【即兴行为】` 和 `【环境变化】` 显示完全相同的文本，LLM 将其当作两份独立内容生成重复叙事
 - **根因**：`keeper.py:100` 把 AT 的 `intent.action` 设成 `"other"`，导致 AT outcome 同时进入 `flavor_outcomes`（prompts.py 按 `action=="other"` 过滤）和 `ambient_changes`（keeper.py 按 `entity_type=="auto_trigger"` 过滤）
 - **解决**：在 `prompts.py` 的 flavor_outcomes 过滤中加入 `o.entity_type != "auto_trigger"`，同时省略空 `flavor_outcomes` 时整个 `【即兴行为】` 段落
 
-## 9. evaluate_trait_enhancement 多行 f-string 被 edit 工具截断
+## 15. evaluate_trait_enhancement 多行 f-string 被 edit 工具截断
 - **症状**：特质增强 Prompt 只剩第一行"你是 TRPG 规则辅助裁判..."，LLM 收不到参赛信息、检定详情等关键上下文，但不会直接报错（因为仍是一个合法 f-string），只在日志中才能发现
 - **根因**：`edit` 工具的 `oldString` 参数匹配多行 f-string 时只覆盖了第一行 `prompt = f"""..."""`，替换后整段 prompt 被截断。更危险的是——Python 语法仍然合法，不会报 SyntaxError，是一种静默破坏
 - **解决**：重新编辑，`oldString` 精确匹配截断态的完整第一行+闭合 `"""`，`newString` 提供完整 prompt。**此事发生两次**——第一次修复后被后续 commit 无意中重新截断（第二次修改 `set_log_label` 时再次使用了匹配第一行的 `oldString`）
 - **教训**：对多行 f-string 使用 edit 时，`oldString` 必须包含足够长的唯一上下文；修改后立即 `python -m py_compile` + 随机读几行确认内容没有被阉割
 
-## 10. Enrich prompt f-string 中未转义花括号导致 NameError
+## 16. Enrich prompt f-string 中未转义花括号导致 NameError
 - **症状**：`run_game.py` 运行时 `NameError: name '整合后���' is not defined`
 - **根因**：Enrich prompt 的 JSON 输出示例中有 `"results": {整合后的叙事}` 被 Python f-string 当作变量引用求值
 - **解决**：加引号改为 `"results": "整合后的叙事"`
 
-## 11. 日志系统重构：response 未按 agent 分文件
+## 17. 日志系统重构：response 未按 agent 分文件
 - **症状**：所有 LLM response 写入单一 `llm.txt`，不同 agent 的 prompt 和 response 分在两个文件里，排查时需要手动拼接
 - **根因**：`_log_response` 始终写 `llm.txt`
 - **解决**：引入 `_current_log_label` 全局变量 + `set_log_label()` 函数。`_show_prompt` 在写 prompt 前设置 label，`_log_response` 按 label 写入对应文件。`evaluate_trait_enhancement` 不走 `call_deepseek` 所以需要手动 `set_log_label("skill_checks")`
