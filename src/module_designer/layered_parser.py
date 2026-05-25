@@ -356,6 +356,8 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - **模组中提到的可获取物品（clues_and_items 章节：clues 为剧情关键物品/线索，items 为非剧情普通物品，需结合精修模组原文和常识判断）必须在对应场景的 entity 中通过 result 或 graded_result 明确表达为可获取状态，确保每个物品都有对应的 entity 承载其获取路径**
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称，不允许自创或使用别名**
+- NPC互动是否生成 entity 的判断标准：entity 必须有可感知的游戏机制后果——技能检定、物品给予/消耗、属性变化、NPC状态变更（受伤/死亡等）、触发新的事件、场景永久性变化。单纯的NPC对话/交谈/打听消息（无机制后果的信息传递）不生成 entity，由运行时 NPC 对话系统处理。
+- NPC 跟随/离开/加入队伍不生成 entity（由运行时 NPC 跟随机制处理，条件由 npc_profile 的 can_follow + follow_requirements 控制）。entity 中不出现 NPC 跟随/离开玩家的描述。
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -445,6 +447,8 @@ STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全
 - type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
+- 与NPC的纯粹对话/交谈不生成 event（NPC对话由运行时NPC系统处理）。只有涉及实质性世界影响的NPC互动才可生成 event。
+- NPC 跟随/离开不生成 event。
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -542,6 +546,8 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
   · 描述：1调查员初始时身上带着什么
          2哪个场景散布着什么武器
          3哪个场景可能会有什么敌人，有多少
+- 与NPC的纯粹对话/交谈不生成 auto_trigger（NPC对话由运行时NPC系统处理）。只有涉及实质性世界影响的NPC互动才可生成 auto_trigger。
+- NPC 跟随/离开不生成 auto_trigger。
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -765,6 +771,7 @@ STEP25_SYSTEM = """你是一个 TRPG NPC 行为描述助手。
 - 只使用提供的信息，不要编造新角色或新能力
 - 描述侧重于 NPC 的能力和行动（what they can/will do），而非静态属性
 - 如果某个 NPC 在 L2 entity 中没有对应互动，只基于 L3/L1 信息描述
+- can_follow：判断 NPC 是否可能跟随调查员行动。如果 NPC 的行动能力/性格/处境允许跟随（非固定在某地、无强制离开理由、愿意协助调查员），设为 true
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -813,6 +820,7 @@ def build_step25_prompt(
       "what_they_can_do": "NPC能做什么、在什么条件下会做什么（核心字段）",
       "interaction_triggers": ["什么情况下玩家可以与NPC互动"],
       "personality_notes": "性格和说话风格",
+      "can_follow": true/false,
       "appearance": "外貌描述（来自L1）",
       "initial_state": "alive",
       "initial_attitude": "neutral",
