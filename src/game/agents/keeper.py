@@ -48,6 +48,11 @@ class Keeper:
         self.turn_number = 0
         self._warnings: list[str] = []  # per-turn LLM error warnings surfaced to player
         self._recent_intents: list[str] = []  # last N intent strings for duplicate suppression
+        from monitor.agent_monitor import AgentMonitor
+        from monitor.policies import KeeperPolicy
+        from llm import _init_sensor
+        self._sensor = _init_sensor()
+        self.monitor = AgentMonitor("Keeper", self._sensor, KeeperPolicy())
         self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
         self._standoff_pending: dict | None = None
         self._weapon_offer: dict | None = None  # pending weapon pickup offer {weapon_ref, scene}
@@ -92,7 +97,8 @@ class Keeper:
                 from prompts import build_npc_intent_detect_prompt
                 intent_prompt = build_npc_intent_detect_prompt(raw, npc_names)
                 try:
-                    intent_result = call_deepseek(
+                    intent_result = self.monitor.call(
+                        lambda p, **kw: call_deepseek(p, **kw),
                         intent_prompt, json_mode=True,
                         model=LLM_FLASH_MODEL, reasoning_effort="low",
                         system="你是回合解析助手。仅输出 JSON。",
@@ -396,7 +402,10 @@ class Keeper:
             )
             combat_executor = ThreadPoolExecutor(max_workers=1)
             combat_future = combat_executor.submit(
-                call_deepseek,
+                lambda p, **kw: self.monitor.call(
+                    lambda pp, **kkw: call_deepseek(pp, **kkw),
+                    p, **kw,
+                ),
                 combat_prompt,
                 json_mode=True,
                 model=LLM_FLASH_MODEL,
@@ -654,9 +663,11 @@ class Keeper:
         # Step 1: Semantic match (LLM, flash)
         match_prompt = build_standoff_match_prompt(player_input)
         try:
-            raw = call_deepseek(match_prompt, json_mode=True, model=LLM_FLASH_MODEL,
-                               system="你是 COC 7th KP 助理，将玩家输入匹配到对应技能。",
-                               fallback_schema={"matched": False, "skill_name": "", "reason": ""})
+            raw = self.monitor.call(
+                lambda p, **kw: call_deepseek(p, **kw),
+                match_prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是 COC 7th KP 助理，将玩家输入匹配到对应技能。",
+                fallback_schema={"matched": False, "skill_name": "", "reason": ""})
             match_data = json.loads(raw) if isinstance(raw, str) else raw
         except Exception:
             match_data = {"matched": False, "skill_name": "", "reason": ""}
@@ -776,7 +787,8 @@ class Keeper:
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
         try:
-            response = call_deepseek(
+            response = self.monitor.call(
+                lambda p, **kw: call_deepseek(p, **kw),
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 reasoning_effort=RE_KEEPER_PARSE,
                 system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
@@ -806,21 +818,28 @@ class Keeper:
         return actions
 
     def _enrich(self, judged_entities, user_input) -> dict:
+        if self.monitor.degraded:
+            from monitor.policies import KeeperPolicy
+            policy = KeeperPolicy()
+            if policy.on_degrade().get("skip_enrich"):
+                return {"results": "（enrich 降级跳过）", "reasoning": "", "emphasis_hint": ""}
         prompt = build_keeper_enrich_prompt(self.world, judged_entities, user_input)
         try:
-            response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
-                                     system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
-                                            "\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。"
-                                            "\n\n叙事规则："
-                                            "\n- success=true → 结果清晰明确地整合，玩家能感知发生了什么"
-                                            "\n- success=false → 若 result 已含明确失败后果（扣血/惩罚/敌人出现），直接保留原文整合，不得改为晦涩模糊；仅当 result 为简单「检定失败」类通用文字时才描述为晦涩、模糊、似错觉或微不足道的细节"
-                                            "\n- 提供 reasoning 简短说明整合逻辑"
-                                            "\n\n输出格式：{\"results\": \"合并叙事\", \"reasoning\": \"整合逻辑\", \"emphasis_hint\": \"叙事方向\"}。直接输出 JSON。",
-                                     fallback_schema={
-                                         "results": {},
-                                         "reasoning": "",
-                                         "emphasis_hint": "",
-                                     })
+            response = self.monitor.call(
+                lambda p, **kw: call_deepseek(p, **kw),
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
+                       "\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。"
+                       "\n\n叙事规则："
+                       "\n- success=true → 结果清晰明确地整合，玩家能感知发生了什么"
+                       "\n- success=false → 若 result 已含明确失败后果（扣血/惩罚/敌人出现），直接保留原文整合，不得改为晦涩模糊；仅当 result 为简单「检定失败」类通用文字时才描述为晦涩、模糊、似错觉或微不足道的细节"
+                       "\n- 提供 reasoning 简短说明整合逻辑"
+                       "\n\n输出格式：{\"results\": \"合并叙事\", \"reasoning\": \"整合逻辑\", \"emphasis_hint\": \"叙事方向\"}。直接输出 JSON。",
+                fallback_schema={
+                    "results": {},
+                    "reasoning": "",
+                    "emphasis_hint": "",
+                })
             return json.loads(response) if isinstance(response, str) else response
         except Exception as e:
             self._warnings.append(f"叙事润色失败（{e}），结果将以原始形式呈现。")
