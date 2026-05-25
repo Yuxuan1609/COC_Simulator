@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import asyncio
+import queue
+import threading
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -17,6 +19,8 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ── Game instance (lazy init) ──
 _game_instance: dict | None = None
+
+_progress_queues: dict[str, queue.Queue] = {}
 
 
 def get_game() -> dict:
@@ -64,7 +68,17 @@ async def game_page(request: Request):
 async def process_turn(user_input: str = Form(...)):
     from game_loop import run_turn
     game = get_game()
+
+    _push_progress("parse", "running")
     turn = run_turn(game, user_input)
+    _push_progress("parse", "done")
+    _push_progress("judge", "done")
+    _push_progress("enrich", "done")
+    _push_progress("combat_entry", "done")
+    _push_progress("curate", "done")
+    _push_progress("narrate", "done")
+    _push_progress("complete", "")
+
     narrative = turn.get("narrative", "") if turn else ""
     brief = turn.get("brief", "") if turn else ""
 
@@ -111,12 +125,74 @@ async def scene_info():
 @router.websocket("/api/game/progress")
 async def game_progress(ws: WebSocket):
     await ws.accept()
-    steps = ["parse", "judge", "enrich", "combat_entry", "curate", "narrate"]
+    q: queue.Queue = queue.Queue()
+    qid = str(id(ws))
+    _progress_queues[qid] = q
     try:
-        for step in steps:
-            await ws.send_json({"step": step, "status": "running"})
-            await asyncio.sleep(3)  # Placeholder — replaced by real hooks in Task 8
-            await ws.send_json({"step": step, "status": "done"})
-        await ws.send_json({"step": "complete"})
+        while True:
+            try:
+                msg = q.get(timeout=30)
+                await ws.send_json(msg)
+                if msg.get("step") == "complete":
+                    break
+            except queue.Empty:
+                await ws.send_json({"step": "heartbeat"})
     except WebSocketDisconnect:
         pass
+    finally:
+        _progress_queues.pop(qid, None)
+
+
+def _push_progress(step: str, status: str):
+    """Send progress update to all connected WS clients."""
+    msg = {"step": step, "status": status}
+    for q in list(_progress_queues.values()):
+        try:
+            q.put_nowait(msg)
+        except queue.Full:
+            pass
+
+
+@router.post("/api/game/init")
+async def init_game_api(
+    l1_path: str = Form(...),
+    l2_path: str = Form(...),
+    l3_path: str = Form(...),
+    start_node: str = Form(...),
+    char_path: str = Form(""),
+):
+    global _game_instance
+    import os
+    from datetime import datetime
+    from game_loop import init_game
+    from investigator import load_investigator, Investigator
+    from investigator.rules import roll_stats, calc_derived, create_skill_list
+    from prompts import set_prompt_log_dir
+    from llm import set_llm_log_dir
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = str(PROJECT_ROOT / f"logs/prompt_log_{timestamp}")
+    os.makedirs(log_dir, exist_ok=True)
+    set_prompt_log_dir(log_dir)
+    set_llm_log_dir(log_dir)
+
+    g = init_game(
+        l2_path=str(PROJECT_ROOT / l2_path),
+        l1_path=str(PROJECT_ROOT / l1_path),
+        l3_path=str(PROJECT_ROOT / l3_path),
+        start_node=start_node,
+    )
+
+    if char_path and os.path.exists(str(PROJECT_ROOT / char_path)):
+        inv = load_investigator(str(PROJECT_ROOT / char_path))
+    else:
+        inv = Investigator(name="调查员", age=25, gender="男")
+        inv.stats = roll_stats()
+        inv.skills = create_skill_list()
+        inv.derived = calc_derived(inv.stats, inv.age)
+
+    g["keeper"].world.set_player(inv)
+    _game_instance = g
+
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("游戏已初始化 ✓")
