@@ -224,6 +224,63 @@ def _get_pipeline_version() -> str:
 
 
 
+def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
+                       npc_profiles: dict) -> tuple[list[dict], list[dict], dict]:
+    """Scan entities for NPC name references -> strip from scene -> bind to NPC profile.
+    Preserves entity IDs. Tags each bound entity with source_scene.
+    """
+    npc_names = set(npc_profiles.keys())
+    if not npc_names:
+        return interactions, auto_triggers, npc_profiles
+
+    def _references_npc(entity: dict) -> str | None:
+        fields = " ".join([
+            entity.get("name", ""), entity.get("trigger", ""), entity.get("result", ""),
+        ])
+        for name in npc_names:
+            if name in fields:
+                return name
+        return None
+
+    def _is_follow_event(entity: dict) -> bool:
+        combined = " ".join([
+            entity.get("name", ""), entity.get("trigger", ""), entity.get("result", ""),
+        ])
+        follow_kw = ("跟随", "跟着", "加入队伍", "离开队伍", "开始跟随", "停止跟随")
+        return any(kw in combined for kw in follow_kw)
+
+    filtered_interactions = []
+    filtered_auto_triggers = []
+
+    for e in interactions:
+        if _is_follow_event(e):
+            continue
+        npc_name = _references_npc(e)
+        if npc_name:
+            e_copy = dict(e)
+            e_copy["source_scene"] = e.get("scene", "")
+            npc_profiles.setdefault(npc_name, {})
+            npc_profiles[npc_name].setdefault("bound_interactions", [])
+            npc_profiles[npc_name]["bound_interactions"].append(e_copy)
+        else:
+            filtered_interactions.append(e)
+
+    for e in auto_triggers:
+        if _is_follow_event(e):
+            continue
+        npc_name = _references_npc(e)
+        if npc_name:
+            e_copy = dict(e)
+            e_copy["source_scene"] = e.get("scene", "")
+            npc_profiles.setdefault(npc_name, {})
+            npc_profiles[npc_name].setdefault("bound_auto_triggers", [])
+            npc_profiles[npc_name]["bound_auto_triggers"].append(e_copy)
+        else:
+            filtered_auto_triggers.append(e)
+
+    return filtered_interactions, filtered_auto_triggers, npc_profiles
+
+
 def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
                  npc_profiles=None, boss_encounters=None) -> dict:
     """将 Step 3a 后的实体按场景分组组装为 L2 结构."""
@@ -514,6 +571,17 @@ def run_pipeline(
     events = step3a.get("events", events)
     auto_triggers = step3a.get("auto_triggers", auto_triggers)
     npc_profiles = step25.get("npc_profiles", {})
+
+    interactions, auto_triggers, npc_profiles = _bind_npc_entities(
+        interactions, auto_triggers, npc_profiles,
+    )
+    if verbose:
+        bound_count = sum(
+            len(p.get("bound_interactions", [])) + len(p.get("bound_auto_triggers", []))
+            for p in npc_profiles.values()
+        )
+        print(f"  [NPC Bind] {bound_count} entities bound to NPCs")
+
     if step3a.get("_fallback"):
         result.fallbacks.append("Step 3a")
     if step25.get("_fallback"):
