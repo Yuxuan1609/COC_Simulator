@@ -730,8 +730,16 @@ def _do_step2a(runner: InteractiveRunner, verbose: bool = True):
     if verbose:
         print("\n\033[1m[Step 2a] Interactions 提取\033[0m")
 
+    # Load skill names for type whitelist
+    skill_names = []
+    skill_path = PROJECT_ROOT / runner.config.skill_checks_path
+    if skill_path.exists():
+        with open(skill_path, "r", encoding="utf-8") as f:
+            skill_checks = json.load(f)
+            skill_names = sorted(set(s["name"] for s in skill_checks))
+
     def _do():
-        prompt = build_step2a_prompt(runner.chapters, runner.scenes, runner.characters)
+        prompt = build_step2a_prompt(runner.chapters, runner.scenes, runner.characters, skill_names=skill_names)
         return runner.llm_json(prompt, system=STEP2A_SYSTEM, call_name="step2a_interactions")
 
     step2a = _do()  # Step 2a 较简单，直接调用
@@ -739,10 +747,10 @@ def _do_step2a(runner: InteractiveRunner, verbose: bool = True):
     runner.scene_movements = step2a.get("scene_movements", {})
 
     # 保存
-    step_dir = runner._step_dir("step_2")
+    step_dir = runner._step_dir("step_2a")
     with open(step_dir / "2a_interactions.json", "w", encoding="utf-8") as f:
         json.dump(step2a, f, ensure_ascii=False, indent=2)
-    runner._save_summary("step_2", {
+    runner._save_summary("step_2a", {
         "interactions_count": len(runner.interactions),
         "scene_movements_count": len(runner.scene_movements),
     })
@@ -795,7 +803,7 @@ def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
     runner.auto_triggers = at_data.get("auto_triggers", [])
 
     # 保存
-    step_dir = runner._step_dir("step_2")
+    step_dir = runner._step_dir("step_2bc")
     with open(step_dir / "2b_events.json", "w", encoding="utf-8") as f:
         json.dump(events_data, f, ensure_ascii=False, indent=2)
     with open(step_dir / "2b_auto_triggers.json", "w", encoding="utf-8") as f:
@@ -891,7 +899,7 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
     )
 
     # 保存
-    step_dir_3 = runner._step_dir("step_3")
+    step_dir_3 = runner._step_dir("step_3a")
     with open(step_dir_3 / "3a_dedup_conflict.json", "w", encoding="utf-8") as f:
         json.dump(step3a, f, ensure_ascii=False, indent=2)
 
@@ -961,7 +969,7 @@ def _do_step3b(runner: InteractiveRunner, verbose: bool = True):
             })
 
     # 保存
-    step_dir = runner._step_dir("step_3")
+    step_dir = runner._step_dir("step_3b")
     with open(step_dir / "3b_cross_check.json", "w", encoding="utf-8") as f:
         json.dump(step3b, f, ensure_ascii=False, indent=2)
 

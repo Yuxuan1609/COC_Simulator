@@ -88,38 +88,7 @@ class Keeper:
         self.turn_number += 1
         self._warnings.clear()
 
-        # NPC interaction routing with intent detection
-        if self.world.npcs:
-            npcs_present = self.world.npcs.get_in_scene(self.world.current_location)
-            npc_names = [n.name for n in npcs_present]
-            matched_name = next((n for n in npc_names if n in raw), None)
-            if matched_name:
-                from prompts import build_npc_intent_detect_prompt
-                intent_prompt = build_npc_intent_detect_prompt(raw, npc_names)
-                try:
-                    intent_result = self.monitor.call(
-                        lambda p, **kw: call_deepseek(p, **kw),
-                        intent_prompt, json_mode=True,
-                        model=LLM_FLASH_MODEL, reasoning_effort="low",
-                        system="你是回合解析助手。仅输出 JSON。",
-                    )
-                    is_talking = intent_result.get("is_talking", False)
-                except Exception:
-                    is_talking = True
-
-                if is_talking:
-                    npc_result = self.world.npcs.process_npc_turn(
-                        npc_name=matched_name, user_input=raw,
-                        world=self.world,
-                        llm_json=lambda prompt, **kw: call_deepseek(prompt, json_mode=True, **kw),
-                        llm_text=lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
-                        judge=self.judge, curator=self.curator,
-                    )
-                    npc_result["npc_events"] = npc_result.get("npc_events", [])
-                    self._inject_npc_at()
-                    return npc_result
-
-        # Inject NPC ATs before normal parse
+        # Inject NPC ATs + interactions before normal parse
         self._inject_npc_at()
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
@@ -752,14 +721,41 @@ class Keeper:
         return True
 
     def _inject_npc_at(self):
-        """Inject condition-satisfied NPC auto-triggers into current node."""
+        """Inject condition-satisfied NPC bound entities (interactions + ATs) into current node."""
         if not self.world.npcs:
             return
         self.world._npc_injected_at_ids.clear()
         for npc in self.world.npcs._npcs.values():
+            if npc.scene != self.world.current_location:
+                continue
+            # Inject bound interactions
+            for ent in npc.bound_interactions:
+                eid = ent.get("id", "")
+                req = ent.get("requirement", "")
+                if req:
+                    from scenario_core import parse_hard_requirement
+                    if not parse_hard_requirement(req, self.world.runtime_state):
+                        continue
+                node = self.world._current_node()
+                if node:
+                    existing_ids = {e.id for e in node.interactions}
+                    if eid not in existing_ids:
+                        from scenario_core import Entity
+                        node.interactions.append(Entity(
+                            id=eid, entity_type="interaction",
+                            name=ent.get("name", ""), scene=ent.get("source_scene", ""),
+                            type=ent.get("type", ""), requirement=req,
+                            trigger=ent.get("trigger", ""), result=ent.get("result", ""),
+                            side_effects=ent.get("side_effects", []),
+                            graded_result=ent.get("graded_result"),
+                            difficulty=ent.get("difficulty", ""),
+                            extra=ent.get("extra"),
+                        ))
+                        self.world._npc_injected_at_ids.add(eid)
+            # Inject bound auto_triggers
             for at in npc.bound_auto_triggers:
                 at_scene = at.get("source_scene", "")
-                if at_scene != self.world.current_location:
+                if at_scene != self.world.current_location and at_scene:
                     continue
                 eid = at.get("id", "")
                 req = at.get("requirement", "")

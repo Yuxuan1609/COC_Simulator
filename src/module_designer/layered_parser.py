@@ -108,8 +108,9 @@ def _parse_condensed_chapters(markdown_text: str) -> dict[str, str]:
 
 
 def _slim_entity(entity: dict) -> dict:
-    """从 entity dict 中提取 Phase 2 需要的 5-6 个字段（graded_result 可选）."""
-    slimmed = {k: entity.get(k, "") for k in ("name", "scene", "type")}
+    """从 entity dict 中提取 Phase 2 需要的字段（含 id 用于精确匹配回原始 entity）."""
+    slimmed = {"id": entity.get("id", "")}
+    slimmed.update({k: entity.get(k, "") for k in ("name", "scene", "type")})
     slimmed["result"] = entity.get("result", "")
     if entity.get("graded_result"):
         slimmed["graded_result"] = entity["graded_result"]
@@ -120,20 +121,28 @@ def _slim_entity(entity: dict) -> dict:
 def _merge_phase2_fields(originals: list[dict], phase2_entities: list[dict]) -> list[dict]:
     """将 Phase 2 标准化后的字段合并回完整 entity。
 
-    Phase 2 prompt 只传 6 个字段给 LLM 以节省 token，LLM 返回标准化后的
+    Phase 2 prompt 传精简字段给 LLM 以节省 token，LLM 返回标准化后的
     type/side_effects/result/graded_result。此函数将这些字段写回原始完整 entity。
-    匹配依据: (name, scene)。
+    匹配优先: id，回退: (name, scene)。
     """
-    lookup = {}
+    by_id = {}
+    by_name_scene = {}
     for i, e in enumerate(originals):
+        eid = e.get("id", "")
+        if eid:
+            by_id[eid] = i
         key = (e.get("name", ""), e.get("scene", ""))
-        lookup[key] = i
+        by_name_scene[key] = i
 
     merged = [dict(e) for e in originals]
     for p2e in phase2_entities:
-        key = (p2e.get("name", ""), p2e.get("scene", ""))
-        if key in lookup:
-            idx = lookup[key]
+        eid = p2e.get("id", "")
+        if eid and eid in by_id:
+            idx = by_id[eid]
+        else:
+            key = (p2e.get("name", ""), p2e.get("scene", ""))
+            idx = by_name_scene.get(key, -1)
+        if idx >= 0:
             for field in ("type", "side_effects", "result", "graded_result"):
                 if field in p2e:
                     merged[idx][field] = p2e[field]
@@ -366,6 +375,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - side_effects 是间接后果：与 result 不重合的附带影响。如 "开抽屉的声响吸引了隔壁车厢的怪物"。自然语言字符串列表
 - 互动完成即代表状态变更，不需要单独的 flag
 - type 涉及技能鉴定时，填入 graded_result（分级检定后果），此时 result 填 "##GRADED##"（占位标记），side_effects 留空。所有结果描述写入 graded_result 各等级中；type 为"无"时不填 graded_result
+- **type 必须从标准 COC 7th 技能列表中选择，严禁使用属性名（如"灵感""幸运""力量"等不是技能名）。不涉及检定的填"无"**
 - based_on 始终为 null（Step 2b 会给派生实体填值）
 - 通行路径记录每个场景的出边（from_here）和入边（to_here），包含通行方式和前置条件
 - entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
@@ -426,22 +436,26 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 """
 
 
-def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict] = None) -> str:
+def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict] = None, skill_names: list[str] = None) -> str:
     scene_list = "\n".join(f"- {s}" for s in scenes)
     char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
+    skills_str = "\n".join(f"- {s}" for s in (skill_names or []))
     return f"""已知场景列表:
 {scene_list}
 
 已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
 {char_list if char_list else "（无）"}
 
+## 标准 COC 7th 技能列表（type 字段必须从此列表中选择，严禁使用属性名如"灵感""幸运"）
+{skills_str if skills_str else "（未提供技能列表，请根据 COC 7th 规则常识选择标准技能名）"}
+
 精修模组（参考上下文）：
 \"\"\"
 {_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary')}
 \"\"\""""
-def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call, characters: list[dict] = None) -> dict:
+def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call, characters: list[dict] = None, skill_names: list[str] = None) -> dict:
     """从精修模组提取所有 interactions."""
-    prompt = build_step2a_prompt(chapters, scenes, characters)
+    prompt = build_step2a_prompt(chapters, scenes, characters, skill_names=skill_names)
     return llm_call(prompt, system=STEP2A_SYSTEM)
 
 
@@ -599,7 +613,14 @@ STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动�
 7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
 8. 每个场景生成 0-2 个 auto_trigger
 9. **必须**生成 AT_WORLD 世界初始化自动触发。AT_WORLD 的 side_effects 使用 @spawn_enemy / @grant_weapon / @item_gain 标记初始配置。enemy_ref 和 weapon_ref 必须来自约束列表，@spawn_enemy / @grant_weapon 的总调用次数不得超过对应 max_count。@item_gain 用于纯文本物品名
-"""
+
+**@标记精确语法（必须严格按此格式，不可自由发挥）:**
+@spawn_enemy(enemy_ref="敌人库名", scene="场景名", quantity=数量)
+@grant_weapon(weapon_ref="武器库名", scene="场景名", quantity=数量)
+@item_gain(item_name="物品名", quantity=数量)
+示例: ["@spawn_enemy(enemy_ref=\"Clicker\", scene=\"2号车厢\", quantity=3)", "@item_gain(item_name=\"手电筒\", quantity=1)"]
+每个 @标记 必须是独立的一条数组元素，格式严格为 @函数(参数=值, ...)"""
+
 
 
 def build_step2b_at_prompt(
@@ -1056,6 +1077,7 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 - graded_result 在 type != "无" 时强制填写至少1条；type == "无" 时删除空 graded_result
 - result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
 - requirement/trigger 冲突以 精修模组（参考上下文） 为准修正
+- **requirement 保护规则**: requirement 中引用的 entity ID 依赖链（如 I8 的 requirement 为 "I7"）即使不是 based_on 关系也绝对不得清除或替换为空格。只修正格式错误（如多余空格、错误大小写），不改变 requirement 的语义内容
 - ##END_## 标记与 L3 ending_conditions 相互补齐
 - 不删改实质信息，只修正名称和引用
 - 互动完成即代表状态变更，不需要单独的 flag
@@ -1217,10 +1239,11 @@ STEP35_SYSTEM = """你是一个 TRPG 依赖关系解析助手。
 2. 提取其中描述的依赖关系，标准化为:
    - 硬性条件中裸 entity ID（如 I3）默认指该实体完成 → {{"type": "interaction", "id": "I3"}}
      AND/OR 连接的每个 entity ID 各提取为一条独立依赖
-   - 软性条件（|| 之后）中如提到其他 entity ID → 同样提取为 {{"type": "interaction", "id": "I4"}}
-   - trigger 中如提到 "E1 已触发" → {{"type": "event", "id": "E1"}}
-     每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
-   - 依赖仅表示"必须完成目标 entity"，不区分成功/失败/触发等条件（requirement 语义由 runtime 解析）
+    - 软性条件（|| 之后）中如提到其他 entity ID → 同样提取为 {{"type": "interaction", "id": "I4"}}
+    - trigger 中如提到 "E1 已触发" → {{"type": "event", "id": "E1"}}
+      每条 entity 的 requires 列出所有提取到的依赖（可为空列表）
+    - 依赖仅表示"必须完成目标 entity"，不区分成功/失败/触发等条件（requirement 语义由 runtime 解析）
+    - **反向依赖识别**: || 后软性条件可能含反向依赖（如 "I7 检定失败或未进行"），此时 I7 不是本 entity 的前置依赖而是反向条件。含否定词（失败/未进行/未触发/未完成）描述的 entity ID 不提取为依赖，由 runtime 运行时判定
 
 3. 每条 entity 必须在输出中列出，requires 为空列表表示无依赖
 4. 实体 ID 必须精确匹配（如 I3 不能写成 I03）

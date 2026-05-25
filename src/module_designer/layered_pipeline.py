@@ -412,6 +412,17 @@ def run_pipeline(
     except Exception:
         pass
 
+    # Pre-load skill names for Step 2a type whitelist
+    skill_names_all = []
+    try:
+        import os as _os
+        skill_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "skill_checks.json")
+        with open(skill_path, "r", encoding="utf-8") as _f:
+            skill_checks = json.load(_f)
+            skill_names_all = sorted(set(s["name"] for s in skill_checks))
+    except Exception:
+        pass
+
     # ── Step 1 ──────────────────────────────────────────────
     if verbose:
         print("═" * 50)
@@ -469,7 +480,7 @@ def run_pipeline(
         print("[Step 2a] Interactions 提取...")
 
     def _do_step2a():
-        return parse_step2a(chapters, scenes, llm_json, characters=characters)
+        return parse_step2a(chapters, scenes, llm_json, characters=characters, skill_names=skill_names_all)
     step2a = _with_fallback(
         _do_step2a, ["interactions"],
         {"interactions": []},
@@ -816,8 +827,8 @@ def run_pipeline(
                                      npc_profiles=npc_profiles, boss_encounters=boss_encounters_data))
     if dep_graph:
         l2_assembled["dependency_graph"] = dep_graph.to_dict()
-    l2_assembled["_phase1"] = {"enemies": phase1_result.get("enemies", []),
-                                "weapons": phase1_result.get("weapons", [])}
+    l2_assembled["_phase1"] = {"enemies": phase1_clean.get("enemies", []),
+                                "weapons": phase1_clean.get("weapons", [])}
 
     # ── 最终: Schema 验证 + Cross-validate ─────────────────
     if verbose:
