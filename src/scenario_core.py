@@ -950,6 +950,9 @@ class ScenarioWorld:
                     f"前往{target}的条件未满足({edge.requirement})"
                 )
         self.current_location = target
+        # Sync following NPCs to new location
+        if hasattr(self, 'npcs') and self.npcs:
+            self.npcs.sync_followers(target)
         return ActionResult(True, f"你来到了{target}。{self.get_current_description()}")
 
     def is_event_triggered(self, event_id: str) -> bool:

@@ -49,7 +49,7 @@ time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
         _show_prompt("TimeAgent", prompt)
         try:
             response = self.monitor.call(
-                lambda p, **kw: call_deepseek(p, **kw),
+                lambda p, **kw: call_deepseek(p, _label="timeagent", **kw),
                 prompt,
                 json_mode=True,
                 model=LLM_FLASH_MODEL,

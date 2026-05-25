@@ -77,13 +77,16 @@ def set_log_label(label: str | None):
     _current_log_label = label
 
 
-def _log_response(content: str):
-    """将 LLM 响应写入日志目录下对应 label 的文件（如已配置）"""
+def _log_response(content: str, label: str | None = None):
+    """将 LLM 响应写入日志目录下对应 label 的文件（如已配置）。
+
+    label: 日志文件名标签。若为 None 则使用全局 _current_log_label。
+    """
     if not _log_dir:
         return
     os.makedirs(_log_dir, exist_ok=True)
-    label = _current_log_label or "llm"
-    filename = f"{label}.txt"
+    lbl = label or _current_log_label or "llm"
+    filename = f"{lbl}.txt"
     path = os.path.join(_log_dir, filename)
     with open(path, 'a', encoding='utf-8') as f:
         f.write("\n--- Response ---\n")
@@ -132,6 +135,7 @@ def call_deepseek(
     max_tokens: int | None = None,
     max_retries: int = 3,
     fallback_schema: dict | None = None,
+    _label: str | None = None,
 ) -> dict | str:
     """
     统一 DeepSeek 调用入口。
@@ -144,10 +148,14 @@ def call_deepseek(
     max_tokens: 最大输出 token 数，None 时 json_mode 默认 162840，非 json_mode 默认 20000
     max_retries: JSON 解析失败时最大重试次数（默认 3）
     fallback_schema: 全部重试失败后，按此 dict 的 key 构造返回（空值填充）
+    _label: 日志文件标签（绕过全局 _current_log_label 的并行竞态）
     """
     _model = model if model is not None else LLM_DEFAULT_MODEL
     _reasoning_effort = reasoning_effort if reasoning_effort is not None else LLM_REASONING_EFFORT
     _thinking = thinking if thinking is not None else LLM_THINKING_ENABLED
+
+    # Capture log label at entry to avoid race conditions with parallel calls
+    _log_label = _label if _label is not None else _current_log_label
 
     import time as _time
     _t0 = _time.time()
@@ -189,7 +197,7 @@ def call_deepseek(
                         _s.record(label=_current_log_label or "llm", model=_model,
                                  json_mode=True, duration_ms=_duration, http_status=200,
                                  ok=True, json_valid=True, response_len=len(raw))
-                    _log_response(json.dumps(result, ensure_ascii=False, indent=2))
+                    _log_response(json.dumps(result, ensure_ascii=False, indent=2), label=_log_label)
                     return result
                 except json.JSONDecodeError as e:
                     last_error = e
@@ -201,7 +209,7 @@ def call_deepseek(
                             _s.record(label=_current_log_label or "llm", model=_model,
                                      json_mode=True, duration_ms=_duration, http_status=200,
                                      ok=True, json_valid=True, response_len=len(raw))
-                        _log_response(json.dumps(result, ensure_ascii=False, indent=2))
+                        _log_response(json.dumps(result, ensure_ascii=False, indent=2), label=_log_label)
                         return result
                     except json.JSONDecodeError:
                         if attempt < max_retries:
@@ -218,7 +226,7 @@ def call_deepseek(
                     _s.record(label=_current_log_label or "llm", model=_model,
                              json_mode=True, duration_ms=_duration, http_status=200,
                              ok=False, json_valid=False, response_len=len(raw if 'raw' in dir() else ""))
-                _log_response(json.dumps(fallback, ensure_ascii=False, indent=2))
+                _log_response(json.dumps(fallback, ensure_ascii=False, indent=2), label=_log_label)
                 return fallback
 
             raise last_error or RuntimeError("JSON解析失败且无 fallback")
@@ -245,7 +253,7 @@ def call_deepseek(
                          json_mode=False, duration_ms=_duration, http_status=200,
                          ok=True, json_valid=None,
                          response_len=len(result))
-            _log_response(result)
+            _log_response(result, label=_log_label)
             return result
     except Exception:
         _duration = (_time.time() - _t0) * 1000

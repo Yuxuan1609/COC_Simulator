@@ -359,7 +359,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             met = world.are_entity_requirements_met(entity)
         return hard, soft, met
 
-    def _fmt_inter(entity) -> str:
+    def _fmt_inter(entity, prefix: str = "[INTERACT]") -> str:
         """Format an interaction entity."""
         done = world.completed_interactions.get(world.current_location, set())
         status = "（已完成）" if entity.name in done else ""
@@ -370,7 +370,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             parts.append(f"条件=\"{soft}\"")
         if status:
             parts.append(status)
-        return "  [INTERACT] " + " ".join(parts)
+        return f"  {prefix} " + " ".join(parts)
 
     def _fmt_at(entity, prefix: str = "[AUTO_TRIGGER]") -> str:
         """Format an auto-trigger entity."""
@@ -381,9 +381,21 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         return f"  {prefix} " + " ".join(parts)
 
     if node:
+        # Collect all NPC-bound entity IDs for the current scene
+        npc_bound_interact_ids: set[str] = set()
+        npc_bound_at_ids: set[str] = set()
+        if hasattr(world, 'npcs') and world.npcs:
+            for npc in world.npcs._npcs.values():
+                if npc.scene != world.current_location:
+                    continue
+                for e in npc.bound_interactions:
+                    npc_bound_interact_ids.add(e.get("id", ""))
+                for e in npc.bound_auto_triggers:
+                    npc_bound_at_ids.add(e.get("id", ""))
+
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
-            is_npc = at.id in npc_injected_ids
+            is_npc = at.id in npc_bound_at_ids or at.id in npc_injected_ids
             line = _fmt_at(at, "[NPC_AT]" if is_npc else "[AUTO_TRIGGER]")
             if is_npc:
                 if met:
@@ -397,11 +409,18 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                     nontrig_scene.append(line)
         for inter in node.interactions:
             _, _, met = _split_req(inter)
-            line = _fmt_inter(inter)
-            if met:
-                trig_scene.append(line)
+            is_npc = inter.id in npc_bound_interact_ids or inter.id in npc_injected_ids
+            line = _fmt_inter(inter, "[NPC_INTERACT]" if is_npc else "[INTERACT]")
+            if is_npc:
+                if met:
+                    trig_npc.append(line)
+                else:
+                    nontrig_npc.append(line)
             else:
-                nontrig_scene.append(line)
+                if met:
+                    trig_scene.append(line)
+                else:
+                    nontrig_scene.append(line)
 
     trig_events = []
     nontrig_events = []

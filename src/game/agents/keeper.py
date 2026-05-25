@@ -56,6 +56,9 @@ class Keeper:
         self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
         self._standoff_pending: dict | None = None
         self._weapon_offer: dict | None = None  # pending weapon pickup offer {weapon_ref, scene}
+        self._npc_events: list[str] = []  # NPC follow/state events collected this turn
+        self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
+        self._pending_move: str | None = None  # deferred move target
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
         """Execute full turn: parse → judge → enrich → curate."""
@@ -87,12 +90,47 @@ class Keeper:
             return self._process_deterministic_only(turn_input)
         self.turn_number += 1
         self._warnings.clear()
+        self._npc_events.clear()
+        self._pending_side_effects.clear()
+        self._pending_move = None
 
         # Inject NPC ATs + interactions before normal parse
         self._inject_npc_at()
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
         parse_result = self._parse(raw)
+
+        # Handle npc_interact — route to NPC subagent
+        npc_interact_entries = [e for e in parse_result if e.get("type") == "npc_interact"]
+        non_npc_entries = [e for e in parse_result if e.get("type") != "npc_interact"]
+        npc_events: list[str] = []
+        if npc_interact_entries:
+            for entry in npc_interact_entries:
+                npc_name = entry.get("npc_name", "")
+                if npc_name and self.world.npcs:
+                    npc = self.world.npcs.get(npc_name)
+                    if npc and npc.scene == self.world.current_location:
+                        dialogue = self.world.npcs.talk_to(
+                            npc_name, raw,
+                            lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
+                        )
+                        # Also run NPC parse for bound entity matching
+                        npc_result = self.world.npcs.process_npc_turn(
+                            npc_name=npc_name, user_input=raw,
+                            world=self.world,
+                            llm_json=lambda prompt, **kw: call_deepseek(prompt, json_mode=True, **kw),
+                            llm_text=lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
+                            judge=self.judge, curator=self.curator,
+                        )
+                        npc_events.extend(npc_result.get("npc_events", []))
+                        # Add dialogue as an outcome for enrichment
+                        non_npc_entries.append({"type": "other",
+                                                "text": f"与{npc_name}对话：{dialogue}"})
+            # If ONLY npc_interact actions, return NPC result directly
+            if not non_npc_entries and npc_interact_entries:
+                brief = f"（与{npc_interact_entries[0].get('npc_name', 'NPC')}进行了对话）"
+                return {"brief": brief, "npc_events": npc_events}
+            parse_result = non_npc_entries
 
         # Launch IntentDetector early if there are "other" entries
         other_entries = [e for e in parse_result if e.get("type") == "other"]
@@ -121,7 +159,7 @@ class Keeper:
                     target=entity.name if entry_type == "interaction" else "",
                 )
                 outcome = self.judge._execute_entity(entity, intent=intent, player_input=raw)
-                self._apply_side_effects(outcome.side_effects)
+                self._pending_side_effects.extend(outcome.side_effects)
                 if outcome.success:
                     tr = entity.extra.get("time_range") if entity.extra else None
                     enrich_input.actions.append({
@@ -142,21 +180,19 @@ class Keeper:
                 })
             elif entry_type == "move":
                 target = entry.get("target", "")
-                result = self.world.move(target)
+                self._pending_move = target  # defer move until Author check passes
+                # Don't execute move yet — just record the intent
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="move", target=target),
-                    success=result.success, message=result.message,
-                    side_effects=result.side_effects,
+                    success=True, message=f"前往{target}...",
                 ))
-                self._apply_side_effects(result.side_effects)
-                if result.success:
-                    enrich_input.actions.append({
-                        "type": "move",
-                        "name": f"移动到{target}",
-                        "success": True,
-                        "time_range": None,
-                        "time_category": "move",
-                    })
+                enrich_input.actions.append({
+                    "type": "move",
+                    "name": f"移动到{target}",
+                    "success": True,
+                    "time_range": None,
+                    "time_category": "move",
+                })
             elif entry_type == "search":
                 # Search always performs a 侦查 (Spot Hidden) check.
                 # No dependency check, no flag update, no enrich.
@@ -330,7 +366,7 @@ class Keeper:
                     source_entity = self.world.graph.events.get(source_id)
                     if source_entity and not self.world.is_event_triggered(source_id):
                         outcome = self.judge._execute_entity(source_entity, intent=ActionIntent(action="event"), player_input=raw)
-                        self._apply_side_effects(outcome.side_effects)
+                        self._pending_side_effects.extend(outcome.side_effects)
                         all_outcomes.append(outcome)
                         enrich_input.entities.append({
                             "entity_type": "event",
@@ -372,7 +408,7 @@ class Keeper:
             combat_executor = ThreadPoolExecutor(max_workers=1)
             combat_future = combat_executor.submit(
                 lambda p, **kw: self.monitor.call(
-                    lambda pp, **kkw: call_deepseek(pp, **kkw),
+                    lambda pp, **kkw: call_deepseek(pp, _label="combat_entry", **kkw),
                     p, **kw,
                 ),
                 combat_prompt,
@@ -557,6 +593,9 @@ class Keeper:
                                 intent=ActionIntent(action="other"), success=True,
                                 message=f"（你尝试了，但{rejection_msg}）"))
 
+        # ── Apply all deferred side effects + move (Author check passed) ──
+        self._apply_pending()
+
         # Ending detection — scan outcomes for ##END_ markers + L3 ending_conditions lookup
         # TODO: 跨模组结局 — 当支持多模组串联时，结局可能需要在模组间传递状态或触发不同后续。
         # 当前实现仅查询当前 L3 的 ending_conditions。跨模组时需要合并多个 L3 或增加全局结局表。
@@ -617,7 +656,8 @@ class Keeper:
                 "standoff_prompt": standoff_prompt,
                 "combat_init": combat_init_result,
                 "time_agent": ta_result,
-                "enrich": enrichment}
+                "enrich": enrichment,
+                "npc_events": self._npc_events}
 
     def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
@@ -633,7 +673,7 @@ class Keeper:
         match_prompt = build_standoff_match_prompt(player_input)
         try:
             raw = self.monitor.call(
-                lambda p, **kw: call_deepseek(p, **kw),
+                lambda p, **kw: call_deepseek(p, _label="standoff_match", **kw),
                 match_prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 system="你是 COC 7th KP 助理，将玩家输入匹配到对应技能。",
                 fallback_schema={"matched": False, "skill_name": "", "reason": ""})
@@ -782,28 +822,37 @@ class Keeper:
 
     # ── Internal ──
 
+    def _apply_pending(self):
+        """Apply all deferred side effects and move collected during this turn."""
+        if self._pending_move:
+            result = self.world.move(self._pending_move)
+            self._pending_move = None
+        if self._pending_side_effects:
+            self._apply_side_effects(list(self._pending_side_effects))
+
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
         try:
             response = self.monitor.call(
-                lambda p, **kw: call_deepseek(p, **kw),
+                lambda p, **kw: call_deepseek(p, _label="keeper_parse", **kw),
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 reasoning_effort=RE_KEEPER_PARSE,
                 system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
                        "\n\n你的任务是为玩家输入匹配结构化的游戏内容。"
                        "\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。"
-                       "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other)。"
+                       "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other/npc_interact)。"
                        "\n只考虑可触发的entity，包括场景实体和全局事件。"
                        "\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。"
                        "\n\n行为优先级："
                        "\n- 有明确对应实体时优先返回实体"
                        "\n- 玩家行为泛指搜索整个场景时返回 search，玩家想要明确移动到另一个场景时返回 move"
+                       "\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问/请求帮助时，返回 npc_interact，npc_name 填 NPC 名称"
                        "\n- 其他情况下返回 other"
                        "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作，动作应该按照常识理解"
                        "\n- auto_trigger 必须在 actions 列表最前面"
                        "\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。"
                        "\n直接输出 JSON，不要额外文字。"
-                       "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ...]}",
+                       "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}",
                 fallback_schema={"actions": []},
             )
             data = json.loads(response) if isinstance(response, str) else response
@@ -824,7 +873,7 @@ class Keeper:
         prompt = build_keeper_enrich_prompt(self.world, judged_entities, user_input)
         try:
             response = self.monitor.call(
-                lambda p, **kw: call_deepseek(p, **kw),
+                lambda p, **kw: call_deepseek(p, _label="keeper_enrich", **kw),
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 system="你是一个优秀的跑团KP，擅长叙事整合和氛围营造。"
                        "\n\n你的任务是整合本轮所有已触发实体的结果，合并润色为统一连贯的叙事。"
@@ -879,7 +928,7 @@ class Keeper:
         # Run auto-triggers deterministically
         at_results = self.judge.check_auto_triggers()
         for o in at_results:
-            self._apply_side_effects(o.side_effects)
+            self._pending_side_effects.extend(o.side_effects)
 
         all_outcomes = list(at_results) + [
             ActionOutcome(
@@ -888,6 +937,7 @@ class Keeper:
         ]
 
         ambient = [a.message for a in at_results]
+        self._apply_pending()
         brief = self.curator.assemble(all_outcomes, ambient, "")
         return {"brief": brief,
                 "ending": None}
@@ -1167,6 +1217,7 @@ class Keeper:
                 self.world.npcs.set_following(effect.npc_name, effect.follow)
                 status = "开始跟随" if effect.follow else "停止跟随"
                 msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
+                self._npc_events.append(f"{effect.npc_name} {status}你")
 
             elif isinstance(effect, StatChange):
                 if self.world.player:
