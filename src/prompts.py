@@ -958,3 +958,60 @@ def build_time_pressure_assess_prompt(
     _show_prompt("Time Pressure", prompt)
     return prompt
 
+
+# ── NPC Intent Detection + NPC Parse ──
+
+def build_npc_intent_detect_prompt(user_input: str, npc_names: list[str]) -> str:
+    """Flash LLM: determine if player input is actually talking to an NPC."""
+    names_text = "、".join(npc_names)
+    prompt = f"""判断玩家输入是否真的是在和 NPC 对话。
+
+在场景中的 NPC：{names_text}
+玩家输入：「{user_input}」
+
+判断标准：
+- 如果玩家在对 NPC 说话/询问/请求，is_talking=true
+- 如果玩家只是在描述场景/物品中提到了 NPC 名字（如"墙上写着老妇人三字"、"老妇人的照片"），is_talking=false
+- 如果玩家同时有对话意图和实体操作意图，is_talking=true
+
+返回 JSON：
+{{"is_talking": true/false, "npc_name": "对话目标NPC名称或空"}}
+
+直接输出 JSON。"""
+    _show_prompt("NPC Intent Detect", prompt)
+    return prompt
+
+
+def build_npc_parse_prompt(npc_name: str, user_input: str, bound_interactions: list[dict],
+                            bound_auto_triggers: list[dict], current_scene: str) -> str:
+    """NPC turn: match player input against NPC's bound entities (current scene only)."""
+    scene_entities = [e for e in bound_interactions
+                      if e.get("source_scene", "") == current_scene]
+    scene_at = [e for e in bound_auto_triggers
+                if e.get("source_scene", "") == current_scene]
+
+    entity_text = ""
+    for e in scene_entities:
+        entity_text += f"  [INTERACT] id={e.get('id','')} name=\"{e.get('name','')}\" trigger=\"{e.get('trigger','')}\"\n"
+    for e in scene_at:
+        entity_text += f"  [AUTO_TRIGGER] id={e.get('id','')} name=\"{e.get('name','')}\" trigger=\"{e.get('trigger','')}\"\n"
+
+    prompt = f"""你是 NPC「{npc_name}」的互动解析助手。判断玩家输入是否触发了以下实体。
+
+【NPC 专属实体】
+{entity_text or '（无）'}
+
+【玩家输入】
+{user_input}
+
+返回 JSON：
+{{
+  "matched_entities": ["entity_id_1", "entity_id_2"],
+  "follow_request": true/false,
+  "reasoning": "简短匹配逻辑"
+}}
+
+follow_request：如果玩家请求 NPC 跟随自己（"跟我来""跟我走""跟着我"等），设为 true。
+直接输出 JSON。"""
+    _show_prompt("NPC Parse", prompt)
+    return prompt
