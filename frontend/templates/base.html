@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}TRPG 调查员助手{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            parchment: {
+              DEFAULT: '#d4c5a0',
+              light: '#e8dcc8',
+              dark: '#1a1410',
+            },
+            aged: {
+              gold: '#c9a060',
+              brown: '#8b5a3c',
+              dark: '#2a2418',
+              darker: '#1f1a10',
+            },
+            coc: {
+              red: '#8b3a3a',
+              green: '#3a6b3a',
+              dim: '#6b635a',
+            },
+          },
+          fontFamily: {
+            serif: ['Noto Serif SC', 'SimSun', 'serif'],
+            mono: ['JetBrains Mono', 'Consolas', 'monospace'],
+          },
+        },
+      },
+    }
+  </script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    /* Base body style — dark parchment background */
+    body { background: #0d0d0d; color: #c8c0b8; font-family: 'Noto Serif SC', 'SimSun', serif; }
+    /* Crossfade transition for images */
+    .image-crossfade { transition: opacity 0.5s ease-in-out; }
+    .image-crossfade.switching { opacity: 0; }
+    /* Slide-up panel animation */
+    .slide-up-enter { transform: translateY(100%); transition: transform 0.3s ease-out; }
+    .slide-up-enter.active { transform: translateY(0); }
+    /* Highlight flash for new narrative */
+    @keyframes narrative-flash {
+      0% { background: rgba(201,168,76,0.1); }
+      100% { background: transparent; }
+    }
+    .narrative-flash { animation: narrative-flash 1.5s ease-out; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="min-h-screen flex flex-col">
+  {% block body %}{% endblock %}
+</body>
+</html>
