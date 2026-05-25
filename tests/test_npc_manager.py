@@ -116,3 +116,38 @@ def test_serialization_roundtrip():
     assert npc.attitude == "friendly"
     assert npc.following is True
     assert "钥匙" in npc.memory[0]
+
+
+def test_state_gate_dead_rejects():
+    from game.npc_manager import NPCManager, NPC
+    mgr = NPCManager()
+    mgr._npcs["x"] = NPC(name="x", state="dead")
+    result = mgr.talk_to("x", "hello", lambda prompt, **kw: "SHOULD_NOT_CALL")
+    assert "无法交谈" in result
+
+
+def test_state_gate_left_rejects():
+    from game.npc_manager import NPCManager, NPC
+    mgr = NPCManager()
+    mgr._npcs["x"] = NPC(name="x", state="left")
+    result = mgr.talk_to("x", "hello", lambda prompt, **kw: "SHOULD_NOT_CALL")
+    assert "不在此处" in result
+
+
+def test_follow_conditions_can_follow_false():
+    from game.npc_manager import NPCManager, NPC
+    mgr = NPCManager()
+    npc = NPC(name="x", can_follow=False)
+    mgr._npcs["x"] = npc
+    ok, reason = mgr._check_follow_conditions(npc, world=None)
+    assert not ok
+    assert "不愿意" in reason
+
+
+def test_follow_conditions_state_dead():
+    from game.npc_manager import NPCManager, NPC
+    mgr = NPCManager()
+    npc = NPC(name="x", can_follow=True, state="dead")
+    mgr._npcs["x"] = npc
+    ok, reason = mgr._check_follow_conditions(npc, world=None)
+    assert not ok
