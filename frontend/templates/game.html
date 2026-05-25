@@ -251,28 +251,6 @@
     }
   });
 
-  document.addEventListener('DOMContentLoaded', function() {
-    // Close file modal when file selected (pickFile in file-listing.html sets input and closes)
-    window._filePickerCallback = function(path) {
-      document.getElementById('file-modal').classList.add('hidden');
-    };
-  });
-
-  // WebSocket connect
-  (function connectWS() {
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(protocol + '//' + location.host + '/api/game/progress');
-    ws.onmessage = function(e) {
-      const data = JSON.parse(e.data);
-      if (data.step === 'complete') {
-        document.getElementById('step-indicator').innerHTML = '<span class="text-aged-gold">完成</span>';
-      } else {
-        document.getElementById('step-indicator').innerHTML =
-          data.step + ' <span class="' + (data.status === 'done' ? 'text-coc-green' : 'text-gray-500') + '">' +
-          (data.status === 'done' ? '✓' : '...') + '</span>';
-      }
-    };
-    ws.onclose = function() { setTimeout(connectWS, 2000); };
-  })();
+  // File picker callback removed — handled globally in base.html
 </script>
 {% endblock %}

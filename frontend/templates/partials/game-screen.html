@@ -130,6 +130,7 @@
           (data.status === 'done' ? '✓' : '...') + '</span>';
       }
     };
-    ws.onclose = function() { setTimeout(connectWS, 2000); };
+    ws.onerror = function() {};
+    ws.onclose = function() { setTimeout(connectWS, 10000); };
   })();
 </script>

@@ -53,17 +53,3 @@
   {% endif %}
 </div>
 
-<script>
-  function pickFile(path, targetId) {
-    if (targetId) {
-      const input = document.getElementById(targetId);
-      if (input) input.value = path;
-    }
-    // Close any parent modal
-    const modal = this.closest ? null : document.querySelector('#file-modal');
-    if (modal) modal.classList.add('hidden');
-    if (!targetId && window._filePickerCallback) {
-      window._filePickerCallback(path);
-    }
-  }
-</script>
