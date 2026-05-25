@@ -57,19 +57,15 @@ time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
             current_input=current_input,
             **kwargs,
         )
-        _show_prompt("TimeAgent", prompt)
+        _show_prompt("TimeAgent", prompt, system="你是 COC 7th KP 时间推进的判断者。基于玩家本轮所有行动评估时间消耗。\n\n评估要点：综合所有行动评估总耗时（越复杂越久）；如有 time_range 建议以此为参考；自由动作评估其自然耗时。\n\n输出格式：{\"time_delta\": 0, \"narrative_hint\": \"\"}。直接输出 JSON。")
         try:
             response = self.monitor.call(
                 lambda p, **kw: call_deepseek(p, **kw),
-                prompt,
-                json_mode=True,
-                model=LLM_FLASH_MODEL,
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 system="你是 COC 7th KP 时间推进的判断者。基于玩家本轮所有行动评估时间消耗。"
                        "\n\n评估要点：综合所有行动评估总耗时（越复杂越久）；如有 time_range 建议以此为参考；自由动作评估其自然耗时。"
                        "\n\n输出格式：{\"time_delta\": 0, \"narrative_hint\": \"\"}。直接输出 JSON。",
-                max_tokens=300,
                 fallback_schema={"time_delta": 0, "narrative_hint": ""},
-                thinking=False,
             )
             result = json.loads(response) if isinstance(response, str) else response
             self._log_response(json.dumps(result, ensure_ascii=False, indent=2))
