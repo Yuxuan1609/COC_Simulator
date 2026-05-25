@@ -131,7 +131,7 @@ class NPCManager:
 
         npc.memory.append(f"玩家：「{player_input}」-> 回复：「{response}」")
         if len(npc.memory) > NPC_MEMORY_CAP:
-            npc.memory = npc.memory[-20:]
+            npc.memory = npc.memory[-NPC_MEMORY_CAP:]
         return response
 
     # ── 状态变更 ──
