@@ -50,10 +50,10 @@ print(f"[info] 武器库：{len(weapon_lib)} 件 | 敌人库：{len(enemy_lib)} 
 
 def run_game(character_path: str = None):
     game = init_game(
-        l2_path="data/modules/常暗之厢/l2_test.json",
-        l1_path="data/modules/常暗之厢/l1_test.json",
-        l3_path="data/modules/常暗之厢/l3_test.json",
-        start_node="测试房间",
+        l2_path="data/modules/常暗更新/l2_keeper.json",
+        l1_path="data/modules/常暗更新/l1_player.json",
+        l3_path="data/modules/常暗更新/l3_designer.json",
+        start_node="6号车厢",
     )
 
     keeper = game["keeper"]

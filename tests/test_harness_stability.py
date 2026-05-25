@@ -21,9 +21,9 @@ TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_ROOT = os.path.join(os.path.dirname(__file__), "..", "data", "debug", "test_stability", TIMESTAMP)
 
 PROJECT_ROOT = os.path.dirname(__file__)
-L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l2_test.json")
-L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l1_test.json")
-L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢", "l3_test.json")
+L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗更新", "l2_keeper.json")
+L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗更新", "l1_player.json")
+L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗更新", "l3_designer.json")
 CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.json")
 
 
@@ -37,7 +37,7 @@ def _init_game():
 
     game = init_game(
         l2_path=L2_PATH, l1_path=L1_PATH, l3_path=L3_PATH,
-        start_node="测试房间",
+        start_node="6号车厢",
     )
     world = game["keeper"].world
     if os.path.exists(CHAR_PATH):
@@ -183,29 +183,29 @@ def _setup_llm_logging(case_dir, case_name):
 CASE_A = {
     "name": "A_normal_exploration",
     "turns": [
-        ("环顾四周，仔细搜索这个房间",
+        ("环顾四周，仔细搜索这个车厢",
          "search: 侦查检定, discover interactions and scene weapons"),
-        ("仔细检查桌子上所有的物品",
-         "IT1: 侦查检定 ##GRADED##, dependency for IT2"),
-        ("拿起桌上的镜子仔细看看",
-         "IT3: 无检定交互, 镜中异常描述"),
+        ("仔细查看门上的便签内容",
+         "I1: 无检定互动, 获取初始信息"),
+        ("仔细查看电车示意图了解车厢布局",
+         "I2: 无检定互动, 了解列车结构"),
     ],
 }
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Case B: Mixed Stress (3 turns)
+#  Case B: Mixed Stress (3 turns) — includes NPC interaction
 # ═══════════════════════════════════════════════════════════════
 
 CASE_B = {
     "name": "B_mixed_stress",
     "turns": [
-        ("用力敲击铁门，大声呼喊！",
-         "IT5: spawn 深潜者+Clicker, combat entry detection triggers"),
-        ("京山 人吉，这里发生了什么事？",
-         "NPC dialogue: name-match routing, early return via talk_to"),
-        ("检查房间角落的急救箱",
-         "IT7: @item_gain + @consume_item, item lifecycle"),
+        ("前往7号车厢",
+         "move to 7号车厢"),
+        ("检查车厢内散落的尸体",
+         "I3: 侦查检定 ##GRADED##"),
+        ("前往5号车厢",
+         "move to 5号车厢"),
     ],
 }
 
