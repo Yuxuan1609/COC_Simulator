@@ -1,10 +1,10 @@
 """
 frontend/server.py — Unified FastAPI server for the TRPG assistant.
-Replaces frontend/server.py and frontend/game_server.py.
+Intended to eventually replace frontend/server.py (old http.server) and frontend/game_server.py.
 
 Usage:
     uvicorn frontend.server:app --reload --port 8080
-    python frontend/server.py                # (production mode with webbrowser open)
+    python frontend/server.py                # (local dev mode with webbrowser open)
 """
 from __future__ import annotations
 
@@ -31,6 +31,10 @@ app.add_middleware(
 FRONTEND_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 
+# Jinja2 template engine — used by all routers
+from fastapi.templating import Jinja2Templates
+templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
+
 # Import and include routers (added in later tasks)
 # from frontend.routers import launcher, character, game, editor, files
 # app.include_router(launcher.router)
@@ -48,5 +52,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     url = f"http://localhost:{port}"
     print(f"  TRPG Assistant v2.0 → {url}")
-    webbrowser.open(url + "/launcher")
+    webbrowser.open(url)  # /launcher route to be added in Task 3
     uvicorn.run(app, host="127.0.0.1", port=port)
