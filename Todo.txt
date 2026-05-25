@@ -3,3 +3,4 @@ Todo:
 2  LLM Moniter 
 3 Frontend 
 4 Agentic test stability
+5 NPC跟随entity生成：_apply_pending运行时注入是死代码（依赖module级@npc_follow entity先生成），已生成的模组不含此entity。重新生成或加运行时兜底。
