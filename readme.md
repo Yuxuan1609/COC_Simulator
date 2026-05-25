@@ -264,7 +264,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | U2 | 缺少技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，但限制未来多人扩展 |
 | U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative`。`CombatSystem.__init__` 已接收 `llm_enhancement` 参数并预留 `_generate_combat_narrative()` 方法。当前仅输出确定性 per-action 文本 |
 | U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换，改写 `llm.py` 的 API 调用方式 |
-| U5 | 管线运行时监控 (PipelineMonitor) | 追踪每次 LLM 调用的耗时、成败、响应长度、JSON 有效性。超出阈值的慢调用生成 warning，连续失败触发降级策略（回退到 flash 模型或确定性逻辑）。Per-agent 聚合统计（avg 耗时、失败率、慢调用数）。Config 预留 `LLM_SLOW_THRESHOLD_MS` / `LLM_TIMEOUT_MS` 开关 |
+| ~~U5~~ | ~~管线运行时监控 (PipelineMonitor)~~ | ✅ 已实现 (2026-05-25)。两层架构：LLMSensor 嵌入 call_deepseek 零侵入记录 + AgentMonitor 每 Agent 降级决策 + DegradationPolicy 集中化配置 (`config.py:DEGRADE_POLICY`)。降级策略：超时重试/连续失败切 flash/Keeper 跳过 enrich。CLI `/health` 查询。`src/monitor/` |
 | U6 | 基于 Logger 内容实现世界状态解读 | `TurnLogger`（`src/game/turn_logger.py`）已记录每轮玩家输入 + Enrich 输出 + Narrator 输出到 `data/debug/turn_logs/`。后续基于此数据训练/评估世界状态解读模型，或生成更准确的场景摘要 |
 
 ## 设计文档
