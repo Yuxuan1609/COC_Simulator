@@ -36,7 +36,9 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
 
 # Import and include routers (added in later tasks)
-# from frontend.routers import launcher, character, game, editor, files
+from frontend.routers import files
+app.include_router(files.router)
+# from frontend.routers import launcher, character, game, editor
 # app.include_router(launcher.router)
 # ...
 
