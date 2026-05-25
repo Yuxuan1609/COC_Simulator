@@ -23,17 +23,29 @@ from utils import get_coc_skill_names
 #  System Prompts
 # ═══════════════════════════════════════════════════════════════
 
-SUPP_STEP1_SYSTEM = """你是TRPG模组创作者。玩家行为超出了当前模组范围，需要扩展。请写一段模组风格的叙事文字（最多3个新场景），描述新的展开。叙事应自然融入L3的基调约束、世界规则和叙事线。
+SUPP_STEP1_SYSTEM = """你是TRPG模组创作者。玩家行为超出了当前模组范围，需要扩展。请基于玩家意图和L3设计，规划补充内容的结构化设计。
 
-同时输出:
-- 标准化场景名 (1-3个): SS1_<中文场景名>, SS2_<中文场景名>, SS3_<中文场景名>
-- 确认的出口场景: 玩家最终回流的已有场景名
+重要原则:
+- 新内容必须与L3的基调约束、世界规则和叙事线保持一致
+- 不涉及已有NPC和Boss的修改或新增——敌人仅限普通敌人库中的敌人类型
+- 场景名使用 SS1_<中文场景名>, SS2_<中文场景名> 格式
 
 返回 JSON:
 {
-  "story": "一段模组风格叙事...",
-  "scene_names": ["SS1_镜中世界", "SS2_深渊回廊"],
-  "exit_scene": "test_room"
+  "overview": "补充内容综述，说明补充了什么、为什么补充、与L3的一致性（200字以内）",
+  "scenes": [
+    {
+      "name": "SS1_场景名",
+      "description": "场景的自然语言描述，包括氛围和关键特征（100字以内）",
+      "available_interactions": ["玩家在此场景可执行的互动（自然语言简述），至少列出1个"]
+    }
+  ],
+  "narrative_lines": [
+    {"name": "叙事线名称", "outline": "叙事线大纲，含起承转合（100字以内）"}
+  ],
+  "driving_force": "补充内容的驱动力描述——是什么推动了这些新场景和事件的发生（50字以内）",
+  "enemies_involved": ["涉及的敌人名称或空列表"],
+  "exit_scene": "玩家最终回流的已有场景名（入口场景名或已有L3场景名）"
 }
 
 直接输出 JSON。"""
@@ -285,7 +297,7 @@ def _step_1_narrative(
     player_intent: str, reasoning: str, base_l3: dict,
     entry_scene: str, exit_scene: str, world_snapshot: dict,
 ) -> dict:
-    """Step 1: write a module-style narrative, determine scene names + exit."""
+    """Step 1: structured supplement planning — overview, scenes, narrative lines, driving force."""
 
     l3_ctx = _build_l3_context(base_l3, current_scene=entry_scene)
 
@@ -310,8 +322,44 @@ def _step_1_narrative(
     response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
                              reasoning_effort="max",
                              system=SUPP_STEP1_SYSTEM,
-                             fallback_schema={"story": "", "scene_names": [], "exit_scene": exit_scene})
-    return json.loads(response) if isinstance(response, str) else response
+                             fallback_schema={"overview": "", "scenes": [],
+                                              "narrative_lines": [], "driving_force": "",
+                                              "enemies_involved": [], "exit_scene": exit_scene})
+    plan = json.loads(response) if isinstance(response, str) else response
+
+    # Extract scene_names from structured scenes list
+    scene_names = [s.get("name", "") for s in plan.get("scenes", []) if s.get("name")]
+    exit_scene = plan.get("exit_scene", exit_scene)
+
+    # Assemble backward-compatible story string for Step 2 consumers
+    story_parts = []
+    overview = plan.get("overview", "")
+    if overview:
+        story_parts.append(f"【综述】{overview}")
+    for s in plan.get("scenes", []):
+        sname = s.get("name", "")
+        sdesc = s.get("description", "")
+        interactions = s.get("available_interactions", [])
+        story_parts.append(f"【{sname}】{sdesc}")
+        for ia in interactions:
+            story_parts.append(f"  - {ia}")
+    nl_lines = plan.get("narrative_lines", [])
+    if nl_lines:
+        story_parts.append("【叙事线】")
+        for nl in nl_lines:
+            story_parts.append(f"  - {nl.get('name', '')}: {nl.get('outline', '')}")
+    df = plan.get("driving_force", "")
+    if df:
+        story_parts.append(f"【驱动力】{df}")
+    enemies = plan.get("enemies_involved", [])
+    if enemies:
+        story_parts.append(f"【涉及敌人】{', '.join(enemies)}")
+    story = "\n".join(story_parts)
+
+    plan["scene_names"] = scene_names
+    plan["exit_scene"] = exit_scene
+    plan["story"] = story
+    return plan
 
 
 def _step_2a_entities(shared: dict, base_l3: dict) -> dict:
