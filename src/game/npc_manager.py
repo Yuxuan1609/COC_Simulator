@@ -100,7 +100,7 @@ class NPCManager:
         if not npc:
             return f"（{npc_name} 不在此处。）"
 
-        gate = STATE_GATE_MESSAGES.get(npc.state, "")
+        gate = self.STATE_GATE_MESSAGES.get(npc.state, "")
         if gate:
             return gate.format(name=npc.name)
 
