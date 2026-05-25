@@ -1262,71 +1262,80 @@ def run_interactive(config: PipelineConfig):
 
 
 def run_auto(config: PipelineConfig):
-    """自动模式：委托给 run_pipeline()，全程无交互。"""
-    # 加载库
-    wl = WeaponLibrary()
-    wl.load_core()
-    el = EnemyLibrary()
-    el.load_core()
-    bl = BossLibrary("data/library/core/bosses.json")
+    """自动模式：复用与 interactive 相同的 _do_step* 函数，全程无交互。"""
+    runner = InteractiveRunner(config)
 
-    # 加载文档
+    # ── 加载库 ──
+    print("加载武器/敌人/Boss库...")
+    wl = WeaponLibrary(); wl.load_core()
+    el = EnemyLibrary(); el.load_core()
+    bl = BossLibrary("data/library/core/bosses.json")
+    runner.wl = wl
+    runner.el = el
+    runner.bl = bl
+
+    # ── 加载文档 ──
     docx_path = PROJECT_ROOT / config.docx_path
     if not docx_path.exists():
         print(f"错误：源文档不存在: {docx_path}")
         sys.exit(1)
-
     content = _load_document(str(docx_path))
     content = estimate_and_truncate_context(content)
+    runner.content = content
+    print(f"源文档: {docx_path.name} ({len(content)} 字符)")
 
-    # 创建 LLM callable（带日志）
-    runner = InteractiveRunner(config)
+    # 保存配置快照
     config.to_json(str(runner.output_dir / "config.json"))
-    llm_json = runner.llm_json
-    llm_text = runner.llm_text
 
     print(f"\n  自动模式 — 全流程执行")
-    print(f"  源文档: {docx_path.name} ({len(content)} 字符)")
     print(f"  JSON 模型: {config.json_model}, 思考: {config.thinking_enabled}/{config.reasoning_effort}")
     print(f"  输出目录: {runner.output_dir.relative_to(PROJECT_ROOT)}")
     print()
 
+    # ── 步骤列表（与 interactive 模式完全一致）──
+    steps = [
+        ("step_1",    _do_step1),
+        ("step_2a",   _do_step2a),
+        ("step_2bc",  _do_step2bc),
+        ("step_3a",   _do_step3a_25),
+        ("step_3b",   _do_step3b),
+        ("step_35",   _do_step35_phase1),
+        ("phase_2",   _do_phase2_finalize),
+    ]
+
     t0 = time.time()
-    result = run_pipeline(
-        content,
-        llm_json=llm_json,
-        llm_text=llm_text,
-        weapon_lib=wl,
-        enemy_lib=el,
-        boss_lib=bl,
-        max_retries=config.max_retries,
-        verbose=True,
-        inject_l3_wr0=config.inject_wr0,
-    )
+    for step_name, step_fn in steps:
+        try:
+            summary = step_fn(runner)
+            runner._completed_steps.add(step_name)
+        except Exception as e:
+            print(f"\n  [错误] {step_name} 执行失败: {e}")
+            import traceback
+            traceback.print_exc()
+            break
+
     elapsed = time.time() - t0
 
-    # 保存结果
-    module_dir = PROJECT_ROOT / "data" / "modules" / config.module_name
-    module_dir.mkdir(parents=True, exist_ok=True)
-    save_pipeline_result(result, str(module_dir))
-
-    # 保存配置和日志
-    config.to_json(str(runner.output_dir / "config.json"))
+    # 保存调用日志
     with open(runner.output_dir / "_pipeline_log.txt", "w", encoding="utf-8") as f:
         f.write(f"模型: json={config.json_model}, text={config.text_model}\n")
         f.write(f"思考: {config.thinking_enabled}, 强度={config.reasoning_effort}\n")
+        f.write(f"温度: json={config.json_temperature}, text={config.text_temperature}\n")
         f.write(f"总耗时: {elapsed:.1f}s\n")
-        f.write(f"总 LLM 调用: {len(runner.llm_logger.call_log)}\n")
-        f.write(f"降级步骤: {result.fallbacks}\n\n")
+        f.write(f"总 LLM 调用: {len(runner.llm_logger.call_log)}\n\n")
         for call in runner.llm_logger.call_log:
             f.write(f"  [{call['name']}] {call.get('model','')} | "
                     f"思考={'on' if call.get('thinking') else 'off'} | "
                     f"{call.get('elapsed_s',0)}s\n")
 
-    print(f"\n  管线完成 ({elapsed:.1f}s)")
+    print()
+    print("=" * 50)
+    print("  管线执行完毕")
     print(f"  最终产物: data/modules/{config.module_name}/")
-    print(f"  降级步骤: {result.fallbacks if result.fallbacks else '无'}")
+    print(f"  中间结果: {runner.output_dir.relative_to(PROJECT_ROOT)}")
+    print(f"  总耗时: {elapsed:.1f}s")
     print(f"  总 LLM 调用: {len(runner.llm_logger.call_log)}")
+    print("=" * 50)
 
 
 # ═══════════════════════════════════════════════════════════════
