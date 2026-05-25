@@ -17,10 +17,14 @@
 Step 2a（interactions）、Step 2b events、Step 2b AT 的 system prompt 新增：
 
 ```
-- 与NPC的纯粹对话/交谈/打听消息不生成 entity（NPC对话由运行时NPC系统专门处理）。
-  只有当NPC互动涉及实质性行动（给予物品、检定、状态变更、触发事件等）时才生成 entity。
-- 与NPC的跟随/离开/加入队伍不生成 entity（由运行时确定性处理）。
-  entity 中不描述 NPC 跟随/离开玩家。
+- NPC互动是否生成 entity 的判断标准：entity 必须有可感知的游戏机制后果——
+  技能检定、物品给予/消耗、属性变化、NPC状态变更（受伤/死亡等）、
+  触发新的事件、场景永久性变化。
+  单纯的NPC对话/交谈/打听消息（无机制后果的信息传递）不生成 entity，
+  由运行时 NPC 对话系统处理。
+- NPC 跟随/离开/加入队伍不生成 entity（由运行时 NPC 跟随机制处理，
+  条件由 npc_profile 的 can_follow + follow_requirements 控制）。
+  entity 中不出现 NPC 跟随/离开玩家的描述。
 ```
 
 ### 2.2 确定性后处理：Entity 剥离与绑定
@@ -45,24 +49,29 @@ NPC 名称匹配规则：精确名称匹配（不区分全角/半角空格），
 ```python
 @dataclass
 class NPC:
-    # 档案字段（Step 2.5 产生，不变）
+    # 档案字段（Step 2.5 产生）
     name: str
     role: str
     personality_notes: str
     appearance: str
     what_they_can_do: str
     interaction_triggers: list[str]
+    can_follow: bool = False          # 模组预设：NPC 是否愿意/能够跟随调查员
+    follow_requirements: str = ""     # 跟随前置条件（entity ID链，如 "I3 AND I5"），
+                                       # 由管线后处理从 entity 依赖推断填充
 
     # 绑定 entities（管线后处理确定性填充，非 Step 2.5 产生）
     bound_interactions: list[dict]   # 从 scene 剥离的 interaction
     bound_auto_triggers: list[dict]  # 从 scene 剥离的 auto_trigger
 ```
 
+`can_follow` 由 Step 2.5 从模组内容推断（NPC 的性格/处境是否支持跟随调查员）。
+`follow_requirements` 由管线后处理 `_bind_npc_entities()` 从相关 entity 的依赖关系自动推断填充。
 `bound_*` 字段不在 Step 2.5 prompt 中生成，由管线 `_bind_npc_entities()` 确定性填充。
 
-### 2.4 Step 2.5 不变
+### 2.4 Step 2.5 变更
 
-Step 2.5 继续生成 `npc_profiles` 的档案字段（name/role/personality_notes 等），不新增字段。
+Step 2.5 新增生成 `can_follow` 字段（bool），从模组内容推断 NPC 是否愿意/能够跟随调查员。除此之外继续生成档案字段（name/role/personality_notes 等），不新增其他字段。`follow_requirements` 由管线后处理填充（见 2.2）。
 
 ## 3. 运行时
 
@@ -141,13 +150,28 @@ System prompt 注入：
 
 ### 3.6 NPC 跟随
 
-纯确定性操作，不走 entity 不走 LLM：
+两种触发源，均走同一条件检查：
 
-| 触发 | 行为 |
-|------|------|
-| `@npc_follow(npc_name=X, follow=true)` | `NPCManager.set_following(X, True)` → `npc_events` 追加 `"X 开始跟随你"` |
-| `@npc_follow(npc_name=X, follow=false)` | `NPCManager.set_following(X, False)` → `npc_events` 追加 `"X 停止了跟随"` |
-| 场景切换 | `NPCManager.sync_followers(new_scene)` — 跟随 NPC 自动移动 |
+| 触发源 | 场景 | 示例 |
+|--------|------|------|
+| `@npc_follow` markup | entity side effect 触发 | 救下 NPC → `@npc_follow(npc_name="老妇人", follow=true)` |
+| 玩家主动请求 | NPC turn 中 NPC parse 检测到跟随意图 | "跟我来" / "跟我走" |
+
+**条件检查**（`NPCManager._check_follow_conditions(npc, world) -> bool`）：
+
+1. `npc.can_follow == True` — NPC 本身愿意/能够跟随
+2. `npc.follow_requirements` 满足 — 通过 dependency graph 检查 entity ID 链（如 `I3 AND I5` 均已完成）
+3. `npc.state not in ("dead", "left")` — NPC 必须存活且在场景内
+
+**执行**：
+
+- 条件通过 → `NPCManager.set_following(name, True)` → `npc_events` 追加 `"{name} 开始跟随你"`
+- 条件不通过 → NPC 对话中说明原因（`talk_to` 处理拒绝理由）
+
+**停止跟随**：
+
+- `@npc_follow(npc_name=X, follow=false)` → `NPCManager.set_following(X, False)` → `npc_events` 追加 `"{name} 停止了跟随"`
+- 场景切换 → `NPCManager.sync_followers(new_scene)` 自动移动跟随 NPC
 
 NPC follow/leave 的 entity 在管线后处理中被筛掉（见 2.2），不会出现在任何 scene 的 entity list 中。
 
