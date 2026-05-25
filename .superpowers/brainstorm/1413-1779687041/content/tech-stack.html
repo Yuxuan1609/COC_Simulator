@@ -1,0 +1,57 @@
+<h2>确定的技术选型</h2>
+
+<div class="section">
+  <h3>后端</h3>
+  <div class="cards">
+    <div class="card" style="border-left: 3px solid #059669">
+      <div class="card-body">
+        <h3>FastAPI</h3>
+        <p>单一入口，async 路由，内置 WebSocket，Jinja2 模板渲染 HTMX 片段</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>前端</h3>
+  <div class="cards">
+    <div class="card" style="border-left: 3px solid #2563eb">
+      <div class="card-body">
+        <h3>HTMX</h3>
+        <p>声明式 AJAX，服务端渲染 HTML 片段，零手写 JS DOM 操作</p>
+      </div>
+    </div>
+    <div class="card" style="border-left: 3px solid #0891b2">
+      <div class="card-body">
+        <h3>Tailwind CSS</h3>
+        <p>原子类样式，CDN 引入，开发时快速迭代，打包时本地化</p>
+      </div>
+    </div>
+    <div class="card" style="border-left: 3px solid #7c3aed">
+      <div class="card-body">
+        <h3>Jinja2 模板</h3>
+        <p>FastAPI 内置，渲染页面 + HTMX 片段，layout/base 模板继承</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>打包</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:13px">
+      pip install fastapi uvicorn jinja2<br>
+      pip install pyinstaller<br>
+      <br>
+      pyinstaller -F --noconsole --name "TRPG助手" \<br>
+        --add-data "frontend/templates;frontend/templates" \<br>
+        --add-data "frontend/static;frontend/static" \<br>
+        --add-data "data;data" \<br>
+        --add-data "src;src" \<br>
+        --add-data "investigator;investigator" \<br>
+        --hidden-import uvicorn \<br>
+        --hidden-import fastapi \<br>
+        run_game.py
+    </div>
+  </div>
+</div>

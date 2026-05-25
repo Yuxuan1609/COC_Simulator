@@ -1,0 +1,101 @@
+<h2>游戏界面布局 v2 — 沉浸式视觉小说风格</h2>
+<p class="subtitle">图片占据屏幕主体，对话精简，点击展开完整会话</p>
+
+<div class="section">
+  <h3>默认状态（紧凑模式）</h3>
+  <div class="mockup">
+    <div class="mockup-body">
+      <div style="position:relative;background:#0d0d0d;border:1px solid #333;border-radius:4px;min-height:450px;overflow:hidden">
+        <!-- Image background -->
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, #1a1410 0%, #2a1a0a 50%, #1a1410 100%)">
+          <div style="text-align:center;color:#555;font-size:13px">
+            <div style="font-size:48px;margin-bottom:8px">🚃</div>
+            场景插图 / 氛围图<br>
+            <span style="font-size:11px">（通用素材，非场景绑定）</span>
+          </div>
+        </div>
+
+        <!-- HUD overlay - top left -->
+        <div style="position:absolute;top:12px;left:12px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:8px 12px;font-size:12px;line-height:1.8">
+          <div style="color:#8b5a3c;font-weight:bold">列车车厢</div>
+          <div style="color:#888">HP <span style="color:#3a6b3a">12/12</span> | SAN <span style="color:#c9a060">55/99</span></div>
+        </div>
+
+        <!-- Step indicator - top right -->
+        <div style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.6);border-radius:4px;padding:4px 10px;font-size:10px;font-family:monospace;color:#555">
+          parse ✓ → judge ✓ → enrich ...
+        </div>
+
+        <!-- Compact narrative bar - bottom -->
+        <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(10,8,6,0.95);border-top:1px solid rgba(139,90,60,0.3);padding:12px 16px;cursor:pointer" onclick="/* expand */">
+          <div style="font-size:14px;color:#d4c5a0;line-height:1.6;margin-bottom:6px">
+            车厢内有六排座椅，大部分空着。第三排座椅上有一个黑色的手提箱，座椅下方隐约可见一张报纸...
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="mock-input" style="font-size:12px;padding:4px 8px;width:300px">输入你的行动...</div>
+              <button class="mock-button" style="font-size:11px;padding:4px 12px">行动</button>
+            </div>
+            <span style="font-size:10px;color:#555">▲ 展开完整会话</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>展开状态 — 会话面板从底部滑出</h3>
+  <div class="mockup">
+    <div class="mockup-body">
+      <div style="position:relative;background:#0d0d0d;border:1px solid #333;border-radius:4px;min-height:450px;overflow:hidden">
+        <!-- Dimmed image behind -->
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.4)"></div>
+
+        <!-- Slide-up panel covering ~60% from bottom -->
+        <div style="position:absolute;bottom:0;left:0;right:0;height:65%;background:rgba(10,8,6,0.97);border-top:2px solid #8b5a3c;display:flex;flex-direction:column">
+          <!-- Panel header -->
+          <div style="padding:8px 16px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;font-size:11px">
+            <span style="color:#8b5a3c">会话记录</span>
+            <span style="color:#555;cursor:pointer">▼ 收起</span>
+          </div>
+          <!-- Full chat history -->
+          <div style="flex:1;overflow-y:auto;padding:12px 16px;font-size:13px;line-height:1.8">
+            <div style="color:#555;text-align:center;margin-bottom:8px">--- 游戏开始 ---</div>
+            <div style="color:#888;margin-bottom:8px;padding-left:8px;border-left:2px solid #555">你推开了列车车厢的门...</div>
+            <div style="color:#d4c5a0;margin-bottom:8px;padding-left:8px;border-left:3px solid #8b5a3c">车厢内有六排座椅...</div>
+            <div style="color:#888;margin-bottom:8px;padding-left:8px;border-left:2px solid #555">你走向第三排座椅，伸手去拿那个手提箱...</div>
+            <div style="color:#d4c5a0;margin-bottom:8px;padding-left:8px;border-left:3px solid #8b5a3c">手提箱没有上锁...</div>
+          </div>
+          <!-- Expanded input -->
+          <div style="padding:10px 16px;border-top:1px solid #222;display:flex;gap:8px">
+            <div class="mock-input" style="flex:1;font-size:13px;padding:8px 12px">输入你的行动...</div>
+            <button class="mock-button" style="padding:8px 20px">行动</button>
+          </div>
+        </div>
+
+        <!-- Side panels in expanded mode -->
+        <div style="position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:8px 12px;font-size:11px;line-height:1.8;color:#888">
+            <b style="color:#8b5a3c">列车车厢</b><br>
+            HP 12/12 | SAN 55/99<br>
+            NPC: 无<br>
+            出口: → 下一节车厢
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>交互行为</h3>
+<div class="section">
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888;width:200px">默认状态</td><td style="padding:8px">全屏图片 + 底部 2-3 行叙事 + 输入框。HUD 叠加显示角色状态和场景名。</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">点击叙事栏 / ▲ 按钮</td><td style="padding:8px">会话面板从底部滑出覆盖 60% 屏幕，显示完整历史。图片区域变暗。面板内独立滚动。</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">▼ 收起 / 点击图片区域</td><td style="padding:8px">面板滑回底部，恢复全屏图片 + 紧凑叙事栏。</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">新叙事到达</td><td style="padding:8px">紧凑栏文字替换为新内容 + 短暂高亮闪烁效果。</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">场景切换</td><td style="padding:8px">图片 crossfade 过渡（CSS transition opacity），HUD 场景名更新。</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">"?" 帮助按钮</td><td style="padding:8px">HUD 右上角小图标，hover/点击显示命令参考。</td></tr>
+  </table>
+</div>

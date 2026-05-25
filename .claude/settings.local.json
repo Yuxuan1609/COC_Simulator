@@ -72,7 +72,15 @@
       "Bash(PYTHONPATH=\"src\" python -c \"compile\\(open\\('notebooks/_parser_layered_export.py'\\).read\\(\\), 'test', 'exec'\\); print\\('Syntax OK'\\)\")",
       "Bash(PYTHONPATH=\"src\" python notebooks/_parser_layered_export.py)",
       "Bash(del notebooks\\\\_convert_to_ipynb.py)",
-      "Bash(PYTHONPATH=\"src;.\" python *)"
+      "Bash(PYTHONPATH=\"src;.\" python *)",
+      "Bash(PYTHONPATH=\".;src\" python -c \"from src.llm import call_deepseek, get_sensor, _init_sensor; s = get_sensor\\(\\); print\\('sensor before init:', s\\); s2 = _init_sensor\\(\\); print\\('sensor after init:', s2\\); print\\('enabled:', s2.enabled\\); print\\('get_sensor imported OK'\\)\")",
+      "Bash(C:/Users/micha/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh *)",
+      "Bash(pip list *)",
+      "Bash(pip show *)",
+      "Bash(where npx *)",
+      "Bash(npx @tailwindcss/cli -i frontend/static/tailwind-input.css -o frontend/static/tailwind.css --minify)",
+      "Bash(grep config_llm .gitignore)",
+      "Bash(cp src/config_llm.template.py src/config_llm.py)"
     ]
   }
 }

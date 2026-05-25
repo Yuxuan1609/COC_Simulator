@@ -1,8 +1,0 @@
-{
-  "case": "D - other + Author Reject",
-  "input": "take out phone and shine flashlight into the dark beyond the iron door",
-  "verdict": "PASS",
-  "messages": [
-    "（仔细查看四周，没有特别的发现）"
-  ]
-}

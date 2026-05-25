@@ -1,0 +1,84 @@
+<h2>游戏循环界面布局</h2>
+<p class="subtitle">左右分栏 + 素材图片展示区 + 处理步骤指示器</p>
+
+<div class="mockup">
+  <div class="mockup-header">整体布局</div>
+  <div class="mockup-body">
+    <div style="display:flex;gap:12px;min-height:400px">
+      <!-- Left sidebar -->
+      <div style="width:260px;border:1px solid #444;border-radius:4px;padding:12px;background:#0d0d0d">
+        <div class="label" style="margin-bottom:8px">调查员状态</div>
+        <div style="font-size:12px;line-height:2">
+          <div style="display:flex;justify-content:space-between"><span style="color:#888">HP</span><span style="color:#3a6b3a">12/12</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#888">SAN</span><span style="color:#c9a060">55/99</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#888">MP</span><span style="color:#c9a060">11/11</span></div>
+        </div>
+        <hr style="border-color:#222;margin:8px 0">
+        <div class="label" style="margin-bottom:4px">场景</div>
+        <div style="font-size:14px;color:#8b5a3c">列车车厢</div>
+        <div style="font-size:12px;color:#666;margin-top:4px">昏暗的车厢内部，座椅上散落着乘客的行李...</div>
+        <hr style="border-color:#222;margin:8px 0">
+        <div class="label" style="margin-bottom:4px">NPC</div>
+        <div style="font-size:12px;color:#888">暂无 NPC 在视野中</div>
+        <hr style="border-color:#222;margin:8px 0">
+        <div class="label" style="margin-bottom:4px">可用行动</div>
+        <div style="font-size:12px;color:#888">→ 搜索行李<br>→ 检查座椅<br>→ 前往下一节车厢</div>
+      </div>
+
+      <!-- Center main -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+        <!-- Step progress indicator -->
+        <div style="border:1px solid #333;border-radius:4px;padding:8px 12px;background:#0f0f0f;display:flex;gap:16px;font-size:11px;font-family:monospace">
+          <span style="color:#c9a060">parse ✓</span>
+          <span style="color:#c9a060">→ judge ✓</span>
+          <span style="color:#888">→ enrich ...</span>
+          <span style="color:#444">→ narrate</span>
+        </div>
+
+        <!-- Narrative stream -->
+        <div style="flex:1;border:1px solid #333;border-radius:4px;padding:12px;overflow-y:auto;background:#0d0d0d">
+          <div style="font-size:13px;color:#555;margin-bottom:12px;text-align:center">--- 游戏开始 ---</div>
+          <div style="padding:8px 12px;background:#141414;border-left:2px solid #555;margin-bottom:8px;font-size:13px;color:#888">
+            你推开了列车车厢的门，昏暗的光线透过脏污的窗户照进来...
+          </div>
+          <div style="padding:8px 12px;background:#1a1410;border-left:3px solid #8b5a3c;margin-bottom:8px;font-size:14px;color:#d4c5a0">
+            车厢内有六排座椅，大部分空着。第三排座椅上有一个黑色的手提箱，座椅下方隐约可见一张报纸。空气中弥漫着淡淡的霉味，混合着若有若无的铁锈气息。
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div style="display:flex;gap:8px">
+          <div class="mock-input" style="flex:1">检查那个手提箱</div>
+          <button class="mock-button">行动</button>
+        </div>
+      </div>
+
+      <!-- Right: image area -->
+      <div style="width:240px;border:1px solid #444;border-radius:4px;padding:12px;background:#0d0d0d;text-align:center">
+        <div class="label" style="margin-bottom:8px">场景插图</div>
+        <div class="placeholder" style="height:200px;display:flex;align-items:center;justify-content:center;color:#555">
+          列车车厢<br><br>
+          <span style="font-size:12px">(场景/怪物/NPC 素材图)</span>
+        </div>
+        <div style="font-size:11px;color:#555;margin-top:8px">支持从 data/ 加载图片<br>或外部 URL</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>HTMX 动态更新区域</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:2">
+      <span style="color:#888"># 每个回合完成后，局部刷新以下区域:</span><br>
+      <br>
+      hx-swap="innerHTML"<br>
+      ├── #player-status     ← GET /api/game/player-status   (HP/SAN/状态)<br>
+      ├── #scene-info        ← GET /api/game/scene           (场景描述+出口)<br>
+      ├── #npc-list          ← GET /api/game/npcs            (可见 NPC)<br>
+      ├── #narrative-stream  ← hx-swap="beforeend" 追加新消息<br>
+      ├── #step-indicator    ← WebSocket 实时更新<br>
+      └── #scene-image       ← GET /api/game/current-image   (当前场景插图)
+    </div>
+  </div>
+</div>

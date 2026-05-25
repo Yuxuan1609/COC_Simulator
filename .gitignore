@@ -8,3 +8,4 @@ data/saves/*.json
 .claude/worktrees/
 data/debug/
 CLAUDE.md
+素材/

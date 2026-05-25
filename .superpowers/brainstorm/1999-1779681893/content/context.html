@@ -1,0 +1,56 @@
+<h2>TRPG 调查员助手 — 前端重构</h2>
+<p class="subtitle">当前状态：vanilla HTML/CSS/JS + Python http.server（原型参考）</p>
+
+<h3>现有页面</h3>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-body">
+      <h3>车卡创建向导</h3>
+      <p>5 步向导：基本信息 → 属性掷骰 → 职业技能 → 战斗装备 → 导出 JSON。LLM 辅助生成外貌/个人描述。</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h3>游戏循环主界面</h3>
+      <p>左右分栏：侧栏显示调查员状态 + 场景信息，主区域显示叙事流 + 输入框。支持 /debug 命令。</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h3>JSON 编辑器</h3>
+      <p>独立的模块 JSON 编辑工具（54KB 单文件），可能是 vendored 外部工具。</p>
+    </div>
+  </div>
+</div>
+
+<h3>当前技术栈</h3>
+
+<div class="pros-cons">
+  <div class="pros"><h4>优点</h4>
+    <ul>
+      <li>零前端依赖，纯 vanilla JS</li>
+      <li>Python 生态统一，PyInstaller 可打包</li>
+      <li>设计风格统一（COC 1920s 克苏鲁美学）</li>
+      <li>架构简单，易于理解</li>
+    </ul>
+  </div>
+  <div class="cons"><h4>问题</h4>
+    <ul>
+      <li>两个 server 端口冲突（都默认 8080）</li>
+      <li>http.server 单线程阻塞（LLM 调用期间卡死）</li>
+      <li>game.html CSS/JS 全部内联，难以维护</li>
+      <li>硬编码 localhost:8080，不可配置</li>
+      <li>离线环境 Google Fonts 加载失败</li>
+      <li>无 WebSocket，无实时反馈</li>
+    </ul>
+  </div>
+</div>
+
+<h3>项目约束</h3>
+<ul>
+  <li>Python 为主后端（LLM 驱动游戏引擎）</li>
+  <li>PyInstaller 打包桌面分发</li>
+  <li>单用户本地工具</li>
+  <li>需要离线可用</li>
+</ul>

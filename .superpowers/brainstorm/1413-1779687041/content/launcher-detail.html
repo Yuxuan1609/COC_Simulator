@@ -1,0 +1,85 @@
+<h2>启动页面（Launcher）详细设计</h2>
+<p class="subtitle">三个功能区：模组创建引导 + 参数配置 + 导航入口</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">功能区 A：模组创建引导</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>Step 1:</b> 上传源文档（.docx / .txt）<br>
+      <b>Step 2:</b> 填写模组名称 + 选择输出目录<br>
+      <b>Step 3:</b> 选择管线步骤（全量 / 从某步续跑）<br>
+      <b>Step 4:</b> 点击"开始生成"<br>
+      <b>Step 5:</b> WebSocket 实时进度（18 步骤）<br>
+      <span style="color:#888">每步完成 → 前端更新进度条 + 中间 JSON 预览</span><br>
+      <b>Step 6:</b> 下载 L1/L2/L3 JSON 文件<br>
+      <br>
+      <i style="color:#888">对应现有 run_pipeline.py CLI → 变为 Web GUI</i>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">功能区 B：参数配置</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>API 配置:</b><br>
+      • API Key 输入（加密存储到 .env）<br>
+      • 模型选择（deepseek-v4-pro / flash / 自定义）<br>
+      • Thinking 开关 + Reasoning Effort 档位<br>
+      <br>
+      <b>管线参数:</b><br>
+      • LLM 超时阈值 (LLM_TIMEOUT_MS)<br>
+      • 慢调用阈值 (LLM_SLOW_THRESHOLD_MS)<br>
+      • 降级策略 (DEGRADE_POLICY)<br>
+      • Combat LLM 增强开关<br>
+      <br>
+      <b>游戏设置:</b><br>
+      • 默认模组选择<br>
+      • 日志级别 / 输出路径<br>
+      • 调试模式开关
+    </div>
+  </div>
+</div>
+
+<h3>页面布局</h3>
+<div class="mockup">
+  <div class="mockup-header">Launcher 页面布局</div>
+  <div class="mockup-body">
+    <div style="display:flex;gap:12px;margin-bottom:12px">
+      <div class="mock-nav" style="flex:1;text-align:center;padding:10px">模组创建引导</div>
+      <div class="mock-nav" style="flex:1;text-align:center;padding:10px">参数配置</div>
+      <div class="mock-nav" style="flex:1;text-align:center;padding:10px">启动游戏</div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:12px">
+      <div style="flex:1;border:1px solid #444;border-radius:4px;padding:12px">
+        <button class="mock-button" style="width:100%;margin:4px 0">创建调查员</button>
+        <button class="mock-button" style="width:100%;margin:4px 0">开始游戏</button>
+        <button class="mock-button" style="width:100%;margin:4px 0">JSON 编辑器</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>代码分离方案</h3>
+<div class="mockup">
+  <div class="mockup-header">目录结构</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:1.8">
+    frontend/<br>
+    ├── server.py              # FastAPI 入口（新）<br>
+    ├── routers/               # 路由模块（FastAPI APIRouter）<br>
+    │   ├── launcher.py        #   启动页 + 模组生成 API<br>
+    │   ├── character.py       #   车卡创建 API<br>
+    │   ├── game.py            #   游戏循环 API + WS<br>
+    │   └── editor.py          #   JSON 编辑器 API<br>
+    ├── templates/             # Jinja2 模板<br>
+    │   ├── base.html          #   基础布局（含 Tailwind CDN）<br>
+    │   ├── launcher.html      #   启动页<br>
+    │   ├── character.html     #   车卡向导<br>
+    │   ├── game.html          #   游戏主界面<br>
+    │   └── editor.html        #   JSON 轻量编辑器<br>
+    ├── static/                # 静态资源（Tailwind 本地化）<br>
+    └── (旧文件保留至迁移完成)<br>
+    <br>
+    src/                        # 游戏引擎（不修改）<br>
+    ├── game_loop.py<br>
+    ├── llm.py<br>
+    └── ...
+  </div>
+</div>

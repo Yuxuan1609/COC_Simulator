@@ -74,8 +74,8 @@ except NameError:
     BASE_DIR = os.getcwd()
 
 # 加载源文档（支持 .txt 和 .docx）
-SOURCE_FILE = os.path.join(BASE_DIR, "..", "常暗之厢（7版规则，简体修正版）.docx")
-# SOURCE_FILE = os.path.join(BASE_DIR, "..", "test_story.txt")  # 测试用：取消注释这行
+SOURCE_FILE = os.path.join(BASE_DIR, "..", "data", "modules", "深渊之口", "module_final.txt")
+# SOURCE_FILE = os.path.join(BASE_DIR, "..", "常暗之厢（7版规则，简体修正版）.docx")
 
 if SOURCE_FILE.endswith(".txt"):
     with open(SOURCE_FILE, "r", encoding="utf-8") as f:
@@ -573,7 +573,7 @@ with open(f"{DEBUG_ROOT}/_validation_report.json", "w", encoding="utf-8") as f:
 # CELL 17 (code)
 # ============================================================
 # ═══ 保存最终结果到 data/modules/ ═══
-MODULE_DIR = "../data/modules/常暗之厢"
+MODULE_DIR = "../data/modules/深渊之口"
 os.makedirs(MODULE_DIR, exist_ok=True)
 
 # L1

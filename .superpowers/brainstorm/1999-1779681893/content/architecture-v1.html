@@ -1,0 +1,84 @@
+<h2>FastAPI + HTMX 架构提案</h2>
+<p class="subtitle">统一后端 + 声明式前端，保持 Python 生态</p>
+
+<div class="mockup">
+  <div class="mockup-header">路由结构</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:14px;line-height:2">
+    /                        → 启动页面（Launcher）<br>
+    /character               → 车卡创建向导<br>
+    /game                    → 游戏循环主界面<br>
+    /editor                  → JSON 模块编辑器<br>
+    /api/game/turn           → POST 提交玩家行动<br>
+    /api/game/state          → GET 获取世界状态<br>
+    /api/game/stream         → WS 实时推送（叙事流）<br>
+    /api/character/generate  → POST LLM 描述生成<br>
+    /api/editor/validate     → POST JSON 校验<br>
+    /api/editor/save         → POST 保存模块文件<br>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">之前：http.server</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="cons"><h4>问题</h4>
+          <ul>
+            <li>两个 server 文件，端口冲突</li>
+            <li>阻塞式单线程</li>
+            <li>手动路由 if/else</li>
+            <li>手动 CORS / JSON</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">之后：FastAPI</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4>
+          <ul>
+            <li>单一 server 入口</li>
+            <li>async 非阻塞</li>
+            <li>声明式路由 + 自动 docs</li>
+            <li>内置 WebSocket、CORS、静态文件</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">之前：vanilla JS DOM 操作</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="cons"><h4>问题</h4>
+          <ul>
+            <li>手动 createElement / appendChild</li>
+            <li>状态分散在 DOM 和变量中</li>
+            <li>inline onclick 处理函数</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">之后：HTMX</div>
+    <div class="mockup-body">
+      <div class="pros-cons">
+        <div class="pros"><h4>优势</h4>
+          <ul>
+            <li>hx-post / hx-get 声明式 AJAX</li>
+            <li>hx-swap 自动 DOM 替换</li>
+            <li>hx-trigger 事件驱动</li>
+            <li>服务端渲染 HTML 片段</li>
+            <li>14KB，零构建步骤</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

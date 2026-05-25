@@ -1,0 +1,90 @@
+<h2>操作指南系统</h2>
+<p class="subtitle">每个页面嵌入上下文相关的用户指引</p>
+
+<div class="section">
+  <h3>呈现方式</h3>
+  <div class="cards">
+    <div class="card" style="border-left:3px solid #c9a84c">
+      <div class="card-body">
+        <h3>侧边帮助面板</h3>
+        <p>每页右侧固定可折叠的帮助面板。首次访问默认展开，之后记住折叠状态 (localStorage)。内容随当前步骤/上下文动态切换。</p>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid #c9a84c">
+      <div class="card-body">
+        <h3>内联提示</h3>
+        <p>表单字段下方灰色小字说明。关键操作旁 "?" 图标 hover 显示 tooltip。对应角色卡现有的 llm-hint 风格。</p>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid #c9a84c">
+      <div class="card-body">
+        <h3>快速入门向导</h3>
+        <p>Launcher 页面提供 3 步快速入门浮层：① 生成/选择模组 → ② 创建/选择调查员 → ③ 开始游戏。完成后不再显示。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>各页面指南内容</h3>
+
+  <div class="mockup">
+    <div class="mockup-header">Launcher — 帮助面板</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>模组生成:</b> 什么是 L1/L2/L3？→ 三层信息架构简介<br>
+      源文档格式要求 → 参考模组创作指南<br>
+      管线步骤说明 → 18 步各做什么，哪些可选<br>
+      <br>
+      <b>参数配置:</b> 模型选择建议 → 复杂判定用 pro，简单描述用 flash<br>
+      降级策略含义 → 何时自动降级到 flash / 确定性逻辑<br>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Character — 帮助面板（随步骤切换）</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>Step 1:</b> COC 7th 属性说明（STR/CON/DEX/... 各代表什么）<br>
+      掷骰公式解释（3D6*5 的含义）<br>
+      <b>Step 2:</b> 职业对应的典型技能<br>
+      技能点分配策略建议<br>
+      <b>Step 3:</b> 导出 JSON 的用途（可被 game loop 加载）
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Game — 帮助面板</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>游戏命令:</b> /help 命令列表 + 示例<br>
+      <b>玩法提示:</b> 如何描述行动 → LLM 解析效果更好<br>
+      技能检定机制简介（D100 ≤ 技能值 = 成功）<br>
+      <b>快捷键:</b> Enter 发送，↑ 历史输入
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Editor — 帮助面板</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>JSON 结构说明:</b> L1 字段含义、L2 entity 类型、L3 设计参数<br>
+      <b>@markup 语法:</b> 7 种副效果标记的格式和参数<br>
+      <b>校验规则:</b> 自动检查依赖图完整性、entity ID 冲突等
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>实现</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:1.8">
+      <span style="color:#888"># 帮助面板 HTML 片段（Jinja2 模板）</span><br>
+      templates/partials/help-launcher.html<br>
+      templates/partials/help-character-step1.html<br>
+      templates/partials/help-character-step2.html<br>
+      templates/partials/help-character-step3.html<br>
+      templates/partials/help-game.html<br>
+      templates/partials/help-editor.html<br>
+      <br>
+      <span style="color:#888"># 前端行为（Alpine.js 轻量驱动，或 HTMX hx-get 按需加载）</span><br>
+      hx-get="/help/game" hx-trigger="load" hx-target="#help-panel"
+    </div>
+  </div>
+</div>

@@ -1,0 +1,63 @@
+<h2>前端重构 — 总体设计</h2>
+
+<h3>技术栈</h3>
+<div class="section">
+  <table style="width:100%;font-size:14px;border-collapse:collapse">
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">后端框架</td><td style="padding:8px">FastAPI (async, WebSocket, Jinja2)</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">前端交互</td><td style="padding:8px">HTMX (声明式 AJAX, DOM 交换)</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">样式</td><td style="padding:8px">Tailwind CSS (CDN dev → 本地化 prod)</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">模板</td><td style="padding:8px">Jinja2 (layout/base 继承, 片段渲染)</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">实时推送</td><td style="padding:8px">WebSocket (处理步骤进度)</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">服务器</td><td style="padding:8px">单一 server.py，替代当前 2 个文件</td></tr>
+    <tr style="border-bottom:1px solid #333"><td style="padding:8px;color:#888">打包</td><td style="padding:8px">PyInstaller (--add-data 模板+静态文件)</td></tr>
+  </table>
+</div>
+
+<h3>页面架构</h3>
+<div class="cards">
+  <div class="card">
+    <div class="card-body">
+      <h3>/ (Launcher 启动页)</h3>
+      <p>项目入口。包含：模组生成引导（上传 docx → 管线进度）、参数配置（API Key、模型选择、管线开关）、三个子页面导航按钮。</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h3>/character (车卡创建)</h3>
+      <p>3 步向导：① 基本信息 + 属性掷骰 → ② 职业选择 + 技能分配 → ③ 预览 + 导出 JSON。LLM 辅助描述生成。HTMX 无刷新翻页。</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h3>/game (游戏循环)</h3>
+      <p>左右分栏 + 素材图片区。WS 推送处理步骤。侧栏：角色 HP/SAN/状态、场景信息、NPC 列表。主区：叙事消息流 + 输入框。图片区：场景/怪物插图。</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <h3>/editor (JSON 编辑器)</h3>
+      <p>轻量查看/微调。树形展开 + 关键字段表单编辑。不追求完整 JSON IDE。</p>
+    </div>
+  </div>
+</div>
+
+<h3>数据流</h3>
+<div class="mockup">
+  <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:2.2">
+    <b>游戏回合:</b><br>
+    用户输入 → hx-post /api/game/turn<br>
+    → WS 推送: "parse" → "judge" → "enrich" → "narrate"<br>
+    → 前端逐步点亮步骤指示器<br>
+    → 完成后 HTMX 局部刷新叙事区 + 侧栏状态 + 图片区<br>
+    <br>
+    <b>车卡创建:</b><br>
+    hx-get /character/step/2 → 服务端渲染步骤 HTML 片段<br>
+    hx-post /character/roll → 返回新属性卡片 HTML<br>
+    hx-post /character/generate-desc → 返回 LLM 描述文本<br>
+    hx-post /character/export → 返回 JSON 下载<br>
+    <br>
+    <b>模组生成:</b><br>
+    上传 docx → POST /api/pipeline/start → WS 推送 18 步进度<br>
+    → 每步完成前端更新进度条 + 中间产物展示
+  </div>
+</div>

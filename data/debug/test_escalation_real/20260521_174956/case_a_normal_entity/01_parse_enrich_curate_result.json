@@ -1,4 +1,0 @@
-{
-  "brief_summary": "NarratorBrief(action_outcomes=[ActionOutcome(intent=ActionIntent(action='other', target='', skill_checks=[], reasoning='', condition=''), success=True, message='头顶的灯泡突然剧烈闪烁起来，嗡嗡声刺耳地回荡在房间里，几秒后才恢复稳定。', ",
-  "action_outcomes_count": 2
-}

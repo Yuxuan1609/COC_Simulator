@@ -1,0 +1,92 @@
+<h2>文件/模组选择系统</h2>
+<p class="subtitle">前端文件浏览器 + 后端动态加载，覆盖 4 类资源</p>
+
+<div class="section">
+  <h3>统一文件选择组件</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-size:13px;line-height:1.8">
+      <b>组件行为:</b><br>
+      • GET /api/files?dir=data/modules → 返回目录列表 JSON<br>
+      • 前端渲染为可选列表（HTMX hx-get 刷新）<br>
+      • 用户选择 → 路径传给对应 API<br>
+      • 支持单选（选模组）/ 多选（选多个库文件）<br>
+      • 当前选择高亮 + breadcrumb 路径显示<br>
+      <br>
+      <b>安全约束（本地工具，但仍然重要）:</b><br>
+      • 限制浏览范围到项目根目录<br>
+      • 只显示 .json / .docx / .txt / .pdf 等白名单扩展名<br>
+      • 路径参数校验，拒绝 ../ 逃逸
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>四类资源的文件选择</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>1. 模组生成</h3>
+        <p style="font-size:13px;color:#888">
+          <b>源文档:</b> data/ 下选 .docx / .txt<br>
+          <b>输出目录:</b> data/modules/ 下新建或选择已有<br>
+          <b>已有模块:</b> 选择已有 L2 JSON 作为参考/补充管线输入
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>2. 游戏模组</h3>
+        <p style="font-size:13px;color:#888">
+          <b>L1/L2/L3 文件:</b> data/modules/{name}/l*_test.json<br>
+          或自由指定三个路径（支持不同目录）<br>
+          <b>起始场景:</b> 从 L2 JSON 解析后下拉选择
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>3. 调查员</h3>
+        <p style="font-size:13px;color:#888">
+          <b>角色卡:</b> investigator/*.json<br>
+          预设角色卡选择 + 新建车卡入口
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>4. 标准库</h3>
+        <p style="font-size:13px;color:#888">
+          <b>武器库:</b> data/library/core/weapons.json<br>
+          + data/library/extensions/ 扩展<br>
+          <b>敌人库:</b> data/library/core/enemies.json<br>
+          <b>Boss 库:</b> data/library/core/bosses.json<br>
+          <span style="color:#888">每项支持多选（核心 + 多个扩展）</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>API 设计</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-family:monospace;font-size:13px;line-height:2">
+      <span style="color:#888"># 文件浏览</span><br>
+      GET  /api/files?dir=data/modules  →  {files: [...], dirs: [...], parent: "..."}<br>
+      <br>
+      <span style="color:#888"># 模组生成</span><br>
+      POST /api/pipeline/start           →  {source_docx, module_name, output_dir, steps}<br>
+      WS   /api/pipeline/progress        →  实时推送 18 步骤状态<br>
+      <br>
+      <span style="color:#888"># 游戏初始化</span><br>
+      POST /api/game/init                →  {l1_path, l2_path, l3_path, start_node, char_path}<br>
+      POST /api/game/library             →  {weapon_paths[], enemy_paths[], boss_paths[]}<br>
+      <br>
+      <span style="color:#888"># 配置持久化</span><br>
+      POST /api/config/save              →  将当前选择保存到 config.json<br>
+      GET  /api/config/load              →  加载上次配置（启动时自动恢复）
+    </div>
+  </div>
+</div>

@@ -1,8 +1,0 @@
-{
-  "actions": [
-    {
-      "type": "move",
-      "target": "SS1_镜中走廊"
-    }
-  ]
-}
