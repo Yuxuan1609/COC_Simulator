@@ -127,31 +127,45 @@ LLM description trigger: textarea input ending in `/llm` → POST `/api/characte
 
 ### 4.3 Game Loop (`/game`)
 
-Three-column layout:
+Visual-novel-style immersive layout with two modes: **compact** (default) and **expanded**.
 
-| Left (260px) | Center (flex) | Right (240px) |
-|--------------|---------------|---------------|
-| Player HP/SAN/MP/status | Processing step indicator | Scene/monster illustration |
-| Current scene name + description | Narrative message stream | (loaded from `data/` or URL) |
-| NPCs visible in scene | Input box + submit button | |
-| Available exits/actions | | |
+#### Compact Mode (Default)
 
-**Processing step indicator (WebSocket)**:
-```
-parse ✓ → judge ✓ → enrich ∥ combat_entry ✓ → curate ... → narrate
-```
-Each step lights up as the backend pushes progress. `enrich` and `combat_entry` run in parallel (shown as side-by-side). `standoff` may appear between curate and narrate when avoidable enemies trigger. Frontend shows the indicator during LLM calls (5-30s).
+- **Full-screen atmospheric image** (~70% viewport) — generic mood/ambiance illustration, not scene-bound. Comes from a curated `data/images/` pool. Crossfade transition on scene change.
+- **HUD overlay** (top-left): Scene name + player HP/SAN/MIN stats. Minimal, semi-transparent.
+- **Step indicator** (top-right): Monospace micro-text showing pipeline progress.
+- **Compact narrative bar** (bottom): 2-3 lines of latest narrative text. Below it, a subtle input field + action button. The whole bar is clickable.
 
-**HTMX partial updates** (after turn completes):
-- `#player-status` ← `GET /api/game/player-status`
-- `#scene-info` ← `GET /api/game/scene`
-- `#npc-list` ← `GET /api/game/npcs`
-- `#narrative-stream` ← `hx-swap="beforeend"` append new narrative/brief/skill messages
-- `#scene-image` ← `GET /api/game/current-image`
+#### Expanded Mode
 
-**Debug commands**: `/scene`, `/char`, `/flags`, `/events`, `/do`, `/trigger`, `/spawn`, `/inject`, `/save`, `/load`, `/reset`, `/help` — all handled server-side, returned as special message types.
+Triggered by clicking the narrative bar or ▲ button:
+- **Slide-up panel** covers bottom 60-65% of viewport. Background image dims.
+- Panel contains: **full scrollable chat history** (narrative + brief + skill results + timestamps), **expanded input area**, and **HUD info** (scene details, NPCs, exits).
+- **Close**: ▼ button or clicking the dimmed image area above the panel.
 
-**Image display**: Images loaded from `data/modules/{module}/images/` directory or external URL configured in module metadata. Falls back to placeholder if no image defined.
+#### Interaction Behaviors
+
+| Trigger | Behavior |
+|---------|----------|
+| New narrative arrives | Compact bar text updates with brief highlight flash |
+| Click narrative bar / ▲ | Slide-up panel (60% height) with full history |
+| ▼ button / click image area | Slide-down panel, back to compact |
+| Scene change | Image crossfade (CSS transition opacity 0.5s) |
+| Step progress WS message | Top-right indicator updates step dots |
+| "?" help icon | HUD top-right, hover tooltip with command reference |
+| Debug commands | Result shown as special message type in panel |
+
+#### HTMX Partial Updates (after turn completes)
+- `#narrative-bar` ← latest narrative text (compact mode)
+- `#chat-history` ← `hx-swap="beforeend"` append new messages (expanded mode, if panel open)
+- `#hud-stats` ← player HP/SAN
+- `#hud-scene` ← scene name
+- `#scene-image` ← new image src with CSS transition (on scene change)
+- `#step-indicator` ← WebSocket real-time (no HTMX)
+
+#### Image System
+
+Images are generic atmospheric art, NOT bound to specific scenes. Stored in `data/images/` with optional module-specific subdirectory. The backend selects an image based on tags/keywords (e.g., "train", "dark", "outdoor") from the current scene description, or rotates through a default pool. Falls back to a dark gradient placeholder if no images available.
 
 ### 4.4 JSON Editor (`/editor`)
 
@@ -344,7 +358,7 @@ Client renders as vertical progress list with checkmarks.
 ### Phase 2: Pages (in order)
 4. Launcher page (module wizard stub + config + nav)
 5. Character creation wizard (3 steps)
-6. Game loop interface (3-column + WS progress)
+6. Game loop interface (visual-novel layout: full-screen image + compact narrative bar + expandable chat panel + WS progress)
 7. JSON editor (tree view + form edit)
 
 ### Phase 3: Wire Up
@@ -369,7 +383,7 @@ Client renders as vertical progress list with checkmarks.
 | WebSocket connection drops during long LLM calls | Client auto-reconnect with exponential backoff; WS is advisory (turn still completes via POST) |
 | File system access from browser sandbox | This is a localhost app — full filesystem access via backend API is intended |
 
-## 12. Open Questions
+## 12. Resolved Design Decisions
 
-- **Font choice for offline**: Bundle Noto Serif SC (Chinese) as woff2, or fall back to system SimSun? Chinese fonts are ~5MB — worth the bundle cost for aesthetic?
-- **Image management**: Where do scene/monster images come from in module data? Current JSON schemas have no image field. Add to L2 template?
+- **Font bundling**: Bundle Noto Serif SC woff2 (~5MB) in `frontend/static/fonts/`. Fallback chain: Noto Serif SC → SimSun → serif. Worth the bundle cost for the 1920s aesthetic.
+- **Image system**: Generic atmospheric images from `data/images/` (not scene-bound). Backend selects by keyword match on scene description or rotates default pool. Images are decorative mood-setters, not informational.
