@@ -24,7 +24,7 @@
                 hx-get="/api/files?dir=data&target_input=pipeline-source"
                 hx-target="#file-browser-content"
                 hx-swap="innerHTML"
-                onclick="document.getElementById('file-modal').classList.remove('hidden')"
+                onclick="openFileBrowser()"
                 class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#1a150c]">
           浏览...
         </button>
@@ -66,14 +66,14 @@
 
   {# File browser modal #}
   <div id="file-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
-       onclick="if(event.target===this)this.classList.add('hidden')">
-    <div class="bg-[#141414] border border-gray-600 rounded-lg p-4 w-[550px] max-h-[70vh] overflow-y-auto file-listing-container">
+       onclick="if(event.target===this)closeFileModal()">
+    <div class="bg-[#141414] border border-gray-600 rounded-lg p-4 w-[550px] max-h-[70vh] overflow-y-auto">
       <div class="flex justify-between items-center mb-2">
-        <span class="text-sm text-gray-400">选择文件</span>
-        <button class="text-gray-500 hover:text-gray-300 text-lg" onclick="document.getElementById('file-modal').classList.add('hidden')">&times;</button>
+        <span class="text-sm text-gray-300">选择文件</span>
+        <button class="text-gray-400 hover:text-gray-200 text-lg" onclick="closeFileModal()">&times;</button>
       </div>
-      <div id="file-browser-content">
-        <p class="text-sm text-gray-600">加载中...</p>
+      <div id="file-browser-content" class="file-listing-container">
+        <p class="text-sm text-gray-500">加载中...</p>
       </div>
     </div>
   </div>

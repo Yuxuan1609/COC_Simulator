@@ -66,18 +66,21 @@
 <body class="min-h-screen flex flex-col">
   {% block body %}{% endblock %}
   <script>
-    // Global file picker — called from HTMX-loaded file-listing partials
+    // Global file picker — available in all pages
+    function openFileBrowser() {
+      const modal = document.getElementById('file-modal');
+      if (modal) modal.classList.remove('hidden');
+    }
+    function closeFileModal() {
+      const modal = document.getElementById('file-modal');
+      if (modal) modal.classList.add('hidden');
+    }
     function pickFile(path, targetId) {
       if (targetId) {
         const input = document.getElementById(targetId);
         if (input) { input.value = path; input.dispatchEvent(new Event('change')); }
       }
-      const modal = document.getElementById('file-modal');
-      if (modal) modal.classList.add('hidden');
-    }
-    function closeFileModal() {
-      const modal = document.getElementById('file-modal');
-      if (modal) modal.classList.add('hidden');
+      closeFileModal();
     }
   </script>
 </body>

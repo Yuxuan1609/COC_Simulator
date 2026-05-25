@@ -153,13 +153,12 @@ def _push_progress(step: str, status: str):
             pass
 
 
-@router.post("/api/game/init", response_class=HTMLResponse)
+@router.post("/api/game/init")
 async def init_game_api(
     request: Request,
     l1_path: str = Form(""),
     l2_path: str = Form(""),
     l3_path: str = Form(""),
-    start_node: str = Form("测试房间"),
     char_path: str = Form(""),
     weapon_path: str = Form(""),
     enemy_path: str = Form(""),
@@ -193,33 +192,36 @@ async def init_game_api(
             l2_path=str(PROJECT_ROOT / l2_path),
             l1_path=str(PROJECT_ROOT / l1_path),
             l3_path=str(PROJECT_ROOT / l3_path),
-            start_node=start_node,
+            start_node="测试房间",
         )
     except Exception as e:
-        return HTMLResponse(f'<div class="text-red-400 text-sm p-4">初始化失败: {e}</div>')
+        return JSONResponse({"error": str(e)}, status_code=500)
 
     if char_path and os.path.exists(str(PROJECT_ROOT / char_path)):
         try:
             inv = load_investigator(str(PROJECT_ROOT / char_path))
         except Exception:
-            inv = Investigator(name="调查员", age=25, gender="男")
-            inv.stats = roll_stats()
-            inv.skills = create_skill_list()
-            inv.derived = calc_derived(inv.stats, inv.age)
+            inv = _make_default_inv()
     else:
-        inv = Investigator(name="调查员", age=25, gender="男")
-        inv.stats = roll_stats()
-        inv.skills = create_skill_list()
-        inv.derived = calc_derived(inv.stats, inv.age)
+        inv = _make_default_inv()
 
     g["keeper"].world.set_player(inv)
     _game_instance = g
 
-    # Return the game screen HTML (replaces setup form via HTMX)
-    return templates.TemplateResponse("partials/game-screen.html", {
-        "request": request,
+    return {
+        "success": True,
         "location": g["keeper"].world.current_location,
         "hp": inv.derived.HP,
         "san": inv.derived.SAN,
         "name": inv.name,
-    })
+    }
+
+
+def _make_default_inv():
+    from investigator import Investigator
+    from investigator.rules import roll_stats, calc_derived, create_skill_list
+    inv = Investigator(name="调查员", age=25, gender="男")
+    inv.stats = roll_stats()
+    inv.skills = create_skill_list()
+    inv.derived = calc_derived(inv.stats, inv.age)
+    return inv
