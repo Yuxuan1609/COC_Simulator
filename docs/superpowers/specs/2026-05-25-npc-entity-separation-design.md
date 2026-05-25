@@ -44,6 +44,8 @@ Step 2a（interactions）、Step 2b events、Step 2b AT 的 system prompt 新增
 
 NPC 名称匹配规则：精确名称匹配（不区分全角/半角空格），不做模糊匹配。
 
+**关键约束**：entity 从 scene 剥离绑定到 NPC 时，`id` 字段保持不变。依赖图中的 edge 通过 entity ID 引用，改变 ID 会导致依赖链失效。
+
 ### 2.3 NPCProfile 新增字段
 
 ```python
