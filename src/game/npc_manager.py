@@ -31,6 +31,24 @@ class NPCManager:
     def __init__(self):
         self._npcs: dict[str, NPC] = {}
 
+    STATE_GATE_MESSAGES: dict[str, str] = {
+        "dead": "（{name} 已无法交谈）",
+        "left": "（{name} 不在此处）",
+    }
+
+    def _check_follow_conditions(self, npc: NPC, world) -> tuple[bool, str]:
+        """Check if NPC can follow. Returns (can_follow, reason_if_not)."""
+        if not npc.can_follow:
+            return False, f"{npc.name} 不愿意跟随你"
+        if npc.state in ("dead", "left"):
+            return False, f"{npc.name} 无法跟随（{npc.state}）"
+        if npc.follow_requirements:
+            from scenario_core import parse_hard_requirement
+            met = parse_hard_requirement(npc.follow_requirements, world.runtime_state)
+            if not met:
+                return False, f"跟随条件尚未满足（{npc.follow_requirements}）"
+        return True, ""
+
     # ── 初始化 ──
 
     def init_from_profiles(self, profiles: dict):
@@ -77,21 +95,32 @@ class NPCManager:
     # ── 交互 ──
 
     def talk_to(self, npc_name: str, player_input: str, llm_call) -> str:
-        """对话：注入态度/记忆/档案上下文 → LLM 扮演 NPC → 追加 memory。"""
+        """State gate -> inject profile/memory context -> LLM -> append memory."""
         npc = self._npcs.get(npc_name)
         if not npc:
             return f"（{npc_name} 不在此处。）"
+
+        gate = STATE_GATE_MESSAGES.get(npc.state, "")
+        if gate:
+            return gate.format(name=npc.name)
+
+        triggers_text = ""
+        if npc.interaction_triggers:
+            triggers_text = f"互动触发条件：{'； '.join(npc.interaction_triggers)}\n"
 
         system_prompt = (
             f"你是 NPC「{npc.name}」。\n"
             f"角色：{npc.role}\n"
             f"性格：{npc.personality_notes}\n"
             f"外貌：{npc.appearance}\n"
-            f"能力：{npc.what_they_can_do}\n"
-            f"当前态度：{npc.attitude}\n"
+            f"能力与所知信息：{npc.what_they_can_do}\n"
+            + triggers_text
+            + f"当前态度：{npc.attitude}\n"
             f"当前状态：{npc.state}\n"
             + (f"对话记忆：{'； '.join(npc.memory[-5:])}\n" if npc.memory else "")
-            + "\n请用符合角色设定的语气回复调查员，回复简洁（1-3句话）。"
+            + "\n请用符合角色设定的语气回复调查员。\n"
+            "若调查员询问或触及你能力范围内/互动触发条件中的信息，应如实告知所知内容，不刻意隐瞒。\n"
+            "回复简洁（1-3句话）。"
         )
         user_prompt = f"调查员对你说：「{player_input}」"
 
@@ -100,7 +129,7 @@ class NPCManager:
         except Exception:
             response = f"（{npc.name} 沉默不语。）"
 
-        npc.memory.append(f"玩家：「{player_input}」→ 回复：「{response}」")
+        npc.memory.append(f"玩家：「{player_input}」-> 回复：「{response}」")
         if len(npc.memory) > NPC_MEMORY_CAP:
             npc.memory = npc.memory[-20:]
         return response
