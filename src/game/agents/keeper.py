@@ -83,14 +83,38 @@ class Keeper:
         self.turn_number += 1
         self._warnings.clear()
 
-        # NPC interaction routing: if user input targets a known NPC, route to NPCManager
+        # NPC interaction routing with intent detection
         if self.world.npcs:
             npcs_present = self.world.npcs.get_in_scene(self.world.current_location)
-            for npc in npcs_present:
-                # Simple heuristic: NPC name or role keywords in user input
-                if npc.name in raw:
-                    response = self.world.npcs.talk_to(npc.name, raw, lambda prompt, **kw: call_deepseek(prompt, **kw))
-                    return {"brief": response, "narrative": response, "full": response}
+            npc_names = [n.name for n in npcs_present]
+            matched_name = next((n for n in npc_names if n in raw), None)
+            if matched_name:
+                from prompts import build_npc_intent_detect_prompt
+                intent_prompt = build_npc_intent_detect_prompt(raw, npc_names)
+                try:
+                    intent_result = call_deepseek(
+                        intent_prompt, json_mode=True,
+                        model=LLM_FLASH_MODEL, reasoning_effort="low",
+                        system="你是回合解析助手。仅输出 JSON。",
+                    )
+                    is_talking = intent_result.get("is_talking", False)
+                except Exception:
+                    is_talking = True
+
+                if is_talking:
+                    npc_result = self.world.npcs.process_npc_turn(
+                        npc_name=matched_name, user_input=raw,
+                        world=self.world,
+                        llm_json=lambda prompt, **kw: call_deepseek(prompt, json_mode=True, **kw),
+                        llm_text=lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
+                        judge=self.judge, curator=self.curator,
+                    )
+                    npc_result["npc_events"] = npc_result.get("npc_events", [])
+                    self._inject_npc_at()
+                    return npc_result
+
+        # Inject NPC ATs before normal parse
+        self._inject_npc_at()
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
         parse_result = self._parse(raw)
@@ -715,6 +739,37 @@ class Keeper:
                 from scenario_core import parse_hard_requirement
                 return parse_hard_requirement(hard_part, self.world.runtime_state)
         return True
+
+    def _inject_npc_at(self):
+        """Inject condition-satisfied NPC auto-triggers into current node."""
+        if not self.world.npcs:
+            return
+        for npc in self.world.npcs._npcs.values():
+            for at in npc.bound_auto_triggers:
+                at_scene = at.get("source_scene", "")
+                if at_scene != self.world.current_location:
+                    continue
+                eid = at.get("id", "")
+                req = at.get("requirement", "")
+                if req:
+                    from scenario_core import parse_hard_requirement
+                    if not parse_hard_requirement(req, self.world.runtime_state):
+                        continue
+                node = self.world._current_node()
+                if node:
+                    existing_ids = {e.id for e in node.auto_triggers}
+                    if eid not in existing_ids:
+                        from scenario_core import Entity
+                        node.auto_triggers.append(Entity(
+                            id=eid, entity_type="auto_trigger",
+                            name=at.get("name", ""), scene=at_scene,
+                            type=at.get("type", ""), requirement=req,
+                            trigger=at.get("trigger", ""), result=at.get("result", ""),
+                            side_effects=at.get("side_effects", []),
+                            graded_result=at.get("graded_result"),
+                            difficulty=at.get("difficulty", ""),
+                            extra=at.get("extra"),
+                        ))
 
     # ── Internal ──
 
