@@ -71,12 +71,29 @@
 │       ├── rules.py                         # COC 7th 规则引擎（纯函数）
 │       └── serialization.py                 # JSON 序列化 / 反序列化
 ├── frontend/
-│   ├── server.py                            # 车卡服务器 + LLM 描述生成 API
-│   ├── character.html                       # 5 步车卡向导
-│   ├── character.css                        # COC 1920s 美学风格
-│   ├── character.js                         # 车卡交互逻辑（含 /llm 触发）
-│   ├── game_server.py                       # 游戏循环 Web 服务器
-│   └── game.html                            # 游戏循环 Web 前端
+│   ├── server.py                              # FastAPI 统一入口（v2，替换旧的 server.py + game_server.py）
+│   ├── routers/
+│   │   ├── launcher.py                        #   启动页 + 模组生成 API + 参数配置 API
+│   │   ├── character.py                       #   车卡创建 API（3 步向导 + LLM 描述生成）
+│   │   ├── game.py                            #   游戏循环 API + WebSocket 步骤进度推送
+│   │   ├── editor.py                          #   JSON 轻量编辑器 API
+│   │   └── files.py                           #   文件浏览 API（共享组件）
+│   ├── templates/
+│   │   ├── base.html                          #   根布局（Tailwind CDN + HTMX + Jinja2 block）
+│   │   ├── launcher.html                      #   启动页（模组生成 + 参数配置 + 导航）
+│   │   ├── character.html                     #   车卡 3 步向导
+│   │   ├── game.html                          #   游戏主界面（视觉小说布局 + 展开式会话）
+│   │   ├── editor.html                        #   JSON 轻量编辑器（3 栏布局）
+│   │   └── partials/
+│   │       ├── file-browser.html              #   可复用文件/目录选择器
+│   │       ├── step-indicator.html            #   WebSocket 驱动的处理步骤指示器
+│   │       └── help-*.html                    #   上下文相关用户指南
+│   └── static/
+│       ├── tailwind.css                       #   Tailwind 独立构建（生产环境）
+│       └── fonts/                             #   捆绑的 Noto Serif SC 字体
+├── (旧 frontend 文件待 v2 完成迁移后删除:
+│   character.html, character.css, character.js,
+│   game.html, json-editor.html, server.py, game_server.py)
 ├── run_pipeline.py                          # 管线 CLI 入口（配置向导 + 手动/自动模式）
 ├── notebooks/
 │   ├── notebook_simplified.ipynb            # 主游戏循环（导入 src/ 模块）
@@ -407,14 +424,14 @@ python run_pipeline.py --config config.json --start-from step_3a  # 断点续跑
 ### 前端车卡（调查员创建）
 
 ```bash
-python frontend/server.py                        # localhost:8080/character.html
+uvicorn frontend.server:app --reload             # 开发模式 → localhost:8080/character
 ```
 
 ### 游戏循环
 
 ```bash
-python frontend/game_server.py                   # Web 模式 → localhost:8080/game.html
-python run_game.py                               # CLI 模式（需要 IPython）
+uvicorn frontend.server:app --reload             # 开发模式 → localhost:8080/game
+python run_game.py                               # 生产模式（含自动打开浏览器）
 ```
 
 Jupyter 交互：`notebooks/notebook_simplified.ipynb`
@@ -437,11 +454,11 @@ Jupyter 交互：`notebooks/notebook_simplified.ipynb`
 ### Web 前端
 
 ```bash
-python frontend/game_server.py                    # 默认 :8080
-python frontend/game_server.py --port 9000        # 自定义端口
+uvicorn frontend.server:app --reload --port 8080    # 开发模式（v2 FastAPI）
+python frontend/server.py                           # 生产模式（自动打开浏览器）
 ```
 
-浏览器打开 `http://localhost:8080/game.html`。
+浏览器打开 `http://localhost:8080` 进入启动页面（Launcher），可选择进入车卡、游戏或编辑器。
 
 ## 公开发行打包
 
@@ -451,19 +468,59 @@ PyInstaller 方案：
 pip install pyinstaller
 
 pyinstaller -F --noconsole --name "TRPG助手" \
-  --add-data "frontend;frontend" \
+  --add-data "frontend/templates;frontend/templates" \
+  --add-data "frontend/static;frontend/static" \
   --add-data "data;data" \
   --add-data "src;src" \
   --add-data "investigator;investigator" \
   --add-data "logs;logs" \
+  --hidden-import fastapi \
+  --hidden-import uvicorn \
+  --hidden-import jinja2 \
   --hidden-import openai \
-  --hidden-import IPython \
   run_game.py
 ```
 
-- API Key：`.env` 不打包，首次启动引导用户在 Web 界面配置
+- API Key：`.env` 不打包，首次启动引导用户在 Web 界面配置（Launcher → 参数配置）
 - 杀软误报：`--onedir`（文件夹分发）误报率低于 `--onefile`
 - 跨平台：Windows/macOS/Linux 分别需在对应系统打包
+
+## Frontend v2 重构 (2026-05-25)
+
+> 正在开发中。将当前的 vanilla HTML/CSS/JS + `http.server` 原型重写为 FastAPI + HTMX + Tailwind CSS。
+
+### 技术栈
+
+| 层 | 技术 | 说明 |
+|----|------|------|
+| 服务器 | **FastAPI** | async 路由 + WebSocket + Jinja2 模板，统一替换两个旧的 http.server |
+| 前端交互 | **HTMX** (~14KB) | 声明式 AJAX，服务端渲染 HTML 片段，最小化手写 JS |
+| 样式 | **Tailwind CSS v4** | CDN 开发 → 独立构建生产部署 |
+| 实时推送 | **WebSocket** | 游戏回合处理步骤进度 + 模组生成管线进度 |
+| 打包 | **PyInstaller** | `--add-data` 模板 + 静态文件 + `--hidden-import` fastapi/uvicorn |
+
+### 页面架构
+
+| 路由 | 页面 | 功能 |
+|------|------|------|
+| `/` | **Launcher 启动页** | 模组生成向导（上传 docx → 管线进度 → 下载 JSON）+ 参数配置（API Key、模型、阈值、开关）+ 子页面导航 |
+| `/character` | **车卡创建** | 3 步向导（基本信息+属性掷骰 → 职业+技能分配 → 预览+导出 JSON），LLM 辅助描述生成 |
+| `/game` | **游戏循环** | 视觉小说风格沉浸式布局：全屏氛围图 + HUD 叠加 + 底部紧凑叙事栏 + 点击展开完整会话面板 + WebSocket 步骤指示器 |
+| `/editor` | **JSON 编辑器** | 轻量 3 栏布局（文件浏览 + JSON 树形展开 + 校验状态），非完整 IDE |
+
+### 设计文档
+
+- 设计规格：`docs/superpowers/specs/2026-05-25-frontend-redesign-design.md`
+- 实现计划：`docs/superpowers/plans/2026-05-25-frontend-redesign-plan.md`
+
+### 代码分离
+
+```
+frontend/          ← 表示层（导入 src/）
+src/               ← 游戏引擎（不导入 frontend/）
+```
+
+旧文件（`character.html/css/js`, `game.html`, `json-editor.html`, `server.py`, `game_server.py`）在 v2 迁移完成后删除。
 
 ## NPC-Entity 分离 (2026-05-25)
 
