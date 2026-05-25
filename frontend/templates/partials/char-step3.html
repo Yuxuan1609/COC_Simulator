@@ -1,0 +1,21 @@
+<div>
+  <h2 class="text-lg text-aged-gold mb-4 border-l-2 border-aged-gold pl-3">预览与导出</h2>
+  <div class="mb-4">
+    <label class="block text-xs text-gray-500 mb-1">背景故事</label>
+    <textarea name="backstory" rows="4" placeholder="调查员背景故事..."
+              class="w-full bg-[#1a150c] border border-[#4a3820] rounded px-3 py-2 text-sm text-gray-300 focus:border-aged-gold focus:outline-none resize-none"></textarea>
+  </div>
+  <div id="preview-summary" class="p-4 bg-[#1a150c] border border-[#3a2810] rounded text-sm text-gray-500 font-mono whitespace-pre-wrap">
+    请填写前两步后查看预览。
+  </div>
+  <div class="flex justify-between mt-6">
+    <button hx-get="/character/step/2" hx-target="#step-content" hx-swap="innerHTML"
+            class="px-6 py-2 border border-gray-700 rounded text-sm text-gray-400 hover:text-aged-gold">
+      ← 上一步
+    </button>
+    <button onclick="exportCharacter()"
+            class="px-6 py-2 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30">
+      导出 JSON
+    </button>
+  </div>
+</div>

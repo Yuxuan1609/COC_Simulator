@@ -40,7 +40,9 @@ from frontend.routers import files
 app.include_router(files.router)
 from frontend.routers import launcher
 app.include_router(launcher.router)
-# from frontend.routers import character, game, editor
+from frontend.routers import character
+app.include_router(character.router)
+# from frontend.routers import game, editor
 # ...
 
 
