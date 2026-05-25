@@ -7,15 +7,18 @@ from config import NPC_MEMORY_CAP
 
 @dataclass
 class NPC:
-    # ── 档案字段（Step 2.5 产生，来自 L3 CharacterDesign → LLM 拆解）──
     name: str
     role: str = ""
     personality_notes: str = ""
     appearance: str = ""
     what_they_can_do: str = ""
     interaction_triggers: list[str] = field(default_factory=list)
+    can_follow: bool = False
+    follow_requirements: str = ""
 
-    # ── 运行时字段（NPCManager 管理）──
+    bound_interactions: list[dict] = field(default_factory=list)
+    bound_auto_triggers: list[dict] = field(default_factory=list)
+
     scene: str = ""
     attitude: str = "neutral"
     following: bool = False
@@ -40,6 +43,10 @@ class NPCManager:
                 appearance=data.get("appearance", ""),
                 what_they_can_do=data.get("what_they_can_do", ""),
                 interaction_triggers=list(data.get("interaction_triggers", [])),
+                can_follow=data.get("can_follow", False),
+                follow_requirements=data.get("follow_requirements", ""),
+                bound_interactions=list(data.get("bound_interactions", [])),
+                bound_auto_triggers=list(data.get("bound_auto_triggers", [])),
                 scene=data.get("scene", ""),
                 state=data.get("initial_state", "alive"),
                 following=data.get("initial_following", False),
@@ -152,6 +159,10 @@ class NPCManager:
                 appearance=profile.get("appearance", ""),
                 what_they_can_do=profile.get("what_they_can_do", ""),
                 interaction_triggers=list(profile.get("interaction_triggers", [])),
+                can_follow=profile.get("can_follow", False),
+                follow_requirements=profile.get("follow_requirements", ""),
+                bound_interactions=list(profile.get("bound_interactions", [])),
+                bound_auto_triggers=list(profile.get("bound_auto_triggers", [])),
                 scene=state_data.get("scene", ""),
                 attitude=state_data.get("attitude", "neutral"),
                 following=state_data.get("following", False),
