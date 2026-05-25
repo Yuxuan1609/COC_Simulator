@@ -100,25 +100,28 @@ class AgentMonitor:
 
 恢复：连续 5 次成功且延迟正常 → `_degraded=False`。
 
-### 3.3 DegradationPolicy（接口化）
+### 3.3 DegradationPolicy（接口化 + 集中化配置）
 
 ```python
 class DegradationPolicy(Protocol):
-    """每个 Agent 自定义降级行为"""
+    """每个 Agent 自定义降级行为，参数从 DEGRADE_POLICY 读取"""
+    def __init__(self, config: dict): ...
     def on_timeout(self, call_record: LLMCallRecord, kwargs: dict) -> RetryAction | None: ...
     def on_consecutive_failures(self, count: int) -> str | None: ...
-    def on_degrade(self, agent_name: str) -> dict: ...
+    def on_degrade(self) -> dict: ...
 ```
 
-各 Agent 默认策略：
+各 Agent 默认策略（行为参数在 `config.py:DEGRADE_POLICY`）：
 
 | Agent | on_degrade 行为 |
 |-------|----------------|
-| Keeper | `{"skip_enrich": True, "skip_combat_entry": True}` — 跳过所有 LLM sub-steps，直接 curator |
-| Narrator | `{"model": "deepseek-v4-flash", "thinking": False}` — 仅降模型 |
-| Author | `{"reject_all": True}` — 拒绝所有 structural edit |
-| TimeAgent | `{"skip": True}` — 跳过时间评估 |
-| IntentDetector | `{"default_result": true}` — 默认当做对话意图 |
+| Keeper | `DEGRADE_POLICY["keeper"]` → 跳过 enrich/combat_entry/intent_detect |
+| Narrator | `DEGRADE_POLICY["narrator"]` → 切 flash，关 thinking |
+| Author | `DEGRADE_POLICY["author"]` → 拒绝所有 structural edit |
+| TimeAgent | `DEGRADE_POLICY["time_agent"]` → 直接跳过 |
+| IntentDetector | `DEGRADE_POLICY["intent_detector"]` → fail-open 默认有意图 |
+
+所有阈值、模型选择、行为开关均在 `config.py` 一处管理，策略类只读不写。
 
 ### 3.4 使用方式
 
@@ -157,15 +160,48 @@ class PipelineHealth:
 
 ## 5. 配置
 
+### 5.1 config.py — 集中化参数
+
 ```python
-# config.py (已有，补充)
-LLM_SLOW_THRESHOLD_MS = 8000     # 慢调用阈值
-LLM_TIMEOUT_MS = 45000           # 超时阈值
-LLM_MAX_CONSECUTIVE_FAILURES = 3 # 触发降级的连续失败次数
-MONITOR_ENABLED = True           # 传感器开关
-MONITOR_HISTORY_SIZE = 200       # 环形缓冲大小
-MONITOR_DEGRADE_RECOVERY = 5     # 恢复所需连续成功次数
+# ── 监控通用 ──
+MONITOR_ENABLED = True           # 传感器总开关
+MONITOR_HISTORY_SIZE = 200       # LLMSensor 环形缓冲大小
+
+# ── 降级阈值 ──
+LLM_SLOW_THRESHOLD_MS = 8000     # 慢调用警告阈值
+LLM_TIMEOUT_MS = 45000           # 单次超时阈值
+LLM_MAX_CONSECUTIVE_FAILURES = 3 # 连续失败触发降级
+LLM_DEGRADE_RECOVERY_COUNT = 5   # 恢复所需连续成功次数
+LLM_SLOW_RATE_THRESHOLD = 0.5    # 近 10 次慢调用比例阈值
+
+# ── 降级策略集中化配置 ──
+# 每个 Agent 的降级行为参数，聚焦于可配置项
+DEGRADE_POLICY = {
+    "keeper": {
+        "fallback_model": "deepseek-v4-flash",
+        "skip_enrich": True,
+        "skip_combat_entry": True,
+        "skip_intent_detect": True,
+    },
+    "narrator": {
+        "fallback_model": "deepseek-v4-flash",
+        "thinking": False,
+        "reasoning_effort": "low",
+    },
+    "author": {
+        "fallback_model": "deepseek-v4-flash",
+        "reject_all_structural": True,   # 拒绝所有 structural edit
+    },
+    "time_agent": {
+        "skip": True,                     # TimeAgent 降级直接跳过
+    },
+    "intent_detector": {
+        "default_result": True,           # 默认认为有对话意图（fail-open）
+    },
+}
 ```
+
+`DegradationPolicy` 实现类在初始化时读取 `DEGRADE_POLICY`，不硬编码参数。
 
 ## 6. 文件结构
 
