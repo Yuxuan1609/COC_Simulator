@@ -42,7 +42,9 @@ from frontend.routers import launcher
 app.include_router(launcher.router)
 from frontend.routers import character
 app.include_router(character.router)
-# from frontend.routers import game, editor
+from frontend.routers import game
+app.include_router(game.router)
+# from frontend.routers import editor
 # ...
 
 

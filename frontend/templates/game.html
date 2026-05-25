@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}TRPG 游戏{% endblock %}
+{% block body %}
+<div class="h-screen flex flex-col bg-black relative overflow-hidden" id="game-root">
+
+  {# Full-screen background image #}
+  <div id="scene-image" class="absolute inset-0 image-crossfade bg-gradient-to-b from-[#1a1410] via-[#2a1a0a] to-[#1a1410] z-0">
+  </div>
+
+  {# HUD overlay — top left #}
+  <div id="hud" class="absolute top-3 left-3 z-20 bg-black/70 border border-white/10 rounded px-3 py-2 backdrop-blur-sm">
+    <div id="hud-scene" class="text-sm font-bold text-aged-brown">
+    </div>
+    <div id="hud-stats" class="mt-0.5">
+    </div>
+  </div>
+
+  {# Step indicator — top right #}
+  <div id="step-indicator" class="absolute top-3 right-3 z-20 bg-black/50 rounded px-2 py-1 text-[10px] font-mono text-gray-600">
+  </div>
+
+  {# Help button #}
+  <button id="help-toggle" class="absolute top-12 right-3 z-20 text-gray-600 hover:text-aged-gold text-xs"
+          onclick="document.getElementById('help-panel').classList.toggle('hidden')">
+    ? 帮助
+  </button>
+
+  {# Help panel (hidden) #}
+  <div id="help-panel" class="hidden absolute top-20 right-3 z-20 bg-black/90 border border-gray-700 rounded p-3 w-56 text-xs text-gray-500">
+    <b class="text-gray-400">命令</b><br>
+    /scene | /char | /flags | /events<br>
+    /do &lt;动作&gt; | /trigger &lt;E1&gt;<br>
+    /save &lt;槽位&gt; | /load &lt;槽位&gt;<br>
+    /reset | /help
+  </div>
+
+  {# Compact narrative bar — bottom #}
+  <div id="narrative-bar"
+       class="absolute bottom-0 left-0 right-0 z-20 bg-[#0a0806]/95 border-t border-aged-brown/30 p-3 cursor-pointer"
+       onclick="togglePanel(true)">
+    <div id="compact-narrative" class="text-sm text-parchment leading-relaxed line-clamp-2 mb-2">
+    </div>
+    <div class="flex items-center gap-3">
+      <input type="text" id="user-input"
+             placeholder="输入你的行动..."
+             class="flex-1 bg-transparent border-none text-sm text-gray-400 placeholder-gray-700 focus:outline-none"
+             autocomplete="off">
+      <button onclick="event.stopPropagation(); sendTurn()"
+              class="px-4 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
+        行动
+      </button>
+      <span class="text-[10px] text-gray-600 ml-2">▲ 展开</span>
+    </div>
+  </div>
+
+  {# Expanded chat panel (slide-up, hidden by default) #}
+  <div id="chat-panel"
+       class="absolute bottom-0 left-0 right-0 z-30 bg-[#0a0806]/98 border-t-2 border-aged-gold hidden flex flex-col"
+       style="height:65%">
+    <div class="flex justify-between items-center px-4 py-2 border-b border-gray-800 text-xs">
+      <span class="text-aged-brown">会话记录</span>
+      <button class="text-gray-500 hover:text-gray-300" onclick="togglePanel(false)">▼ 收起</button>
+    </div>
+    <div id="chat-history" class="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+    </div>
+    <div class="px-4 py-2 border-t border-gray-800 flex gap-2">
+      <input type="text" id="user-input-expanded"
+             placeholder="输入你的行动..."
+             class="flex-1 bg-transparent border-none text-sm text-gray-400 placeholder-gray-700 focus:outline-none"
+             autocomplete="off">
+      <button onclick="sendTurn()"
+              class="px-6 py-2 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
+        行动
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function togglePanel(show) {
+    const panel = document.getElementById('chat-panel');
+    const image = document.getElementById('scene-image');
+    if (show) {
+      panel.classList.remove('hidden');
+      image.style.filter = 'brightness(0.4)';
+    } else {
+      panel.classList.add('hidden');
+      image.style.filter = '';
+    }
+  }
+  document.getElementById('scene-image').addEventListener('click', function(e) {
+    if (!document.getElementById('chat-panel').classList.contains('hidden')) {
+      togglePanel(false);
+    }
+  });
+  async function sendTurn() {
+    const compactInput = document.getElementById('user-input');
+    const expandedInput = document.getElementById('user-input-expanded');
+    const text = (compactInput.value || expandedInput.value).trim();
+    if (!text) return;
+    compactInput.value = '';
+    expandedInput.value = '';
+    compactInput.disabled = true;
+    document.getElementById('step-indicator').innerHTML = 'parse ...';
+    try {
+      const formData = new FormData();
+      formData.append('user_input', text);
+      const resp = await fetch('/api/game/turn', { method: 'POST', body: formData });
+      const html = await resp.text();
+      document.getElementById('compact-narrative').innerHTML = html;
+      const chatHistory = document.getElementById('chat-history');
+      if (!document.getElementById('chat-panel').classList.contains('hidden')) {
+        chatHistory.insertAdjacentHTML('beforeend', html);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+      }
+      htmx.ajax('GET', '/api/game/player-status', '#hud-stats');
+      htmx.ajax('GET', '/api/game/scene', '#hud-scene');
+    } catch(e) {
+      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-500">网络错误</span>';
+    }
+    compactInput.disabled = false;
+    compactInput.focus();
+  }
+  document.getElementById('user-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendTurn();
+  });
+  document.getElementById('user-input-expanded').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendTurn();
+  });
+  document.addEventListener('DOMContentLoaded', function() {
+    htmx.ajax('GET', '/api/game/player-status', '#hud-stats');
+    htmx.ajax('GET', '/api/game/scene', '#hud-scene');
+  });
+  (function connectWS() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(protocol + '//' + location.host + '/api/game/progress');
+    ws.onmessage = function(e) {
+      const data = JSON.parse(e.data);
+      if (data.step === 'complete') {
+        document.getElementById('step-indicator').innerHTML = '<span class="text-aged-gold">完成</span>';
+      } else {
+        document.getElementById('step-indicator').innerHTML =
+          data.step + ' <span class="' + (data.status === 'done' ? 'text-coc-green' : 'text-gray-500') + '">' +
+          (data.status === 'done' ? '✓' : '...') + '</span>';
+      }
+    };
+    ws.onclose = function() { setTimeout(connectWS, 2000); };
+  })();
+</script>
+{% endblock %}
