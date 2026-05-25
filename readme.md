@@ -474,3 +474,8 @@ pyinstaller -F --noconsole --name "TRPG助手" \
 - **NPC 跟随**：两种触发源（@npc_follow markup + 玩家请求），统一检查 `can_follow` + `follow_requirements` + 存活状态。跟随变化走固定预料。
 - **设计文档**：`docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
 - **实现计划**：`docs/superpowers/plans/2026-05-25-npc-entity-separation-plan.md`
+
+## 管线提示词重构 (2026-05-25)
+
+- **主管线 + 补充管线**：全部 18 个步骤的 system prompt 重构——角色定义、规则、输出格式、字段约束从 user prompt 移入 system prompt。User prompt 仅保留动态数据（章节文本、entity 列表、场景/角色名、库引用）。
+- **补充管线 Step 1 结构化**：`story` 输出从自由文本改为半结构化——综述（200字）、每场景可用互动、叙事线、driving force、涉及敌人（仅普通敌人库）。`enemy_names` 参数传入确保敌人名从库中选择。Step 2 消费的 story 自动组装为 markdown 格式。
