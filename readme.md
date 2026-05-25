@@ -511,7 +511,9 @@ src/               ← 游戏引擎（不导入 frontend/）
 - **运行时**：NPC 对话走独立 turn — talk_to(状态门+交互触发条件) → NPC parse(bound entities) → judge → enrich → curate，game_loop 统一 narrate。flash LLM 判定对话意图防止误触发。NPC AT 条件满足时动态注入主 parse，注入的 AT 标记为 `[NPC_AT]` 并在 parse prompt 中显示为独立 `【NPC 专属实体】` 区块。
 - **独立输出**：`run_turn()` 返回 `npcs_visible` (in_scene/following) 和 `npc_events` (固定预料通知)。
 - **NPC 跟随（简化）**：两种触发源（@npc_follow markup + 玩家请求），统一检查 `can_follow` + 存活状态。`follow_requirements` 保留为 Step 1a 生成的文本描述供将来 LLM 评估（TODO），当前运行时不做确定性求值。
-- **NPC 跟随 entity 生成**：`_apply_pending()` 中检测 `npc.following=True` 后注入 `EVT_NPC_FOLLOW` entity 的逻辑当前是死代码——必须先有 entity 触发 `@npc_follow` side effect 调用 `set_following()`，NPC 才会开始跟随。Step 2a/2b prompt 已允许生成跟随 entity（`@npc_follow`），但已生成的模组（如 `常暗更新`）不含此 entity。**TODO**：重新生成模组或运行时加兜底逻辑。
+- **NPC 跟随 entity 生成**：`_apply_pending()` 中检测 `npc.following=True` 后注入 `EVT_NPC_FOLLOW` entity 的逻辑当前是死代码——必须先有 entity 触发 `@npc_follow` side effect 调用 `set_following()`，NPC 才会开始跟随。Step 2a/2b prompt 已允许生成跟随 entity（`@npc_follow`），但已生成的模组（如 `常暗更新`）不含此 entity。
+  - **TODO**：重新生成模组或运行时加兜底逻辑。
+  - **注意**：跟随事件应在**单一环节**中确定性注入（如 Step 1a 直接写死 `@npc_follow` 字段，或在 `_assemble_l2` 中自动化补全），不要在多个步骤中各自解析跟随，避免重复和冲突。不要依赖 LLM 自己"理解"是否要生成跟随实体。
 - **run_pipeline.py CLI**：LLM call 日志目录使用语义化步骤名（如 `step1a_structured_extract`）替代编号。Step 3a+2.5+2.5b 三路并行。
 - **设计文档**：`docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
 - **实现计划**：`docs/superpowers/plans/2026-05-25-npc-entity-separation-plan.md`
