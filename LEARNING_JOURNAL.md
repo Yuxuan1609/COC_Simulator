@@ -23,5 +23,21 @@
 
 ## README 作为活文档
 - 已完成项目不应留在"待实现"列表里——要么删除，要么移入架构文档
-- G1-G8 全部 FIXED 后仍占据"已知缺口"表的一半行数，读者难以快速定位真正活跃的问题
 - 清理后"已知缺口"只留 G9/G10，"待优化"只留 O4-O7，并标注优先级
+
+## God Object 拆分的执行模式
+- 设计→Plan→Subagent-Driven Development 三步：设计文档冻结子系统清单和接口边界；Plan 写出每步的文件路径/精确代码/测试命令；每个 Task 一个独立 subagent（implement→spec review→code quality review）
+- 关键决策：RuntimeState 融合回 World 本体而非独立类——本质是对两个 dict 的 CRUD + 依赖查询，拆出去只是多一层间接
+- 向后兼容：用 `@property` 代理旧属性名（`world.game_time` → `world.clock.game_time`），给所有调用方预留迁移窗口
+- Worktree isolation 保证主分支不受破坏，merge 时仅 `side_effects.py` 一个冲突（新文件 add/add）
+
+## LLM Mock/Patch Wrapper 的 `**kw` 陷阱
+- 为日志拦截而写的 `call_deepseek` wrapper 如果有显式默认参数（如 `model=""`），会把空字符串传给真实 API——而 `model=""` 和 `model=None` 语义不同（后者在 `call_deepseek` 内回退到默认模型）
+- 正确做法：`def wrapper(prompt, json_mode=True, **kw)`，从 `kw` 中过滤已知合法参数，用 `filtered["json_mode"] = json_mode` 覆盖，其余按原名传递
+- 同样影响 mock wrapper——所有替换 `call_deepseek` 的 wrapper 都应遵循此模式
+
+## 测试 Harness 并行隔离模式
+- 每个 case 通过 `_init_game_instance()` 创建独立 World/Keeper/Narrator/Author 全套实例，不共用任何可变状态
+- `ThreadPoolExecutor` 在 worker 线程内调用 `init_game()`（创建在 worker 而非主线程），避免跨线程共享
+- Mock 模式用 `--mock` flag 切换：原 LLM path 保留，mock path 注入 `patch()` 替换所有 `call_deepseek` 调用点
+- 必须在 patches 列表中显式覆盖所有 agent 的 `call_deepseek`（keeper/intent_detector/author/narrator/time_agent），因为各 agent 用 `from llm import call_deepseek` 持有模块级引用，`patch("llm.call_deepseek")` 只影响 llm 模块属性，不影响已导入的本地引用
