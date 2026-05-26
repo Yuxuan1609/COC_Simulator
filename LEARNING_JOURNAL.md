@@ -26,10 +26,15 @@
 - 清理后"已知缺口"只留 G9/G10，"待优化"只留 O4-O7，并标注优先级
 
 ## God Object 拆分的执行模式
-- 设计→Plan→Subagent-Driven Development 三步：设计文档冻结子系统清单和接口边界；Plan 写出每步的文件路径/精确代码/测试命令；每个 Task 一个独立 subagent（implement→spec review→code quality review）
-- 关键决策：RuntimeState 融合回 World 本体而非独立类——本质是对两个 dict 的 CRUD + 依赖查询，拆出去只是多一层间接
-- 向后兼容：用 `@property` 代理旧属性名（`world.game_time` → `world.clock.game_time`），给所有调用方预留迁移窗口
-- Worktree isolation 保证主分支不受破坏，merge 时仅 `side_effects.py` 一个冲突（新文件 add/add）
+- 设计→Plan→Subagent-Driven Development 三步。关键教训：Plan 必须包含 notebook 和 pipeline wiring 的同步 Task——subagent 天然聚焦源文件，跨文件调用链（如 10+ 个 `parse_step*` 的 pipeline wiring）最容易遗漏
+
+## 字段合并的渐进收敛模式
+- 识别语义重叠 → 合并到信息更丰富的字段 → 更新全部 prompt/consumer → 删除空字段。本 session 合并了 5 个字段（clue/effect_type/irreversible_impact/reveal_narrative/enemy_ref→result/side_effects），数据模型从 13→11 字段
+- 适用于 LLM 生成层中多字段承载重叠信息且消费者无需区分来源的场景
+
+## 特殊字符标记作为 LLM 跨步骤通信协议
+- `##GRADED##`/`##END_名称:简述##` 嵌入 entity.result——Step 2 写入→Step 3a 验证→game_loop 解析。无需新增 schema 字段即可传递可选元数据
+- 代价：下游需正则扫描；标记格式变更需同步所有 producer/consumer
 
 ## LLM Mock/Patch Wrapper 的 `**kw` 陷阱
 - 为日志拦截而写的 `call_deepseek` wrapper 如果有显式默认参数（如 `model=""`），会把空字符串传给真实 API——而 `model=""` 和 `model=None` 语义不同（后者在 `call_deepseek` 内回退到默认模型）
@@ -41,3 +46,24 @@
 - `ThreadPoolExecutor` 在 worker 线程内调用 `init_game()`（创建在 worker 而非主线程），避免跨线程共享
 - Mock 模式用 `--mock` flag 切换：原 LLM path 保留，mock path 注入 `patch()` 替换所有 `call_deepseek` 调用点
 - 必须在 patches 列表中显式覆盖所有 agent 的 `call_deepseek`（keeper/intent_detector/author/narrator/time_agent），因为各 agent 用 `from llm import call_deepseek` 持有模块级引用，`patch("llm.call_deepseek")` 只影响 llm 模块属性，不影响已导入的本地引用
+
+## 两层状态模型（静态骨架 + 动态叠加层）
+- 将实体状态追踪拆为两层：`dependency_graph`（L2 定义的只读骨架，nodes + edges）和 `runtime_state`（运行时填充的动态叠加层，key = entity_id, value = {completed, result_tier, retries}）
+- 依赖解析走 graph edges（AND 语义），运行状态写 runtime_state（常规操作轻量），Author 介入改 graph（稀有操作重量）。graph 始终保持 L2 纯净性
+- 适用场景：任何需要"预定义结构 + 运行时动态状态"的场景——静态结构不随运行改变，动态状态频繁读写但不改变结构
+- 本 session 将旧 world.flags 字典（任意 key-value）全部迁移到此模式
+
+## NotImplementedError 作为可插拔系统接口
+- 预留函数直接抛 `NotImplementedError` 而非空函数——调用方明确知道"此处有接口但未实现"，避免静默跳过
+- 接口设计：先定 Input/Output 消息类型（dataclass），实现方消费标准输入返回标准输出，不感知上游来源
+- 战斗系统用了此模式：`CombatSystem.run_combat(CombatInit) → CombatResult`——上游主循环只传 CombatInit，不关心战斗内部回合逻辑
+
+## 子系统的并行合约
+- 多进程协作时，先定 data class 作为合约（CombatInit/CombatResult/EnemyInstance），各自独立实现，接口对齐即可合流
+- 战斗进入判定进程定义 CombatInit 输出，战斗机制进程定义 CombatInit 消费——两方只依赖消息类型，不直接引用对方的模块
+- 与"单一数据源"互补：合约是跨进程的共享数据格式，单一数据源是进程内的共享状态
+
+## NotebookEdit 脆弱性 — 优先 .py
+- NotebookEdit 在多次编辑后 cell id 会被 Jupyter 自动重生成，导致新内容覆盖错误 cell
+- 多次编辑的 notebook 应转为 .py 文件作为主入口，notebook 退化为调试辅助
+- 跨项目适用：任何 notebook 经 3+ 次编辑后应迁移到 .py

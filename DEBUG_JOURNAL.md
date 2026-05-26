@@ -69,10 +69,8 @@
 ## 14. auto_trigger 在 flavor_outcomes 和 ambient_changes 中重复
 - **症状/根因/解决**：AT 的 action 设为 "other" 导致同时进入两个列表 → 过滤条件加 `o.entity_type != "auto_trigger"`
 
-## 15. evaluate_trait_enhancement 多行 f-string 被 edit 工具截断
-- **症状**：Prompt 只剩第一行，LLM 收不到关键上下文。更危险的是——语法仍合法不报错，静默破坏
-- **根因**：edit 的 `oldString` 匹配多行 f-string 时只覆盖第一行 → 截断。**发生两次**——第二次在后续 commit 中无意重新截断
-- **解决/教训**：`oldString` 必须含足够长的唯一上下文；改后 `py_compile` + 随机读几行确认
+## 15. Edit 工具截断多行 f-string — 静默破坏
+- **症状/根因/解决**：Edit 的 `oldString` 匹配多行 f-string 只覆盖首行 → prompt 截断但语法合法不报错。**发生两次**。解决：`oldString` 含足够长唯一上下文；改后 `py_compile` 确认
 
 ## 16. Enrich prompt f-string 中未转义花括号导致 NameError
 - **症状**：`run_game.py` 运行时 `NameError: name '整合后���' is not defined`
@@ -87,10 +85,8 @@
 - **根因**：Step 2.5 不生成 initial_scene + `_bind_npc_entities()` 不设 scene + init_game 死代码读不存在的 `npcs` 字段
 - **解决/教训**：从 entity source_scene 推断 NPC 位置；新架构上线前必须端到端 smoke test
 
-## 19. 18 个管线步骤的 System/User Prompt 批量重构
-- **症状/根因**：所有 build 函数把角色定义/规则/JSON Schema 和动态数据混在 user prompt 中，每次重复发送
-- **解决**：13 步主管线 + 4 步补充管线逐一拆分——静态内容移入 STEP*_SYSTEM，user prompt 仅保留动态数据
-- **关联**：`src/module_designer/layered_parser.py`；`src/module_designer/supplement_pipeline.py`
+## 19. 18 个管线步骤 System/User Prompt 批量拆分
+- **症状/根因/解决**：所有 build 函数把角色定义/规则/Schema 混在 user prompt → 拆分为 STEP*_SYSTEM + 纯数据 user prompt（13+4 步）
 
 ## 20. Edit 工具替换中文代码块时引入全角引号
 - **症状**：~180 行替换后所有 Python 字符串引号变全角 `""`，`SyntaxError: invalid character`
@@ -103,15 +99,64 @@
 
 ## 22. LLM logging wrapper 导致 NPC 对话静默失败
 
-- **症状**：test harness 中 NPC 对话返回"（京山 人吉 沉默不语。）"（fallback 文本），即使 LLM response 正常
-- **根因**：两层 — (a) wrapper 有显式默认参数 `model=""`，空字符串传给 `call_deepseek` 后被 `_model = model if model is not None else "deepseek-v4-pro"` 当作合法模型名，API 返回错误；(b) `NPCManager.talk_to()` 用 `except Exception` 静默吞掉所有异常，返回 fallback
-- **解决**：wrapper 改为 `def _logging_wrapper(prompt, json_mode=True, **kw)` — 移除所有显式默认参数，从 `kw` 中提取 `system` 用于日志，过滤 `allowed = {"json_mode", "model", "system", "reasoning_effort", ...}` 并只传这些到真实 API。`json_mode` 覆盖 `kw` 中的值（以防调用方在 kw 中传了不同的 json_mode）
-- **关键教训**：`call_deepseek` 用 `is not None` 判断默认值（而非 falsy 检查），所以空字符串 `""` 和 `None` 行为完全不同。任何 wrapper 都不应给这类参数设空字符串默认值
-- **关联**：`tests/test_harness_stability.py:78-100`；`tests/test_harness_parallel.py:85-107`；已在 LEARNING_JOURNAL 中记录了通用模式
+- **症状**：test harness 中 NPC 对话返回 fallback 文本，LLM response 正常但被丢弃
+- **根因**：(a) wrapper 有 `model=""` 默认参数，空字符串 vs None 在 `call_deepseek` 的 `is not None` 检查中行为不同；(b) `NPCManager.talk_to()` 用 `except Exception` 静默吞异常
+- **解决**：wrapper 改为 `def _logging_wrapper(prompt, json_mode=True, **kw)`——移除默认参数，从 `kw` 过滤合法参数传 API
+- **教训**：`is not None` 判断下空字符串 `""` 和 `None` 完全不同，wrapper 不应给这类参数设空字符串默认值
 
-## 23. NPC 名称中空格导致对话路由不匹配
+## 23. Subagent 遗漏 layered_pipeline.py — chapters 未传播
+- **症状**：Subagent 完成 `layered_parser.py` 的 `condensed_text→chapters` 转换，但 `layered_pipeline.py` 中 10+ 个 `parse_step*(condensed_text,...)` 调用未更新，`'str' object has no attribute 'get'`
+- **根因**：pipeline wiring 跨 10+ 个调用点，subagent 逐个替换时 API 超时未完成
+- **解决**：grep 残留 `condensed_text` → 逐个 `replace_all`。事后 audit grep 验证签名一致
+- **教训**：prompt 签名变更必须在 Plan 末尾加 pipeline audit Task
+
+## 24. Notebook chapters 同步滞后
+- **症状**：两个 notebook 仍传 `condensed_text` 字符串给期望 `chapters: dict` 的函数
+- **根因**：Plan 中 notebook Task 被 subagent 跳过；`_parser_layered_export.py`（纯 Python export）被忽略
+- **解决**：Python 脚本注入 `chapters = _parse_condensed_chapters()` + 替换所有调用点（含首参/尾参）
+- **教训**：notebook 不独立为 Task——每个源码 Task 同步更新 notebook
+
+## 25. `git add -A` 提交 debug 产物
+- **症状/解决**：`git add -A` 提交了 `data/debug/` 整个目录 → 用 `git add <explicit paths>` 重新提交。`data/debug/` 应加入 `.gitignore`
+- **教训**：始终用显式路径而非 `git add -A`
 
 - **症状**：test harness Case B Turn 2 用"京山人吉"（无空格）不触发 NPC 对话，而 data profile 中是"京山 人吉"（有空格）
 - **根因**：`keeper.py` 的 NPC 路由用 `npc.name in raw` 做裸子串匹配，容错性极低
 - **解决**：test input 中添加空格（"京山 人吉，..."）。长期方案见 Debug #1 — parse 层 `npc_interact` 类型
 - **关联**：`tests/test_harness_stability.py:135`；`tests/test_harness_parallel.py:250,349`
+
+## 26. world.flags 移除后残留引用链
+- **症状**：15 个 test harness case 全部 `AttributeError: 'ScenarioWorld' object has no attribute 'flags'`
+- **根因**：`Task 10` 删除 `self.flags` 后，`prompts.py._build_world_state()` 和 `keeper.py` world_snapshot 仍引用 `world.flags.items()` 和 `self.world.flags`
+- **解决**：grep 全量扫描 `\.flags` → 逐一替换为 `runtime_state`，prompts 改为展示已完成实体列表，keeper world_snapshot 改为 runtime_state 摘要
+- **关联**：`src/prompts.py:104`；`src/game/agents/keeper.py:261`
+
+## 27. prompts.py 中文引号感染 ASCII 引号 (复发)
+- **症状**：`SyntaxError: invalid character ' (U+201C)` — ~50 行 `parse_narrative_output()` 函数体全部引号变全角 `""`
+- **根因**：Edit 工具替换多行中英文混合代码块时，中文上下文中的全角引号感染 Python 字符串。与 Debug #20 同类问题
+- **解决**：用 `bash "python -c 'content.replace(chr(0x201C),...)'"` 写入文件修复。事后验证 `compile()`。教训：大块代码替换优先 `Write` 而非 `Edit`
+- **关联**：`src/prompts.py:231-277`
+
+## 28. NotebookEdit 导致 run_game 函数 def 行丢失
+- **症状**：notebook cell 只剩下函数 body（`initial = run_turn(...)` 开始），缺失 `def run_game(...):` 签名和初始化代码。`NameError: name 'game' is not defined`
+- **根因**：NotebookEdit 的 `cell_id` 引用在多次编辑后 cell id 被 Jupyter 自动重生成，新旧 id 不一致导致替换覆盖了错误的 cell 内容
+- **解决**：放弃 notebook 格式，直接写 `run_game.py` 纯 Python 文件。Notebook 作为调试辅助不再作为主入口
+- **关联**：`notebooks/notebook_simplified.ipynb` → `run_game.py`
+
+## 29. Windows GBK 终端 emoji 崩溃
+- **症状**：`UnicodeEncodeError: 'gbk' codec can't encode character '✓'` — test harness print 时 `✓`/`✗` emoji 崩溃
+- **根因**：Windows 中文终端默认 GBK 编码，不支持大部分 Unicode 符号
+- **解决**：所有 print 中 emoji 替换为 ASCII 标记（`[PASS]`/`[FAIL]`），字符串切片做安全保护
+- **关联**：`tests/game_loop_harness.py:299-306`
+
+## 30. Combat 系统 `skill_used` vs `skill_name` 字段不匹配
+- **症状**：`AttributeError: 'Weapon' object has no attribute 'skill_used'`
+- **根因**：`Investigator.models.Weapon` 用 `skill_name`，`combat.py._get_player_actions` 访问 `w.skill_used`
+- **解决**：combat.py 改为 `getattr(w, 'skill_name', '') or getattr(w, 'skill_used', '')` 兼容两种命名
+- **关联**：`src/game/combat.py:141`；`tests/test_combat_harness.py:55`
+
+## 31. DerivedStats 无 LUCK 字段
+- **症状**：`TypeError: DerivedStats.__init__() got an unexpected keyword argument 'LUCK'`
+- **根因**：`DerivedStats` 只有 HP/MP/SAN/SAN_MAX/MOV/DB/BUILD/DODGE，LUCK 在 `Stats` 上
+- **解决**：删除 `DerivedStats(LUCK=...)` 参数
+- **关联**：`src/investigator/models.py:27`；`tests/test_combat_harness.py:55`
