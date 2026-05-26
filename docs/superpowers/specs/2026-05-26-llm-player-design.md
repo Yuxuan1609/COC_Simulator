@@ -45,11 +45,14 @@ stress_profile.json    — 共享配置（策略 + 审核重点）
 5. 当 stuck 时尝试非直接方案
 
 [压力测试模式]
-当前焦点系统: {focus_systems}
-- NPC: 积极与 NPC 对话、尝试跟随、测试态度变化边界
-- Enemy: 尝试进入/退出战斗、对峙、逃跑等路径
-- TimeAgent: 尝试等待、休息、rush 等时间操作
-- Author: 尝试出人意料的动作、边界输入（空输入、不合理动作）
+当前测试目标: {player_strategy}
+- NPC: 积极对话、尝试跟随、测试态度变化
+- Enemy: 进入/退出战斗、对峙、逃跑
+- Boss: 触发遭遇条件
+- Combat: 不同战斗动作（攻击/闪避/逃跑）
+- TimeAgent: 等待、休息、rush
+- Author: 出人意料动作、边界输入（空输入、不合理动作）
+注意：不要试图测试不存在的系统——只操作游戏内可执行的行动。
 
 角色扮演要求:
 - 行动符合调查员性格和当前 SAN 状态
@@ -217,10 +220,12 @@ python llm_player.py --profile stress_npc.json # 自定义 stress profile
 
 ```json
 {
-  "focus_systems": [
+  "player_strategy": ["NPC", "Enemy", "Boss", "Combat", "TimeAgent", "Author"],
+  "audit_targets": [
     "NPC", "Enemy", "Boss", "Combat",
     "TimeAgent", "Author", "IntentDetector",
-    "SideEffects", "Memory", "DependencyGraph"
+    "SideEffects", "Memory", "DependencyGraph",
+    "Judge", "Narrator"
   ],
   "player_config": {
     "max_turns": 60,
@@ -291,21 +296,21 @@ logs/llm_player/<ts>/
 
 审计脚本覆盖全部 11 个子系统：
 
-| 类别 | 子系统 | 审计重点 |
-|------|--------|---------|
-| 核心管线 | Keeper | parse 匹配率、enrich 质量、curate 组合 |
-| 核心管线 | Narrator | 叙事一致性、空洞检测 |
-| 核心管线 | Judge | 检定通过率、失败惩罚触发、trait enhancement |
-| NPC | NPCManager | 对话调用、跟随切换、态度状态机 |
-| 战斗 | EnemyManager | spawn/combat/exit 生命周期、对峙 |
-| 战斗 | BossManager | 触发条件、combat_init、completed 标记 |
-| 战斗 | CombatSystem | 回合逻辑、伤害/护甲、win/loss/flee |
-| 时间 | TimeAgent | 时间推进、pressure 激活 |
-| 扩展 | Author | Patch/StructuralEdit 触发、去重 |
-| 扩展 | IntentDetector | 意图检测 false positive/negative |
-| 机制 | SideEffects | 7 种 @markup 全部触发验证 |
-| 机制 | DependencyGraph | 依赖链、cascade 事件、循环检测 |
-| 状态 | MemoryManager | 压缩质量、key_findings 记录 |
+| 类别 | 子系统 | 玩家策略 | 审计重点 |
+|------|--------|---------|---------|
+| 核心管线 | Keeper | — | parse 匹配率、enrich 质量 |
+| 核心管线 | Narrator | — | 叙事一致性、空洞检测 |
+| 核心管线 | Judge | — | 检定通过率、失败惩罚、trait enhancement |
+| NPC | NPCManager | ✅ 积极互动 | 对话调用、跟随切换、态度状态机 |
+| 战斗 | EnemyManager | ✅ 进入战斗 | spawn/combat/exit 生命周期、对峙 |
+| 战斗 | BossManager | ✅ 触发条件 | combat_init、completed 标记 |
+| 战斗 | CombatSystem | ✅ 战斗动作 | 回合逻辑、伤害/护甲、win/loss/flee |
+| 时间 | TimeAgent | ✅ 时间操作 | 时间推进、pressure 激活 |
+| 扩展 | Author | ✅ 边界输入 | Patch/StructuralEdit 触发、去重 |
+| 扩展 | IntentDetector | —（Author 间接触发） | false positive/negative |
+| 机制 | SideEffects | —（entity 执行触发） | 7 种 @markup 全部验证 |
+| 机制 | DependencyGraph | —（后端判定） | 依赖链、cascade 事件 |
+| 状态 | MemoryManager | —（后端压缩） | 压缩质量、key_findings |
 
 ## Out of Scope
 
