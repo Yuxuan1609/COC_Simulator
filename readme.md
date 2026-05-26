@@ -263,9 +263,9 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | U3 | Author "other 行为" 意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。建议引入二次确认（Keeper 反问玩家）或实体匹配置信度阈值 |
 | U4 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法 |
 | U5 | 世界状态系统 | ✅ 序列化已实现（G9/G10，全部子系统 `to_dict/from_dict`）。待完成：基于 Logger 的世界状态解读模型（`TurnLogger` 数据已就绪） |
-| U6 | 技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，限制未来多人扩展 |
-| U7 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
-| U8 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化——角色卡/物品/技能/属性/SAN 跨模组继承；(2) 模组 Patch 永久化——Author StructuralEdit 持久写入；(3) 调查员经历写入——每模组 narrative 经历摘要累积；(4) 多模组拼接战役——模组队列、结局分支路由、全局世界状态跨模组延续 |
+| U6 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
+| U7 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化；(2) 模组 Patch 永久化；(3) 调查员经历写入；(4) 多模组拼接战役——模组队列、结局分支路由、全局世界状态延续 |
+| U8 | 多人模式（Hotseat） | 同机多人轮流操作，各自独立调查员角色卡，共享世界状态。类似传统 TRPG 桌面局的数字版——KP 主持，多个调查员轮流输入行动 |
 
 ## 设计文档
 
