@@ -6,12 +6,65 @@
     调查员创建
   </h1>
 
+  {# Hidden fields for cross-step data persistence #}
+  <form id="char-form" style="display:none">
+    {% for s in stats %}
+    <input type="hidden" id="stat-{{ s }}" name="stat_{{ s }}" value="">
+    {% endfor %}
+    <input type="hidden" id="stat-HP" name="stat_HP" value="">
+    <input type="hidden" id="stat-MP" name="stat_MP" value="">
+    <input type="hidden" id="stat-SAN" name="stat_SAN" value="">
+    <input type="hidden" id="stat-DODGE" name="stat_DODGE" value="">
+    <input type="hidden" id="stat-DB" name="stat_DB" value="">
+    <input type="hidden" id="stat-BUILD" name="stat_BUILD" value="">
+    <input type="hidden" id="skills-json" name="skills_json" value="">
+  </form>
+
   {# Progress bar #}
   <div class="flex justify-between mb-8 px-8" id="wizard-progress">
     <span id="step-dot-1" class="text-sm px-4 py-1 rounded text-aged-gold bg-aged-brown/20 border border-aged-gold/30">1. 基本信息 & 属性</span>
     <span id="step-dot-2" class="text-sm px-4 py-1 rounded text-gray-600">2. 职业 & 技能</span>
     <span id="step-dot-3" class="text-sm px-4 py-1 rounded text-gray-600">3. 预览 & 导出</span>
   </div>
+
+  <script>
+  function exportCharacter() {
+    const form = document.getElementById('char-form');
+    const fd = new FormData();
+    // Gather visible step fields
+    document.querySelectorAll('#step-content input[name], #step-content textarea[name], #step-content select[name]').forEach(function(el) {
+      if (el.name) fd.append(el.name, el.value);
+    });
+    // Gather hidden stat fields
+    form.querySelectorAll('input[type=hidden]').forEach(function(el) {
+      if (el.value) fd.append(el.name.replace('-', '_'), el.value);
+    });
+    fd.set('name', document.querySelector('#step-content input[name="name"]')?.value || '');
+    fd.set('age', document.querySelector('#step-content input[name="age"]')?.value || '25');
+    fd.set('gender', document.querySelector('#step-content select[name="gender"]')?.value || '');
+    fd.set('occupation', document.querySelector('#step-content select[name="occupation"]')?.value || '');
+    fd.set('appearance', document.querySelector('#step-content textarea[name="appearance"]')?.value || '');
+    fd.set('description', document.querySelector('#step-content textarea[name="description"]')?.value || '');
+    fd.set('backstory', document.querySelector('#step-content textarea[name="backstory"]')?.value || '');
+
+    fetch('/character/export', { method: 'POST', body: fd })
+      .then(function(r) {
+        if (!r.ok) throw new Error('Export failed');
+        return r.blob();
+      })
+      .then(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (fd.get('name') || 'character') + '_character.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(function(e) {
+        alert('导出失败: ' + e.message);
+      });
+  }
+  </script>
 
   {# Step content (loaded via HTMX) #}
   <div id="step-content"

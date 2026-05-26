@@ -38,9 +38,7 @@
 function loadPath() {
   const path = document.getElementById('manual-path').value.trim();
   if (!path) return;
-  fetch('/editor/load?path=' + encodeURIComponent(path))
-    .then(r => r.text())
-    .then(html => { document.getElementById('json-tree').innerHTML = html; });
+  htmx.ajax('GET', '/editor/load?path=' + encodeURIComponent(path), '#json-tree');
 }
 </script>
 {% endblock %}

@@ -2,16 +2,16 @@
 Prompt 构建器 —— 为 LLM 调用链构建结构化 prompt。
 
 所有 build_* 函数只负责构造 prompt 字符串，不发起 LLM 调用。
-通过 set_prompt_log_file() 配置日志输出路径。
+通过 set_prompt_log_dir() 配置日志输出路径。
 """
 
 from __future__ import annotations
 import json
 import os
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from config import SHOW_NON_TRIGGERABLE
+from config import SHOW_NON_TRIGGERABLE, SHOW_COMPLETED
 
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld
@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 # ── 日志配置 ──
 
 _log_dir: str | None = None
-_log_file: str | None = None  # backward compat for log_skill_result
+
+
 _current_round: int = 0
 
 
@@ -33,15 +34,10 @@ def set_current_round(n: int):
 
 def set_prompt_log_dir(log_dir: str):
     """设置 prompt 日志目录。所有 build_* 函数会将 prompt 写入该目录下的独立文件。"""
-    global _log_dir, _log_file
+    global _log_dir
     _log_dir = log_dir
-    _log_file = log_dir  # for backward compat in log_skill_result
     os.makedirs(_log_dir, exist_ok=True)
 
-
-def set_prompt_log_file(path: str):
-    """向后兼容包装器，内部转为目录模式。"""
-    set_prompt_log_dir(path)
 
 
 def _sanitize_label(label: str) -> str:
@@ -76,8 +72,6 @@ def log_skill_result(text: str, log_path: str | None = None):
         path = log_path
     elif _log_dir:
         path = os.path.join(_log_dir, "skill_checks.txt")
-    elif _log_file:
-        path = _log_file
     else:
         return
     import threading
@@ -170,65 +164,6 @@ def _build_world_state(snap: dict) -> str:
     flags_str = ", ".join(completed) or "（无）"
     return f"""已触发事件：{triggered or '（无）'}
 世界标记：{flags_str}"""
-
-# ── 世界更新 ──
-
-def build_action_world_update(world: ScenarioWorld, action_result: str, user_input: str) -> str:
-    """基于动作结果更新当前场景 description"""
-    prompt = f"""你是一位TRPG模组写作者。根据刚刚发生的玩家行动，对模组背景设定和当前场景描述进行文学性更新。
-
-【当前背景设定】
-{world.background_story}
-
-【当前场景描述】
-{world.get_current_description()}
-
-【玩家输入】
-{user_input}
-
-【本轮行动结果】
-{action_result}
-
-要求：
-- description：如果当前场景发生了可见变化（物品移动、痕迹留下、环境改变等），更新描述使其反映新的场景状态；如果场景未发生可见变化，description 原样返回【当前场景描述】
-- 不得添加未实际发生的实质性信息，避免误导
-- 保持原有世界观和恐怖氛围
-- 直接输出 JSON
-- 【当前场景描述】是需要修改的描述，【当前背景设定】仅供参考，判断核心来自【本轮行动结果】和【玩家输入】
-返回 JSON：
-{{
-  "description": "更新后的【当前场景描述】描述"
-}}"""
-    _show_prompt("World Update — Action", prompt)
-    return prompt
-
-
-def build_event_world_update(world: ScenarioWorld, events_result: str) -> str:
-    """基于触发的事件结果更新 abstract"""
-    prompt = f"""你是一位TRPG模组写作者。根据刚刚触发的不可逆事件，对模组背景设定和当前场景描述进行文学性更新。
-
-【当前背景设定】
-{world.background_story}
-
-【当前场景描述】
-{world.get_current_description()}
-
-【本轮触发事件】
-{events_result}
-
-要求：
-- abstract：将本轮触发的事件及其不可逆影响以文学性语言融入【当前背景设定】中，采用累积追加的方式
-- 不得添加未实际发生的实质性信息，避免误导
-- 保持原有世界观和恐怖氛围
-- 直接输出 JSON
-- 【当前背景设定】是需要修改的描述，【当前场景描述】仅供参考，判断核心来自【本轮触发事件】
-返回 JSON：
-{{
-  "abstract": "更新后的【当前背景设定】",
-}}"""
-    _show_prompt("World Update — Event", prompt)
-    return prompt
-
 
 # ── 叙事输出解析 ──
 
@@ -324,11 +259,12 @@ def parse_narrative_output(response: dict | str) -> tuple[str, str, str]:
 
 
 
-def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str]]:
-    """Build triggerable / non-triggerable entity lists for current scene + events.
+def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str], list[str], list[str]]:
+    """Build triggerable / non-triggerable / completed entity lists.
 
     Returns (triggerable_scene, non_triggerable_scene, triggerable_npc,
-             non_triggerable_npc, triggerable_events, non_triggerable_events).
+             non_triggerable_npc, triggerable_events, non_triggerable_events,
+             completed_scene, completed_npc).
     NPC-injected ATs are separated from scene ATs for prompt clarity.
     """
     node = world._current_node()
@@ -363,15 +299,11 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
 
     def _fmt_inter(entity, prefix: str = "[INTERACT]") -> str:
         """Format an interaction entity."""
-        done = world.completed_interactions.get(world.current_location, set())
-        status = "（已完成）" if entity.name in done else ""
         _, soft, _ = _split_req(entity)
         parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
                  f"trigger=\"{entity.trigger}\""]
         if soft:
             parts.append(f"条件=\"{soft}\"")
-        if status:
-            parts.append(status)
         return f"  {prefix} " + " ".join(parts)
 
     def _fmt_at(entity, prefix: str = "[AUTO_TRIGGER]") -> str:
@@ -395,11 +327,16 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                 for e in npc.bound_auto_triggers:
                     npc_bound_at_ids.add(e.get("id", ""))
 
+        completed_scene: list[str] = []
+        completed_npc: list[str] = []
+
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
             is_npc = at.id in npc_bound_at_ids or at.id in npc_injected_ids
             line = _fmt_at(at, "[NPC_AT]" if is_npc else "[AUTO_TRIGGER]")
-            if is_npc:
+            if world.is_entity_completed(at.id):
+                (completed_npc if is_npc else completed_scene).append(line)
+            elif is_npc:
                 if met:
                     trig_npc.append(line)
                 else:
@@ -413,7 +350,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             _, _, met = _split_req(inter)
             is_npc = inter.id in npc_bound_interact_ids or inter.id in npc_injected_ids
             line = _fmt_inter(inter, "[NPC_INTERACT]" if is_npc else "[INTERACT]")
-            if is_npc:
+            if world.is_entity_completed(inter.id):
+                (completed_npc if is_npc else completed_scene).append(line)
+            elif is_npc:
                 if met:
                     trig_npc.append(line)
                 else:
@@ -445,7 +384,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         else:
             nontrig_events.append(line)
 
-    return trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events
+    return trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events, completed_scene, completed_npc
 
 
 def build_keeper_parse_prompt(world, user_input: str) -> str:
@@ -459,13 +398,16 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     scene_state = _build_scene_state(snap)
     time_block = _build_time_block(snap)
 
-    trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events = _build_entity_lines(world)
+    (trig_scene, nontrig_scene, trig_npc, nontrig_npc,
+     trig_events, nontrig_events, completed_scene, completed_npc) = _build_entity_lines(world)
 
     scene_entity_parts = []
     if trig_scene:
         scene_entity_parts.append("【可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(trig_scene))
     if SHOW_NON_TRIGGERABLE and nontrig_scene:
         scene_entity_parts.append("【暂不可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(nontrig_scene))
+    if SHOW_COMPLETED and completed_scene:
+        scene_entity_parts.append("【已完成 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(completed_scene))
     scene_entity_text = "\n\n".join(scene_entity_parts) if scene_entity_parts else "（无）"
 
     npc_entity_parts = []
@@ -473,6 +415,8 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
         npc_entity_parts.append("【可触发 — NPC 专属】\n" + "\n".join(trig_npc))
     if SHOW_NON_TRIGGERABLE and nontrig_npc:
         npc_entity_parts.append("【暂不可触发 — NPC 专属】\n" + "\n".join(nontrig_npc))
+    if SHOW_COMPLETED and completed_npc:
+        npc_entity_parts.append("【已完成 — NPC 专属】\n" + "\n".join(completed_npc))
     npc_entity_text = "\n\n".join(npc_entity_parts) if npc_entity_parts else ""
 
     event_parts = []

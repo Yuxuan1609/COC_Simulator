@@ -24,23 +24,52 @@
 
   <div class="mb-4">
     <label class="block text-xs text-gray-500 mb-1">外貌描述 <span class="text-gray-700">(输入 /llm 自动生成)</span></label>
-    <textarea name="appearance" rows="2" placeholder="外貌描述..."
+    <textarea name="appearance" id="input-appearance" rows="2" placeholder="外貌描述..."
               class="w-full bg-[#1a150c] border border-[#4a3820] rounded px-3 py-2 text-sm text-gray-300 focus:border-aged-gold focus:outline-none resize-none"></textarea>
   </div>
   <div class="mb-6">
     <label class="block text-xs text-gray-500 mb-1">个人描述 <span class="text-gray-700">(输入 /llm 自动生成)</span></label>
-    <textarea name="description" rows="2" placeholder="个人描述..."
+    <textarea name="description" id="input-description" rows="2" placeholder="个人描述..."
               class="w-full bg-[#1a150c] border border-[#4a3820] rounded px-3 py-2 text-sm text-gray-300 focus:border-aged-gold focus:outline-none resize-none"></textarea>
   </div>
 
   <h2 class="text-lg text-aged-gold mb-4 border-l-2 border-aged-gold pl-3">属性掷骰</h2>
   <button hx-post="/character/roll" hx-target="#roll-result" hx-swap="innerHTML"
+          hx-on--after-request="charStoreStats()"
           class="px-6 py-2 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30 mb-4">
     掷骰生成
   </button>
   <div id="roll-result" class="mb-6">
     <p class="text-sm text-gray-600">点击上方按钮生成属性</p>
   </div>
+
+<script>
+function charStoreStats() {
+  const cards = document.querySelectorAll('#roll-result .stat-card');
+  cards.forEach(function(card) {
+    const text = card.querySelector('.text-xs').textContent;
+    const stat = text.match(/\((\w+)\)/);
+    const val = card.querySelector('.text-2xl').textContent;
+    if (stat) document.getElementById('stat-' + stat[1]).value = val;
+  });
+  const derived = document.querySelectorAll('#roll-result .grid-cols-4 div');
+  derived.forEach(function(d) {
+    const pair = d.textContent.trim().split(' ');
+    const key = pair[0], val = pair[1];
+    if (['HP','MP','SAN','DODGE','DB','BUILD'].includes(key))
+      document.getElementById('stat-' + key).value = val;
+  });
+}
+function charStoreSkills() {
+  const inputs = document.querySelectorAll('#skills-list input[type=number]');
+  const data = {};
+  inputs.forEach(function(inp) {
+    const label = inp.closest('.flex')?.querySelector('span')?.textContent?.split('基础')[0]?.trim();
+    if (label) data[label] = inp.value;
+  });
+  document.getElementById('skills-json').value = JSON.stringify(data);
+}
+</script>
 
   <div class="flex justify-end">
     <button hx-get="/character/step/2" hx-target="#step-content" hx-swap="innerHTML"
@@ -50,3 +79,23 @@
     </button>
   </div>
 </div>
+
+<script>
+document.addEventListener('input', function(e) {
+  if (e.target.id === 'input-appearance' || e.target.id === 'input-description') {
+    const val = e.target.value;
+    if (val.endsWith('/llm')) {
+      e.target.value = val.slice(0, -4).trim();
+      const type = e.target.id === 'input-appearance' ? 'appearance' : 'description';
+      const prompt = e.target.value || type;
+      const formData = new FormData();
+      formData.append('type', type);
+      formData.append('prompt', prompt);
+      fetch('/character/generate-description', { method: 'POST', body: formData })
+        .then(r => r.text())
+        .then(text => { e.target.value = text; })
+        .catch(() => { e.target.value = '[生成失败]'; });
+    }
+  }
+});
+</script>

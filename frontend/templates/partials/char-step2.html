@@ -2,14 +2,21 @@
   <h2 class="text-lg text-aged-gold mb-4 border-l-2 border-aged-gold pl-3">职业与技能</h2>
   <div class="mb-4">
     <label class="block text-xs text-gray-500 mb-1">职业</label>
-    <select name="occupation" class="w-full bg-[#1a150c] border border-[#4a3820] rounded px-3 py-2 text-sm text-gray-300">
+    <select name="occupation"
+            hx-get="/character/skills-list?occupation="
+            hx-trigger="change"
+            hx-target="#skills-list"
+            hx-swap="innerHTML"
+            hx-params="occupation"
+            class="w-full bg-[#1a150c] border border-[#4a3820] rounded px-3 py-2 text-sm text-gray-300">
       <option value="">选择职业...</option>
       {% for occ in occupations %}
       <option value="{{ occ.name }}">{{ occ.name }}</option>
       {% endfor %}
     </select>
   </div>
-  <div id="skills-list" class="text-sm text-gray-600">选择职业后显示技能列表</div>
+  <div id="skills-list" class="text-sm text-gray-600"
+       hx-on--htmx-after-swap="charStoreSkills()">选择职业后显示技能列表</div>
 
   <div class="flex justify-between mt-6">
     <button hx-get="/character/step/1" hx-target="#step-content" hx-swap="innerHTML"

@@ -22,8 +22,9 @@ JUDGMENT_TIER2_ENABLED = True
 SHOW_NON_TRIGGERABLE = True
 """Keeper Parse prompt 是否展示未满足条件的实体。"""
 
-AT_WORLD_ENABLED = True
-"""管线是否生成 AT_WORLD 世界初始化自动触发。"""
+SHOW_COMPLETED = False
+"""Keeper Parse prompt 是否展示已完成的实体。默认关闭，已完成实体从可触发列表中移除。"""
+
 
 INJECT_L3_WR0 = True
 """管线是否向 L3 的 world_rules 注入 WR0 条目。"""

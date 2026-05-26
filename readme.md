@@ -176,8 +176,7 @@ parse → judge 之后、curate → narrator 之前的软缓冲层。职责是**
 - 独立于 Keeper 管线，接收 `CombatInit`，返回 `CombatResult`
 - 伤害掷骰（1D6+DB 等公式）、护甲减免、D100 技能检定（格斗/射击/闪避）
 - 先攻排序、逐轮处理、玩家/敌人动作编排
-- 10 个单元测试（`tests/test_combat.py`），combat harness 集成测试（`tests/test_combat_harness.py`）
-- **TODO**: 战斗 LLM 增强（`COMBAT_LLM_ENHANCEMENT` 开关在 `src/config.py`，# 174 `_generate_combat_narrative()` 为占位；`_resolve_boss_action_stub` 当前镜像常规敌人逻辑，未来接入 `boss_mechanics` 做 LLM 行为决策）
+
 
 **Boss 战斗系统**：
 
@@ -191,7 +190,7 @@ Boss 与普通敌人（Enemy）并行管理，但设计上独立：
 | 实例 | 持久化 `EnemyInstance`（注册到 EnemyManager） | 瞬态 `EnemyInstance`（战斗后丢弃） |
 | 击败状态 | `EnemyManager._dead` | `runtime_state[boss_id].completed` |
 | 战斗 | `CombatSystem.run_combat()` | 复用 `CombatSystem.run_combat()` |
-| 特殊机制 | `combat_behavior` 字段 | `boss_mechanics` 字段（**TODO: LLM 增强暂未实现**） |
+| 特殊机制 | `combat_behavior` 字段 | `boss_mechanics` 字段 |
 
 **Boss 事件流**：`keeper.process_turn()` 内
 1. **`at` 触发**（场景进入后）→ 依赖图事件触发后立即检查
@@ -221,13 +220,13 @@ Boss 与普通敌人（Enemy）并行管理，但设计上独立：
 
 ### `src/module_designer/` — 三层信息引擎
 
-渐进式解析流程（13 次 LLM 调用）：
+渐进式解析流程（12 次 LLM 调用）：
 
 1. Step 1a/1b — 结构化提取 + 精修模组 (2 并行)。Step 1a 同时输出敌人/武器/Boss 约束
 2. Step 2a — Interactions + scene_movements
-3. Step 2b/2c — Events + AT + L1 + L3 (4 并行)。AT 自动生成 AT_WORLD 世界初始化实体
-4. Step 3a ∥ Step 2.5 ∥ Step_boss — 去重/冲突/结局验证 ∥ NPC 行为档案 ∥ Boss 遭遇实体 (3 并行)
-5. 组装 L2 → Step 3b: L1↔L2↔L3 交叉核对
+3. Step 2b/2c — Events+AT (合并) ∥ L1 ∥ L3 (3 并行)。AT 自动生成 AT_WORLD 世界初始化实体
+4. Step 3a ∥ Step 2.5 — 去重/冲突/结局验证 ∥ NPC 档案+实体归属 (2 并行)
+5. 组装 L2 → Step 3b: L1↔L2↔L3 交叉核对（确定性优先 + LLM gap-fill）
 6. Step 3.5 — 依赖图构建 + 循环检测
 7. Phase 2 — type 标准化 + side_effects → `@函数(参数)` (7 种：spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow)
 
@@ -251,34 +250,23 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 | P | # | 问题 | 说明 |
 |---|----|------|------|
-| **1** | O6 | Harness 整合 + LLM 模拟真人测试 | ♻ 部分完成。旧 `game_loop_harness.py` 已由 `test_harness_parallel.py`（17 case，并行）和 `test_harness_stability.py`（2 case，串行多轮）替代。Parallel harness 已稳定通过。Stability harness 仍需调整 LLM 输入输出响应质量。Escalation harness 触发条件苛刻，暂不整合。远期：LLM-as-player 模式自动驱动多轮探索 |
-| **2** | O4 | 基于 Escalation 修改轻量级管线 | ✅ 已实现 — Author Patch/StructuralEdit 管线完整可运行（`author.py:handle_request()` → `build_author_prompt()` → `supplement_pipeline.run_supplement_pipeline()` 4 步 LLM）。Keeper 集成完整（`process_turn` → Author → 递归）。待优化：LLM prompt 模板精修提升 Patch 命中率 |
-| **3** | O5 | 时间系统 | ✅ 已修复 — `_resolve_time_delta` 移除，改为每轮单次 TimeAgent 调用（与 enrich 并行）。TA 接收本轮所有 action 摘要 + time_range + 玩家输入，统一评估总耗时。日志写入 `logs/<ts>/TimeAgent.txt` |
-| 4 | O7 | 世界状态类 & 调查员类序列化 | ✅ 已修复（G9/G10 于 2026-05-23 修复）— 所有子系统（GameClock/EnemyManager/NPCManager/BossManager/MemoryManager/ItemManager）均实现 `to_dict()`/`from_dict()`，`test_save_load_roundtrip.py` 覆盖全量往返测试 |
-| 5 | O8 | parse → enrich → curate 链路缺少明确中间结构 | ✅ 已修复 — 引入 `EnrichInput` dataclass（`messages.py`），封装 `entities: list[dict]` + `actions: list[dict]`，替代 `process_turn` 中的裸 `list[dict]` 局部变量。`keeper.py` 全部引用已迁移 |
-| 6 | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位。开启后调用 `build_combat_narrative_prompt()` → LLM 填充 `CombatResult.narrative`。当前输出确定性 per-action 文本 |
-| 7 | O10 | Standoff 流程未接入 Harness | ✅ 已修复 — `_run_turns()` 检测 `standoff_prompt` 后自动消耗下一个玩家输入调用 `continue_standoff()`，记录对峙结果。详见 `tests/test_harness_parallel.py:289` |
-| 8 | O11 | System Prompt 过于简略 — 稳定规则应从 User Prompt 迁移 | ✅ 已修复 — Keeper Parse/Enrich、Narrator、CombatEntry、TimeAgent 的 system prompt 已扩充，包含角色定义 + 任务描述 + 输出规则 + 输出格式。User prompt 中移除了冗余规则，仅保留动态数据和 JSON 格式示例 |
-| 9 | O12 | 条件="" 字段造成 Token 噪声 | ✅ 已修复 — `_build_entity_lines()` 中 `_fmt_inter`、`_fmt_at` 和事件格式化均改为仅当条件非空时才渲染 `条件="..."` 字段 |
-| 10 | O13 | @grant_weapon 副效果未接入游戏循环 | ✅ 已修复（2026-05-23）。两处 fix：(1) `ScenarioWorld.__init__()` 从 graph nodes 加载 L2 `scene_weapons` → `world.scene_weapons`。(2) `Keeper._load_scene_into_graph()` 动态场景时同步武器。(3) Search handler 中武器发现移出 `if ok` 分支——即使侦查失败也能看到场景武器。(4) Search handler 新增拾取意图检测，LLM 误分类为 search 时仍能触发 `add_weapon()` |
-| 11 | O14 | 结局事件系统未实施 | ✅ 已修复 — `keeper.py` 中 Judge 完成后通过 dependency_graph 自动检测并触发依赖事件的结局（如 IT3 完成 → E_TEST_END 自动触发）。`##END_` 标记检测后从 L3 `ending_conditions` 查找完整叙事。`game_loop.py` 返回 `game_over=True`，前端可据此显示结局并退出。**TODO**：跨模组时结局需合并多 L3 或全局结局表 |
-| 14 | O15 | NPC 态度层级复杂影响 | hostile/wary/neutral/friendly/trusting 五级态度 -> 信息透露量 / 检定难度 / 战斗触发。当前仅注入 prompt 供 LLM 自行解读 |
-| 15 | O16 | 世界状态更新纳入 NPC 关键事件 | NPC 跟随/死亡/态度转变等事件纳入 dependency graph 和 world.runtime_state 追踪 |
-| 16 | O17 | 半主动 NPC ambient triggers | NPCManager 预留 get_ambient_triggers() hook，未来对接 AutoTrigger 系统实现 NPC 主动行为 |
-| 17 | O18 | requirement 确定性 NPC 状态语法 | 如 NPC:name.attitude=friendly 形式的硬性条件解析 |
-| 18 | O19 | NPC bound entity 跨场景激活 | 当前 source_scene 精确匹配过于粗糙——NPC 移动后原场景 entity 仍应可选，部分 AT 应跨场景生效。需细化绑定实体的可用性规则 |
+| **1** | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位 |
 
 
-### 待升级（不优先）
+### 待升级（按优先级）
 
 | # | 问题 | 说明 |
 |----|------|------|
-| U1 | Author 的 "other 行为" 缺乏意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。当前 IntentDetector 只判断"是否有意图"但不评分"意图对应哪个实体/是否需要检定"，导致 detect 的 false positive 触发不必要的 Author 调用。建议引入二次确认（如 Keeper 反问玩家"你要实际尝试吗？"）或实体匹配置信度阈值 |
-| U2 | 缺少技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，但限制未来多人扩展 |
-| U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative`。`CombatSystem.__init__` 已接收 `llm_enhancement` 参数并预留 `_generate_combat_narrative()` 方法。当前仅输出确定性 per-action 文本 |
-| U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换，改写 `llm.py` 的 API 调用方式 |
-| ~~U5~~ | ~~管线运行时监控 (PipelineMonitor)~~ | ✅ 已实现 (2026-05-25)。两层架构：LLMSensor 嵌入 call_deepseek 零侵入记录 + AgentMonitor 每 Agent 降级决策 + DegradationPolicy 集中化配置 (`config.py:DEGRADE_POLICY`)。降级策略：超时重试/连续失败切 flash/Keeper 跳过 enrich。CLI `/health` 查询。`src/monitor/` |
-| U6 | 基于 Logger 内容实现世界状态解读 | `TurnLogger`（`src/game/turn_logger.py`）已记录每轮玩家输入 + Enrich 输出 + Narrator 输出到 `data/debug/turn_logs/`。后续基于此数据训练/评估世界状态解读模型，或生成更准确的场景摘要 |
+| U1 | 自动化测试体系 | ♻ `test_harness_parallel.py`（17 case，探索+检定）、`test_harness_stability.py`（2 case，串行多轮）稳定通过。`llm_player.py` + `audit_player_log.py` + `stress_profile.json` 已实现（本 session）。待完成：30 轮完整跑局、战斗 Harness、子系统覆盖率达标 |
+| U2 | 战斗系统升级 | ♻ Boss 系统已完成。待完成：LLM 战斗叙事增强（`COMBAT_LLM_ENHANCEMENT`）、回合上限保护（防死循环）、对峙流程完整接入 |
+| U3 | Author "other 行为" 意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。建议引入二次确认（Keeper 反问玩家）或实体匹配置信度阈值 |
+| U4 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法 |
+| U5 | 世界状态系统 | ✅ 序列化已实现（G9/G10，全部子系统 `to_dict/from_dict`）。待完成：基于 Logger 的世界状态解读模型（`TurnLogger` 数据已就绪） |
+| U6 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
+| U7 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化；(2) 模组 Patch 永久化；(3) 调查员经历写入；(4) 多模组拼接战役——模组队列、结局分支路由、全局世界状态延续 |
+
+### 待升级（有生之年）
+| U8 | 多人模式（Hotseat） | 同机多人轮流操作，各自独立调查员角色卡，共享世界状态。类似传统 TRPG 桌面局的数字版——KP 主持，多个调查员轮流输入行动 |
 
 ## 设计文档
 
@@ -296,32 +284,18 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 ## 测试
 
+端到端集成测试为主，以真实 LLM 调用结果为准。
+
 | 文件 | 覆盖范围 | 类型 |
 |------|----------|------|
-| `tests/test_clock.py` | 10 case — GameClock 默认值/推进/跨天/时段转换/时间标记/序列化/隔离 | 单元（确定） |
-| `tests/test_time_system.py` | 8 case — GameClock 集成 world + time_costs 文件完整性 | 单元（确定） |
-| `tests/test_enemy_manager.py` | 9 case — spawn/filter/group/combat lifecycle/range/context | 单元（确定） |
-| `tests/test_combat_entry.py` | 6 case — SpawnEnemy→EnemyManager→combat lifecycle | 集成（确定） |
-| `tests/test_combat.py` | 10 case — damage roll/armor/tier/combat state | 单元（确定） |
-| `tests/test_combat_harness.py` | CombatSystem 完整战斗流程 | 集成（确定） |
-| `tests/test_boss_library.py` | 3 case — BossLibrary 加载/查询/字段完整性 | 单元（确定） |
-| `tests/test_boss_manager.py` | 6 case — engage_type 过滤/CombatInit 构造/active/set/resolve | 单元（确定） |
-| `tests/test_npc_manager.py` | 6 case — 创建/对话/跟随同步/场景查询/状态变更/序列化 | 单元（确定） |
-| `tests/test_library.py` | 18 case — WeaponLibrary/EnemyLibrary + flag 解析 | 单元（确定） |
-| `tests/test_author_flow.py` + `tests/test_intent_detector.py` | 11 case — Detector→Author→Keeper 全链路（全 mock） | 单元 |
-| `tests/test_escalation_harness.py` | 5 case — 正常/flavor/Patch/Reject/StructuralEdit | 集成（真实 LLM） |
+| `tests/test_harness_parallel.py` | 17 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/重复失败惩罚，含 `--mock` 模式 | 集成（真实 LLM） |
+| `tests/test_harness_stability.py` | 2 case 串行稳定性（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
 | `tests/test_escalation_real.py` | 5 case — 真实 LLM 升级流测试，含完整 prompt/response 日志 | 集成（真实 LLM） |
-| `tests/test_harness_parallel.py` | **NEW** — 17 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/重复失败惩罚，含 `--mock` 模式 | 集成（真实 LLM） |
-| `tests/test_harness_stability.py` | **NEW** — 2 case 串行稳定性测试（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
-| `tests/test_failure_penalty.py` | **NEW** — 2 case 失败惩罚链路：Judge 生成→Keeper 保留→Narrator 接收，全 mock | 单元 |
-| `tests/test_save_load_roundtrip.py` | **NEW** — 存档/读档全量 roundtrip：ItemManager/GameClock/EnemyManager/NPCManager/Memory | 集成 |
-| `tests/game_loop_harness.py` | ⚠ 已弃用 — 7 轮旧 pipeline（绕过 Keeper.process_turn，使用废弃的 `apply_side_effects`），待迁移到新 harness | 集成（真实 LLM） |
-| 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup | 单元 + 集成 |
+| `tests/game_loop_harness.py` | ⚠ 已弃用 — 旧 pipeline（绕过 Keeper.process_turn），待迁移到新 harness | 集成（真实 LLM） |
 
-**测试说明**：
-- 测试数据：`data/modules/test/l*_test.json` 及 `data/modules/常暗之厢/l*_test.json`
-- **Parallel Harness**：`python tests/test_harness_parallel.py`（17 case 并行），`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
-- **Stability Harness**：`python tests/test_harness_stability.py`（2 case 串行），日志 → `data/debug/test_stability/<ts>/`
+**运行方式**：
+- **Parallel Harness**：`python tests/test_harness_parallel.py`，`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
+- **Stability Harness**：`python tests/test_harness_stability.py`，日志 → `data/debug/test_stability/<ts>/`
 - Game Loop Harness（旧）：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
 
 ## @markup 副效果系统（7 种）
@@ -371,8 +345,7 @@ class NodeRuntimeState:
 
 **2026-05-22 修复**：失败实体的惩罚叙事曾因 enrich 步骤的两个 bug 丢失：
 - `judged_entities` 只收集成功实体 → enrich LLM 看不到惩罚内容
-- `all_outcomes[0].message` 无条件被 enrich 结果覆盖 → 惩罚叙事可能被擦除  
-详见 `tests/test_failure_penalty.py`（2 case，全部 mock）。
+- `all_outcomes[0].message` 无条件被 enrich 结果覆盖 → 惩罚叙事可能被擦除
 
 ## 特殊标记
 
@@ -506,19 +479,17 @@ src/               ← 游戏引擎（不导入 frontend/）
 ## NPC-Entity 分离 (2026-05-25)
 
 - **NPC 场景分配**：Step 1a `characters` 输出 `scenes`（首次出现的主要场景）、`can_follow`（bool）、`follow_condition`（文本描述）。管线后处理注入到 `npc_profiles[].scene` / `.can_follow` / `.follow_requirements`。
-- **NPC 实体绑定**：新增 Step 2.5b（LLM，与 Step 3a ∥ 2.5 并行），用 LLM 判定每个 entity 归属哪个 NPC，替代原确定性子串匹配。Binding 结果传入 `_bind_npc_entities()` 优先使用，fallback 到确定性匹配。
-- **模组生成 prompt**：Step 2a/2b prompt 排除纯 NPC 对话和跟随事件。Step 2.5b prompt 传入完整 entity 列表 + characters 用于归属判定。
-- **运行时**：NPC 对话走独立 turn — talk_to(状态门+交互触发条件) → NPC parse(bound entities) → judge → enrich → curate，game_loop 统一 narrate。flash LLM 判定对话意图防止误触发。NPC AT 条件满足时动态注入主 parse，注入的 AT 标记为 `[NPC_AT]` 并在 parse prompt 中显示为独立 `【NPC 专属实体】` 区块。
-- **独立输出**：`run_turn()` 返回 `npcs_visible` (in_scene/following) 和 `npc_events` (固定预料通知)。
-- **NPC 跟随（简化）**：两种触发源（@npc_follow markup + 玩家请求），统一检查 `can_follow` + 存活状态。`follow_requirements` 保留为 Step 1a 生成的文本描述供将来 LLM 评估（TODO），当前运行时不做确定性求值。
-- **NPC 跟随 entity 生成**：`_apply_pending()` 中检测 `npc.following=True` 后注入 `EVT_NPC_FOLLOW` entity 的逻辑当前是死代码——必须先有 entity 触发 `@npc_follow` side effect 调用 `set_following()`，NPC 才会开始跟随。Step 2a/2b prompt 已允许生成跟随 entity（`@npc_follow`），但已生成的模组（如 `常暗更新`）不含此 entity。
-  - **TODO**：重新生成模组或运行时加兜底逻辑。
-  - **注意**：跟随事件应在**单一环节**中确定性注入（如 Step 1a 直接写死 `@npc_follow` 字段，或在 `_assemble_l2` 中自动化补全），不要在多个步骤中各自解析跟随，避免重复和冲突。不要依赖 LLM 自己"理解"是否要生成跟随实体。
-- **run_pipeline.py CLI**：LLM call 日志目录使用语义化步骤名（如 `step1a_structured_extract`）替代编号。Step 3a+2.5+2.5b 三路并行。
+- **NPC 实体绑定**：Step 2.5（LLM，与 Step 3a 并行）同时完成 NPC 行为档案生成 + entity 归属判定。输出 `npc_profiles` 中每个 NPC 包含 `bound_entities` 列表，管线后处理提取为 `entity_bindings` 传入 `_bind_npc_entities()` 优先使用，fallback 到确定性子串匹配。
+- **模组生成 prompt**：Step 2a/2b prompt 排除纯 NPC 对话和跟随事件。跟随 entity 由管线根据 Step 1a `can_follow` 确定性注入（O20）。
+- **运行时**：NPC 专属 entity（`[NPC_INTERACT]`/`[NPC_AT]`）由 `_inject_npc_at()` 注入当前场景 node，parse 按普通 interaction/auto_trigger 类型匹配 → 走主 judge→enrich→curate→narrator 管道。已完成 entity 默认不注入。NPC 一般性对话（无匹配 entity）由 parse 返回 `npc_interact` → `talk_to()` 直接生成对话并短路返回，不经过主 enrich/narrator 管道。`npc_interact` 后置确定性检查：NPC 不存在 → `（没有叫「XX」的 NPC）`；NPC 不在当前场景 → `（XX 不在当前场景）`；关键词检测跟随请求。
+- **独立输出**：`run_turn()` 返回 `npcs_visible` (in_scene/following) 和 `npc_events`（对话/跟随/状态事件）。
+- **NPC 跟随**：两种触发源——O20 管线注入的 `@npc_follow` entity（经主 parse→judge→side_effect 路径）+ 玩家对话关键词检测（`npc_interact` 路径）。统一检查 `can_follow` + 存活状态。`follow_requirements` 保留为 Step 1a 生成的文本描述供将来 LLM 评估，当前运行时不做确定性求值。
+- **run_pipeline.py CLI**：LLM call 日志目录使用语义化步骤名（如 `step1a_structured_extract`）替代编号。Step 3a+2.5 两路并行。
 - **设计文档**：`docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
 - **实现计划**：`docs/superpowers/plans/2026-05-25-npc-entity-separation-plan.md`
 
-## 管线提示词重构 (2026-05-25)
+## 管线提示词重构 (2026-05-25 / 2026-05-26)
 
-- **主管线 + 补充管线**：全部 18 个步骤的 system prompt 重构——角色定义、规则、输出格式、字段约束从 user prompt 移入 system prompt。User prompt 仅保留动态数据（章节文本、entity 列表、场景/角色名、库引用）。
-- **补充管线 Step 1 结构化**：`story` 输出从自由文本改为半结构化——综述（200字）、每场景可用互动、叙事线、driving force、涉及敌人（仅普通敌人库）。`enemy_names` 参数传入确保敌人名从库中选择。Step 2 消费的 story 自动组装为 markdown 格式。
+- **主管线**：全部步骤 system prompt 重构——角色定义、规则、输出格式、字段约束从 user prompt 移入 system prompt。User prompt 仅保留动态数据（章节文本、entity 列表、场景/角色名、库引用）。
+- **合并优化 (2026-05-26)**：Step 2b events+AT 合并 (4→3 并行)，Step 2.5+2.5b 合并 (3→2 并行)，总 LLM 调用从 14 减到 12。Step 3b 改为确定性优先 + LLM gap-fill（prompt 从 40K token 降到 ~2K）。
+- **补充管线**：`story` 输出半结构化——综述（200字）、每场景可用互动、叙事线、driving force、涉及敌人（仅普通敌人库），由 `enemy_names` 参数约束。Step 2 消费的 story 自动组装为 markdown 格式。

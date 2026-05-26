@@ -46,8 +46,8 @@
   </script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
-    /* Base body — warm dark background, high-contrast text */
-    body { background: #111110; color: #c8c4bc; font-family: 'Noto Serif SC', 'SimSun', serif; }
+    /* Base body — warm dark background, high-contrast text (design doc: #0d0d0d) */
+    body { background: #0d0d0d; color: #c8c0b8; font-family: 'Noto Serif SC', 'SimSun', serif; }
     /* Crossfade transition for images */
     .image-crossfade { transition: opacity 0.5s ease-in-out; }
     .image-crossfade.switching { opacity: 0; }
@@ -60,6 +60,9 @@
       100% { background: transparent; }
     }
     .narrative-flash { animation: narrative-flash 1.5s ease-out; }
+    /* line-clamp for Tailwind CDN v4 compatibility */
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
   {% block head %}{% endblock %}
 </head>

@@ -19,8 +19,32 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ── Game instance (lazy init) ──
 _game_instance: dict | None = None
+_weapon_lib = None
+_enemy_lib = None
+_injector = None
 
 _progress_queues: dict[str, queue.Queue] = {}
+
+
+def _init_libraries(weapon_path="", enemy_path="", boss_path=""):
+    global _weapon_lib, _enemy_lib, _injector
+    if _weapon_lib is not None:
+        return
+    from library.weapons import WeaponLibrary
+    from library.enemies import EnemyLibrary
+    from library.injector import ContentInjector
+
+    _weapon_lib = WeaponLibrary()
+    if weapon_path:
+        _weapon_lib.load_core(str(PROJECT_ROOT / weapon_path))
+    else:
+        _weapon_lib.load_core()
+    _enemy_lib = EnemyLibrary()
+    if enemy_path:
+        _enemy_lib.load_core(str(PROJECT_ROOT / enemy_path))
+    else:
+        _enemy_lib.load_core()
+    _injector = ContentInjector(_weapon_lib, _enemy_lib)
 
 
 def get_game() -> dict:
@@ -44,6 +68,8 @@ def get_game() -> dict:
         from game_loop import set_turn_logger
         set_turn_logger(TurnLogger(log_dir=log_dir))
 
+        _init_libraries()
+
         g = init_game(
             l2_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l2_test.json"),
             l1_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l1_test.json"),
@@ -65,7 +91,7 @@ def get_game() -> dict:
 
 @router.get("/game", response_class=HTMLResponse)
 async def game_page(request: Request):
-    return templates.TemplateResponse("game.html", {"request": request})
+    return templates.TemplateResponse(request, "game.html", {})
 
 
 @router.post("/api/game/turn")
@@ -88,12 +114,12 @@ async def process_turn(user_input: str = Form(...)):
     # Run blocking LLM call in thread pool to avoid blocking event loop
     loop = asyncio.get_running_loop()
     try:
-        turn = await loop.run_in_executor(None, run_turn, game, user_input)
+        turn = await loop.run_in_executor(None, run_turn, game, user_input, _weapon_lib, _enemy_lib, _injector)
     except Exception as e:
         traceback.print_exc()
         _push_progress("complete", "")
         return HTMLResponse(
-            f'<div class="msg-narrative px-3 py-2 text-red-400 border-l-3 border-red-500 bg-[#1a0a0a]">'
+            f'<div class="msg-narrative px-3 py-2 text-red-400 border-l-2 border-red-500 bg-[#1a0a0a]">'
             f'错误: {e}</div>'
         )
 
@@ -140,6 +166,74 @@ async def player_status():
         f'<div class="text-xs"><span class="text-gray-500">HP </span><span class="text-coc-green">{hp}</span>'
         f'<span class="text-gray-500 ml-2">SAN </span><span class="text-aged-gold">{san}</span></div>'
     )
+
+
+@router.post("/api/game/command", response_class=HTMLResponse)
+async def game_command(cmd: str = Form(...)):
+    game = get_game()
+    world = game["keeper"].world
+    p = world.player
+    cmd = cmd.strip().lower()
+    lines = []
+    if cmd == "/help":
+        names = ["/scene", "/char", "/flags", "/events", "/do <动作>", "/trigger <E1>",
+                 "/save <槽位>", "/load <槽位>", "/reset", "/help"]
+        lines = [f'<div class="text-xs text-gray-500">{"  ".join(names)}</div>']
+    elif cmd == "/scene":
+        loc = world.current_location
+        desc = world.get_current_description()
+        lines.append(f'<div class="font-bold text-aged-brown">{loc}</div>')
+        lines.append(f'<div class="text-xs text-gray-500 mt-1">{desc}</div>')
+        for e in world.get_possible_exits():
+            lines.append(f'<div class="text-xs text-gray-600">→ {e.target}：{e.method}</div>')
+    elif cmd == "/char":
+        if p:
+            lines.append(f'<div class="text-sm text-aged-gold">{p.name} (HP {p.derived.HP} SAN {p.derived.SAN})</div>')
+            lines.append(f'<div class="text-xs text-gray-500">属性: {" ".join(f"{k}={getattr(p.stats,k,0)}" for k in ["STR","CON","SIZ","DEX","APP","INT","POW","EDU","LUCK"])}</div>')
+        else:
+            lines.append('<div class="text-xs text-gray-500">未设置调查员</div>')
+    elif cmd == "/flags":
+        rs = world.runtime_state or {}
+        if rs:
+            for k, v in rs.items():
+                c = "text-green-400" if v.get("completed") else "text-gray-500"
+                lines.append(f'<div class="text-xs {c}">{k}: {v}</div>')
+        else:
+            lines.append('<div class="text-xs text-gray-500">无状态</div>')
+    elif cmd == "/events":
+        triggered = world.triggered_events or []
+        if triggered:
+            for ev in triggered:
+                lines.append(f'<div class="text-xs text-gray-400">• {ev}</div>')
+        else:
+            lines.append('<div class="text-xs text-gray-500">无已触发事件</div>')
+    elif cmd.startswith("/save"):
+        slot = cmd.replace("/save", "").strip() or "1"
+        try:
+            from game_loop import save_game
+            save_game(game, str(PROJECT_ROOT / f"save_{slot}.json"))
+            lines.append(f'<div class="text-xs text-green-400">已存档到 save_{slot}.json</div>')
+        except Exception as e:
+            lines.append(f'<div class="text-xs text-red-400">存档失败: {e}</div>')
+    elif cmd.startswith("/load"):
+        slot = cmd.replace("/load", "").strip() or "1"
+        spath = str(PROJECT_ROOT / f"save_{slot}.json")
+        if Path(spath).exists():
+            try:
+                from game_loop import load_game
+                load_game(game, spath)
+                lines.append(f'<div class="text-xs text-green-400">已从 save_{slot}.json 读档</div>')
+            except Exception as e:
+                lines.append(f'<div class="text-xs text-red-400">读档失败: {e}</div>')
+        else:
+            lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
+    elif cmd == "/reset":
+        global _game_instance
+        _game_instance = None
+        lines.append('<div class="text-xs text-green-400">游戏已重置，刷新页面以重新开始</div>')
+    else:
+        lines.append(f'<div class="text-xs text-gray-500">未知命令: {cmd}。输入 /help 查看可用命令。</div>')
+    return HTMLResponse("".join(lines))
 
 
 @router.get("/api/game/scene", response_class=HTMLResponse)
@@ -218,6 +312,9 @@ async def init_game_api(
     if not l3_path:
         l3_path = "data/modules/常暗之厢/l3_test.json"
 
+    # Initialize libraries with user-specified paths
+    _init_libraries(weapon_path, enemy_path, boss_path)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = str(PROJECT_ROOT / f"logs/prompt_log_{timestamp}")
     os.makedirs(log_dir, exist_ok=True)
@@ -259,6 +356,39 @@ async def init_game_api(
         "san": inv.derived.SAN,
         "name": inv.name,
     }
+
+
+@router.get("/api/game/state")
+async def game_state():
+    game = get_game()
+    world = game["keeper"].world
+    p = world.player
+    return {
+        "location": world.current_location,
+        "turn": game["keeper"].turn_number,
+        "hp": p.derived.HP if p else 0,
+        "san": p.derived.SAN if p else 0,
+        "name": p.name if p else "",
+    }
+
+
+@router.get("/api/game/npcs", response_class=HTMLResponse)
+async def npc_list():
+    game = get_game()
+    world = game["keeper"].world
+    npcs = world.npcs or []
+    if not npcs or not hasattr(npcs, 'get_in_scene'):
+        return HTMLResponse('<span class="text-xs text-gray-500">无 NPC</span>')
+    visible = npcs.get_in_scene(world.current_location)
+    if not visible:
+        return HTMLResponse('<span class="text-xs text-gray-500">当前场景无 NPC</span>')
+    cards = ""
+    for n in visible:
+        att = n.attitude or "neutral"
+        att_cls = {"hostile": "text-red-400", "wary": "text-yellow-400", "friendly": "text-green-400"}.get(att, "text-gray-400")
+        cards += (f'<div class="text-xs flex gap-2 py-1"><span class="text-gray-300">{n.name}</span>'
+                  f'<span class="{att_cls}">[{att}]</span></div>')
+    return HTMLResponse(cards)
 
 
 def _resolve_start_scene(l2_path: str, l3_path: str) -> str:

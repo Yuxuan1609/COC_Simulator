@@ -97,6 +97,12 @@ class Judge:
 
     def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None, player_input: str = "") -> ActionOutcome:
         """Run entity through gate and execute."""
+        if self._is_entity_completed(entity):
+            return ActionOutcome(
+                intent=intent or ActionIntent(action="other"),
+                success=False, message="（该实体已触发过，无法重复执行）",
+                entity_id=entity.id, entity_type=entity.entity_type,
+            )
         # Check structured requirements (world flags + entity IDs) — hard part only
         if entity.requirement and entity.requirement.strip():
             self._current_entity_id = entity.id

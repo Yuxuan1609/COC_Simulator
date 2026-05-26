@@ -44,8 +44,7 @@ def _save_config(data: dict) -> None:
 @router.get("/", response_class=HTMLResponse)
 async def launcher_page(request: Request):
     config = _load_config()
-    return templates.TemplateResponse("launcher.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "launcher.html", {
         "config": config,
     })
 
@@ -54,10 +53,9 @@ async def launcher_page(request: Request):
 async def launcher_tab(request: Request, tab: str):
     config = _load_config()
     if tab == "module-gen":
-        return templates.TemplateResponse("partials/launcher-module-gen.html", {"request": request})
+        return templates.TemplateResponse(request, "partials/launcher-module-gen.html", {})
     elif tab == "config":
-        return templates.TemplateResponse("partials/launcher-config.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "partials/launcher-config.html", {
             "config": config,
         })
     return HTMLResponse("<p class='text-red-500'>Unknown tab</p>", status_code=404)

@@ -126,23 +126,24 @@ def _pick_file_scan() -> str:
 from module_designer import (
     validate_all, save_pipeline_result,
     build_step1a_prompt, build_step1b_prompt,
-    build_step2a_prompt, build_step2b_events_prompt, build_step2b_at_prompt,
+    build_step2a_prompt, build_step2b_combined_prompt,
     build_step2c_l1_prompt, build_step2c_l3_prompt,
-    build_step3a_prompt, build_step3b_prompt, build_step35_prompt,
-    build_step25_prompt, build_step4_prompt, build_step2_boss_prompt,
-    build_step25b_prompt,
+    build_step3a_prompt, build_step35_prompt,
+    build_step4_prompt, build_step2_boss_prompt,
+    parse_step25_combined,
     _with_fallback,
 )
 from module_designer.layered_parser import (
     _parse_condensed_chapters, _merge_phase2_fields, _slim_entity,
     STEP1A_SYSTEM, STEP1B_SYSTEM,
-    STEP2A_SYSTEM, STEP2B_EVENTS_SYSTEM, STEP2B_AT_SYSTEM,
+    STEP2A_SYSTEM, STEP2B_COMBINED_SYSTEM,
     STEP2C_L1_SYSTEM, STEP2C_L3_SYSTEM,
-    STEP3A_SYSTEM, STEP3B_SYSTEM, STEP35_SYSTEM,
-    STEP25_SYSTEM, STEP4_SYSTEM, STEP2_BOSS_SYSTEM,
-    parse_step25b, STEP25B_SYSTEM,
+    STEP3A_SYSTEM, STEP35_SYSTEM,
+    parse_step3b, STEP4_SYSTEM, STEP2_BOSS_SYSTEM,
 )
-from module_designer.layered_pipeline import run_pipeline, cross_validate_layers, _assemble_l2, _bind_npc_entities
+from module_designer.layered_pipeline import (run_pipeline, cross_validate_layers, _assemble_l2,
+    _bind_npc_entities, _extract_entity_bindings, _inject_step1a_meta,
+    _inject_npc_follow_entities)
 from module_designer.dependency_graph import DependencyGraph
 from library import WeaponLibrary, EnemyLibrary
 from library.bosses import BossLibrary
@@ -164,7 +165,7 @@ STEP_NAMES = {
     "step_1":    "Step 1a+1b: 结构化提取 + 精修模组（并行）",
     "step_2a":   "Step 2a: 互动项提取",
     "step_2bc":  "Step 2b+2c: 事件 + 自动触发 + L1 玩家层 + L3 设计层（并行）",
-    "step_3a":   "Step 3a+2.5+2.5b: 去重冲突 + NPC行为档案生成 + NPC实体归属判定（并行）",
+    "step_3a":   "Step 3a+2.5: 去重冲突 + NPC档案+实体归属（并行）",
     "step_3b":   "Step 3b: L1 ↔ L2 交叉核对",
     "step_35":   "Step 3.5+Phase 1: 依赖图构建 + 约束提取",
     "phase_2":   "Phase 2: 精简标准化 → 组装 → 验证 → 保存",
@@ -762,21 +763,17 @@ def _do_step2a(runner: InteractiveRunner, verbose: bool = True):
 
 
 def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
-    """Step 2b + 2c: Events + AT + L1 + L3（并行）。"""
+    """Step 2b + 2c: Events+AT (合并) + L1 + L3（并行）。"""
     config = runner.config
     if verbose:
-        print("\n\033[1m[Step 2b+2c] Events + AT + L1 + L3（并行）\033[0m")
+        print("\n\033[1m[Step 2b+2c] Events+AT (合并) + L1 + L3（并行）\033[0m")
 
-    def _do_events():
-        prompt = build_step2b_events_prompt(runner.chapters, runner.scenes, runner.interactions, runner.characters)
-        return runner.llm_json(prompt, system=STEP2B_EVENTS_SYSTEM, call_name="step2b_events")
-
-    def _do_at():
-        prompt = build_step2b_at_prompt(runner.chapters, runner.scenes, runner.interactions,
-                                        runner.characters,
-                                        enemies=runner.step1a.get("enemies", []),
-                                        weapons=runner.step1a.get("weapons", []))
-        return runner.llm_json(prompt, system=STEP2B_AT_SYSTEM, call_name="step2b_auto_triggers")
+    def _do_step2b():
+        prompt = build_step2b_combined_prompt(runner.chapters, runner.scenes, runner.interactions,
+                                               runner.characters,
+                                               enemies=runner.step1a.get("enemies", []),
+                                               weapons=runner.step1a.get("weapons", []))
+        return runner.llm_json(prompt, system=STEP2B_COMBINED_SYSTEM, call_name="step2b_combined")
 
     def _do_l1():
         prompt = build_step2c_l1_prompt(runner.chapters, runner.scenes, runner.characters)
@@ -789,25 +786,21 @@ def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
         )
         return runner.llm_json(prompt, system=STEP2C_L3_SYSTEM, call_name="step2c_l3")
 
-    with ThreadPoolExecutor(max_workers=min(4, config.parallel_workers)) as ex:
-        f_ev = ex.submit(_do_events)
-        f_at = ex.submit(_do_at)
+    with ThreadPoolExecutor(max_workers=min(3, config.parallel_workers)) as ex:
+        f_2b = ex.submit(_do_step2b)
         f_l1 = ex.submit(_do_l1)
         f_l3 = ex.submit(_do_l3)
-        events_data = f_ev.result()
-        at_data = f_at.result()
+        step2b_data = f_2b.result()
         runner.l1_data = f_l1.result()
         runner.l3_data = f_l3.result()
 
-    runner.events = events_data.get("events", [])
-    runner.auto_triggers = at_data.get("auto_triggers", [])
+    runner.events = step2b_data.get("events", [])
+    runner.auto_triggers = step2b_data.get("auto_triggers", [])
 
     # 保存
     step_dir = runner._step_dir("step_2bc")
-    with open(step_dir / "2b_events.json", "w", encoding="utf-8") as f:
-        json.dump(events_data, f, ensure_ascii=False, indent=2)
-    with open(step_dir / "2b_auto_triggers.json", "w", encoding="utf-8") as f:
-        json.dump(at_data, f, ensure_ascii=False, indent=2)
+    with open(step_dir / "2b_combined.json", "w", encoding="utf-8") as f:
+        json.dump(step2b_data, f, ensure_ascii=False, indent=2)
     with open(step_dir / "2c_l1.json", "w", encoding="utf-8") as f:
         json.dump(runner.l1_data, f, ensure_ascii=False, indent=2)
     with open(step_dir / "2c_l3.json", "w", encoding="utf-8") as f:
@@ -821,9 +814,9 @@ def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
 
 
 def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
-    """Step 3a + 2.5 + 2.5b: 去重冲突 + NPC行为档案生成 + NPC实体归属判定（并行）→ 绑定 → 组装 L2。"""
+    """Step 3a + 2.5: 去重冲突 + NPC档案+实体归属（并行）→ 绑定 → 组装 L2。"""
     if verbose:
-        print("\n\033[1m[Step 3a+2.5+2.5b] 去重冲突 + NPC 行为描述 + NPC 实体归属判定（并行）\033[0m")
+        print("\n\033[1m[Step 3a+2.5] 去重冲突 + NPC 档案+实体归属（并行）\033[0m")
 
     ending_conditions = runner.l3_data.get("ending_conditions", [])
     l3_characters = runner.l3_data.get("characters", [])
@@ -836,67 +829,36 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
         )
         return runner.llm_json(prompt, system=STEP3A_SYSTEM, call_name="step3a_dedup_conflict")
 
-    n_workers = 1
-    if l3_characters:
-        n_workers += 1
-    if step1a_characters:
-        n_workers += 1
-
+    n_workers = 1 + (1 if l3_characters else 0)
     with ThreadPoolExecutor(max_workers=n_workers) as ex:
         f3a = ex.submit(_do_3a)
         if l3_characters:
             f25 = ex.submit(
-                lambda: runner.llm_json(
-                    build_step25_prompt(
-                        l3_characters, runner.l1_data,
-                        runner.interactions, runner.auto_triggers,
-                    ),
-                    system=STEP25_SYSTEM, call_name="step25_npc_profile_gen",
-                )
-            )
-        if step1a_characters:
-            f25b = ex.submit(
-                lambda: runner.llm_json(
-                    build_step25b_prompt(
-                        step1a_characters, runner.interactions, runner.auto_triggers,
-                    ),
-                    system=STEP25B_SYSTEM, call_name="step25b_npc_entity_bind",
+                lambda: parse_step25_combined(
+                    l3_characters, runner.l1_data,
+                    runner.interactions, runner.auto_triggers,
+                    lambda p, **kw: runner.llm_json(p, call_name="step25_combined", **kw),
+                    step1a_characters=step1a_characters,
                 )
             )
         step3a = f3a.result()
         step25 = f25.result() if l3_characters else {"npc_profiles": {}}
-        step25b = f25b.result() if step1a_characters else {"entity_bindings": {}}
 
     runner.interactions = step3a.get("interactions", runner.interactions)
     runner.events = step3a.get("events", runner.events)
     runner.auto_triggers = step3a.get("auto_triggers", runner.auto_triggers)
     runner.npc_profiles = step25.get("npc_profiles", {})
-    entity_bindings = step25b.get("entity_bindings", {})
 
-    # Inject scene + can_follow + follow_condition from Step 1a characters
-    char_name_to_meta = {
-        c["name"]: {
-            "scenes": c.get("scenes", []),
-            "can_follow": c.get("can_follow", False),
-            "follow_condition": c.get("follow_condition", ""),
-        }
-        for c in step1a_characters if isinstance(c, dict)
-    }
-    for npc_name, profile in runner.npc_profiles.items():
-        meta = char_name_to_meta.get(npc_name, {})
-        if meta.get("scenes"):
-            profile["scene"] = meta["scenes"][0]
-            profile["all_scenes"] = list(meta["scenes"])
-        if "can_follow" in meta:
-            profile["can_follow"] = bool(meta["can_follow"])
-        if meta.get("follow_condition"):
-            profile["follow_requirements"] = meta["follow_condition"]
+    entity_bindings = _extract_entity_bindings(runner.npc_profiles)
 
-    # Bind NPC entities using LLM result (fallback to deterministic if no bindings)
+    _inject_step1a_meta(runner.npc_profiles, step1a_characters, verbose)
+
     runner.interactions, runner.auto_triggers, runner.npc_profiles = _bind_npc_entities(
         runner.interactions, runner.auto_triggers, runner.npc_profiles,
         entity_bindings=entity_bindings if entity_bindings else None,
     )
+
+    _inject_npc_follow_entities(runner.interactions, runner.npc_profiles, verbose)
 
     # 保存
     step_dir_3 = runner._step_dir("step_3a")
@@ -906,8 +868,6 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
     step_dir_25 = runner._step_dir("step_25")
     with open(step_dir_25 / "25_npc_profiles.json", "w", encoding="utf-8") as f:
         json.dump(step25, f, ensure_ascii=False, indent=2)
-    with open(step_dir_25 / "25b_entity_bindings.json", "w", encoding="utf-8") as f:
-        json.dump(step25b, f, ensure_ascii=False, indent=2)
 
     # 组装 L2
     boss_hints = runner.step1a.get("boss_encounters", [])
@@ -937,24 +897,23 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
         )
         bind_source = "LLM" if entity_bindings else "deterministic"
         print(f"  ✓ Step 3a: {len(runner.interactions)} interactions, {len(runner.events)} events, {len(runner.auto_triggers)} AT")
-        print(f"  ✓ Step 2.5: {len(runner.npc_profiles)} NPC profiles")
-        print(f"  ✓ Step 2.5b: {len(entity_bindings)} entity bindings ({bind_source})")
+        print(f"  ✓ Step 2.5: {len(runner.npc_profiles)} NPC profiles, {len(entity_bindings)} bound entities ({bind_source})")
         print(f"  ✓ NPC Bind: {bound_count} entities bound to NPCs")
         print(f"  ✓ L2 组装: {len(runner.l2_assembled.get('scenes',{}))} 场景")
 
-    return f"Step 3a+2.5+2.5b 完成: {len(runner.npc_profiles)} NPC profiles, L2 已组装"
+    return f"Step 3a+2.5 完成: {len(runner.npc_profiles)} NPC profiles, L2 已组装"
 
 
 def _do_step3b(runner: InteractiveRunner, verbose: bool = True):
-    """Step 3b: L1 ↔ L2 交叉核对。"""
+    """Step 3b: L1 ↔ L2 交叉核对（确定性优先 + LLM gap-fill）。"""
     if verbose:
         print("\n\033[1m[Step 3b] L1 ↔ L2 交叉核对\033[0m")
 
-    prompt = build_step3b_prompt(
+    step3b = parse_step3b(
         runner.chapters, runner.l1_data, runner.l2_assembled,
         runner.l3_data, runner.scenes,
+        lambda prompt, **kw: runner.llm_json(prompt, call_name="step3b_link_fill", **kw),
     )
-    step3b = runner.llm_json(prompt, system=STEP3B_SYSTEM, call_name="step3b_crosscheck")
     runner.l1_data = step3b.get("l1_data", runner.l1_data)
     runner.l3_data = step3b.get("l3_data", runner.l3_data)
 

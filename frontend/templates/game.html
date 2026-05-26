@@ -183,18 +183,20 @@
 </div>
 
 <script>
-  // ── File browser ──
-  function openFileBrowser() {
-    document.getElementById('file-modal').classList.remove('hidden');
-  }
-
   // ── Game init ──
-  async function initGame(e) {
+    async function initGame(e) {
     e.preventDefault();
     const form = document.getElementById('init-form');
     const fd = new FormData(form);
     const errEl = document.getElementById('init-error');
     errEl.textContent = '';
+    // Validate module paths
+    for (const id of ['l2-path', 'l1-path', 'l3-path']) {
+      if (!document.getElementById(id).value.trim()) {
+        errEl.textContent = '请填写 ' + document.getElementById(id).previousElementSibling.textContent;
+        return;
+      }
+    }
 
     try {
       const resp = await fetch('/api/game/init', { method: 'POST', body: fd });
@@ -205,7 +207,7 @@
       const data = JSON.parse(text);
       document.getElementById('hud-stats').innerHTML =
         '<span class="text-gray-300">' + data.name + '</span>' +
-        '<span class="text-gray-500 ml-2">HP</span> <span class="text-green-400">' + data.hp + '</span>' +
+        '<span class="text-gray-500 ml-2">HP</span> <span class="text-coc-green">' + data.hp + '</span>' +
         '<span class="text-gray-500 ml-2">SAN</span> <span class="text-aged-gold">' + data.san + '</span>';
       document.getElementById('hud-scene').textContent = data.location;
 
@@ -330,6 +332,7 @@
 
   // ── WebSocket (only connected after game init) ──
   let ws = null;
+  let wsRetry = 0;
   function connectWS() {
     if (ws) { try { ws.close(); } catch(e) {} }
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -337,22 +340,22 @@
     ws.onmessage = function(e) {
       const data = JSON.parse(e.data);
       const indicator = document.getElementById('step-indicator');
-      // Ignore heartbeat keep-alive messages
       if (data.step === 'heartbeat') return;
       if (data.step === 'complete') {
         indicator.innerHTML = '<span class="text-aged-gold">完成</span>';
       } else {
         indicator.innerHTML =
-          data.step + ' <span class="' + (data.status === 'done' ? 'text-green-400' : 'text-gray-500') + '">' +
+          data.step + ' <span class="' + (data.status === 'done' ? 'text-coc-green' : 'text-gray-500') + '">' +
           (data.status === 'done' ? '✓' : '...') + '</span>';
       }
     };
     ws.onerror = function() {};
     ws.onclose = function() {
       ws = null;
-      // Only reconnect if game screen is visible
       if (document.getElementById('game-screen').style.display !== 'none') {
-        setTimeout(connectWS, 10000);
+        const delay = Math.min(1000 * Math.pow(2, wsRetry), 30000);
+        wsRetry++;
+        setTimeout(connectWS, delay);
       }
     };
   }

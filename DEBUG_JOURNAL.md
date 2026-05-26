@@ -35,57 +35,42 @@
 - **解决**：删除函数内 import，模块顶部已有
 
 ## 7. 失败惩罚叙事在 enrich 管道中丢失
-- **症状**：多次检定失败后 LLM 生成了惩罚叙事（扣血/刷怪/叙事文本），但玩家看不到惩罚反馈
-- **根因**：两层 bug — (a) `judged_entities` 只收集 `success=True` 的实体，失败实体不进入 enrich；(b) `all_outcomes[0].message` 被 enrich 结果无条件覆写，当失败实体排在首位时惩罚叙事被擦除
-- **解决**：(a) `judged_entities` 改为收集所有实体（含 failure）；(b) enrich 覆写规则改为只覆盖第一个成功且非 AT 的 outcome
-- **关联**：`src/game/agents/keeper.py:113-121, 325-332`；`src/prompts.py:530`（enrich 指示词更新）
+- **症状/根因**：`judged_entities` 只收集 success=True 的实体，失败实体不进 enrich；且 `all_outcomes[0].message` 被 enrich 无条件覆写
+- **解决**：judged_entities 改为收集所有实体（含 failure）；enrich 覆写只对第一个成功且非 AT 的 outcome
+- **关联**：`src/game/agents/keeper.py:113-121, 325-332`
 
 ## 8. ##GRADED## 结果未传递到 enrich
-- **症状**：enrich prompt 中 entity 的 result 显示 `"考古学检定：D100=62/1 > 失败"`（裸 D100 字符串），而非模组预设的 `on_failure` 分级文本
-- **根因**：`judge.py:127` 把 `skill_message` 设为 `skill_result`（D100 原始字符串），而 `line 171` 正确解析的 `result_text`（`resolve_graded_result` 输出）被丢弃——成功分支用了 `result_text`，失败分支用了 `skill_result`
-- **解决**：在 `resolve_graded_result` 后添加 `if has_graded: skill_message = result_text`，使失败路径也使用分级文本
+- **症状**：enrich prompt 中 entity.result 显示裸 D100 字符串而非 on_failure 分级文本
+- **根因/解决**：失败分支用了 `skill_result`（原始 D100）而非 `result_text`（resolve_graded_result 输出）→ 加 `if has_graded: skill_message = result_text`
 - **关联**：`src/game/judge.py:174-175`
 
 ## 9. @markup 泄漏到 LLM prompt
-- **症状**：含 inline markup 的 entity（如 IT5 的 `@spawn_enemy(enemy_ref="深潜者", ...)`）把这些语法传给 enrich LLM
-- **根因**：`entity.result` 和 `entity.side_effects` 是两条并行路径——side_effects 被 parse_markup_all 解析执行，但 result 中的 @markup 原样保留
-- **解决**：两层防护 — (a) judge 层面：`result_text = _MARKUP_STRIP_RE.sub("", result_text)` 从源头清除；(b) enrich prompt 层面：同样 strip 作为防御
+- **症状/根因**：entity.result 中的 @markup 原样保留传给 enrich → 两层 strip 防护（judge + enrich prompt）
 - **关联**：`src/game/judge.py:174`；`src/prompts.py:506`
 
 ## 10. EnemyAttack 被当 dict 访问
-- **症状**：`combat.py` 执行时报 `'EnemyAttack' object has no attribute 'get'`
-- **根因**：`EnemyAttack` 是 dataclass（有 `.name`, `.damage` 属性），但 `combat.py` 多处用 `attack['name']`、`attack.get('weight')` 等 dict 方式访问
-- **解决**：`attack['name']` → `attack.name`；`a.get('weight', 1)` → `getattr(a, 'weight', 1)`
-- **关联**：`src/game/combat.py:294, 309-310, 320-388`
+- **症状/根因/解决**：`EnemyAttack` 是 dataclass，但 combat.py 用 dict 方式 (`attack['name']`) 访问 → 全部改为属性访问 (`attack.name` / `getattr(a, 'weight', 1)`)
+- **关联**：`src/game/combat.py:294,309-310,320-388`
 
 ## 11. Mock patch 未覆盖 Narrator/TimeAgent 的 call_deepseek
-- **症状**：mock 模式下 test harness 日志缺失 Narrator 和 TimeAgent 调用，且测试耗时异常（10-30s per case）
-- **根因**：Narrator 和 TimeAgent 在模块顶部用 `from llm import call_deepseek` 导入，`patch("llm.call_deepseek", ...)` 只替换模块属性，已导入的本地引用不受影响——导致这两个 agent 绕过 mock 进行了真实 API 调用
-- **解决**：在 patches 列表中新增 `patch("game.agents.narrator.call_deepseek", ...)` 和 `patch("game.agents.time_agent.call_deepseek", ...)`
-- **关联**：`tests/test_harness_parallel.py`；`tests/test_harness_stability.py`
+- **症状**：mock 模式下日志缺失且耗时异常（10-30s/case）——Narrator/TimeAgent 绕过 mock 调用真实 API
+- **根因/解决**：`from llm import call_deepseek` 创建模块级本地引用，`patch("llm.call_deepseek")` 只替换模块属性不影响已导入引用 → 显式 patch 每个 agent 的 `call_deepseek`
+- **关联**：已在 LEARNING_JOURNAL 记录通用模式
 
 ## 12. G9/G10 子系统未序列化
-- **症状**：存档/读档后 ItemManager（物品）、GameClock（时间）、EnemyManager（敌人位置）、NPCManager（态度）、BossManager（状态）全部丢失
-- **根因**：`ScenarioWorld.to_dict()` 和 `from_dict()` 只序列化了核心状态字段，子系统全部跳过；`Investigator` 的 `to_dict()` 也未包含 `item_manager`
-- **解决**：扩展 `to_dict()` 输出 clock/enemies/npcs/bosses/scene_weapons/memory；`load_state()` 中逐一恢复（含 library 缺失降级处理）；investigator 序列化新增 `item_manager` 字段
-- **关联**：`src/scenario_core.py:976-1070`；`src/investigator/serialization.py:88, 168-170`；`tests/test_save_load_roundtrip.py`
-- **教训**：改完一个之后翻其他文件看是否有同样的 import-in-function 模式——果然 judge.py 也有
+- **症状**：存档/读档后 ItemManager/GameClock/EnemyManager/NPCManager/BossManager 全部丢失
+- **解决**：`to_dict()` 扩展输出 clock/enemies/npcs/bosses/scene_weapons/memory；`load_state()` 逐一恢复；investigator 序列化新增 `item_manager`
+- **关联**：`src/scenario_core.py:976-1070`；`tests/test_save_load_roundtrip.py`
 
 ## 13. Enrich results 类型不一致导致 TypeError
-- **症状**：`keeper.py:284` 报 `TypeError: string indices must be integers, not 'str'`
-- **根因**：Enrich prompt 输出 `"results": "整合后的叙事"`（单一合并字符串），但代码期望 `"results": {"I1": "..."}`（per-entity dict）。Python 的 `"I1" in "整合后的叙事"` 是合法子串检查，不会报错，因此偶然命中时 `"整合后的叙事"["I1"]` 才爆 TypeError
-- **解决**：`isinstance(results, dict)` 守卫——字符串直接跳过 per-entity 分配；后续改为 string results 走 `all_outcomes[0].message = results` 简单路径
+- **症状/根因**：Enrich 有时输出 `"results": "合并叙事"`（字符串）而非 `"results": {"I1": "..."}`（dict），字符串下标访问报 TypeError
+- **解决**：`isinstance(results, dict)` 守卫
 
-## 14. auto_trigger 结果在 flavor_outcomes 和 ambient_changes 中重复
-- **症状**：Narrator prompt 的 `【即兴行为】` 和 `【环境变化】` 显示完全相同的文本，LLM 将其当作两份独立内容生成重复叙事
-- **根因**：`keeper.py:100` 把 AT 的 `intent.action` 设成 `"other"`，导致 AT outcome 同时进入 `flavor_outcomes`（prompts.py 按 `action=="other"` 过滤）和 `ambient_changes`（keeper.py 按 `entity_type=="auto_trigger"` 过滤）
-- **解决**：在 `prompts.py` 的 flavor_outcomes 过滤中加入 `o.entity_type != "auto_trigger"`，同时省略空 `flavor_outcomes` 时整个 `【即兴行为】` 段落
+## 14. auto_trigger 在 flavor_outcomes 和 ambient_changes 中重复
+- **症状/根因/解决**：AT 的 action 设为 "other" 导致同时进入两个列表 → 过滤条件加 `o.entity_type != "auto_trigger"`
 
-## 15. evaluate_trait_enhancement 多行 f-string 被 edit 工具截断
-- **症状**：特质增强 Prompt 只剩第一行"你是 TRPG 规则辅助裁判..."，LLM 收不到参赛信息、检定详情等关键上下文，但不会直接报错（因为仍是一个合法 f-string），只在日志中才能发现
-- **根因**：`edit` 工具的 `oldString` 参数匹配多行 f-string 时只覆盖了第一行 `prompt = f"""..."""`，替换后整段 prompt 被截断。更危险的是——Python 语法仍然合法，不会报 SyntaxError，是一种静默破坏
-- **解决**：重新编辑，`oldString` 精确匹配截断态的完整第一行+闭合 `"""`，`newString` 提供完整 prompt。**此事发生两次**——第一次修复后被后续 commit 无意中重新截断（第二次修改 `set_log_label` 时再次使用了匹配第一行的 `oldString`）
-- **教训**：对多行 f-string 使用 edit 时，`oldString` 必须包含足够长的唯一上下文；修改后立即 `python -m py_compile` + 随机读几行确认内容没有被阉割
+## 15. Edit 工具截断多行 f-string — 静默破坏
+- **症状/根因/解决**：Edit 的 `oldString` 匹配多行 f-string 只覆盖首行 → prompt 截断但语法合法不报错。**发生两次**。解决：`oldString` 含足够长唯一上下文；改后 `py_compile` 确认
 
 ## 16. Enrich prompt f-string 中未转义花括号导致 NameError
 - **症状**：`run_game.py` 运行时 `NameError: name '整合后���' is not defined`
@@ -93,6 +78,91 @@
 - **解决**：加引号改为 `"results": "整合后的叙事"`
 
 ## 17. 日志系统重构：response 未按 agent 分文件
-- **症状**：所有 LLM response 写入单一 `llm.txt`，不同 agent 的 prompt 和 response 分在两个文件里，排查时需要手动拼接
-- **根因**：`_log_response` 始终写 `llm.txt`
-- **解决**：引入 `_current_log_label` 全局变量 + `set_log_label()` 函数。`_show_prompt` 在写 prompt 前设置 label，`_log_response` 按 label 写入对应文件。`evaluate_trait_enhancement` 不走 `call_deepseek` 所以需要手动 `set_log_label("skill_checks")`
+- **症状/解决**：所有 response 写入单一 `llm.txt` → 引入 `_current_log_label` 全局变量，`_show_prompt` 设 label，`_log_response` 按 label 写入对应文件
+
+## 18. NPC 系统完全空转 — scene 字段无人填充
+- **症状**：NPC 对话路由永不触发——所有 NPC `scene=""` → `get_in_scene()` 返回空
+- **根因**：Step 2.5 不生成 initial_scene + `_bind_npc_entities()` 不设 scene + init_game 死代码读不存在的 `npcs` 字段
+- **解决/教训**：从 entity source_scene 推断 NPC 位置；新架构上线前必须端到端 smoke test
+
+## 19. 18 个管线步骤 System/User Prompt 批量拆分
+- **症状/根因/解决**：所有 build 函数把角色定义/规则/Schema 混在 user prompt → 拆分为 STEP*_SYSTEM + 纯数据 user prompt（13+4 步）
+
+## 20. Edit 工具替换中文代码块时引入全角引号
+- **症状**：~180 行替换后所有 Python 字符串引号变全角 `""`，`SyntaxError: invalid character`
+- **根因/解决**：Edit 的 `new_string` 中混合中英文时中文引号感染 Python 引号 → `python -c "content.replace('“', '\"').replace('”', '\"')"` 一键修复；事后 `grep -n '[“”]' file.py` 检查
+- **教训**：大块中文代码替换优先用 Write 重写整个文件
+
+## 21. 条件块内定义的变量在块外引用导致 UnboundLocalError
+- **症状/根因**：`enrich_executor = ThreadPoolExecutor(...)` 在条件块内，块外 `enrich_executor.shutdown()` 无条件执行
+- **解决/教训**：条件块前初始化为 `None`；同类问题见 #13
+
+## 22. LLM logging wrapper 导致 NPC 对话静默失败
+
+- **症状**：test harness 中 NPC 对话返回 fallback 文本，LLM response 正常但被丢弃
+- **根因**：(a) wrapper 有 `model=""` 默认参数，空字符串 vs None 在 `call_deepseek` 的 `is not None` 检查中行为不同；(b) `NPCManager.talk_to()` 用 `except Exception` 静默吞异常
+- **解决**：wrapper 改为 `def _logging_wrapper(prompt, json_mode=True, **kw)`——移除默认参数，从 `kw` 过滤合法参数传 API
+- **教训**：`is not None` 判断下空字符串 `""` 和 `None` 完全不同，wrapper 不应给这类参数设空字符串默认值
+
+## 23. Subagent 遗漏 layered_pipeline.py — chapters 未传播
+- **症状**：Subagent 完成 `layered_parser.py` 的 `condensed_text→chapters` 转换，但 `layered_pipeline.py` 中 10+ 个 `parse_step*(condensed_text,...)` 调用未更新，`'str' object has no attribute 'get'`
+- **根因**：pipeline wiring 跨 10+ 个调用点，subagent 逐个替换时 API 超时未完成
+- **解决**：grep 残留 `condensed_text` → 逐个 `replace_all`。事后 audit grep 验证签名一致
+- **教训**：prompt 签名变更必须在 Plan 末尾加 pipeline audit Task
+
+## 24. Notebook chapters 同步滞后
+- **症状**：两个 notebook 仍传 `condensed_text` 字符串给期望 `chapters: dict` 的函数
+- **根因**：Plan 中 notebook Task 被 subagent 跳过；`_parser_layered_export.py`（纯 Python export）被忽略
+- **解决**：Python 脚本注入 `chapters = _parse_condensed_chapters()` + 替换所有调用点（含首参/尾参）
+- **教训**：notebook 不独立为 Task——每个源码 Task 同步更新 notebook
+
+## 25. `git add -A` 提交 debug 产物
+- **症状/解决**：`git add -A` 提交了 `data/debug/` 整个目录 → 用 `git add <explicit paths>` 重新提交。`data/debug/` 应加入 `.gitignore`
+- **教训**：始终用显式路径而非 `git add -A`
+
+- **症状**：test harness Case B Turn 2 用"京山人吉"（无空格）不触发 NPC 对话，而 data profile 中是"京山 人吉"（有空格）
+- **根因**：`keeper.py` 的 NPC 路由用 `npc.name in raw` 做裸子串匹配，容错性极低
+- **解决**：test input 中添加空格（"京山 人吉，..."）。长期方案见 Debug #1 — parse 层 `npc_interact` 类型
+- **关联**：`tests/test_harness_stability.py:135`；`tests/test_harness_parallel.py:250,349`
+
+## 26. world.flags 移除后残留引用链
+- **症状**：15 个 test harness case 全部 `AttributeError: 'ScenarioWorld' object has no attribute 'flags'`
+- **根因**：`Task 10` 删除 `self.flags` 后，`prompts.py._build_world_state()` 和 `keeper.py` world_snapshot 仍引用 `world.flags.items()` 和 `self.world.flags`
+- **解决**：grep 全量扫描 `\.flags` → 逐一替换为 `runtime_state`，prompts 改为展示已完成实体列表，keeper world_snapshot 改为 runtime_state 摘要
+- **关联**：`src/prompts.py:104`；`src/game/agents/keeper.py:261`
+
+## 27. prompts.py 中文引号感染 ASCII 引号 (复发)
+- **症状**：`SyntaxError: invalid character ' (U+201C)` — ~50 行 `parse_narrative_output()` 函数体全部引号变全角 `""`
+- **根因**：Edit 工具替换多行中英文混合代码块时，中文上下文中的全角引号感染 Python 字符串。与 Debug #20 同类问题
+- **解决**：用 `bash "python -c 'content.replace(chr(0x201C),...)'"` 写入文件修复。事后验证 `compile()`。教训：大块代码替换优先 `Write` 而非 `Edit`
+- **关联**：`src/prompts.py:231-277`
+
+## 28. NotebookEdit 导致 run_game 函数 def 行丢失
+- **症状**：notebook cell 只剩下函数 body（`initial = run_turn(...)` 开始），缺失 `def run_game(...):` 签名和初始化代码。`NameError: name 'game' is not defined`
+- **根因**：NotebookEdit 的 `cell_id` 引用在多次编辑后 cell id 被 Jupyter 自动重生成，新旧 id 不一致导致替换覆盖了错误的 cell 内容
+- **解决**：放弃 notebook 格式，直接写 `run_game.py` 纯 Python 文件。Notebook 作为调试辅助不再作为主入口
+- **关联**：`notebooks/notebook_simplified.ipynb` → `run_game.py`
+
+## 29. Windows GBK 终端 emoji 崩溃
+- **症状**：`UnicodeEncodeError: 'gbk' codec can't encode character '✓'` — test harness print 时 `✓`/`✗` emoji 崩溃
+- **根因**：Windows 中文终端默认 GBK 编码，不支持大部分 Unicode 符号
+- **解决**：所有 print 中 emoji 替换为 ASCII 标记（`[PASS]`/`[FAIL]`），字符串切片做安全保护
+- **关联**：`tests/game_loop_harness.py:299-306`
+
+## 30. Combat 系统 `skill_used` vs `skill_name` 字段不匹配
+- **症状**：`AttributeError: 'Weapon' object has no attribute 'skill_used'`
+- **根因**：`Investigator.models.Weapon` 用 `skill_name`，`combat.py._get_player_actions` 访问 `w.skill_used`
+- **解决**：combat.py 改为 `getattr(w, 'skill_name', '') or getattr(w, 'skill_used', '')` 兼容两种命名
+- **关联**：`src/game/combat.py:141`；`tests/test_combat_harness.py:55`
+
+## 31. DerivedStats 无 LUCK 字段
+- **症状**：`TypeError: DerivedStats.__init__() got an unexpected keyword argument 'LUCK'`
+- **根因**：`DerivedStats` 只有 HP/MP/SAN/SAN_MAX/MOV/DB/BUILD/DODGE，LUCK 在 `Stats` 上
+- **解决**：删除 `DerivedStats(LUCK=...)` 参数
+- **关联**：`src/investigator/models.py:27`；`tests/test_combat_harness.py:55`
+
+## 32. Boss 护甲过高 → 战斗死循环
+- **症状**：LLM Player smoke test 第 4 轮卡死——parse 有结果但进程 hang
+- **根因**：Boss "吞噬之口" 护甲 10，玩家拳击伤害 1D3+DB（最大 ~7）无法破防。`combat.py:116` 的 `while not state.finished` 只在敌人全灭时退出，无回合上限或僵局检测 → 无限循环
+- **解决**：`llm_player.py` monkey-patch `CombatSystem.run_combat` 自动返回 `win`。底层修复待做：combat 加 `max_rounds` + 僵局检测
+- **关联**：`src/game/combat.py:116`；`data/library/core/bosses.json`

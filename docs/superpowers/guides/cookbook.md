@@ -22,13 +22,14 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 2. Keeper 回合编配
 
-### `src/game/agents/keeper.py` (1013 行)
+### `src/game/agents/keeper.py` (~1,020 行)
 
 | 方法 | 功能 |
 |------|------|
-| `process_turn(turn_input, author)` | **主流程**：NPC 对话路由 → Step1 parse(LLM) → Step2 judge(确定) + 并行 IntentDetect → Step3 [enrich(LLM) ∥ combat_entry(LLM) ∥ TimeAgent(LLM)] → Step3.5 收集结果 → Step4 对峙/CombatInit → Step5 IntentDetect 决策 → Step6 curate → Step7 memory(后台压缩) → 返回 `{brief, combat_entry, standoff_prompt, combat_init}` |
-| `_parse(raw)` | LLM parse：玩家输入 → 匹配 entity (interaction/auto_trigger/event/move/search/other) |
-| `_enrich(judged_entities, user_input)` | **LLM enrich**：将本轮所有实体结果（含成功/失败/AT）合并润色为连贯叙事段落。输入包含 `judged_entities`（修复后含失败实体及惩罚叙事）、world snapshot（世界状态/场景现状/时间块）。覆写规则：结果只覆写第一个成功且非 AT 的 outcome.message，保护失败实体的惩罚叙事 |
+| `process_turn(turn_input, author)` | **主流程**：`_inject_npc_at()` 注入 NPC entity → Step1 parse(LLM) → NPC 对话路由 → Step2 judge(确定) + 并行 IntentDetect → Step3 [enrich(LLM) ∥ combat_entry(LLM) ∥ TimeAgent(LLM)] → Step4 对峙/CombatInit → Step5 Author → Step6 curate → Step7 memory(后台压缩) → 返回 `{brief, combat_entry, standoff_prompt, combat_init, npc_events}` |
+| `_parse(raw)` | LLM parse：玩家输入匹配场景/NPC/全局 entity。NPC entity 按普通类型匹配；`npc_interact` 仅用于无实体匹配的一般性 NPC 对话 |
+| `_inject_npc_at()` | 每回合开始：将当前场景 NPC 的 bound entity 注入 node。跳过已完成的 entity |
+| `_apply_pending()` | 回合末尾：应用 side effects + 注入跟随 NPC 的 `EVT_NPC_FOLLOW` entity |
 | `_find_entity_by_id(eid)` | 跨 graph(场景+events) 查找 entity |
 | `_apply_side_effects(side_effects)` | 应用 7 种 @markup side effect dataclass 到世界状态（ItemGain/ConsumeItem/StatChange/SpawnEnemy/GrantWeapon/NPCStateChange/NPCFollow） |
 | `resolve_standoff(state, player_input)` | 对峙：语义匹配 LLM → D100 检定 → trait enhancement → 成功转 neutral / 失败进战斗 |
@@ -139,17 +140,18 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 6. NPC 管理
 
-### `src/game/npc_manager.py` (152 行)
+### `src/game/npc_manager.py` (~310 行)
 
 | 类/方法 | 功能 |
 |----------|------|
-| `NPC` (dataclass) | NPC 实例：name/scene/attitude/dialogue_state/following |
+| `NPC` (dataclass) | NPC 实例：name/role/personality/appearance/what_they_can_do/can_follow/scene/attitude/following/bound_interactions/bound_auto_triggers |
 | `NPCManager()` | NPC 全量管理 |
 | `.init_from_profiles(profiles)` | 从 L2 npc_profiles 批量初始化 |
 | `.get_in_scene(scene)` → list | 获取场景中所有 NPC |
-| `.talk_to(name, user_input, llm_call)` → str | **对话系统**：LLM 生成 NPC 回复，含 attitude/dialogue 上下文 |
-| `.set_attitude(name, attitude)` | 修改 NPC 态度 |
+| `.talk_to(name, user_input, llm_call)` → str | **对话系统**：LLM 生成 NPC 回复，注入 NPC 档案/态度/记忆上下文 |
+| `.process_npc_turn(...)` → dict | **已弃用**——内部 judge/enrich/curate 循环已由主管道接管。保留仅作为独立 API |
 | `.set_following(name, bool)` | 同伴跟随切换 |
+| `.sync_followers(scene)` | 移动时将跟随 NPC 同步到新场景 |
 | `.to_dict()` / `.from_dict()` | 序列化/反序列化 |
 
 ---
@@ -158,7 +160,7 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ### `src/scenario_core.py` (1391 行)
 
-**Side Effects (6 种 @markup)**：
+**Side Effects (7 种 @markup)**：
 
 | dataclass | 字段 | 应用路径 |
 |-----------|------|----------|
@@ -167,7 +169,8 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 | `StatChange` | stat_name, delta, narrative | → Investigator.modify_stat() + LLM 描述更新 |
 | `ItemGain` | item_name, quantity | → ItemManager.add() |
 | `ConsumeItem` | item_name, quantity, narrative | → ItemManager.remove() + LLM 模糊匹配保底 |
-| `NPCStateChange` | npc_name, new_state | → world.npc_states 更新 |
+| `NPCStateChange` | npc_name, new_state | → NPCManager.set_state() |
+| `NPCFollow` | npc_name, follow | → NPCManager.set_following() |
 | `SceneWeapon` | weapon_ref, scene, quantity | 场景武器追踪 |
 
 **核心类**：
@@ -178,7 +181,7 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 | `Node` | 场景节点：description/edges/interactions/auto_triggers/encounters |
 | `Edge` | 连接边：target/method/requirement |
 | `DirectedGraph` | 有向图：管理 nodes/events，支持 from_dict/to_dict |
-| `ScenarioWorld` | 运行时世界状态：graph/player/memory/enemy_manager/scene_weapons/npc_states/runtime_state/dependency_graph |
+| `ScenarioWorld` | 运行时世界状态 Facade：graph/player/clock/memory/enemy_manager/npcs/bosses/completed_interactions/runtime_state/dependency_graph |
 | `MemoryManager` | 分层记忆：raw_history + summary + key_items/visited |
 
 **关键函数**：
@@ -241,12 +244,13 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 10. Prompt 构建
 
-### `src/prompts.py` (990 行)
+### `src/prompts.py` (~1,060 行)
 
 | 函数 | 用途 |
 |------|------|
-| `build_keeper_parse_prompt(world, raw)` | Parse 阶段：玩家输入 → entity 匹配 |
-| `build_keeper_enrich_prompt(world, entities, input)` | Enrich 阶段：检定结果 → 叙事润色 |
+| `build_keeper_parse_prompt(world, raw)` | Parse：玩家输入 → entity 匹配。已完成 entity 默认不显示（`SHOW_COMPLETED` 控制） |
+| `build_keeper_enrich_prompt(world, entities, input)` | Enrich：检定结果 → 叙事润色 |
+| `build_npc_parse_prompt(npc_name, input, bound, bound_at, scene)` | NPC 对话解析：NPC 专属 entity 匹配（按 source_scene 过滤） |
 | `build_narrator_prompt(brief, l1, inv_info)` | Narrator：L1 + Brief → 沉浸式叙事 |
 | `build_author_prompt(request, l3, ...)` | Author：Patch/StructuralEdit 判定 |
 | `build_combat_entry_prompt(player_input, outcomes, enemy_ctx, scene)` | Combat entry：LLM 判定是否进入战斗 |
@@ -254,11 +258,10 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 | `build_stat_narrative_prompt(inv_desc, stat_name, delta, narrative)` | StatChange：LLM 更新调查员描述 |
 | `build_consume_item_fuzzy_prompt(target, quantity, held_items)` | ConsumeItem：LLM 模糊匹配背包物品 |
 | `build_combat_narrative_prompt(round_log, enemies_desc, player_name, scene)` | 战斗逐轮叙事 |
-| `_build_investigator_info(world)` | 构建调查员状态摘要（供各 prompt 复用） |
-| `_build_l1l3_context(l1, l3, location)` | L1/L3 基调约束 + 场景感知上下文 |
+| `_build_entity_lines(world)` → 8元组 | 构建可触发/不可触发/已完成 entity 列表（场景+NPC+事件三层） |
+| `_build_investigator_info(world)` | 调查员状态摘要（供各 prompt 复用） |
 | `log_skill_result(detail)` | 技能检定写入日志 `skill_checks.txt` |
 | `set_current_round(n)` | 设置当前回合号（供日志命名） |
-| `_show_prompt(label, prompt)` | 调试用 prompt 打印（由环境变量控制） |
 
 ---
 
@@ -276,11 +279,11 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 12. 离线管线
 
-### `src/module_designer/layered_pipeline.py` (727 行)
-`run_pipeline()` — 12 步渐进式解析入口，含 fallback 策略
+### `src/module_designer/layered_pipeline.py` (~850 行)
+`run_pipeline()` — 渐进式解析入口（12 LLM 调用，含 Step 2b events+AT 合并、2.5 NPC 档案+归属合并），含 fallback 策略
 
-### `src/module_designer/layered_parser.py` (1187 行)
-各步 prompt 构建 + 解析函数。Phase 2 标准化 6 种 `@函数(参数)` 标记
+### `src/module_designer/layered_parser.py` (~1,420 行)
+各步 prompt 构建 + 解析函数。Step 3b 确定性优先 + LLM gap-fill。Phase 2 标准化 7 种 `@函数(参数)` 标记
 
 ### `src/module_designer/layered_schema.py` (325 行)
 JSON Schema 定义 + `validate_all()` 三层验证
@@ -335,7 +338,7 @@ L1/L2/L3 数据模型定义
 ```
 离线管线: .docx → layered_pipeline(12 LLM calls) → l1/l2/l3.json
 
-运行时加载: l2.json → DirectedGraph → ScenarioWorld(enemy_manager, weapon_library, scene_weapons)
+运行时加载: l2.json → DirectedGraph → ScenarioWorld(npc_manager, enemy_manager, ...)
             l1.json → Narrator
             l3.json → Author
             enemies.json → EnemyLibrary → EnemyManager
@@ -343,15 +346,19 @@ L1/L2/L3 数据模型定义
             bosses.json → BossLibrary → BossManager
 
 单回合: user_input → Keeper.process_turn()
-           ├─ parse(LLM flash) → intent matches
-           ├─ judge(deterministic) → D100 check + @markup resolve + [失败≥3次 → 惩罚系统(LLM) → penalty narrative + markup_effects]
-           ├─ [enrich(LLM flash) ∥ combat_entry(LLM flash) ∥ TimeAgent(LLM)]
-           ├─ [对峙(avoidable敌人): 语义匹配(LLM flash) → D100 → trait_enhancement]
+           ├─ _inject_npc_at() → NPC bound entities 注入当前场景
+           ├─ parse(LLM) → entity matches
+           ├─ [NPC 路由]:
+           │   ├─ [NPC_INTERACT]/[NPC_AT] entity → interaction/auto_trigger → 走主管道
+           │   └─ npc_interact(无匹配) → talk_to() → 短路返回对话
+           ├─ judge(deterministic) → D100 + @markup + [失败≥3次 → LLM 惩罚]
+           ├─ [enrich(LLM) ∥ combat_entry(LLM) ∥ TimeAgent(LLM)]
+           ├─ [对峙(avoidable): 语义匹配(LLM) → D100 → trait_enhancement]
            ├─ curate → NarratorBrief
            ├─ [IntentDetect → Author → Patch/StructuralEdit (按需)]
            └─ narrator(LLM) → immersive narrative
-           ╎ 独立管线: skill_detail(骰值/难度递增/惩罚标记) → CLI skill_results + 日志
-           ╎          TimeAgent → clock.advance_time() + time_context
+           ╎ 独立管线: skill_detail → CLI + 日志
+           ╎          TimeAgent → clock.advance_time()
 
 战斗: CombatInit → CombatSystem.run_combat()
         ├─ _init_combat → CombatState
@@ -363,8 +370,9 @@ L1/L2/L3 数据模型定义
 
 ## 16. 环境约定
 
-- **Python path**：所有命令需要 `PYTHONPATH="src;."`（Windows）或 `PYTHONPATH="src:."`（Unix）
-- **测试命令**：`cd C:/Users/micha/PyCharmMiscProject && PYTHONPATH="src;." python -m pytest tests/<file> -v --tb=short`
+- **Python path**：所有命令需要 `PYTHONPATH="src"`（Windows 用 `set PYTHONPATH=src`）
+- **测试命令**：`cd C:/Users/micha/PyCharmMiscProject && $env:PYTHONPATH="src"; python tests/<file> --case B`
 - **LLM 模型**：默认 `deepseek-v4-pro`（重推理），flash 任务用 `deepseek-v4-flash`（轻量）
 - **推理强度**：`reasoning_effort`: 重任务 `"high"`，轻任务 `"low"`
 - **JSON mode**：结构化判定 `json_mode=True`（temperature=0.2），叙事生成 `json_mode=False`（temperature=0.7）
+- **关键配置项** (`src/config.py`)：`SHOW_NON_TRIGGERABLE`（展示不可触发实体）、`SHOW_COMPLETED`（展示已完成实体）、`COMBAT_LLM_ENHANCEMENT`（战斗 LLM 叙事增强）

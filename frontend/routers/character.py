@@ -63,8 +63,7 @@ def _roll_stat(dice: int, add: int) -> int:
 
 @router.get("", response_class=HTMLResponse)
 async def character_page(request: Request):
-    return templates.TemplateResponse("character.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "character.html", {
         "skills": SKILLS,
         "stats": STATS,
         "stat_labels": STAT_LABELS,
@@ -75,15 +74,15 @@ async def character_page(request: Request):
 @router.get("/step/{n}", response_class=HTMLResponse)
 async def step_partial(request: Request, n: int):
     if n == 1:
-        return templates.TemplateResponse("partials/char-step1.html", {
-            "request": request, "stats": STATS, "stat_labels": STAT_LABELS, "stat_rolls": STAT_ROLLS,
+        return templates.TemplateResponse(request, "partials/char-step1.html", {
+            "stats": STATS, "stat_labels": STAT_LABELS, "stat_rolls": STAT_ROLLS,
         })
     elif n == 2:
-        return templates.TemplateResponse("partials/char-step2.html", {
-            "request": request, "skills": SKILLS, "occupations": _load_occupations(),
+        return templates.TemplateResponse(request, "partials/char-step2.html", {
+            "skills": SKILLS, "occupations": _load_occupations(),
         })
     elif n == 3:
-        return templates.TemplateResponse("partials/char-step3.html", {"request": request})
+        return templates.TemplateResponse(request, "partials/char-step3.html", {})
     return HTMLResponse("<p class='text-red-500'>Invalid step</p>", status_code=404)
 
 
@@ -114,6 +113,31 @@ async def roll_stats():
     return HTMLResponse(f'<div class="grid grid-cols-3 gap-3">{cells}</div><div class="mt-4 p-3 bg-[#1a150c] border border-[#3a2810] rounded">{derived}</div>')
 
 
+@router.get("/skills-list", response_class=HTMLResponse)
+async def skills_list(occupation: str = ""):
+    occs = _load_occupations()
+    occs = [o for o in occs if o["name"] == occupation]
+    if not occs:
+        return HTMLResponse('<div class="text-sm text-gray-600">未找到该职业</div>')
+    occ = occs[0]
+    skill_names = occ.get("occupation_skills", [])
+    related = {s["name"]: s["base"] for s in SKILLS if s["name"] in skill_names}
+    pts = occ.get("skill_points_formula", "EDU*4")
+    cr_min, cr_max = occ.get("credit_rating_min", 0), occ.get("credit_rating_max", 99)
+    rows = "".join(
+        f'<div class="flex items-center gap-2"><span class="text-sm text-gray-300 w-28">{name}</span>'
+        f'<span class="text-xs text-gray-600">基础 {base}%</span>'
+        f'<input type="number" min="0" max="99" value="{base}" '
+        f'class="w-16 bg-[#1a150c] border border-[#4a3820] rounded px-2 py-1 text-xs text-gray-300"></div>'
+        for name, base in related.items()
+    )
+    html = (
+        f'<div class="text-sm text-gray-500 mb-3">技能点: {pts} | 信用: {cr_min}-{cr_max}</div>'
+        f'<div class="space-y-1">{rows}</div>'
+    )
+    return HTMLResponse(html)
+
+
 @router.post("/generate-description")
 async def generate_description(type: str = Form(...), prompt: str = Form(...)):
     from llm import call_deepseek
@@ -137,15 +161,47 @@ async def export_character(
     name: str = Form(""), age: int = Form(20), gender: str = Form(""),
     occupation: str = Form(""), appearance: str = Form(""),
     description: str = Form(""), backstory: str = Form(""),
+    stat_STR: int = Form(0), stat_CON: int = Form(0), stat_SIZ: int = Form(0),
+    stat_DEX: int = Form(0), stat_APP: int = Form(0), stat_INT: int = Form(0),
+    stat_POW: int = Form(0), stat_EDU: int = Form(0), stat_LUCK: int = Form(0),
+    stat_HP: int = Form(0), stat_MP: int = Form(0), stat_SAN: int = Form(0),
+    stat_DODGE: int = Form(0), stat_DB: str = Form("0"), stat_BUILD: int = Form(0),
+    skills_json: str = Form("{}"),
 ):
     import json as _json
     from datetime import datetime as _dt
-    data = {
-        "meta": {"version": "1.0", "created_at": _dt.now().isoformat(), "rules_edition": "COC7"},
-        "personal": {"name": name, "age": age, "gender": gender, "occupation": occupation,
-                     "appearance": appearance, "description": description},
-        "backstory": backstory,
-    }
+    from investigator.models import Stats, DerivedStats
+    from investigator.serialization import investigator_to_dict
+    from investigator import Investigator
+    from investigator.rules import create_skill_list
+
+    inv = Investigator(name=name or "调查员", age=age, gender=gender or "男")
+    inv.stats = Stats(
+        STR=stat_STR, CON=stat_CON, SIZ=stat_SIZ, DEX=stat_DEX,
+        APP=stat_APP, INT=stat_INT, POW=stat_POW, EDU=stat_EDU, LUCK=stat_LUCK,
+    )
+    inv.derived = DerivedStats(
+        HP=stat_HP, MP=stat_MP, SAN=stat_SAN, MOV=8,
+        DB=stat_DB, BUILD=stat_BUILD, DODGE=stat_DODGE,
+    )
+    skills = create_skill_list()
+    custom = _json.loads(skills_json) if skills_json.strip() else {}
+    for s in skills:
+        if s.name in custom:
+            s.value = int(custom[s.name])
+    inv.skills = skills
+    inv.occupation = occupation
+    inv.appearance = appearance
+    inv.description = description
+    inv.backstory = backstory
+
+    data = investigator_to_dict(inv)
+    data.setdefault("meta", {})
+    data["meta"].update({
+        "version": "1.0",
+        "created_at": _dt.now().isoformat(),
+        "rules_edition": "COC7",
+    })
     content = _json.dumps(data, ensure_ascii=False, indent=2)
     from fastapi.responses import Response
     return Response(content=content, media_type="application/json",

@@ -248,12 +248,7 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
                 return name
         return None
 
-    def _is_follow_event(entity: dict) -> bool:
-        combined = " ".join([
-            entity.get("name", ""), entity.get("trigger", ""), entity.get("result", ""),
-        ])
-        follow_kw = ("跟随", "跟着", "加入队伍", "离开队伍", "开始跟随", "停止跟随")
-        return any(kw in combined for kw in follow_kw)
+
 
     filtered_interactions = []
     filtered_auto_triggers = []
@@ -289,6 +284,66 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
             filtered_auto_triggers.append(e)
 
     return filtered_interactions, filtered_auto_triggers, npc_profiles
+
+
+def _extract_entity_bindings(npc_profiles: dict) -> dict[str, str]:
+    """从 npc_profiles 的 bound_entities 字段提取 entity→NPC 绑定映射。"""
+    bindings = {}
+    for npc_name, profile in npc_profiles.items():
+        for eid in profile.pop("bound_entities", []):
+            bindings[eid] = npc_name
+    return bindings
+
+
+def _inject_step1a_meta(npc_profiles: dict, step1a_characters: list[dict],
+                        verbose: bool = False) -> None:
+    """从 Step 1a characters 注入 scene/can_follow/follow_requirements 到 npc_profiles。"""
+    char_meta = {
+        c["name"]: {
+            "scenes": c.get("scenes", []),
+            "can_follow": c.get("can_follow", False),
+            "follow_condition": c.get("follow_condition", ""),
+        }
+        for c in step1a_characters if isinstance(c, dict)
+    }
+    for npc_name, profile in npc_profiles.items():
+        meta = char_meta.get(npc_name, {})
+        if meta.get("scenes"):
+            profile["scene"] = meta["scenes"][0]
+            profile["all_scenes"] = list(meta["scenes"])
+        if "can_follow" in meta:
+            profile["can_follow"] = bool(meta["can_follow"])
+        if meta.get("follow_condition"):
+            profile["follow_requirements"] = meta["follow_condition"]
+    if verbose and char_meta:
+        assigned = sum(1 for p in npc_profiles.values() if p.get("scene"))
+        print(f"  [NPC Scene] {assigned}/{len(npc_profiles)} NPCs assigned scene from Step 1a")
+
+
+def _inject_npc_follow_entities(interactions: list[dict], npc_profiles: dict,
+                                 verbose: bool = False) -> None:
+    """为 can_follow=true 的 NPC 确定性注入 NPC_FOLLOW entity。"""
+    existing_ids = {e.get("id") for e in interactions}
+    for npc_name, profile in npc_profiles.items():
+        if not profile.get("can_follow"):
+            continue
+        follow_id = f"NPC_FOLLOW_{npc_name}"
+        if follow_id in existing_ids:
+            continue
+        interactions.append({
+            "id": follow_id,
+            "scene": profile.get("scene", ""),
+            "name": f"请求{npc_name}跟随",
+            "type": "无",
+            "trigger": f"你请求{npc_name}跟随你一起行动",
+            "result": f"@npc_follow(npc_name=\"{npc_name}\", follow=true)",
+            "side_effects": [],
+            "difficulty": "None",
+            "requirement": profile.get("follow_requirements", ""),
+        })
+        existing_ids.add(follow_id)
+        if verbose:
+            print(f"  [NPC Follow] 注入 {follow_id}")
 
 
 def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
@@ -379,11 +434,10 @@ def run_pipeline(
     from module_designer.layered_parser import (
         _with_fallback,
         parse_step1a, parse_step1b,
-        parse_step2a, parse_step2b_events, parse_step2b_at,
+        parse_step2a, parse_step2b_combined,
         parse_step2c_l1, parse_step2c_l3,
         parse_step3a, parse_step3b, parse_step4,
-        parse_step35, parse_step25,
-        parse_step25b,
+        parse_step35, parse_step25_combined,
         parse_step2_boss,
         _merge_phase2_fields, _slim_entity,
     )
@@ -492,30 +546,25 @@ def run_pipeline(
 
     # ── Step 2b + 2c ─────────────────────────────────────────
     if verbose:
-        print("[Step 2b+2c] Events, Auto-triggers, L1, L3 (并行)...")
+        print("[Step 2b+2c] Events+AT (合并), L1, L3 (并行)...")
 
-    def _do_events():
-        return parse_step2b_events(chapters, scenes, interactions, llm_json, characters=characters)
-    step1_enemies = step1a.get("enemies", [])
-    step1_weapons = step1a.get("weapons", [])
-
-    def _do_at():
-        return parse_step2b_at(chapters, scenes, interactions, llm_json,
-                               characters=characters, enemies=step1_enemies, weapons=step1_weapons)
+    def _do_step2b():
+        step1_enemies = step1a.get("enemies", [])
+        step1_weapons = step1a.get("weapons", [])
+        return parse_step2b_combined(chapters, scenes, interactions, llm_json,
+                                      characters=characters, enemies=step1_enemies,
+                                      weapons=step1_weapons)
     def _do_l1():
         return parse_step2c_l1(chapters, scenes, characters, llm_json)
     def _do_l3():
         step1_meta = step1a.get("module_meta", {})
         return parse_step2c_l3(chapters, scenes, characters, llm_json, step1_meta=step1_meta)
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        f_ev = ex.submit(lambda: _with_fallback(
-            _do_events, ["events"], {"events": []},
-            max_retries, verbose, "Step 2b events",
-        ))
-        f_at = ex.submit(lambda: _with_fallback(
-            _do_at, ["auto_triggers"], {"auto_triggers": []},
-            max_retries, verbose, "Step 2b auto_triggers",
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_2b = ex.submit(lambda: _with_fallback(
+            _do_step2b, ["events", "auto_triggers"],
+            {"events": [], "auto_triggers": []},
+            max_retries, verbose, "Step 2b",
         ))
         f_l1 = ex.submit(lambda: _with_fallback(
             _do_l1, [], {},
@@ -526,15 +575,13 @@ def run_pipeline(
             {"world_rules": [], "driving_force": ""},
             max_retries, verbose, "Step 2c L3",
         ))
-        events_data = f_ev.result()
-        at_data = f_at.result()
+        step2b_data = f_2b.result()
         l1_data = f_l1.result()
         l3_data = f_l3.result()
 
-    events = events_data.get("events", [])
-    auto_triggers = at_data.get("auto_triggers", [])
-    for fb_name, fb_data in [("Step 2b events", events_data),
-                              ("Step 2b auto_triggers", at_data),
+    events = step2b_data.get("events", [])
+    auto_triggers = step2b_data.get("auto_triggers", [])
+    for fb_name, fb_data in [("Step 2b", step2b_data),
                               ("Step 2c L1", l1_data),
                               ("Step 2c L3", l3_data)]:
         if fb_data.get("_fallback"):
@@ -560,10 +607,10 @@ def run_pipeline(
         print(f"  Step 2b 完成: {len(events)} events, {len(auto_triggers)} auto_triggers")
         print(f"  Step 2c 完成: {len(l1_data)} L1 场景, {len(l3_data.get('world_rules',[]))} 世界规则")
 
-    # ── Step 3a ∥ Step 2.5 ∥ Step 2.5b (并行) ─────────────────
+    # ── Step 3a ∥ Step 2.5 (并行) ─────────────────
     if verbose:
         print("═" * 50)
-        print("[Step 3a + Step 2.5 + Step 2.5b] L2 依赖解析 ∥ NPC 行为描述 ∥ NPC 实体归属判定 (并行)...")
+        print("[Step 3a + Step 2.5] L2 依赖解析 ∥ NPC 档案+实体归属 (并行)...")
 
     def _do_step3a():
         ending_conditions = l3_data.get("ending_conditions", [])
@@ -573,15 +620,11 @@ def run_pipeline(
         l3_characters = l3_data.get("characters", [])
         if not l3_characters:
             return {"npc_profiles": {}}
-        return parse_step25(l3_characters, l1_data, interactions, auto_triggers, llm_json)
-
-    def _do_step25b():
         step1_characters = step1a.get("characters", [])
-        if not step1_characters:
-            return {"entity_bindings": {}}
-        return parse_step25b(step1_characters, interactions, auto_triggers, llm_json)
+        return parse_step25_combined(l3_characters, l1_data, interactions, auto_triggers,
+                                      llm_json, step1a_characters=step1_characters)
 
-    n_workers = 1 + (1 if l3_data.get("characters") else 0) + (1 if step1a.get("characters") else 0)
+    n_workers = 1 + (1 if l3_data.get("characters") else 0)
     with ThreadPoolExecutor(max_workers=n_workers) as ex:
         f3a = ex.submit(lambda: _with_fallback(
             _do_step3a, ["interactions"],
@@ -593,40 +636,17 @@ def run_pipeline(
             {"npc_profiles": {}},
             max_retries, verbose, "Step 2.5",
         ))
-        f25b = ex.submit(lambda: _with_fallback(
-            _do_step25b, ["entity_bindings"],
-            {"entity_bindings": {}},
-            max_retries, verbose, "Step 2.5b",
-        ))
         step3a = f3a.result()
         step25 = f25.result()
-        step25b = f25b.result()
 
     interactions = step3a.get("interactions", interactions)
     events = step3a.get("events", events)
     auto_triggers = step3a.get("auto_triggers", auto_triggers)
     npc_profiles = step25.get("npc_profiles", {})
-    entity_bindings = step25b.get("entity_bindings", {})
 
-    # Inject scene + can_follow + follow_condition from Step 1a characters into npc_profiles
-    step1a_characters = step1a.get("characters", [])
-    char_name_to_meta = {
-        c["name"]: {"scenes": c.get("scenes", []), "can_follow": c.get("can_follow", False),
-                    "follow_condition": c.get("follow_condition", "")}
-        for c in step1a_characters if isinstance(c, dict)
-    }
-    for npc_name, profile in npc_profiles.items():
-        meta = char_name_to_meta.get(npc_name, {})
-        if meta.get("scenes"):
-            profile["scene"] = meta["scenes"][0]
-            profile["all_scenes"] = list(meta["scenes"])
-        if "can_follow" in meta:
-            profile["can_follow"] = bool(meta["can_follow"])
-        if meta.get("follow_condition"):
-            profile["follow_requirements"] = meta["follow_condition"]
-    if verbose and char_name_to_meta:
-        assigned = sum(1 for p in npc_profiles.values() if p.get("scene"))
-        print(f"  [NPC Scene] {assigned}/{len(npc_profiles)} NPCs assigned scene from Step 1a")
+    entity_bindings = _extract_entity_bindings(npc_profiles)
+
+    _inject_step1a_meta(npc_profiles, step1a.get("characters", []), verbose)
 
     interactions, auto_triggers, npc_profiles = _bind_npc_entities(
         interactions, auto_triggers, npc_profiles,
@@ -644,12 +664,12 @@ def run_pipeline(
         result.fallbacks.append("Step 3a")
     if step25.get("_fallback"):
         result.fallbacks.append("Step 2.5")
-    if step25b.get("_fallback"):
-        result.fallbacks.append("Step 2.5b")
 
     if verbose:
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
         print(f"  Step 2.5 完成: {len(npc_profiles)} NPC profiles")
+
+    _inject_npc_follow_entities(interactions, npc_profiles, verbose)
 
     # ── 生成 Boss Encounter（如果 Step 1 识别到了 Boss）──
     boss_hints = step1a.get("boss_encounters", [])

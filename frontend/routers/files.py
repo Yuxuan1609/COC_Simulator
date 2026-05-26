@@ -50,8 +50,7 @@ async def list_files(
     if format == "json":
         return {"dirs": dirs, "files": files, "parent": parent, "current": current}
 
-    return templates.TemplateResponse("partials/file-listing.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "partials/file-listing.html", {
         "dirs": dirs,
         "files": files,
         "parent": parent,

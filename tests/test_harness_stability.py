@@ -21,9 +21,9 @@ TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_ROOT = os.path.join(os.path.dirname(__file__), "..", "data", "debug", "test_stability", TIMESTAMP)
 
 PROJECT_ROOT = os.path.dirname(__file__)
-L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗更新", "l2_keeper.json")
-L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗更新", "l1_player.json")
-L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗更新", "l3_designer.json")
+L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "更新模组0526v2", "l2_keeper.json")
+L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "更新模组0526v2", "l1_player.json")
+L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "更新模组0526v2", "l3_designer.json")
 CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.json")
 
 
