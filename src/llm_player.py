@@ -86,6 +86,20 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         start_node="6号车厢",
     )
 
+    # Monkey-patch combat → auto-win (combat tested separately)
+    from game.combat import CombatSystem, CombatResult
+    _orig_run_combat = CombatSystem.run_combat
+    def _auto_win_combat(self, combat_init):
+        return CombatResult(
+            outcome="win",
+            defeated_instance_ids=[e.instance_id for e in combat_init.enemies],
+            player_hp=game["keeper"].world.player.derived.HP,
+            player_san=game["keeper"].world.player.derived.SAN,
+            rounds=1,
+            narrative="（战斗已短路——压力测试模式自动胜利）",
+        )
+    CombatSystem.run_combat = _auto_win_combat
+
     ct = profile.get("combat_testing", {})
     if ct.get("mode") == "buff_investigator":
         char_path = PROJECT_ROOT / "data" / "investigator" / "combat_test_character.json"
