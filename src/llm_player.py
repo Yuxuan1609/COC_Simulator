@@ -87,16 +87,25 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     )
 
     # Monkey-patch combat → auto-win (combat tested separately)
+    # Frame as costly Pyrrhic victory so the LLM player learns to avoid combat
     from game.combat import CombatSystem, CombatResult
     _orig_run_combat = CombatSystem.run_combat
     def _auto_win_combat(self, combat_init):
+        player = game["keeper"].world.player
+        san_loss = min(10, player.derived.SAN // 6)
+        hp_loss = min(4, player.derived.HP // 4)
+        player.modify_stat("SAN", -san_loss)
+        player.derived.HP = max(1, player.derived.HP - hp_loss)
         return CombatResult(
             outcome="win",
             defeated_instance_ids=[e.instance_id for e in combat_init.enemies],
-            player_hp=game["keeper"].world.player.derived.HP,
-            player_san=game["keeper"].world.player.derived.SAN,
+            player_hp=player.derived.HP,
+            player_san=player.derived.SAN,
             rounds=1,
-            narrative="（战斗已短路——压力测试模式自动胜利）",
+            narrative=(
+                f"你侥幸战胜了敌人，但付出了惨重代价（SAN -{san_loss}，HP -{hp_loss}）。"
+                f"你意识到正面冲突极其危险，应尽量通过潜行、回避或交涉来规避战斗。"
+            ),
         )
     CombatSystem.run_combat = _auto_win_combat
 
