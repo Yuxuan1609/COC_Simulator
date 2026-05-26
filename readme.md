@@ -265,6 +265,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | U5 | 世界状态系统 | ✅ 序列化已实现（G9/G10，全部子系统 `to_dict/from_dict`）。待完成：基于 Logger 的世界状态解读模型（`TurnLogger` 数据已就绪） |
 | U6 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
 | U7 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化；(2) 模组 Patch 永久化；(3) 调查员经历写入；(4) 多模组拼接战役——模组队列、结局分支路由、全局世界状态延续 |
+
+### 待升级（有生之年）
 | U8 | 多人模式（Hotseat） | 同机多人轮流操作，各自独立调查员角色卡，共享世界状态。类似传统 TRPG 桌面局的数字版——KP 主持，多个调查员轮流输入行动 |
 
 ## 设计文档
