@@ -772,64 +772,61 @@ class Keeper:
         if not self.world.npcs:
             return
         self.world._npc_injected_at_ids.clear()
+        node = self.world._current_node()
+        if not node:
+            return
+        existing_interact_ids = {e.id for e in node.interactions}
+        existing_at_ids = {e.id for e in node.auto_triggers}
         for npc in self.world.npcs._npcs.values():
             if npc.scene != self.world.current_location:
                 continue
             # Inject bound interactions
             for ent in npc.bound_interactions:
                 eid = ent.get("id", "")
-                if self.world.is_entity_completed(eid):
+                if self.world.is_entity_completed(eid) or eid in existing_interact_ids:
                     continue
                 req = ent.get("requirement", "")
                 if req:
                     from scenario_core import parse_hard_requirement
                     if not parse_hard_requirement(req, self.world.runtime_state):
                         continue
-                node = self.world._current_node()
-                if node:
-                    existing_ids = {e.id for e in node.interactions}
-                    if eid not in existing_ids:
-                        from scenario_core import Entity
-                        node.interactions.append(Entity(
-                            id=eid, entity_type="interaction",
-                            name=ent.get("name", ""), scene=ent.get("source_scene", ""),
-                            type=ent.get("type", ""), requirement=req,
-                            trigger=ent.get("trigger", ""), result=ent.get("result", ""),
-                            side_effects=ent.get("side_effects", []),
-                            graded_result=ent.get("graded_result"),
-                            difficulty=ent.get("difficulty", ""),
-                            extra=ent.get("extra"),
-                        ))
-                        self.world._npc_injected_at_ids.add(eid)
+                from scenario_core import Entity
+                node.interactions.append(Entity(
+                    id=eid, entity_type="interaction",
+                    name=ent.get("name", ""), scene=ent.get("source_scene", ""),
+                    type=ent.get("type", ""), requirement=req,
+                    trigger=ent.get("trigger", ""), result=ent.get("result", ""),
+                    side_effects=ent.get("side_effects", []),
+                    graded_result=ent.get("graded_result"),
+                    difficulty=ent.get("difficulty", ""),
+                    extra=ent.get("extra"),
+                ))
+                self.world._npc_injected_at_ids.add(eid)
             # Inject bound auto_triggers
             for at in npc.bound_auto_triggers:
                 at_scene = at.get("source_scene", "")
                 if at_scene != self.world.current_location and at_scene:
                     continue
                 eid = at.get("id", "")
-                if self.world.is_entity_completed(eid):
+                if self.world.is_entity_completed(eid) or eid in existing_at_ids:
                     continue
                 req = at.get("requirement", "")
                 if req:
                     from scenario_core import parse_hard_requirement
                     if not parse_hard_requirement(req, self.world.runtime_state):
                         continue
-                node = self.world._current_node()
-                if node:
-                    existing_ids = {e.id for e in node.auto_triggers}
-                    if eid not in existing_ids:
-                        from scenario_core import Entity
-                        node.auto_triggers.append(Entity(
-                            id=eid, entity_type="auto_trigger",
-                            name=at.get("name", ""), scene=at_scene,
-                            type=at.get("type", ""), requirement=req,
-                            trigger=at.get("trigger", ""), result=at.get("result", ""),
-                            side_effects=at.get("side_effects", []),
-                            graded_result=at.get("graded_result"),
-                            difficulty=at.get("difficulty", ""),
-                            extra=at.get("extra"),
-                        ))
-                        self.world._npc_injected_at_ids.add(eid)
+                from scenario_core import Entity
+                node.auto_triggers.append(Entity(
+                    id=eid, entity_type="auto_trigger",
+                    name=at.get("name", ""), scene=at_scene,
+                    type=at.get("type", ""), requirement=req,
+                    trigger=at.get("trigger", ""), result=at.get("result", ""),
+                    side_effects=at.get("side_effects", []),
+                    graded_result=at.get("graded_result"),
+                    difficulty=at.get("difficulty", ""),
+                    extra=at.get("extra"),
+                ))
+                self.world._npc_injected_at_ids.add(eid)
 
     # ── Internal ──
 
@@ -1171,28 +1168,6 @@ class Keeper:
                    quantity=sw.get("quantity", 1))
                 for sw in raw_weapons
             ]
-
-    def _execute_entity_direct(self, entity: Entity) -> ActionOutcome:
-        if entity.entity_type == "event":
-            self.world.triggered_events[entity.id] = True
-        elif entity.entity_type == "interaction":
-            loc = self.world.current_location
-            if loc not in self.world.completed_interactions:
-                self.world.completed_interactions[loc] = set()
-            self.world.completed_interactions[loc].add(entity.name)
-
-        side_effects = []
-        for se_text in entity.side_effects:
-            side_effects.extend(parse_markup_all(se_text))
-
-        return ActionOutcome(
-            intent=ActionIntent(action="other"),
-            success=True,
-            message=entity.result,
-            entity_id=entity.id,
-            entity_type=entity.entity_type,
-            side_effects=side_effects,
-        )
 
     def _apply_side_effects(self, side_effects: list) -> list[str]:
         """Apply side effect dataclasses via respective managers. Returns log messages."""

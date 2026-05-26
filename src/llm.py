@@ -66,10 +66,6 @@ def set_llm_log_dir(log_dir: str):
     os.makedirs(_log_dir, exist_ok=True)
 
 
-def set_llm_log_file(path: str):
-    """向后兼容包装器，内部转为目录模式。"""
-    set_llm_log_dir(path)
-
 
 def set_log_label(label: str | None):
     """设置当前 LLM 调用对应的日志 label。_log_response 会写入 <label>.txt 而非 llm.txt。"""
@@ -494,60 +490,6 @@ def evaluate_failure_penalty(
     except json.JSONDecodeError:
         return {"narrative": graded_on_failure or f"{skill_name}检定失败。",
                 "markup_effects": []}
-
-def evaluate_soft_requirement(expr: str, inv_desc: str, scene_desc: str) -> dict:
-    """LLM fallback for soft requirements (after ||).
-
-    Evaluates narrative conditions like "调查员持有光源" or "已知晓大嘴的存在"
-    that cannot be resolved deterministically.
-
-    Returns {"met": bool, "reason": str}
-    """
-    if not expr or not expr.strip():
-        return {"met": True, "reason": ""}
-
-    prompt = f"""你是 TRPG 规则裁判。判断当前调查员是否满足给定的叙事条件。
-
-【调查员】
-  描述：{inv_desc or '（无）'}
-
-【场景】
-  {scene_desc or '（无）'}
-
-【条件】
-  {expr}
-
-条件仅涉及叙事性判断（物品持有、知识状态、NPC关系等）。
-若条件和调查员的当前状况、已有物品或已知信息相符则判定为满足。
-不确定时倾向于判定为满足（避免过度卡关）。
-
-返回 JSON：
-{{"met": true, "reason": "简短理由"}}
-或
-{{"met": false, "reason": "简短理由"}}
-
-直接输出 JSON。"""
-    response = client.chat.completions.create(
-        model=LLM_FLASH_MODEL,
-        messages=[
-            {"role": "system", "content": "你是一个TRPG规则裁判。仅输出JSON。"},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2,
-        max_tokens=200,
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-    raw = response.choices[0].message.content.strip()
-    if raw.startswith("```json"):
-        raw = raw[7:-3].strip()
-    elif raw.startswith("```"):
-        raw = raw[3:-3].strip()
-    try:
-        result = json.loads(raw)
-        return {"met": result.get("met", True), "reason": result.get("reason", "")}
-    except json.JSONDecodeError:
-        return {"met": True, "reason": "JSON解析失败，默认通过"}
-
 
 def evaluate_combat_round_narrative(
     round_log: list, enemies_desc: str,

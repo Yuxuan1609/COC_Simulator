@@ -141,7 +141,9 @@ from module_designer.layered_parser import (
     STEP3A_SYSTEM, STEP35_SYSTEM,
     parse_step3b, STEP4_SYSTEM, STEP2_BOSS_SYSTEM,
 )
-from module_designer.layered_pipeline import run_pipeline, cross_validate_layers, _assemble_l2, _bind_npc_entities
+from module_designer.layered_pipeline import (run_pipeline, cross_validate_layers, _assemble_l2,
+    _bind_npc_entities, _extract_entity_bindings, _inject_step1a_meta,
+    _inject_npc_follow_entities)
 from module_designer.dependency_graph import DependencyGraph
 from library import WeaponLibrary, EnemyLibrary
 from library.bosses import BossLibrary
@@ -847,57 +849,16 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
     runner.auto_triggers = step3a.get("auto_triggers", runner.auto_triggers)
     runner.npc_profiles = step25.get("npc_profiles", {})
 
-    # Extract entity_bindings from npc_profiles' bound_entities
-    entity_bindings = {}
-    for npc_name, profile in runner.npc_profiles.items():
-        for eid in profile.pop("bound_entities", []):
-            entity_bindings[eid] = npc_name
+    entity_bindings = _extract_entity_bindings(runner.npc_profiles)
 
-    # Inject scene + can_follow + follow_condition from Step 1a characters
-    char_name_to_meta = {
-        c["name"]: {
-            "scenes": c.get("scenes", []),
-            "can_follow": c.get("can_follow", False),
-            "follow_condition": c.get("follow_condition", ""),
-        }
-        for c in step1a_characters if isinstance(c, dict)
-    }
-    for npc_name, profile in runner.npc_profiles.items():
-        meta = char_name_to_meta.get(npc_name, {})
-        if meta.get("scenes"):
-            profile["scene"] = meta["scenes"][0]
-            profile["all_scenes"] = list(meta["scenes"])
-        if "can_follow" in meta:
-            profile["can_follow"] = bool(meta["can_follow"])
-        if meta.get("follow_condition"):
-            profile["follow_requirements"] = meta["follow_condition"]
+    _inject_step1a_meta(runner.npc_profiles, step1a_characters, verbose)
 
-    # Bind NPC entities using LLM result (fallback to deterministic if no bindings)
     runner.interactions, runner.auto_triggers, runner.npc_profiles = _bind_npc_entities(
         runner.interactions, runner.auto_triggers, runner.npc_profiles,
         entity_bindings=entity_bindings if entity_bindings else None,
     )
 
-    # ── 确定性注入 NPC 跟随 entity (O20) ──
-    for npc_name, profile in runner.npc_profiles.items():
-        if not profile.get("can_follow"):
-            continue
-        follow_id = f"NPC_FOLLOW_{npc_name}"
-        if any(e.get("id") == follow_id for e in runner.interactions):
-            continue
-        runner.interactions.append({
-            "id": follow_id,
-            "scene": profile.get("scene", ""),
-            "name": f"请求{npc_name}跟随",
-            "type": "无",
-            "trigger": f"你请求{npc_name}跟随你一起行动",
-            "result": f"@npc_follow(npc_name=\"{npc_name}\", follow=true)",
-            "side_effects": [],
-            "difficulty": "None",
-            "requirement": profile.get("follow_requirements", ""),
-        })
-        if verbose:
-            print(f"  [NPC Follow] 注入 {follow_id}")
+    _inject_npc_follow_entities(runner.interactions, runner.npc_profiles, verbose)
 
     # 保存
     step_dir_3 = runner._step_dir("step_3a")

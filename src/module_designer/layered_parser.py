@@ -35,11 +35,6 @@ def load_json(filepath: str) -> dict:
         return json.load(f)
 
 
-def _load_template(name: str) -> str:
-    """加载模板文件并格式化为示例 JSON 字符串."""
-    path = os.path.join(TEMPLATE_DIR, name)
-    template = load_json(path)
-    return json.dumps(template, ensure_ascii=False, indent=2)
 
 
 # 预加载三个模板文件，供其他模块使用
@@ -1092,7 +1087,6 @@ def parse_step3b(
     llm_call,
 ) -> dict:
     """Step 3b：确定性修复场景名/NPC名/引用/覆盖 → LLM 仅补 linked_interaction gap → key 合并。"""
-    import copy
     scene_names = [s.get("name", s) if isinstance(s, dict) else s for s in step1_scenes]
 
     # Phase 1: deterministic
@@ -1108,7 +1102,7 @@ def parse_step3b(
                 elem_name = link.get("element_name", "")
                 linked = link.get("linked_interaction", "")
                 if linked and scene in l1:
-                    for elem in l1[scene].get("perceptible_elements", []):
+                    for elem in l1[scene].get("perceptible", []):
                         if elem.get("name") == elem_name:
                             elem["linked_interaction"] = linked
                             break
@@ -1269,18 +1263,6 @@ def build_phase1_prompt(
 \"\"\"
 {"\n\n".join(chapters.values())}
 \"\"\""""
-
-
-def parse_phase1(
-    chapters: dict[str, str],
-    scene_intents: dict,
-    weapon_library_names: list[str],
-    enemy_library_names: list[str],
-    llm_call,
-) -> dict:
-    """从精修模组判断敌人和武器的风格方向与数量范围."""
-    prompt = build_phase1_prompt(chapters, scene_intents, weapon_library_names, enemy_library_names)
-    return llm_call(prompt, system=PHASE1_SYSTEM)
 
 
 # ═══════════════════════════════════════════════════════════════

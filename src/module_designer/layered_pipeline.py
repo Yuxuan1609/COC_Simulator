@@ -248,12 +248,7 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
                 return name
         return None
 
-    def _is_follow_event(entity: dict) -> bool:
-        combined = " ".join([
-            entity.get("name", ""), entity.get("trigger", ""), entity.get("result", ""),
-        ])
-        follow_kw = ("跟随", "跟着", "加入队伍", "离开队伍", "开始跟随", "停止跟随")
-        return any(kw in combined for kw in follow_kw)
+
 
     filtered_interactions = []
     filtered_auto_triggers = []
@@ -289,6 +284,66 @@ def _bind_npc_entities(interactions: list[dict], auto_triggers: list[dict],
             filtered_auto_triggers.append(e)
 
     return filtered_interactions, filtered_auto_triggers, npc_profiles
+
+
+def _extract_entity_bindings(npc_profiles: dict) -> dict[str, str]:
+    """从 npc_profiles 的 bound_entities 字段提取 entity→NPC 绑定映射。"""
+    bindings = {}
+    for npc_name, profile in npc_profiles.items():
+        for eid in profile.pop("bound_entities", []):
+            bindings[eid] = npc_name
+    return bindings
+
+
+def _inject_step1a_meta(npc_profiles: dict, step1a_characters: list[dict],
+                        verbose: bool = False) -> None:
+    """从 Step 1a characters 注入 scene/can_follow/follow_requirements 到 npc_profiles。"""
+    char_meta = {
+        c["name"]: {
+            "scenes": c.get("scenes", []),
+            "can_follow": c.get("can_follow", False),
+            "follow_condition": c.get("follow_condition", ""),
+        }
+        for c in step1a_characters if isinstance(c, dict)
+    }
+    for npc_name, profile in npc_profiles.items():
+        meta = char_meta.get(npc_name, {})
+        if meta.get("scenes"):
+            profile["scene"] = meta["scenes"][0]
+            profile["all_scenes"] = list(meta["scenes"])
+        if "can_follow" in meta:
+            profile["can_follow"] = bool(meta["can_follow"])
+        if meta.get("follow_condition"):
+            profile["follow_requirements"] = meta["follow_condition"]
+    if verbose and char_meta:
+        assigned = sum(1 for p in npc_profiles.values() if p.get("scene"))
+        print(f"  [NPC Scene] {assigned}/{len(npc_profiles)} NPCs assigned scene from Step 1a")
+
+
+def _inject_npc_follow_entities(interactions: list[dict], npc_profiles: dict,
+                                 verbose: bool = False) -> None:
+    """为 can_follow=true 的 NPC 确定性注入 NPC_FOLLOW entity。"""
+    existing_ids = {e.get("id") for e in interactions}
+    for npc_name, profile in npc_profiles.items():
+        if not profile.get("can_follow"):
+            continue
+        follow_id = f"NPC_FOLLOW_{npc_name}"
+        if follow_id in existing_ids:
+            continue
+        interactions.append({
+            "id": follow_id,
+            "scene": profile.get("scene", ""),
+            "name": f"请求{npc_name}跟随",
+            "type": "无",
+            "trigger": f"你请求{npc_name}跟随你一起行动",
+            "result": f"@npc_follow(npc_name=\"{npc_name}\", follow=true)",
+            "side_effects": [],
+            "difficulty": "None",
+            "requirement": profile.get("follow_requirements", ""),
+        })
+        existing_ids.add(follow_id)
+        if verbose:
+            print(f"  [NPC Follow] 注入 {follow_id}")
 
 
 def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
@@ -589,31 +644,9 @@ def run_pipeline(
     auto_triggers = step3a.get("auto_triggers", auto_triggers)
     npc_profiles = step25.get("npc_profiles", {})
 
-    # Extract entity_bindings from npc_profiles' bound_entities
-    entity_bindings = {}
-    for npc_name, profile in npc_profiles.items():
-        for eid in profile.pop("bound_entities", []):
-            entity_bindings[eid] = npc_name
+    entity_bindings = _extract_entity_bindings(npc_profiles)
 
-    # Inject scene + can_follow + follow_condition from Step 1a characters into npc_profiles
-    step1a_characters = step1a.get("characters", [])
-    char_name_to_meta = {
-        c["name"]: {"scenes": c.get("scenes", []), "can_follow": c.get("can_follow", False),
-                    "follow_condition": c.get("follow_condition", "")}
-        for c in step1a_characters if isinstance(c, dict)
-    }
-    for npc_name, profile in npc_profiles.items():
-        meta = char_name_to_meta.get(npc_name, {})
-        if meta.get("scenes"):
-            profile["scene"] = meta["scenes"][0]
-            profile["all_scenes"] = list(meta["scenes"])
-        if "can_follow" in meta:
-            profile["can_follow"] = bool(meta["can_follow"])
-        if meta.get("follow_condition"):
-            profile["follow_requirements"] = meta["follow_condition"]
-    if verbose and char_name_to_meta:
-        assigned = sum(1 for p in npc_profiles.values() if p.get("scene"))
-        print(f"  [NPC Scene] {assigned}/{len(npc_profiles)} NPCs assigned scene from Step 1a")
+    _inject_step1a_meta(npc_profiles, step1a.get("characters", []), verbose)
 
     interactions, auto_triggers, npc_profiles = _bind_npc_entities(
         interactions, auto_triggers, npc_profiles,
@@ -636,27 +669,7 @@ def run_pipeline(
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
         print(f"  Step 2.5 完成: {len(npc_profiles)} NPC profiles")
 
-    # ── 确定性注入 NPC 跟随 entity ──
-    for npc_name, profile in npc_profiles.items():
-        if not profile.get("can_follow"):
-            continue
-        follow_id = f"NPC_FOLLOW_{npc_name}"
-        if any(e.get("id") == follow_id for e in interactions):
-            continue
-        follow_entity = {
-            "id": follow_id,
-            "scene": profile.get("scene", ""),
-            "name": f"请求{npc_name}跟随",
-            "type": "无",
-            "trigger": f"你请求{npc_name}跟随你一起行动",
-            "result": f"@npc_follow(npc_name=\"{npc_name}\", follow=true)",
-            "side_effects": [],
-            "difficulty": "None",
-            "requirement": profile.get("follow_requirements", ""),
-        }
-        interactions.append(follow_entity)
-        if verbose:
-            print(f"  [NPC Follow] 注入 {follow_id}")
+    _inject_npc_follow_entities(interactions, npc_profiles, verbose)
 
     # ── 生成 Boss Encounter（如果 Step 1 识别到了 Boss）──
     boss_hints = step1a.get("boss_encounters", [])
