@@ -252,7 +252,6 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | P | # | 问题 | 说明 |
 |---|----|------|------|
 | **1** | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位 |
-| 2 | O21 | 跨模组结局合并 | 结局事件系统 (O14) 已实施，但跨模组时结局需合并多 L3 或全局结局表 |
 
 
 ### 待升级（不优先）
@@ -267,6 +266,7 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | U6 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法。详见 `## NPC-Entity 分离` 章节 |
 | U7 | 战斗系统完整性与安全退出 | ♻ Boss 系统已完成。待完成：LLM 战斗叙事（U3）、回合上限保护（防死循环）、对峙流程完整接入 |
 | U8 | 自动化测试体系 | ♻ `test_harness_parallel.py`（17 case）、`test_harness_stability.py`（2 case）稳定通过。`llm_player.py` + `audit_player_log.py` + `stress_profile.json` 已实现（本 session）。待完成：30 轮完整跑局、子系统覆盖率达标 |
+| U9 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化——角色卡/物品/技能/属性/SAN 跨模组继承；(2) 模组 Patch 永久化——Author StructuralEdit 产出的场景/entity 持久写入；(3) 调查员经历写入——每模组结束时生成 narrative 经历摘要并累积；(4) 多模组拼接成战役系统——模组队列、结局分支路由、全局世界状态跨模组延续 |
 
 ## 设计文档
 
