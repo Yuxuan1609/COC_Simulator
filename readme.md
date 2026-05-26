@@ -267,7 +267,10 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative`。`CombatSystem.__init__` 已接收 `llm_enhancement` 参数并预留 `_generate_combat_narrative()` 方法。当前仅输出确定性 per-action 文本 |
 | U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换，改写 `llm.py` 的 API 调用方式 |
 | U5 | 基于 Logger 内容实现世界状态解读 | `TurnLogger`（`src/game/turn_logger.py`）已记录每轮玩家输入 + Enrich 输出 + Narrator 输出到 `data/debug/turn_logs/`。后续基于此数据训练/评估世界状态解读模型，或生成更准确的场景摘要 |
-| U6 | NPC 系统统一升级 | 合并 O15-O18：(1) 态度层级 — 五级态度仅注入 prompt 供 LLM 自行解读，缺少硬性信息透露量/检定难度/战斗触发规则；(2) 世界状态追踪 — 跟随/死亡/态度转变等关键事件未纳入 dependency graph；(3) 半主动行为 — `get_ambient_triggers()` hook 已预留，待对接 AutoTrigger；(4) 确定性状态语法 — `NPC:name.attitude=friendly` 形式解析未实现 |
+| U6 | NPC 系统统一升级 | ♻ 本 session (2026-05-26) NPC 对话架构已重构——bound entity 走主管线，npc_interact 短路返回。O20 跟随 entity 确定性注入。待完成：态度层级硬性规则、半主动行为、状态语法。详见 `## NPC-Entity 分离` 章节 |
+| U7 | 世界状态序列化与恢复 | ✅ 已实现 (G9/G10 于 2026-05-23)。`ScenarioWorld` Facade 组合 5 个子系统（GameClock/EnemyManager/NPCManager/BossManager/MemoryManager），全部 `to_dict()/from_dict()`。`test_save_load_roundtrip.py` 覆盖全量往返测试。 |
+| U8 | 战斗系统完整性与安全退出 | ♻ Boss 系统已完成（`CombatInit` → `CombatSystem.run_combat()` → `CombatResult`）。待完成：LLM 战斗叙事增强（U3）、回合上限保护（防死循环）、对峙流程完整接入。 |
+| U9 | LLM Player 压力测试 | ♻ 本 session (2026-05-26) 已实现 `llm_player.py` + `audit_player_log.py` + `stress_profile.json`。待完成：30 轮完整跑局、子系统覆盖率提升。 |
 
 ## 设计文档
 

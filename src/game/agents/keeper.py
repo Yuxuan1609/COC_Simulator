@@ -187,11 +187,11 @@ class Keeper:
                 })
             elif entry_type == "move":
                 target = entry.get("target", "")
+                origin = self.world.current_location
                 self._pending_move = target  # defer move until Author check passes
-                # Don't execute move yet — just record the intent
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="move", target=target),
-                    success=True, message=f"前往{target}...",
+                    success=True, message=f"从{origin}前往{target}...",
                 ))
                 enrich_input.actions.append({
                     "type": "move",

@@ -88,6 +88,16 @@
 - Step 3b 是混合案例：7 个检查中 6 个可确定性，仅 linked_interaction 补全需 LLM → 拆分后 prompt 从 40K token 降到 ~2K
 - 与"统一数据源"互补：确定性逻辑依赖结构化数据质量；LLM 负责将非结构化输入转为结构化输出
 
+## 压力测试中子系统短路策略
+- 自动化测试非目标系统时，短路阻塞子系统而非修它——`llm_player.py` 用 monkey-patch 让 CombatSystem 自动胜利，避免了 Boss 护甲 10 导致的死循环。战斗系统独立测试即可
+- 关键：短路要保留接口——返回合法的 `CombatResult`，下游 EnemyManager/BossManager 仍能正常处理
+- 适用场景：任何多子系统集成测试中，个别系统未就绪或会阻塞全局时
+
+## LLM API 超时是生产必备
+- `OpenAI()` 客户端默认超时 600s，API 挂住会卡死整个进程。`call_deepseek` 加 `timeout` 参数（重任务 180s，flash 60s）后所有调用点统一受控
+- `str.format()` 中中文花括号 `{关键行动}` 被误解析为 format key → 全部转义为 `{{关键行动}}`
+- 适用场景：任何调用外部 API 的生产代码——超时不是优化，是必须
+
 ## 面向非程序员的 CLI 一键启动模式
 - `.bat` 文件封装：检查 Python 环境 → 自动安装缺失依赖 → 检查 API 配置 → 启动服务 + 打开浏览器
 - 关键细节：(a) 依赖检查用 `python -c "import X"` 而非 `pip list | grep`，更快且跨平台；(b) 失败时给出可操作的下一步（下载链接、手动命令）；(c) `chcp 65001` 解决 Windows 中文终端乱码

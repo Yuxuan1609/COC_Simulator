@@ -160,3 +160,9 @@
 - **根因**：`DerivedStats` 只有 HP/MP/SAN/SAN_MAX/MOV/DB/BUILD/DODGE，LUCK 在 `Stats` 上
 - **解决**：删除 `DerivedStats(LUCK=...)` 参数
 - **关联**：`src/investigator/models.py:27`；`tests/test_combat_harness.py:55`
+
+## 32. Boss 护甲过高 → 战斗死循环
+- **症状**：LLM Player smoke test 第 4 轮卡死——parse 有结果但进程 hang
+- **根因**：Boss "吞噬之口" 护甲 10，玩家拳击伤害 1D3+DB（最大 ~7）无法破防。`combat.py:116` 的 `while not state.finished` 只在敌人全灭时退出，无回合上限或僵局检测 → 无限循环
+- **解决**：`llm_player.py` monkey-patch `CombatSystem.run_combat` 自动返回 `win`。底层修复待做：combat 加 `max_rounds` + 僵局检测
+- **关联**：`src/game/combat.py:116`；`data/library/core/bosses.json`
