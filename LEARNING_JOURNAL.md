@@ -1,78 +1,27 @@
-# Global Learning Journal
+# Learning Journal — COC Simulator
 
-> 更新原则：每次解决复杂问题后，检查是否有可迁移的工程习惯/方法论。保持 ≤5000 字。
+> 更新原则：每次完成非平凡重构或解决复杂问题后，反思是否有可迁移的工程习惯/方法论。保持 ≤5000 字。
 > **写入前**：与已有内容交叉对比——新条目可能与已有条目重叠或互补，优先合并而非新增。
-> **写入时**：与各项目 LEARNING_JOURNAL.md 对比，将可迁移的内容同步到全局。
+> **写入时**：与 `~/.config/opencode/LEARNING_JOURNAL.md` 对比，将可迁移的技巧同步到全局。
 
 ---
 
-## 分步调试，而非猜测修复
-- 遇到 Bug 先定位根因，再动手；不要基于猜测连续尝试多个修复
-- 同一个问题改到第 2 次还没解决 → 停下来，加中间输出或日志，审视之前的思路是否正确
-- 必要时用最小可复现用例隔离问题
+## 重构前审计完整数据流
+- 修改跨多个文件的共享状态前，先 grep 所有引用（`self.boss_manager`/`self.npc_manager`/`game["boss_manager"]`），确认调用方、消费者、序列化路径
+- 本 session 的 Keeper 去重（Phase 1）是典型案例：移除 6 个 Keeper 属性前先用 grep 扫描了 `keeper.py`、`game_loop.py`、`scenario_core.py` 的全部引用，发现 `dependency_graph` 和 `npc_profiles` 已是死代码，`boss_manager` 被 `run_turn` 独立引用
+- 与"修改后追溯上下游"互补——前者是改后检查，这个是改前摸底
 
-## 展示中间结果
-- 修改后第一时间展示中间输出（log、prompt、response），用实际数据验证而非凭感觉判断
-- 复杂的多步流程每步都应有可观测的输出，方便逐段排查
+## 统一数据源替代碎片化构建
+- 7 个 `_build_*` 函数各自从 World 组装部分状态，字段名不一致、覆盖不完整 → 替换为单一 `world.build_snapshot()`，每个 prompt builder 按需取切片
+- 收益：(a) 新增字段（HP/SAN/武器/敌人/NPC/时间）对所有 prompt 自动生效；(b) 字段名统一，消除"这个 prompt 的 NPC 字段叫 npc_states 还是 npcs_in_scene"问题
+- 代价：snapshot 方法必须保持纯数据组装，不引入任何 LLM 或格式化逻辑
 
-## 修改后追溯上下游
-- 改完一处后，顺着数据流向上游和下游各走一步，检查是否有被影响的调用方或消费者
-- 特别是共享数据格式（JSON schema、dataclass 字段）的变更，要确认生成端和运行端是否对齐
+## 集中式时间管理替代分散式判定
+- `_resolve_time_delta` 散落在 entity/move/search/other 四个分支中，各走不同的规则 → 收集所有 action 摘要，单次 TimeAgent 调用统一评估
+- 额外收益：TA 可以与 enrich 并行（两者都不依赖对方的结果），不增加每轮延迟
+- 适用场景：当一种判定（时间/难度/奖励）需要在多个不同上下文中执行，且 LLM 评估质量优于硬编码规则时
 
-## 副作用延迟执行
-- 当操作需要异步确认（如 LLM 返回后才决定是否保留结果），先收集 pending，确认通过后统一 apply
-- 比先执行再回滚更可靠，避免重复执行或遗漏清理
-
-## 并行环境避免全局状态
-- 模块级 mutable 变量在并行时必然被覆盖；每个调用应携带自己的上下文（参数传递或入口捕获）
-- 日志写入是最常见的重灾区——每个 agent 自己打开文件写入，不共享标签
-
-## 管道并行编排
-- 多步调用中，用依赖图确定哪些可并行 → 一次提交全部独立任务 → 合并结果
-- 后处理（merge/dedup）保持串行，避免结果竞态
-
-## 管道中的数据不应被后续步骤覆盖
-- 管道每一步应累积而非替换——上游产出的关键信息不能被下游无条件覆写
-- 若必须覆写，限制范围（如"只覆盖同类型的成功输出"），避免跨类型覆盖（成功→失败）
-- 典型场景：enrich 合并了结果后不应擦除上游的 penalty narrative
-
-## `from X import Y` 的 mock patch 陷阱（Python）
-- `patch("module.X", mock)` 只替换模块属性，不影响已通过 `from X import Y` 绑定到其他模块本地命名空间的引用
-- 每个使用 `from X import Y` 的模块都需要单独 patch
-- 排查方法：grep 所有 `from X import Y` 调用方，逐一确认是否在 patches 列表中
-
-## LLM prompt 的身份框架效应
-- "你是格式转换者"和"你是原文作者在做二创"这两种身份设定，在格式转换+内容增强类任务中输出质量差异巨大——前者趋于机械和信息压缩，后者保留细节并自然衍生创造性内容
-- 适用于任何需要 LLM 在转换格式的同时做内容增强或创造性扩展的场景
-
-## LLM JSON 输出的正确姿势
-- 使用 API 官方提供的结构化输出参数（如 `response_format={'type': 'json_object'}`）而非仅依赖 prompt 约束，可稳定消除非纯 JSON 返回、markdown 包裹等边缘情况
-- 同时加空值重试逻辑应对 API 偶尔返回空 content 的已知问题
-
-## LLM System/User Prompt 分离
-- System prompt 放任务定义、格式约束、硬性规则；User prompt 放每次输入变化的动态数据
-- LLM 需要精确输出格式时，函数签名/示例必须写在 system prompt 中，不能靠"常识"
-- LLM 需要从固定集合中选值时，把完整白名单注入 prompt，不依赖 LLM 的领域知识
-
-## 双代码路径尽早统一
-- 两个函数实现同一逻辑 → 其中一个必出 bug（缺 step 目录、缺错误处理等）
-- 重构时应提取共用实现，让两条路径调用同一套函数
-
-## git stash 操作后验证
-- `git checkout` + `git stash pop` 恢复的可能是过期快照，部分编辑会丢失
-- 恢复后 grep 关键修改是否还在，import 是否成功
-
-## 批量 Prompt 重构：先定模板再逐个套用
-- 18 个步骤的 system/user prompt 拆分，统一 pattern：System = 角色 + 规则 + Schema；User = 动态数据
-- 先抽一个步骤（如 Step 2a）作为"金样板"，验证无误后再批量应用同一步骤模板到其余步骤
-- 每个步骤改完后立即 `ast.parse` 验证语法，避免静默破坏
-
-## Subagent-Driven 开发中的依赖管理
-- 同一文件被多个 task 修改时，合并到一个 agent dispatch 中处理，避免文件冲突
-- 大文件（1000+ 行）的增量修改 agent 容易出错——尽量提供精确的行号上下文
-- 每个 task 完成后必须做 spec compliance review（检查"做了要求的事吗"）然后 code quality review（检查"代码写得好吗"）
-
-## 系统集成应先验证"端到端数据流"
-- NPC 系统从模组生成到运行时完整链路，但没有任何 smoke test 验证数据是否真的从 pipeline 流到了 runtime
-- 新架构上线要选一个最简路径做端到端：生成 → 加载 → 验证中间状态（如 `npc.scene` 是否非空）
-- 中间的空白字段不会报错，只会静默失效——这种 bug 最难发现
+## README 作为活文档
+- 已完成项目不应留在"待实现"列表里——要么删除，要么移入架构文档
+- G1-G8 全部 FIXED 后仍占据"已知缺口"表的一半行数，读者难以快速定位真正活跃的问题
+- 清理后"已知缺口"只留 G9/G10，"待优化"只留 O4-O7，并标注优先级

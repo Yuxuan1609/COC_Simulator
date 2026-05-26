@@ -112,3 +112,17 @@
 - **根因**：最初的设计没有区分 system/user prompt，所有内容塞在 build 函数的 f-string 里
 - **解决**：13 步主管线 + 4 步补充管线逐一重构——静态内容（任务定义、字段规则、输出格式、要求）移入 STEP*_SYSTEM，user prompt 仅保留 `chapter_text`、`entity_list`、`scene_names` 等动态数据。补充管线原本没有独立 system prompt，全在 inline 构建
 - **关联**：`src/module_designer/layered_parser.py`；`src/module_designer/supplement_pipeline.py`
+
+## 20. Edit 工具替换中文代码块时引入全角引号
+
+- **症状**：`keeper.py` 整个 action 处理循环（~180 行）被替换后，所有 Python 字符串引号变成全角 `""`，`SyntaxError: invalid character U+201C`
+- **根因**：`Edit` 工具的 `new_string` 参数中，中文文本的引号（如 `"拾取"`, `"搜索"`, `"other"`）被统一渲染为全角引号。替换块大量混合中英文时，Python dict key 如 `"type"` 也被感染
+- **解决**：`python -c "content.replace('“', '\"').replace('”', '\"')"` 一键替换所有全角引号。注意：字符串内容中的中文引号也会变成 ASCII 引号，但在语义上等价不产生逻辑 bug
+- **教训**：Edit 替换含中文的大段代码后，立即 `grep -n '[“”]' file.py` 检查全角引号；或直接用 Write 重写整个文件避免 Edit 的中间渲染问题
+
+## 21. 条件块内定义的变量在块外引用导致 UnboundLocalError
+
+- **症状**：`test_case_e_author_structural` 报 `UnboundLocalError: cannot access local variable 'enrich_executor'`
+- **根因**：`enrich_executor = ThreadPoolExecutor(...)` 在 `if judged_entities or action_summaries:` 块内定义，但 `if enrich_executor:` 和 `enrich_executor.shutdown()` 在块外无条件执行。当条件为 False 时变量未绑定
+- **解决**：在 `if` 块前添加 `enrich_executor = None` 初始化
+- **教训**：条件块内创建的变量如需在块外引用，必须在块前初始化为 `None`。同类模式已见于 #13（`isinstance(results, dict)` 守卫），两者都是"先存在性检查再使用"导致的问题
