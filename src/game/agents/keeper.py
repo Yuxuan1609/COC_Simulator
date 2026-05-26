@@ -100,36 +100,43 @@ class Keeper:
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
         parse_result = self._parse(raw)
 
-        # Handle npc_interact — route to NPC subagent
+        # Handle npc_interact — general conversation (no matching entity).
+        # NPC-bound entities ([NPC_INTERACT]/[NPC_AT]) are matched as normal
+        # interaction/auto_trigger by parse — they follow the main pipeline.
+        # npc_interact here means "talk to NPC about something no entity covers."
         npc_interact_entries = [e for e in parse_result if e.get("type") == "npc_interact"]
         non_npc_entries = [e for e in parse_result if e.get("type") != "npc_interact"]
-        npc_events: list[str] = []
+        _FOLLOW_KEYWORDS = ("跟我", "跟着", "跟随", "一起走", "加入我", "跟我来", "跟我走",
+                           "一起行动", "陪同", "随行", "随我")
+        _has_follow_request = lambda txt: any(kw in txt for kw in _FOLLOW_KEYWORDS)
         if npc_interact_entries:
             for entry in npc_interact_entries:
                 npc_name = entry.get("npc_name", "")
-                if npc_name and self.world.npcs:
-                    npc = self.world.npcs.get(npc_name)
-                    if npc and npc.scene == self.world.current_location:
-                        dialogue = self.world.npcs.talk_to(
-                            npc_name, raw,
-                            lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
-                        )
-                        # Also run NPC parse for bound entity matching
-                        npc_result = self.world.npcs.process_npc_turn(
-                            npc_name=npc_name, user_input=raw,
-                            world=self.world,
-                            llm_json=lambda prompt, **kw: call_deepseek(prompt, json_mode=True, **kw),
-                            llm_text=lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
-                            judge=self.judge, curator=self.curator,
-                        )
-                        npc_events.extend(npc_result.get("npc_events", []))
-                        # Add dialogue as an outcome for enrichment
-                        non_npc_entries.append({"type": "other",
-                                                "text": f"与{npc_name}对话：{dialogue}"})
-            # If ONLY npc_interact actions, return NPC result directly
-            if not non_npc_entries and npc_interact_entries:
-                brief = f"（与{npc_interact_entries[0].get('npc_name', 'NPC')}进行了对话）"
-                return {"brief": brief, "npc_events": npc_events}
+                npc = self.world.npcs.get(npc_name) if npc_name and self.world.npcs else None
+                if not npc:
+                    self._npc_events.append(f"（没有叫「{npc_name}」的 NPC）")
+                    continue
+                if npc.scene != self.world.current_location:
+                    self._npc_events.append(f"（{npc_name} 不在当前场景）")
+                    continue
+                dialogue = self.world.npcs.talk_to(
+                    npc_name, raw,
+                    lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
+                )
+                self._npc_events.append(f"{npc_name}：{dialogue}")
+                # Detect follow request via keyword match
+                if _has_follow_request(raw):
+                    ok, reason = self.world.npcs._check_follow_conditions(npc, self.world)
+                    if ok:
+                        self.world.npcs.set_following(npc_name, True)
+                        self._npc_events.append(f"{npc_name} 开始跟随你")
+                    else:
+                        self._npc_events.append(reason)
+            # If ONLY npc_interact, short-circuit — dialogue is the narrative.
+            if not non_npc_entries:
+                dialogue_text = self._npc_events[-1] if self._npc_events else ""
+                return {"brief": dialogue_text, "narrative": dialogue_text,
+                        "npc_events": list(self._npc_events)}
             parse_result = non_npc_entries
 
         # Launch IntentDetector early if there are "other" entries
@@ -155,7 +162,7 @@ class Keeper:
                 if not entity:
                     continue
                 intent = ActionIntent(
-                    action=entry_type if entry_type != "auto_trigger" else "other",
+                    action=entry_type,
                     target=entity.name if entry_type == "interaction" else "",
                 )
                 outcome = self.judge._execute_entity(entity, intent=intent, player_input=raw)
@@ -657,7 +664,7 @@ class Keeper:
                 "combat_init": combat_init_result,
                 "time_agent": ta_result,
                 "enrich": enrichment,
-                "npc_events": self._npc_events}
+                "npc_events": list(self._npc_events)}
 
     def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
@@ -771,6 +778,8 @@ class Keeper:
             # Inject bound interactions
             for ent in npc.bound_interactions:
                 eid = ent.get("id", "")
+                if self.world.is_entity_completed(eid):
+                    continue
                 req = ent.get("requirement", "")
                 if req:
                     from scenario_core import parse_hard_requirement
@@ -798,6 +807,8 @@ class Keeper:
                 if at_scene != self.world.current_location and at_scene:
                     continue
                 eid = at.get("id", "")
+                if self.world.is_entity_completed(eid):
+                    continue
                 req = at.get("requirement", "")
                 if req:
                     from scenario_core import parse_hard_requirement
@@ -859,17 +870,17 @@ class Keeper:
                 reasoning_effort=RE_KEEPER_PARSE,
                 system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。"
                        "\n\n你的任务是为玩家输入匹配结构化的游戏内容。"
-                       "\n实体分为三类：INTERACT（场景交互）、AUTO_TRIGGER（自动触发）、EVENT（全局事件）。"
+                       "\n实体分为四类：[INTERACT]（场景交互）、[AUTO_TRIGGER]（自动触发）、[NPC_INTERACT]/[NPC_AT]（NPC 专属实体）、[EVENT]（全局事件）。"
                        "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other/npc_interact)。"
-                       "\n只考虑可触发的entity，包括场景实体和全局事件。"
+                       "\n只考虑可触发的entity，包括场景实体、NPC 专属实体和全局事件。"
                        "\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。"
                        "\n\n行为优先级："
-                       "\n- 有明确对应实体时优先返回实体"
+                       "\n- 有明确对应实体时优先返回实体（[NPC_INTERACT]/[NPC_AT] 标记的 NPC 专属实体也按 interaction/auto_trigger 类型匹配）"
                        "\n- 玩家行为泛指搜索整个场景时返回 search，玩家想要明确移动到另一个场景时返回 move"
-                       "\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问/请求帮助时，返回 npc_interact，npc_name 填 NPC 名称"
+                       "\n- npc_interact 仅用于与【场景 NPC】中列出的 NPC 进行一般性对话/闲聊（玩家输入不涉及任何实体时），npc_name 必须从【场景 NPC】列表中精确复制"
                        "\n- 其他情况下返回 other"
                        "\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作，动作应该按照常识理解"
-                       "\n- auto_trigger 必须在 actions 列表最前面"
+                       "\n- [AUTO_TRIGGER]/[NPC_AT] 为自动触发事件：条件满足即自动触发，不依赖玩家主动匹配。无「条件=」的 AT 进入场景时自动触发，必须包含在匹配结果中"
                        "\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。"
                        "\n直接输出 JSON，不要额外文字。"
                        "\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}",

@@ -11,7 +11,7 @@ import os
 import re
 from typing import TYPE_CHECKING, Optional
 
-from config import SHOW_NON_TRIGGERABLE
+from config import SHOW_NON_TRIGGERABLE, SHOW_COMPLETED
 
 if TYPE_CHECKING:
     from scenario_core import ScenarioWorld
@@ -324,11 +324,12 @@ def parse_narrative_output(response: dict | str) -> tuple[str, str, str]:
 
 
 
-def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str]]:
-    """Build triggerable / non-triggerable entity lists for current scene + events.
+def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str], list[str], list[str]]:
+    """Build triggerable / non-triggerable / completed entity lists.
 
     Returns (triggerable_scene, non_triggerable_scene, triggerable_npc,
-             non_triggerable_npc, triggerable_events, non_triggerable_events).
+             non_triggerable_npc, triggerable_events, non_triggerable_events,
+             completed_scene, completed_npc).
     NPC-injected ATs are separated from scene ATs for prompt clarity.
     """
     node = world._current_node()
@@ -363,15 +364,11 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
 
     def _fmt_inter(entity, prefix: str = "[INTERACT]") -> str:
         """Format an interaction entity."""
-        done = world.completed_interactions.get(world.current_location, set())
-        status = "（已完成）" if entity.name in done else ""
         _, soft, _ = _split_req(entity)
         parts = [f"id={entity.id}", f"name=\"{entity.name}\"",
                  f"trigger=\"{entity.trigger}\""]
         if soft:
             parts.append(f"条件=\"{soft}\"")
-        if status:
-            parts.append(status)
         return f"  {prefix} " + " ".join(parts)
 
     def _fmt_at(entity, prefix: str = "[AUTO_TRIGGER]") -> str:
@@ -395,11 +392,16 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                 for e in npc.bound_auto_triggers:
                     npc_bound_at_ids.add(e.get("id", ""))
 
+        completed_scene: list[str] = []
+        completed_npc: list[str] = []
+
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
             is_npc = at.id in npc_bound_at_ids or at.id in npc_injected_ids
             line = _fmt_at(at, "[NPC_AT]" if is_npc else "[AUTO_TRIGGER]")
-            if is_npc:
+            if world.is_entity_completed(at.id):
+                (completed_npc if is_npc else completed_scene).append(line)
+            elif is_npc:
                 if met:
                     trig_npc.append(line)
                 else:
@@ -413,7 +415,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             _, _, met = _split_req(inter)
             is_npc = inter.id in npc_bound_interact_ids or inter.id in npc_injected_ids
             line = _fmt_inter(inter, "[NPC_INTERACT]" if is_npc else "[INTERACT]")
-            if is_npc:
+            if world.is_entity_completed(inter.id):
+                (completed_npc if is_npc else completed_scene).append(line)
+            elif is_npc:
                 if met:
                     trig_npc.append(line)
                 else:
@@ -445,7 +449,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         else:
             nontrig_events.append(line)
 
-    return trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events
+    return trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events, completed_scene, completed_npc
 
 
 def build_keeper_parse_prompt(world, user_input: str) -> str:
@@ -459,13 +463,16 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     scene_state = _build_scene_state(snap)
     time_block = _build_time_block(snap)
 
-    trig_scene, nontrig_scene, trig_npc, nontrig_npc, trig_events, nontrig_events = _build_entity_lines(world)
+    (trig_scene, nontrig_scene, trig_npc, nontrig_npc,
+     trig_events, nontrig_events, completed_scene, completed_npc) = _build_entity_lines(world)
 
     scene_entity_parts = []
     if trig_scene:
         scene_entity_parts.append("【可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(trig_scene))
     if SHOW_NON_TRIGGERABLE and nontrig_scene:
         scene_entity_parts.append("【暂不可触发 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(nontrig_scene))
+    if SHOW_COMPLETED and completed_scene:
+        scene_entity_parts.append("【已完成 — AUTO_TRIGGER / INTERACT】\n" + "\n".join(completed_scene))
     scene_entity_text = "\n\n".join(scene_entity_parts) if scene_entity_parts else "（无）"
 
     npc_entity_parts = []
@@ -473,6 +480,8 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
         npc_entity_parts.append("【可触发 — NPC 专属】\n" + "\n".join(trig_npc))
     if SHOW_NON_TRIGGERABLE and nontrig_npc:
         npc_entity_parts.append("【暂不可触发 — NPC 专属】\n" + "\n".join(nontrig_npc))
+    if SHOW_COMPLETED and completed_npc:
+        npc_entity_parts.append("【已完成 — NPC 专属】\n" + "\n".join(completed_npc))
     npc_entity_text = "\n\n".join(npc_entity_parts) if npc_entity_parts else ""
 
     event_parts = []

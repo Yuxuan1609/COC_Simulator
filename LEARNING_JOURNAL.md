@@ -67,3 +67,29 @@
 - NotebookEdit 在多次编辑后 cell id 会被 Jupyter 自动重生成，导致新内容覆盖错误 cell
 - 多次编辑的 notebook 应转为 .py 文件作为主入口，notebook 退化为调试辅助
 - 跨项目适用：任何 notebook 经 3+ 次编辑后应迁移到 .py
+- 本 session 将 parser_test.ipynb 的管线编排逻辑完整迁移到 run_pipeline.py（CLI 入口），notebook 退化为调试辅助
+
+## 布尔表达式作为 LLM 产出格式约束
+- 将 requirement 字段的硬性条件从自然语言（"I3 已完成, I1 已完成"）改为 `entity_id + AND/OR/()` 表达式（如 `I1 AND I2`、`(I1 OR I2) AND I3`）
+- 收益：(a) LLM 产出格式统一，解析端只需处理 entity ID + 逻辑运算符；(b) 裸 entity ID 语义固定（= 成功完成），不需 "已完成/已触发/已成功" 等变体；(c) 特殊条件（失败/未触发）放 `||` 后的软性条件，自然语言交给 LLM 运行时评估
+- 代价：所有涉及 requirement 的提示词（Step 2a/2b/3.5 × 7 处）需同步更新；依赖图提取逻辑（Step 3.5）需适配新格式
+- 适用场景：任何需要 LLM 在受限文本字段中表达复合逻辑的场景 — 定义清晰的原子 token（entity ID）和逻辑运算符，让 LLM 像写布尔表达式一样组合
+
+## LLM Pipeline 步骤的确定性替代判定框架
+- 不是所有 LLM 调用都能换成确定性逻辑。判定标准：**输入是否以自然语言为主要信息载体**。
+- **可确定性化**（正则/查表/fuzzy match）：
+  - 引用校验：L1 linked_interaction 是否指向 L2 中存在的名称 → 集合查找
+  - 覆盖检查：所有场景是否都有 L3 scene_intents → key diff
+  - 名称一致性：L1/L2/L3 场景名/角色名统一 → 字符串匹配
+  - 输出格式固定、输入高度结构化的场景
+- **不可确定性化**（必须 LLM）：
+  - 依赖图（Step 3.5）：requirement/trigger 中文文本中 30-40% 的依赖信息藏在自然语言里（软条件、反向依赖、跨文本引用），正则只能覆盖 60%
+  - @markup 标准化（Phase 2）：同一语义在中文中有 10+ 种表达（"搜查/观察/翻找"→"侦查"、"一阵眩晕"→SAN-1），规则覆盖常见模式（~60%），边缘 case 需语义理解
+- Step 3b 是混合案例：7 个检查中 6 个可确定性，仅 linked_interaction 补全需 LLM → 拆分后 prompt 从 40K token 降到 ~2K
+- 与"统一数据源"互补：确定性逻辑依赖结构化数据质量；LLM 负责将非结构化输入转为结构化输出
+
+## 面向非程序员的 CLI 一键启动模式
+- `.bat` 文件封装：检查 Python 环境 → 自动安装缺失依赖 → 检查 API 配置 → 启动服务 + 打开浏览器
+- 关键细节：(a) 依赖检查用 `python -c "import X"` 而非 `pip list | grep`，更快且跨平台；(b) 失败时给出可操作的下一步（下载链接、手动命令）；(c) `chcp 65001` 解决 Windows 中文终端乱码
+- 前端 server.py 默认自动打开浏览器（`--no-open` 可关闭），省去用户手动访问的步骤
+- 适用于任何需要分发给非技术用户的 Python 项目

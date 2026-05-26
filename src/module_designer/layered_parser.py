@@ -382,7 +382,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - **模组中提到的可获取物品（clues_and_items 章节：clues 为剧情关键物品/线索，items 为非剧情普通物品，需结合精修模组原文和常识判断）必须在对应场景的 entity 中通过 result 或 graded_result 明确表达为可获取状态，确保每个物品都有对应的 entity 承载其获取路径**
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称，不允许自创或使用别名**
 - NPC互动是否生成 entity 的判断标准：entity 必须有可感知的游戏机制后果——技能检定、物品给予/消耗、属性变化、NPC状态变更（受伤/死亡等）、触发新的事件、场景永久性变化。单纯的NPC对话/交谈/打听消息（无机制后果的信息传递）不生成 entity，由运行时 NPC 对话系统处理。
-- NPC 跟随/离开/加入队伍可以生成 entity。对于 can_follow=true 的 NPC，生成一个 interaction entity，trigger 为"你请求 NPC 跟随"，result 为 "@npc_follow(npc_name=\"NPC名\", follow=true)"，side_effects 留空。需要前置条件则在 requirement 中描述。
+- NPC 跟随/离开实体由管线根据 Step 1a 的 can_follow 字段自动生成，你不要手动创建。
 - 仅输出 JSON，不要任何解释性文字
 
 从精修模组文本中提取每个场景的全部可执行互动，以及场景间的通行路径。
@@ -460,170 +460,53 @@ def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call, charact
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Step 2b: Events
+#  Step 2b: Events + Auto-triggers (合并)
 # ═══════════════════════════════════════════════════════════════
 
-STEP2B_EVENTS_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取全局事件。
-你的任务是：从精修模组文本和已知互动中派生全局事件。事件是跨场景的的世界级变化。
+STEP2B_COMBINED_SYSTEM = """你是一个 TRPG 模组解析助手，同时提取全局事件和自动触发事件。
+你的任务是：从精修模组文本和已知互动中派生两类实体——全局事件（events）和自动触发事件（auto_triggers）。
 
 术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
 
-重要原则：
-- 事件使用与 interaction 相同的统一字段模型，除了事件无 scene 字段（全局事件不绑定特定场景）
-- based_on 指向派生的 interaction ID（非派生事件则留空字符串）
-- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
-- result 是直接结果（含不可逆性标注）。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头
-- requirement 可描述是否需要消耗常见非剧情物品及数量；result 可描述结果是否会失去常见消耗品（具体数值由 Phase 2 标准化为 @consume_item）
+## 通用原则
+- 所有 entity 使用统一的字段模型（id/type/name/requirement/trigger/result/side_effects/graded_result/difficulty/based_on）
+- based_on 指向派生的 interaction ID（非派生则留空）
+- requirement: 硬性前置用 entity ID + AND/OR/() 表达，裸 ID 默认指成功完成。特殊条件在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
+- type 涉及技能鉴定时填 graded_result（四等级: on_failure/on_regular/on_hard/on_extreme），result 填 "##GRADED##"，side_effects 留空
+- result 是直接结果。如导致结局，必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
-- type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
-- entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
-- **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
-- 与NPC的纯粹对话/交谈不生成 event（NPC对话由运行时NPC系统处理）。只有涉及实质性世界影响的NPC互动才可生成 event。
-- NPC 跟随/离开可以生成 event 或 auto_trigger。对于 can_follow=true 的 NPC，可生成对应的 entity，result 中使用 @npc_follow 标记。
+- difficulty: None/regular/hard/extreme；不涉及检定则为 None
+- entity 不涉及进入与怪物的战斗/对抗/追捕（战斗由 game loop 运行时管理）。可声明怪物出现，不描述对砍
+- **entity 涉及 NPC 名称时必须使用已知角色列表中的名称**
+- 与NPC的纯粹对话/交谈不生成 entity（NPC 对话由运行时 NPC 系统处理）。仅涉及实质性世界影响才生成
+- NPC 跟随/离开实体由管线根据 Step 1a 的 can_follow 字段自动生成，你不要手动创建
 - 仅输出 JSON，不要任何解释性文字
 
-从精修模组文本中提取所有全局事件。
+## 全局事件 (events)
+- 跨场景的世界级变化，不绑定特定场景（无 scene 字段）
+- 仅需不可逆的世界变化时才生成（结局触发、时间压力事件等）
+- result 不可逆事件需标注"不可逆："
 
-输出格式:
-{
-  "events": [
-    {
-      "id": "E1",
-      "type": "关联技能名，不涉及填\"无\"",
-      "name": "事件名称",
-      "requirement": "硬性前置条件（entity ID + AND/OR/() 表达复合关系，裸 ID 默认指成功完成）||软性前置条件（特殊状态如实体检定失败等，无条件填空字符串）",
-      "trigger": "触发场景（描述什么情况下此事件触发），如：调查员试图折返会之前的一个场景时",
-      "result": "直接结果（事件直接产生的结果，含不可逆标注）",
-      "side_effects": ["间接后果（与result不重合的附带影响），无条件则为空列表"],
-      "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."},
-      "difficulty": "None/regular/hard/extreme",
-      "based_on": "I1"
-    }
-  ]
-}
+## 自动触发事件 (auto_triggers)
+- 绑定特定场景（scene 字段必填）
+- 被动触发，不生成玩家主动互动
+- 每个场景生成 0-2 个
+- 必须生成 AT_WORLD（id="AT_WORLD", scene="world", type="无", difficulty="None", based_on=""）用于世界初始化。trigger="模组开始时自动触发"，result="世界环境初始化"。side_effects 中用 @标记 声明：
+  1调查员初始时身上带着什么
+  2哪个场景散布着什么武器
+  3哪个场景可能会有什么敌人，有多少
+- clues_and_items 中标记为初始可见/场景内放置的物品，必须生成为进入场景时的 auto_trigger（requirement 留空），trigger="玩家进入此场景时"
 
-要求：
-1. id 全局唯一 (E1, E2, E3...)
-2. based_on 指向派生的 interaction ID，非派生事件则填空字符串
-3. requirement 是前置条件；trigger 是触发场景描述，两者不可混淆
-4. result 是直接结果：不可逆事件需明确标注"不可逆："。如果此事件会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 "##END_坏结局:电车坠入黑暗## 不可逆：调查员们永远被困在噩梦中"）
-5. side_effects 是间接后果：与 result 不重合的附带影响。无条件则为空列表
-6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功。若原文未区分等级，各等级可描述相同
-7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
-8. 事件是全局的，不绑定特定场景（无 scene 字段）
-"""
-
-
-def build_step2b_events_prompt(
-    chapters: dict[str, str],
-    scenes: list[dict],
-    interactions: list[dict],
-    characters: list[dict] = None,
-) -> str:
-    scene_list = "\n".join(f"- {s}" for s in scenes)
-    interaction_list = "\n".join(
-        f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
-        for i in interactions
-    )
-    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
-    return f"""已知场景:
-{scene_list}
-
-已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
-{char_list if char_list else "（无）"}
-
-已知互动（事件可基于这些互动派生，based_on 指向其 ID；非派生事件留空）:
-{interaction_list}
-
-精修模组（参考上下文）：
-\"\"\"
-{_join_chapters(chapters, 'module_overview', 'scenes', 'clues_and_items', 'events_summary')}
-\"\"\""""
-
-
-def parse_step2b_events(
-    chapters: dict[str, str],
-    scenes: list[dict],
-    interactions: list[dict],
-    llm_call,
-    characters: list[dict] = None,
-) -> dict:
-    prompt = build_step2b_events_prompt(chapters, scenes, interactions, characters)
-    return llm_call(prompt, system=STEP2B_EVENTS_SYSTEM)
-
-
-# ═══════════════════════════════════════════════════════════════
-#  Step 2b: Auto-triggers
-# ═══════════════════════════════════════════════════════════════
-
-STEP2B_AT_SYSTEM = """你是一个 TRPG 模组解析助手，专门生成自动触发事件。
-你的任务是：基于精修模组和已知互动，生成所有被动触发事件（auto_trigger）。
-
-术语：interaction、auto_trigger、event 三者统称为 entity（实体）。
-
-重要原则：
-- auto_trigger 使用与 interaction 相同的统一字段模型
-- auto_trigger 绑定特定场景（scene 字段必填）
-- based_on 指向派生的 interaction ID（非派生 AT 则留空字符串）
-- requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
-- result 是直接结果：如果此自动触发会导致游戏结局，必须以 ##END_结局名称:结局简述## 开头
-- requirement 可描述是否需要消耗常见非剧情物品及数量；result 可描述结果是否会失去常见消耗品（具体数值由 Phase 2 标准化为 @consume_item）
-- side_effects 是与 result 不重合的间接后果
-- type 涉及技能鉴定时填写 graded_result，此时 result 填 "##GRADED##"，side_effects 留空。四等级对应检定失败/常规成功/困难成功/极难成功
-- 只生成被动触发的事件，不要生成玩家主动互动
-- entity 的 result/side_effects/graded_result 不涉及进入与怪物的战斗/对抗/追捕的情况（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
-- **模组 clues_and_items（clues=剧情物品/线索，items=非剧情普通物品，需结合精修模组原文和常识判断）中标记为初始可见/场景内放置的物品，必须生成为进入场景时的 auto_trigger（requirement 留空），trigger 为"玩家进入此场景时"，result 描述玩家自动感知到该物品的存在。无需检定即可获取的物品直接以 result 表达获取；需要检定的以 graded_result 表达**
-- **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称**
-- **必须生成一个 AT_WORLD（id="AT_WORLD", scene="world", type="无", difficulty="None", based_on=""）用于世界初始化。trigger 为"模组开始时自动触发"，result 为"世界环境初始化"。side_effects 中使用 @标记 声明初始配置：
-  · 描述：1调查员初始时身上带着什么
-         2哪个场景散布着什么武器
-         3哪个场景可能会有什么敌人，有多少
-- 与NPC的纯粹对话/交谈不生成 auto_trigger（NPC对话由运行时NPC系统处理）。只有涉及实质性世界影响的NPC互动才可生成 auto_trigger。
-- NPC 跟随/离开可以生成 event 或 auto_trigger。对于 can_follow=true 的 NPC，可生成对应的 entity，result 中使用 @npc_follow 标记。
-- 仅输出 JSON，不要任何解释性文字
-
-从精修模组文本中生成所有自动触发事件，包括一个世界初始化自动触发（AT_WORLD）。
-
-输出格式:
-{
-  "auto_triggers": [
-    {
-      "id": "AT1",
-      "scene": "6号车厢",
-      "type": "关联技能名，不涉及填\"无\"",
-      "name": "自动触发名称",
-      "requirement": "硬性前置条件（entity ID + AND/OR/() 表达复合关系，裸 ID 默认指成功完成）||软性前置条件（特殊状态如实体检定失败、调查员理智极度崩溃等，无条件填空字符串）",
-      "trigger": "触发场景（描述什么情况下此被动事件触发），如：玩家进入场景且 I1 已完成",
-      "result": "直接结果（被动触发直接产生的结果）",
-      "side_effects": ["间接后果（与result不重合的附带影响），无条件则为空列表"],
-      "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."},
-      "difficulty": "None/regular/hard/extreme",
-      "based_on": "I1"
-    }
-  ]
-}
-
-要求：
-1. id 全局唯一 (AT1, AT2, AT3...)
-2. scene 使用场景中文名
-3. based_on 指向派生的 interaction ID，非派生 AT 则留空字符串
-4. requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败等）在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
-5. result 是直接结果：如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头；side_effects 是间接后果（与 result 不重合）
-6. type 是关联技能名，不涉及填"无"；涉及鉴定时填写 graded_result。此时 result 填 "##GRADED##"，side_effects 留空。四等级含义同上，原文未区分时各等级可相同
-7. difficulty 从以下选择：None/regular/hard/extreme；不涉及检定则为 None
-8. 每个场景生成 0-2 个 auto_trigger
-9. **必须**生成 AT_WORLD 世界初始化自动触发。AT_WORLD 的 side_effects 使用 @spawn_enemy / @grant_weapon / @item_gain 标记初始配置。enemy_ref 和 weapon_ref 必须来自约束列表，@spawn_enemy / @grant_weapon 的总调用次数不得超过对应 max_count。@item_gain 用于纯文本物品名
-
-**@标记精确语法（必须严格按此格式，不可自由发挥）:**
+**@标记精确语法（必须严格按此格式）:**
 @spawn_enemy(enemy_ref="敌人库名", scene="场景名", quantity=数量)
 @grant_weapon(weapon_ref="武器库名", scene="场景名", quantity=数量)
 @item_gain(item_name="物品名", quantity=数量)
 示例: ["@spawn_enemy(enemy_ref=\"Clicker\", scene=\"2号车厢\", quantity=3)", "@item_gain(item_name=\"手电筒\", quantity=1)"]
-每个 @标记 必须是独立的一条数组元素，格式严格为 @函数(参数=值, ...)"""
+每个 @标记 必须是独立的一条数组元素，格式严格为 @函数(参数=值, ...)
+enemy_ref 和 weapon_ref 必须来自约束列表，@spawn_enemy / @grant_weapon 总调用次数不超过对应 max_count"""
 
 
-
-def build_step2b_at_prompt(
+def build_step2b_combined_prompt(
     chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
@@ -645,7 +528,7 @@ def build_step2b_at_prompt(
 已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
 {char_list if char_list else "（无）"}
 
-已知互动（auto_trigger 可基于这些互动派生，based_on 指向其 ID；非派生 AT 留空）:
+已知互动（events 和 auto_triggers 可基于这些互动派生，based_on 指向其 ID）:
 {interaction_list}
 
 ## 敌人约束
@@ -660,7 +543,7 @@ def build_step2b_at_prompt(
 \"\"\""""
 
 
-def parse_step2b_at(
+def parse_step2b_combined(
     chapters: dict[str, str],
     scenes: list[dict],
     interactions: list[dict],
@@ -669,8 +552,10 @@ def parse_step2b_at(
     enemies: list[dict] = None,
     weapons: list[dict] = None,
 ) -> dict:
-    prompt = build_step2b_at_prompt(chapters, scenes, interactions, characters, enemies, weapons)
-    return llm_call(prompt, system=STEP2B_AT_SYSTEM)
+    """合并的 Step 2b：单次 LLM 调用同时提取 events 和 auto_triggers。"""
+    prompt = build_step2b_combined_prompt(chapters, scenes, interactions,
+                                           characters, enemies, weapons)
+    return llm_call(prompt, system=STEP2B_COMBINED_SYSTEM)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -797,64 +682,55 @@ def parse_step2c_l3(chapters: dict[str, str], scenes: list[dict], characters: li
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Step 2.5: NPC 行为描述
+#  Step 2.5: NPC 档案 + 实体归属（合并）
 # ═══════════════════════════════════════════════════════════════
 
-STEP25_SYSTEM = """你是一个 TRPG NPC 行为描述助手。
-你的任务是：基于 L3 角色设计意图、L1 外貌描述和 L2 entity 互动信息，为每个 NPC 生成行为描述档案。
+STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
+你的任务有两部分：(1) 为每个 NPC 生成行为描述档案；(2) 判断每个 L2 entity 归属于哪个 NPC。
 
-核心问题：这个 NPC 能/会干什么？在什么情况下会触发什么互动？
+术语：interaction、auto_trigger 统称为 entity。
 
-重要原则：
-- 只使用提供的信息，不要编造新角色或新能力
-- 描述侧重于 NPC 的能力和行动（what they can/will do），而非静态属性
-- 如果某个 NPC 在 L2 entity 中没有对应互动，只基于 L3/L1 信息描述
-- can_follow：判断 NPC 是否可能跟随调查员行动。如果 NPC 的行动能力/性格/处境允许跟随（非固定在某地、无强制离开理由、愿意协助调查员），设为 true
-- 仅输出 JSON，不要任何解释性文字
+## 第一部分：NPC 行为档案
+- 基于 L3 角色设计意图、L1 外貌描述和 L2 entity 互动信息
+- what_they_can_do 是核心字段：描述 NPC 的能力、所知信息和互动条件
+- personality_notes：性格、说话风格、情绪倾向
+- 只使用提供的信息，不编造新角色或新能力
 
-为以下 NPC 生成行为描述档案。
+## 第二部分：Entity 归属
+- 若 entity 的触发/结果/名称明确涉及某个 NPC（该 NPC 是互动的对象或主体），标记该 entity 属于该 NPC
+- 若 entity 描述的是场景通用互动（不特指某个 NPC），不标记
+- 一个 entity 最多属于一个 NPC
+- 将标记结果填入对应 NPC 的 bound_entities 列表
 
-输出格式:
+## 输出格式
 {
   "npc_profiles": {
     "NPC名称": {
       "name": "NPC名称",
       "role": "一句话角色定位",
-      "what_they_can_do": "NPC能做什么、在什么条件下会做什么（核心字段）",
-      "interaction_triggers": ["什么情况下玩家可以与NPC互动"],
+      "what_they_can_do": "NPC能做什么、在什么条件下会做什么",
       "personality_notes": "性格和说话风格",
       "can_follow": true/false,
-      "appearance": "外貌描述（来自L1）",
-      "initial_state": "alive",
-      "initial_attitude": "neutral",
-      "initial_following": false
+      "bound_entities": ["I1", "AT2"]
     }
   }
 }
 
-要求：
-1. 必须覆盖 L3 characters 中的所有角色
-2. what_they_can_do 是核心字段，描述 NPC 的能力和行动模式
-3. interaction_triggers 基于 L2 entity 信息，列出 NPC 参与的互动触发条件
-4. 仅输出 JSON
-"""
+规则：
+- 必须覆盖 L3 characters 中的所有角色
+- can_follow：如果 NPC 的行动能力/性格/处境允许跟随（非固定在某地、无强制离开理由、愿意协助），设为 true
+- bound_entities：该 NPC 专属的 entity ID 列表（scene 通用 entity 不列入）
+- 仅输出 JSON，不要任何解释性文字"""
 
 
-def build_step25_prompt(
+def build_step25_combined_prompt(
     l3_characters: list[dict],
     l1_data: dict,
     interactions: list[dict],
     auto_triggers: list[dict],
+    step1a_characters: list[dict] = None,
 ) -> str:
-    # Collect NPC-related entities from L2
-    npc_entities = []
-    for e in interactions + auto_triggers:
-        name = e.get("name", "")
-        result = e.get("result", "")[:100]
-        trigger = e.get("trigger", "")[:100]
-        npc_entities.append({"name": name, "result": result, "trigger": trigger})
-
-    # Extract NPC appearances from L1
+    # NPC appearances from L1
     npc_appearances = []
     for scene_name, sdata in l1_data.items():
         for npc in sdata.get("npc_appearances", []):
@@ -865,99 +741,45 @@ def build_step25_prompt(
                 "scene": scene_name,
             })
 
-    return f"""## L3 角色设计意图（NPC 为什么会这样做）
-{json.dumps(l3_characters, ensure_ascii=False, indent=2)}
-
-## L1 NPC 外貌（玩家第一印象）
-{json.dumps(npc_appearances, ensure_ascii=False, indent=2)}
-
-## L2 Entity 互动（NPC 参与的动作）
-{json.dumps(npc_entities, ensure_ascii=False, indent=2)}"""
-
-
-def parse_step25(
-    l3_characters: list[dict],
-    l1_data: dict,
-    interactions: list[dict],
-    auto_triggers: list[dict],
-    llm_call,
-) -> dict:
-    prompt = build_step25_prompt(l3_characters, l1_data, interactions, auto_triggers)
-    return llm_call(prompt, system=STEP25_SYSTEM)
-
-
-# ═══════════════════════════════════════════════════════════════
-#  Step 2.5b: NPC Entity Binding (LLM)
-# ═══════════════════════════════════════════════════════════════
-
-STEP25B_SYSTEM = """你是一个 TRPG 实体归属判断助手。
-你的任务是：判断每个 L2 entity 是否属于某个 NPC，区分 NPC 专属互动、场景通用互动和 NPC 跟随事件。
-
-术语：interaction、auto_trigger 统称为 entity。
-
-判断标准：
-- 若 entity 的触发/结果/名称明确涉及某个 NPC（该 NPC 是互动的对象或主体），标记该 entity 属于该 NPC
-- 若 entity 描述的是场景通用互动（不特指某个 NPC），标记为 scene
-- 若 entity 描述的是 NPC 跟随/离开/加入队伍行为，标记为 follow
-- 一个 entity 最多属于一个 NPC
-
-输出格式:
-{
-  "entity_bindings": {
-    "I1": "老赵",
-    "I2": null,
-    "I5": "明觉",
-    "AT2": null,
-    "AT5": "老赵"
-  }
-}
-
-规则：
-- value 为 NPC 名称时：该 entity 绑定到对应 NPC
-- value 为 null 时：该 entity 不属于任何 NPC（场景通用互动）
-- 仅输出 JSON，不要任何解释性文字
-- binding 中只需列出 NPC 相关的 entity（value 非 null），场景通用 entity 可忽略"""
-
-
-def build_step25b_prompt(
-    characters: list[dict],
-    interactions: list[dict],
-    auto_triggers: list[dict],
-) -> str:
-    char_list = json.dumps(characters, ensure_ascii=False, indent=2)
+    # Entity list for binding
     entity_list = []
     for e in interactions:
         entity_list.append({
-            "id": e.get("id", ""),
-            "scene": e.get("scene", ""),
+            "id": e.get("id", ""), "scene": e.get("scene", ""),
             "name": e.get("name", ""),
             "trigger": e.get("trigger", "")[:80],
             "result": e.get("result", "")[:120],
         })
     for e in auto_triggers:
         entity_list.append({
-            "id": e.get("id", ""),
-            "scene": e.get("scene", ""),
+            "id": e.get("id", ""), "scene": e.get("scene", ""),
             "name": e.get("name", ""),
             "trigger": e.get("trigger", "")[:80],
             "result": e.get("result", "")[:120],
         })
 
-    return f"""## NPC 角色列表
-{char_list}
+    return f"""## L3 角色设计意图
+{json.dumps(l3_characters, ensure_ascii=False, indent=2)}
+
+## L1 NPC 外貌
+{json.dumps(npc_appearances, ensure_ascii=False, indent=2) if npc_appearances else "（无）"}
 
 ## L2 Entity 列表
 {json.dumps(entity_list, ensure_ascii=False, indent=2)}"""
 
 
-def parse_step25b(
-    characters: list[dict],
+def parse_step25_combined(
+    l3_characters: list[dict],
+    l1_data: dict,
     interactions: list[dict],
     auto_triggers: list[dict],
     llm_call,
+    step1a_characters: list[dict] = None,
 ) -> dict:
-    prompt = build_step25b_prompt(characters, interactions, auto_triggers)
-    return llm_call(prompt, system=STEP25B_SYSTEM)
+    """合并的 Step 2.5：单次 LLM 调用生成 NPC 档案 + entity 归属。"""
+    prompt = build_step25_combined_prompt(l3_characters, l1_data, interactions,
+                                           auto_triggers, step1a_characters)
+    return llm_call(prompt, system=STEP25_COMBINED_SYSTEM)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1067,13 +889,12 @@ def parse_step2_boss(
 # ═══════════════════════════════════════════════════════════════
 
 STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息的去重和冲突解决。
-你的任务是：检查所有 interaction/event/auto_trigger，基于 based_on 去重，验证 graded_result，修剪 result/side_effects 重合，解决冲突，验证结局标记。
+你的任务是：检查所有 interaction/event/auto_trigger，去重，验证 graded_result，修剪 result/side_effects 重合，解决冲突，验证结局标记。
 
 重要原则：
 - interaction/event/auto_trigger统称为entity
-- based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个entity和其based_on指向的entity
-  描述的是同一个事件（判断标准：指代同一件事情的发生，而非仅仅文字相似），合并为一个。
-- 合并时优先保留auto_trigger和interaction
+- **唯一去重条件**：两个 entity 描述的是同一件事情的发生（判断标准：指代同一事件，不仅仅是同一 based_on 源，也不是文字相似）。仅在这种情况下合并为一个。
+- 合并时优先保留 auto_trigger 和 interaction（event 的信息合入保留方，不丢失）
 - graded_result 在 type != "无" 时强制填写至少1条；type == "无" 时删除空 graded_result
 - result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
 - requirement/trigger 冲突以 精修模组（参考上下文） 为准修正
@@ -1086,12 +907,11 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 对以下模组中的所有 L2 内容做去重、冲突解决和结局验证。
 
 任务:
-1. **Based_on 去重**: based_on 已标注派生关系。若两个 entity 的 based_on 指向同一 interaction，或者一个 entity 和其 based_on 指向的 entity 描述的是同一个事件（判断标准：指代同一件事情的发生，而非仅仅文字相似），合并为一个。
-2. **合并时优先保留 auto_trigger 和 interaction**（即优先合并 event）。
-3. **Graded_result 检查**: type != "无" 时填写 graded_result 中至少一条；type == "无" 时删除空 graded_result。
-4. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
-5. **冲突解决**: requirement/trigger 矛盾以 精修模组（参考上下文） 为准修正。
-6. **结局标记验证**: 扫描 ##END_## 标记与 L3 ending_conditions 做语义匹配。标记缺失则基于L3信息补齐。
+1. **去重**: 仅当两个 entity 描述的是同一件事情的发生时才合并。based_on 相同的 entity 不去重——event 和其源 interaction 是不同实体（一个代表玩家行动，一个代表世界变化）。合并时优先保留 interaction/auto_trigger，被合并方的重要信息合入保留方。
+2. **Graded_result 检查**: type != "无" 时填写 graded_result 中至少一条；type == "无" 时删除空 graded_result。
+3. **Result / Side_effects 去重**: 若 result 为 "##GRADED##" 跳过此检查。否则若 side_effects 中的某条内容已在 result 中体现，移除该条。
+4. **冲突解决**: requirement/trigger 矛盾以 精修模组（参考上下文） 为准修正。
+5. **结局标记验证**: 扫描 ##END_## 标记与 L3 ending_conditions 做语义匹配。标记缺失则基于L3信息补齐。
 
 输出格式:
 {
@@ -1145,61 +965,122 @@ def parse_step3a(
 #  Step 3b: L1 ↔ L2 交叉核对
 # ═══════════════════════════════════════════════════════════════
 
-STEP3B_SYSTEM = """你是一个 TRPG 一致性校对助手。
-你的任务是：检查 L1 与 L2/L3 的交叉引用和命名一致性，修正不一致。
+def _step3b_deterministic(
+    l1_data: dict, l2_completed: dict, l3_data: dict,
+    step1_scenes: list[str],
+) -> tuple[dict, dict, list[dict]]:
+    """Step 3b 确定性部分：场景名/角色名一致性、引用有效性、覆盖完整性。
+    Returns (fixed_l1, fixed_l3, link_gaps) where link_gaps are perceptible elements
+    that might need linked_interaction (LLM).
+    """
+    import copy
+    l1 = copy.deepcopy(l1_data)
+    l3 = copy.deepcopy(l3_data)
 
-重要原则：
-- linked_interaction 必须指向 L2 中真实存在的 interaction name
-- L1 中的 NPC 名称必须与 L3 characters 中的名称一致
-- 场景名必须在所有层中一致
-- 仅修正名称和引用，不改变实质内容
-- 仅输出 JSON，不要任何解释性文字
+    # Collect canonical names
+    scene_names = set(step1_scenes)
+    l2_interaction_names: set[str] = set()
+    l2_npc_names: set[str] = set()
+    for sdata in l2_completed.get("scenes", {}).values():
+        for i in sdata.get("interactions", []):
+            if i.get("name"):
+                l2_interaction_names.add(i["name"])
+    for npc_name in l2_completed.get("npc_profiles", {}):
+        l2_npc_names.add(npc_name)
+    l3_char_names: set[str] = set()
+    for c in l3.get("characters", []):
+        if isinstance(c, dict) and c.get("name"):
+            l3_char_names.add(c["name"])
+    # Collect NPCs from L1 appearances
+    l1_npc_names: set[str] = set()
+    for sname, sdata in l1.items():
+        for npc in sdata.get("npc_appearances", []):
+            if npc.get("name"):
+                l1_npc_names.add(npc["name"])
+    all_npc_names = l1_npc_names | l2_npc_names
 
-核对 L1 与 L2 的交叉引用。
+    # ── 1. Scene name consistency ──
+    l1_keys = list(l1.keys())
+    for key in l1_keys:
+        if key not in scene_names:
+            # Try to find matching scene (case-insensitive)
+            match = next((s for s in scene_names if s.lower() == key.lower()), None)
+            if match:
+                l1[match] = l1.pop(key)
+            # else: keep as-is, can't resolve
 
-任务:
-1. L1 场景名是否与统一场景名一致 → 不一致则修正
-2. L1 linked_interaction 是否指向 L2 中存在的 interaction name → 不存在则修正或清空
-3. L1 npc_appearances 中 NPC 名称是否与 L3 characters 中的名称一致 → 不一致则统一为 L3 中的名称
-4. 检查 L1 感知元素是否应关联 L2 互动但未关联 → 补充 linked_interaction
-5. L3 scene_intents 的 key 是否覆盖所有场景 → 缺失则补充
-6. L3 characters 是否覆盖所有在 L1/L2 中出现的 NPC → 缺失则补充
-7. 所有层的场景名和角色名统一
+    # ── 2. linked_interaction validity ──
+    link_gaps = []
+    for sname, sdata in l1.items():
+        for elem in sdata.get("perceptible", []):
+            linked = elem.get("linked_interaction", "")
+            if linked and linked not in l2_interaction_names:
+                elem["linked_interaction"] = ""  # Clear invalid ref
+            if not linked:
+                link_gaps.append({
+                    "scene": sname,
+                    "element_name": elem.get("name", ""),
+                    "element_brief": elem.get("brief", ""),
+                })
+
+    # ── 3. NPC name consistency ──
+    # Collect all L3 character names (canonical source)
+    canonical_npc: dict[str, str] = {}  # lowercase → canonical
+    for name in l3_char_names:
+        canonical_npc[name.lower()] = name
+    for sname, sdata in l1.items():
+        for npc in sdata.get("npc_appearances", []):
+            npc_name = npc.get("name", "")
+            if npc_name and npc_name.lower() in canonical_npc:
+                canonical = canonical_npc[npc_name.lower()]
+                if npc_name != canonical:
+                    npc["name"] = canonical
+
+    # ── 5. L3 scene_intents coverage ──
+    scene_intents = l3.setdefault("scene_intents", {})
+    for sname in scene_names:
+        if sname not in scene_intents:
+            scene_intents[sname] = ""
+
+    # ── 6. L3 characters coverage ──
+    for name in all_npc_names:
+        if name and name.lower() not in canonical_npc:
+            l3.setdefault("characters", []).append({
+                "name": name,
+                "personality": "", "role": "",
+                "what_they_can_do": "", "character_arc": "",
+            })
+
+    return l1, l3, link_gaps
+
+
+STEP3B_LINK_SYSTEM = """你是一个 TRPG 内容关联助手。
+你的任务是：判断 L1 感知元素是否应关联到 L2 互动，补充缺失的 linked_interaction。
+
+判断标准：
+- 如果感知元素描述的是玩家能看到/感知到的东西，且 L2 中有对应的互动（如"检查XX"、"搜寻XX"），则应关联
+- 如果感知元素是纯氛围描述（如"昏暗的光线"、"空气中有血腥味"），不需要关联
 
 输出格式:
-{
-  "l1_data": { ...修正后的 L1... },
-  "l3_data": { ...修正后的 L3... }
-}
+{"links": [{"scene": "场景名", "element_name": "元素名", "linked_interaction": "互动名或空字符串"}]}
 
-仅输出 JSON。
-"""
+仅输出 JSON。"""
 
 
-def build_step3b_prompt(
-    chapters: dict[str, str],
-    l1_data: dict,
-    l2_completed: dict,
-    l3_data: dict,
-    step1_scenes: list[dict],
-) -> str:
-    scene_names = ", ".join(step1_scenes)
-    return f"""## 模组概述（参考上下文）
-\"\"\"
-{chapters.get('module_overview', '')}
-\"\"\"
+def build_step3b_link_prompt(l1_data: dict, l2_completed: dict, link_gaps: list[dict]) -> str:
+    # Build compact L2 interaction reference
+    l2_refs = []
+    for sname, sdata in l2_completed.get("scenes", {}).items():
+        for i in sdata.get("interactions", []):
+            l2_refs.append({
+                "scene": sname, "id": i.get("id", ""),
+                "name": i.get("name", ""), "trigger": i.get("trigger", "")[:60],
+            })
+    return f"""## L2 互动参考
+{json.dumps(l2_refs, ensure_ascii=False, indent=2)}
 
-## 统一场景名（Step 1 确定）
-{scene_names}
-
-## L1 数据
-{json.dumps(l1_data, ensure_ascii=False, indent=2)}
-
-## L2 完整数据（已通过 Step 3a 补全依赖）
-{json.dumps(l2_completed, ensure_ascii=False, indent=2)}
-
-## L3 数据
-{json.dumps(l3_data, ensure_ascii=False, indent=2)}"""
+## 需要判断的感知元素
+{json.dumps(link_gaps, ensure_ascii=False, indent=2)}"""
 
 
 def parse_step3b(
@@ -1210,8 +1091,31 @@ def parse_step3b(
     step1_scenes: list[dict],
     llm_call,
 ) -> dict:
-    prompt = build_step3b_prompt(chapters, l1_data, l2_completed, l3_data, step1_scenes)
-    return llm_call(prompt, system=STEP3B_SYSTEM)
+    """Step 3b：确定性修复场景名/NPC名/引用/覆盖 → LLM 仅补 linked_interaction gap → key 合并。"""
+    import copy
+    scene_names = [s.get("name", s) if isinstance(s, dict) else s for s in step1_scenes]
+
+    # Phase 1: deterministic
+    l1, l3, link_gaps = _step3b_deterministic(l1_data, l2_completed, l3_data, scene_names)
+
+    # Phase 2: LLM gap-fill (only if there are gaps)
+    if link_gaps:
+        try:
+            prompt = build_step3b_link_prompt(l1, l2_completed, link_gaps)
+            llm_result = llm_call(prompt, system=STEP3B_LINK_SYSTEM)
+            for link in llm_result.get("links", []):
+                scene = link.get("scene", "")
+                elem_name = link.get("element_name", "")
+                linked = link.get("linked_interaction", "")
+                if linked and scene in l1:
+                    for elem in l1[scene].get("perceptible_elements", []):
+                        if elem.get("name") == elem_name:
+                            elem["linked_interaction"] = linked
+                            break
+        except Exception:
+            pass  # LLM gap-fill is best-effort
+
+    return {"l1_data": l1, "l3_data": l3}
 
 
 # ═══════════════════════════════════════════════════════════════
