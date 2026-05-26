@@ -476,6 +476,49 @@ frontend/          ← 表示层（导入 src/）
 src/               ← 游戏引擎（不导入 frontend/）
 ```
 
+### 前端优化 (2026-05-26)
+
+> ♻ 基于 `2026-05-25-frontend-redesign-audit.md` 交叉审计报告修复。
+
+**已修复（18 项）**：
+
+| 级别 | 项 | 内容 |
+|------|----|------|
+| 🔴 | B1-B3 | 武器库/敌人库/注入器初始化 + `run_turn` 传参；`weapon_path`/`enemy_path`/`boss_path` 参数生效 |
+| 🔴 | B4 | 角色导出含完整 `Stats`/`DerivedStats`/`Skills`（隐藏表单跨 step 持久化） |
+| 🔴 | B5 | `GET /character/skills-list` 端点，职业选择后自动展示技能 |
+| 🔴 | B6 | `text-coc-green` 替代 `text-green-400` 统一 HUD 颜色 |
+| 🟠 | H1 | `.line-clamp-2` CSS polyfill 兼容 Tailwind v4 CDN |
+| 🟠 | H6 | `GET /api/game/state` + `GET /api/game/npcs` 端点 |
+| 🟠 | H7 | editor `POST /save` + `POST /validate` 端点 |
+| 🟡 | M3 | WebSocket 重连指数退避（1s→2s→4s… 上限 30s） |
+| 🟡 | M6 | 删除 `game.html` 重复 `openFileBrowser()` |
+| 🟡 | M11 | 游戏初始化 L1/L2/L3 路径非空校验 |
+| 🟡 | M12 | `/llm` 触发 LLM 外貌/个人描述自动生成 |
+| 🔵 | L1 | 统一背景色 `#0d0d0d`（与设计文档一致） |
+| 🔵 | L4 | `border-l-3` → `border-l-2` |
+| 🔵 | L5 | `loadPath()` 改为 `htmx.ajax()` |
+| ⬜ | — | 新增 `POST /api/game/command` 端点（/scene /char /save /load /flags /events /reset /help） |
+| ⬜ | — | ★ 修复 Starlette 1.1.0 `TemplateResponse` 签名变更 `(name,ctx)→(req,name,ctx)`（10 处） |
+| ⬜ | — | 创建 `frontend/static/fonts/` 空目录占位 |
+
+**待优化（需后续迭代）**：
+
+| P | # | 问题 | 说明 |
+|---|----|------|------|
+| 1 | F1 | WebSocket 实时步骤进度 | 当前所有步骤在 `run_turn` 完成后一次性推送 `done`，无实时反馈。需在 `src/` Keeper 管线各阶段插入 `_push_progress()` 调用 |
+| 2 | F2 | 场景图片系统 | `data/images/` 不存在，`scene-image` 只有 CSS 渐变。需 image 目录 + `/api/game/current-image` 端点 + 前端渐变 -> 图片切换 |
+| 3 | F3 | `get_game()` 线程安全 | `run_turn` 在线程池中执行，`get_game()` 无锁。并发访问 `/api/game/turn` 时可能重复初始化 |
+| 4 | F4 | 角色创建 session 持久化 | 3 step 向导使用 HTMX 无状态切换，步骤间数据不持久。需 sessionStorage 或服务端 session |
+| 5 | F5 | `static/fonts/` 字体文件 | 设计文档要求捆绑 Noto Serif SC (~5MB)，当前 woff2 文件缺失 |
+| 6 | F6 | `get_game()` `start_node` 硬编码 | `"测试房间"` 硬编码 fallback，部分模组可能 KeyError |
+| 7 | F7 | Scene 端点输出精简 | `/api/game/scene` 返回全量描述+出口挤入 HUD，应只显示场景名 |
+| 8 | F8 | `requirements-dev.txt` | 计划文档要求创建，当前不存在 |
+| 9 | F9 | 生产环境 Tailwind 独立构建 | `static/tailwind.css` 未构建，当前依赖 CDN |
+| 10 | F10 | 错误边界改进 | `run_turn` 异常只返回通用 HTML，无有意义的用户提示 |
+
+> 审计完整报告见项目根目录 `2026-05-25-frontend-redesign-audit.md`
+
 ## NPC-Entity 分离 (2026-05-25)
 
 - **NPC 场景分配**：Step 1a `characters` 输出 `scenes`（首次出现的主要场景）、`can_follow`（bool）、`follow_condition`（文本描述）。管线后处理注入到 `npc_profiles[].scene` / `.can_follow` / `.follow_requirements`。

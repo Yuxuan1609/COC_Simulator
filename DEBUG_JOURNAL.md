@@ -166,3 +166,17 @@
 - **根因**：Boss "吞噬之口" 护甲 10，玩家拳击伤害 1D3+DB（最大 ~7）无法破防。`combat.py:116` 的 `while not state.finished` 只在敌人全灭时退出，无回合上限或僵局检测 → 无限循环
 - **解决**：`llm_player.py` monkey-patch `CombatSystem.run_combat` 自动返回 `win`。底层修复待做：combat 加 `max_rounds` + 僵局检测
 - **关联**：`src/game/combat.py:116`；`data/library/core/bosses.json`
+
+## 33. Starlette 1.1.0 TemplateResponse 签名变更 → 全部页面 500
+
+- **症状**：前端服务器 `/health` 正常返回 `{"status":"ok"}`，但 `/` `/game` `/character` `/editor` 全部返回 500 Internal Server Error。初次排查以为是 jinja2 缓存问题（`TypeError: cannot use 'tuple' as a dict key`），disable cache 后报 `'dict' object has no attribute 'split'`
+- **根因**：(a) Starlette 1.1.0 将 `TemplateResponse` 签名从 `(name, context)` 改为 `(request, name, context)`，所有 10 个 router 中的调用仍用旧签名。(b) `templates.TemplateResponse("launcher.html", {"request": request})` 实际变成 `TemplateResponse(request="launcher.html", name={"request": request})`，dict 被当作模板名传入 Jinja2 → `split_template_path` 报错。(c) 触发原因是 `pip install uvicorn jinja2` 时升级了 starlette 间接依赖
+- **解决/教训**：(1) grep 全部 10 个 `templates.TemplateResponse(` 调用点，逐个改为 `templates.TemplateResponse(request, "name.html", {context})`，移除 context 中的 `"request": request`（starlette 1.1.0 自动注入）；(2) `pip install` 后必须跑全量 smoke test（不只是 health check）；(3) 依赖升级后应先 `pip show starlette` 确认版本 + 对比 breaking changes
+- **关联**：`frontend/routers/*.py`（launcher/game/character/editor/files 共 10 处）
+
+## 34. frontend/static/ 目录缺失 → 服务器无法启动
+
+- **症状**：`uvicorn frontend.server:app` 启动即报 `RuntimeError: Directory 'D:\COC simulator\frontend\static' does not exist`
+- **根因**：`server.py:40` 中 `app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")))` 要求目录存在，但 git 不追踪空目录
+- **解决**：`mkdir frontend\static\fonts` 创建目录占位；审计 L3 项同时闭合
+- **教训**：任何 `StaticFiles.mount` 都应用 `os.makedirs(dir, exist_ok=True)` 兜底，或用 try/except 跳过不存在的静态目录
