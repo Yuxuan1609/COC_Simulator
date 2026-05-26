@@ -95,6 +95,10 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = PROJECT_ROOT / "logs" / "llm_player" / ts
     log_dir.mkdir(parents=True, exist_ok=True)
+    from llm import set_llm_log_dir
+    from prompts import set_prompt_log_dir
+    set_prompt_log_dir(str(log_dir))
+    set_llm_log_dir(str(log_dir))
     turn_logger = TurnLogger(log_dir=str(log_dir / "turn_logs"))
     set_turn_logger(turn_logger)
 
@@ -123,25 +127,40 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             break
 
         t_turn = time.perf_counter()
-        system, user = build_player_prompt(
-            game["keeper"].world, last_narrative,
-            short_history, long_memory, profile,
-        )
+        try:
+            system, user = build_player_prompt(
+                game["keeper"].world, last_narrative,
+                short_history, long_memory, profile,
+            )
+        except Exception as e:
+            print(f"  [WARN] build_player_prompt failed: {e}")
+            action = "环顾四周"
+            reasoning = "prompt build error"
+            system, user = "", ""
+
         try:
             response = call_deepseek(
                 user, json_mode=True, system=system,
                 model=pc["model"], reasoning_effort=pc["reasoning_effort"],
                 fallback_schema={"action": "环顾四周", "reasoning": "fallback"},
+                max_retries=3,
             )
             if isinstance(response, str):
                 response = json.loads(response)
             action = response.get("action", "环顾四周")
             reasoning = response.get("reasoning", "")
         except Exception as e:
+            print(f"  [WARN] LLM call failed: {e}")
             action = "环顾四周"
             reasoning = f"LLM error: {e}"
 
-        result = run_turn(game, action)
+        try:
+            result = run_turn(game, action)
+        except Exception as e:
+            print(f"  [WARN] run_turn failed: {e}")
+            result = {"brief": str(e), "narrative": "", "skill_results": [],
+                      "ending": None, "combat": None, "npc_events": []}
+
         dt = time.perf_counter() - t_turn
 
         brief = result.get("brief", "")
