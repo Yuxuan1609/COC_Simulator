@@ -161,6 +161,44 @@ python llm_player.py --profile stress_npc.json # 自定义 stress profile
 - StructuralEdit: 0 次
 - 异常: Patch 内容与已有 entity 重叠
 
+### Combat
+- 战斗触发: N 次
+- 总回合数: N rounds
+- 伤害计算: 玩家 / 敌人各 N 次
+- 护甲减免: N 次
+- 逃跑尝试: N 次
+- win/loss/flee 分布: W/L/F
+- 异常: 无
+
+### Side Effects
+- @spawn_enemy: N 次
+- @grant_weapon: N 次
+- @stat_change: N 次（SAN/HP/STR/...）
+- @item_gain: N 次
+- @consume_item: N 次
+- @npc_state_change: N 次
+- @npc_follow: N 次
+- 异常: 无
+
+### Memory
+- 记忆压缩: N 次
+- key_findings 记录: N 条
+- 异常: 无
+
+### DependencyGraph
+- 依赖边: N 条
+- 已解析: N 条
+- 循环检测: N 次
+- 条件触发 cascade: N 次
+- 异常: 无
+
+### IntentDetector
+- detect 调用: N 次
+- 判定 "有意义": N 次
+- Author 触发: N 次
+- false positive: N 次（Author 返回 Reject）
+- 异常: 无
+
 ## Anomalies
 | 轮次 | 类型 | 详情 |
 |------|------|------|
@@ -179,7 +217,11 @@ python llm_player.py --profile stress_npc.json # 自定义 stress profile
 
 ```json
 {
-  "focus_systems": ["NPC", "Enemy", "TimeAgent"],
+  "focus_systems": [
+    "NPC", "Enemy", "Boss", "Combat",
+    "TimeAgent", "Author", "IntentDetector",
+    "SideEffects", "Memory", "DependencyGraph"
+  ],
   "player_config": {
     "max_turns": 60,
     "max_duration_s": 3600,
@@ -187,12 +229,24 @@ python llm_player.py --profile stress_npc.json # 自定义 stress profile
     "model": "deepseek-v4-flash",
     "reasoning_effort": "low"
   },
+  "combat_testing": {
+    "note": "测试怪物削弱或使用战斗强化调查员。避免战斗过长阻塞整体流程。",
+    "weaken_enemies": {
+      "hp_multiplier": 0.5,
+      "damage_multiplier": 0.5
+    },
+    "buff_investigator": {
+      "combat_skills_boost": 30,
+      "dodge_boost": 30
+    }
+  },
   "audit_config": {
     "anomaly_thresholds": {
       "other_rate_max": 0.3,
       "enrich_degrade_max": 2,
       "consecutive_fail_alert": 3,
-      "combat_max_duration_turns": 10
+      "combat_max_duration_turns": 10,
+      "intent_detect_false_positive_max": 3
     }
   }
 }
@@ -218,6 +272,40 @@ logs/llm_player/<ts>/
   _llm_calls/             # prompt/response 日志
   audit_report.md         # 审核报告（audit 脚本输出）
 ```
+
+## Combat Testing Strategy
+
+战斗测试需要特化处理——正常 CombatSystem 可能拖长回合数。两个可选方案：
+
+**方案 A — 削弱怪物**（修改 EnemyLibrary 加载后的实例属性）
+- HP 乘 0.5，damage 乘 0.5
+- 不改代码，在 `llm_player.py` 初始化时 patch `EnemyLibrary`
+
+**方案 B — 战斗强化调查员**（修改角色卡）
+- 战斗技能（格斗/射击/闪避）基础值 +30
+- 加载 `investigator/combat_test_character.json`
+
+**默认**：方案 B（不修改核心库）。`stress_profile.json` 的 `combat_testing` 节控制。
+
+## Subsystem Coverage
+
+审计脚本覆盖全部 11 个子系统：
+
+| 类别 | 子系统 | 审计重点 |
+|------|--------|---------|
+| 核心管线 | Keeper | parse 匹配率、enrich 质量、curate 组合 |
+| 核心管线 | Narrator | 叙事一致性、空洞检测 |
+| 核心管线 | Judge | 检定通过率、失败惩罚触发、trait enhancement |
+| NPC | NPCManager | 对话调用、跟随切换、态度状态机 |
+| 战斗 | EnemyManager | spawn/combat/exit 生命周期、对峙 |
+| 战斗 | BossManager | 触发条件、combat_init、completed 标记 |
+| 战斗 | CombatSystem | 回合逻辑、伤害/护甲、win/loss/flee |
+| 时间 | TimeAgent | 时间推进、pressure 激活 |
+| 扩展 | Author | Patch/StructuralEdit 触发、去重 |
+| 扩展 | IntentDetector | 意图检测 false positive/negative |
+| 机制 | SideEffects | 7 种 @markup 全部触发验证 |
+| 机制 | DependencyGraph | 依赖链、cascade 事件、循环检测 |
+| 状态 | MemoryManager | 压缩质量、key_findings 记录 |
 
 ## Out of Scope
 
