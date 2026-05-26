@@ -254,19 +254,18 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 | **1** | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位 |
 
 
-### 待升级（不优先）
+### 待升级（按优先级）
 
 | # | 问题 | 说明 |
 |----|------|------|
-| U1 | Author 的 "other 行为" 缺乏意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。当前 IntentDetector 只判断"是否有意图"但不评分"意图对应哪个实体/是否需要检定"，导致 detect 的 false positive 触发不必要的 Author 调用。建议引入二次确认（如 Keeper 反问玩家"你要实际尝试吗？"）或实体匹配置信度阈值 |
-| U2 | 缺少技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，但限制未来多人扩展 |
-| U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative` |
-| U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
+| U1 | 自动化测试体系 | ♻ `test_harness_parallel.py`（17 case，探索+检定）、`test_harness_stability.py`（2 case，串行多轮）稳定通过。`llm_player.py` + `audit_player_log.py` + `stress_profile.json` 已实现（本 session）。待完成：30 轮完整跑局、战斗 Harness、子系统覆盖率达标 |
+| U2 | 战斗系统升级 | ♻ Boss 系统已完成。待完成：LLM 战斗叙事增强（`COMBAT_LLM_ENHANCEMENT`）、回合上限保护（防死循环）、对峙流程完整接入 |
+| U3 | Author "other 行为" 意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。建议引入二次确认（Keeper 反问玩家）或实体匹配置信度阈值 |
+| U4 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法 |
 | U5 | 世界状态系统 | ✅ 序列化已实现（G9/G10，全部子系统 `to_dict/from_dict`）。待完成：基于 Logger 的世界状态解读模型（`TurnLogger` 数据已就绪） |
-| U6 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法。详见 `## NPC-Entity 分离` 章节 |
-| U7 | 战斗系统完整性与安全退出 | ♻ Boss 系统已完成。待完成：LLM 战斗叙事（U3）、回合上限保护（防死循环）、对峙流程完整接入 |
-| U8 | 自动化测试体系 | ♻ `test_harness_parallel.py`（17 case）、`test_harness_stability.py`（2 case）稳定通过。`llm_player.py` + `audit_player_log.py` + `stress_profile.json` 已实现（本 session）。待完成：30 轮完整跑局、子系统覆盖率达标 |
-| U9 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化——角色卡/物品/技能/属性/SAN 跨模组继承；(2) 模组 Patch 永久化——Author StructuralEdit 产出的场景/entity 持久写入；(3) 调查员经历写入——每模组结束时生成 narrative 经历摘要并累积；(4) 多模组拼接成战役系统——模组队列、结局分支路由、全局世界状态跨模组延续 |
+| U6 | 技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，限制未来多人扩展 |
+| U7 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
+| U8 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化——角色卡/物品/技能/属性/SAN 跨模组继承；(2) 模组 Patch 永久化——Author StructuralEdit 持久写入；(3) 调查员经历写入——每模组 narrative 经历摘要累积；(4) 多模组拼接战役——模组队列、结局分支路由、全局世界状态跨模组延续 |
 
 ## 设计文档
 
