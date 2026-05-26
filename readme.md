@@ -251,11 +251,8 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 | P | # | 问题 | 说明 |
 |---|----|------|------|
-| **1** | O6 | Harness 整合 + LLM 模拟真人测试 | ♻ 部分完成。旧 `game_loop_harness.py` 已由 `test_harness_parallel.py`（17 case，并行）和 `test_harness_stability.py`（2 case，串行多轮）替代。Parallel harness 已稳定通过。Stability harness 仍需调整 LLM 输入输出响应质量。Escalation harness 触发条件苛刻，暂不整合。远期：LLM-as-player 模式自动驱动多轮探索 |
-| **2** | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位。开启后调用 `build_combat_narrative_prompt()` → LLM 填充 `CombatResult.narrative`。当前输出确定性 per-action 文本 |
-| 3 | O19 | NPC bound entity 跨场景激活 | 当前 source_scene 精确匹配过于粗糙——NPC 移动后原场景 entity 仍应可选，部分 AT 应跨场景生效。需细化绑定实体的可用性规则 |
-| 4 | O20 | NPC 跟随事件注入统一化 | `_apply_pending()` 中跟随 entity 注入逻辑当前是死代码（需先有 entity 触发 `@npc_follow` 才能开始跟随）。跟随事件应在单一环节确定性注入（Step 1a 写死字段或 `_assemble_l2` 自动补全），避免多步骤各自解析导致重复和冲突 |
-| 5 | O21 | 跨模组结局合并 | 结局事件系统 (O14) 已实施，但跨模组时结局需合并多 L3 或全局结局表 |
+| **1** | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位 |
+| 2 | O21 | 跨模组结局合并 | 结局事件系统 (O14) 已实施，但跨模组时结局需合并多 L3 或全局结局表 |
 
 
 ### 待升级（不优先）
@@ -264,13 +261,12 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 |----|------|------|
 | U1 | Author 的 "other 行为" 缺乏意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。当前 IntentDetector 只判断"是否有意图"但不评分"意图对应哪个实体/是否需要检定"，导致 detect 的 false positive 触发不必要的 Author 调用。建议引入二次确认（如 Keeper 反问玩家"你要实际尝试吗？"）或实体匹配置信度阈值 |
 | U2 | 缺少技能协同检定 | COC 7th 规则中的合作检定（多人共同尝试）和互补检定（用相关技能辅助）未实现。单调查员模组下无大碍，但限制未来多人扩展 |
-| U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative`。`CombatSystem.__init__` 已接收 `llm_enhancement` 参数并预留 `_generate_combat_narrative()` 方法。当前仅输出确定性 per-action 文本 |
-| U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换，改写 `llm.py` 的 API 调用方式 |
-| U5 | 基于 Logger 内容实现世界状态解读 | `TurnLogger`（`src/game/turn_logger.py`）已记录每轮玩家输入 + Enrich 输出 + Narrator 输出到 `data/debug/turn_logs/`。后续基于此数据训练/评估世界状态解读模型，或生成更准确的场景摘要 |
-| U6 | NPC 系统统一升级 | ♻ 本 session (2026-05-26) NPC 对话架构已重构——bound entity 走主管线，npc_interact 短路返回。O20 跟随 entity 确定性注入。待完成：态度层级硬性规则、半主动行为、状态语法。详见 `## NPC-Entity 分离` 章节 |
-| U7 | 世界状态序列化与恢复 | ✅ 已实现 (G9/G10 于 2026-05-23)。`ScenarioWorld` Facade 组合 5 个子系统（GameClock/EnemyManager/NPCManager/BossManager/MemoryManager），全部 `to_dict()/from_dict()`。`test_save_load_roundtrip.py` 覆盖全量往返测试。 |
-| U8 | 战斗系统完整性与安全退出 | ♻ Boss 系统已完成（`CombatInit` → `CombatSystem.run_combat()` → `CombatResult`）。待完成：LLM 战斗叙事增强（U3）、回合上限保护（防死循环）、对峙流程完整接入。 |
-| U9 | LLM Player 压力测试 | ♻ 本 session (2026-05-26) 已实现 `llm_player.py` + `audit_player_log.py` + `stress_profile.json`。待完成：30 轮完整跑局、子系统覆盖率提升。 |
+| U3 | 战斗系统 LLM 增强 | `config.py` 中 `COMBAT_LLM_ENHANCEMENT=False`。开启后：每轮战斗由 `build_combat_narrative_prompt()` 生成 LLM 叙事，战斗结束生成 LLM 战斗总结填入 `CombatResult.narrative` |
+| U4 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
+| U5 | 世界状态系统 | ✅ 序列化已实现（G9/G10，全部子系统 `to_dict/from_dict`）。待完成：基于 Logger 的世界状态解读模型（`TurnLogger` 数据已就绪） |
+| U6 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法。详见 `## NPC-Entity 分离` 章节 |
+| U7 | 战斗系统完整性与安全退出 | ♻ Boss 系统已完成。待完成：LLM 战斗叙事（U3）、回合上限保护（防死循环）、对峙流程完整接入 |
+| U8 | 自动化测试体系 | ♻ `test_harness_parallel.py`（17 case）、`test_harness_stability.py`（2 case）稳定通过。`llm_player.py` + `audit_player_log.py` + `stress_profile.json` 已实现（本 session）。待完成：30 轮完整跑局、子系统覆盖率达标 |
 
 ## 设计文档
 
