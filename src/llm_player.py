@@ -143,7 +143,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
                 user, json_mode=True, system=system,
                 model=pc["model"], reasoning_effort=pc["reasoning_effort"],
                 fallback_schema={"action": "环顾四周", "reasoning": "fallback"},
-                max_retries=3,
+                max_retries=3, timeout=60,
             )
             if isinstance(response, str):
                 response = json.loads(response)

@@ -131,6 +131,7 @@ def call_deepseek(
     max_tokens: int | None = None,
     max_retries: int = 3,
     fallback_schema: dict | None = None,
+    timeout: float = 180.0,
     _label: str | None = None,
 ) -> dict | str:
     """
@@ -178,7 +179,8 @@ def call_deepseek(
                     max_tokens=_max_tokens,
                     reasoning_effort=_reasoning_effort,
                     response_format={"type": "json_object"},
-                    extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
+                    extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}},
+                    timeout=timeout,
                 )
                 raw = response.choices[0].message.content
                 if not raw or not raw.strip():
@@ -240,6 +242,7 @@ def call_deepseek(
                 temperature=_temperature,
                 max_tokens=_max_tokens,
                 reasoning_effort=_reasoning_effort,
+                timeout=timeout,
                 extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
             )
             result = response.choices[0].message.content.strip()
@@ -375,6 +378,7 @@ COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技�
         ],
         temperature=0.2,
         max_tokens=500,
+        timeout=60,
         extra_body={"thinking": {"type": "disabled"}},
     )
     raw = response.choices[0].message.content.strip()
@@ -474,6 +478,7 @@ def evaluate_failure_penalty(
         ],
         temperature=0.4,
         max_tokens=800,
+        timeout=60,
         extra_body={"thinking": {"type": "disabled"}},
     )
     raw = response.choices[0].message.content.strip()
