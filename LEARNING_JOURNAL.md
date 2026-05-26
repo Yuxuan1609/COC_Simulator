@@ -61,3 +61,18 @@
 ## git stash 操作后验证
 - `git checkout` + `git stash pop` 恢复的可能是过期快照，部分编辑会丢失
 - 恢复后 grep 关键修改是否还在，import 是否成功
+
+## 批量 Prompt 重构：先定模板再逐个套用
+- 18 个步骤的 system/user prompt 拆分，统一 pattern：System = 角色 + 规则 + Schema；User = 动态数据
+- 先抽一个步骤（如 Step 2a）作为"金样板"，验证无误后再批量应用同一步骤模板到其余步骤
+- 每个步骤改完后立即 `ast.parse` 验证语法，避免静默破坏
+
+## Subagent-Driven 开发中的依赖管理
+- 同一文件被多个 task 修改时，合并到一个 agent dispatch 中处理，避免文件冲突
+- 大文件（1000+ 行）的增量修改 agent 容易出错——尽量提供精确的行号上下文
+- 每个 task 完成后必须做 spec compliance review（检查"做了要求的事吗"）然后 code quality review（检查"代码写得好吗"）
+
+## 系统集成应先验证"端到端数据流"
+- NPC 系统从模组生成到运行时完整链路，但没有任何 smoke test 验证数据是否真的从 pipeline 流到了 runtime
+- 新架构上线要选一个最简路径做端到端：生成 → 加载 → 验证中间状态（如 `npc.scene` 是否非空）
+- 中间的空白字段不会报错，只会静默失效——这种 bug 最难发现

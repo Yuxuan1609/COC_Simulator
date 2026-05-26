@@ -96,3 +96,19 @@
 - **症状**：所有 LLM response 写入单一 `llm.txt`，不同 agent 的 prompt 和 response 分在两个文件里，排查时需要手动拼接
 - **根因**：`_log_response` 始终写 `llm.txt`
 - **解决**：引入 `_current_log_label` 全局变量 + `set_log_label()` 函数。`_show_prompt` 在写 prompt 前设置 label，`_log_response` 按 label 写入对应文件。`evaluate_trait_enhancement` 不走 `call_deepseek` 所以需要手动 `set_log_label("skill_checks")`
+
+---
+
+## 18. NPC 系统完全空转 — scene 字段无人填充
+
+- **症状**：NPC 对话路由永不触发，`npcs_visible` 永远空列表，整个 NPC-Entity 分离系统形同虚设
+- **根因**：三层断链 — (a) Step 2.5 不生成 `initial_scene`；(b) `_bind_npc_entities()` 不设置 NPC 的 `scene` 字段；(c) `init_game()` 有一段死代码循环试图从 `scene_data.get("npcs", [])` 读，但 L2 scenes 根本没有 `npcs` 字段。最终所有 NPC `scene=""` → `get_in_scene()` 永远返回空
+- **解决**：在 `_bind_npc_entities()` 绑 entity 时从第一个 entity 的 source_scene 推断 NPC 所在场景；纯对话框 NPC 从 L1 npc_appearances 兜底。Step 2.5 不该写 scene（scene 绑定是确定性逻辑，不该交由 LLM）
+- **教训**：新架构上线前必须做端到端 smoke test——这里只要打印 `npc.scene` 一眼就看出是空，但没人验证过
+
+## 19. 18 个管线步骤的 System/User Prompt 批量重构
+
+- **症状**：所有模块生成步骤的提示词中，稳定内容（角色定义、规则、JSON Schema）和动态数据（章节文本、entity 列表）混在 user prompt 中，每次调用重复发送
+- **根因**：最初的设计没有区分 system/user prompt，所有内容塞在 build 函数的 f-string 里
+- **解决**：13 步主管线 + 4 步补充管线逐一重构——静态内容（任务定义、字段规则、输出格式、要求）移入 STEP*_SYSTEM，user prompt 仅保留 `chapter_text`、`entity_list`、`scene_names` 等动态数据。补充管线原本没有独立 system prompt，全在 inline 构建
+- **关联**：`src/module_designer/layered_parser.py`；`src/module_designer/supplement_pipeline.py`
