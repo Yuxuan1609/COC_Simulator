@@ -1,0 +1,33 @@
+{
+  "player_strategy": ["NPC", "Enemy", "Boss", "Combat", "TimeAgent", "Author"],
+  "audit_targets": [
+    "NPC", "Enemy", "Boss", "Combat",
+    "TimeAgent", "Author", "IntentDetector",
+    "SideEffects", "Memory", "DependencyGraph",
+    "Judge", "Narrator"
+  ],
+  "player_config": {
+    "max_turns": 60,
+    "max_duration_s": 3600,
+    "memory_compress_interval": 5,
+    "model": "deepseek-v4-flash",
+    "reasoning_effort": "low",
+    "module_name": "更新模组0526v2"
+  },
+  "combat_testing": {
+    "mode": "buff_investigator",
+    "buff_investigator": {
+      "combat_skills_boost": 30,
+      "dodge_boost": 30
+    }
+  },
+  "audit_config": {
+    "anomaly_thresholds": {
+      "other_rate_max": 0.3,
+      "enrich_degrade_max": 2,
+      "consecutive_fail_alert": 3,
+      "combat_max_duration_turns": 10,
+      "intent_detect_false_positive_max": 3
+    }
+  }
+}
