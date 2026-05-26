@@ -176,7 +176,6 @@ parse → judge 之后、curate → narrator 之前的软缓冲层。职责是**
 - 独立于 Keeper 管线，接收 `CombatInit`，返回 `CombatResult`
 - 伤害掷骰（1D6+DB 等公式）、护甲减免、D100 技能检定（格斗/射击/闪避）
 - 先攻排序、逐轮处理、玩家/敌人动作编排
-- 10 个单元测试（`tests/test_combat.py`），combat harness 集成测试（`tests/test_combat_harness.py`）
 
 
 **Boss 战斗系统**：
@@ -285,32 +284,18 @@ LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat e
 
 ## 测试
 
+端到端集成测试为主，以真实 LLM 调用结果为准。
+
 | 文件 | 覆盖范围 | 类型 |
 |------|----------|------|
-| `tests/test_clock.py` | 10 case — GameClock 默认值/推进/跨天/时段转换/时间标记/序列化/隔离 | 单元（确定） |
-| `tests/test_time_system.py` | 8 case — GameClock 集成 world + time_costs 文件完整性 | 单元（确定） |
-| `tests/test_enemy_manager.py` | 9 case — spawn/filter/group/combat lifecycle/range/context | 单元（确定） |
-| `tests/test_combat_entry.py` | 6 case — SpawnEnemy→EnemyManager→combat lifecycle | 集成（确定） |
-| `tests/test_combat.py` | 10 case — damage roll/armor/tier/combat state | 单元（确定） |
-| `tests/test_combat_harness.py` | CombatSystem 完整战斗流程 | 集成（确定） |
-| `tests/test_boss_library.py` | 3 case — BossLibrary 加载/查询/字段完整性 | 单元（确定） |
-| `tests/test_boss_manager.py` | 6 case — engage_type 过滤/CombatInit 构造/active/set/resolve | 单元（确定） |
-| `tests/test_npc_manager.py` | 6 case — 创建/对话/跟随同步/场景查询/状态变更/序列化 | 单元（确定） |
-| `tests/test_library.py` | 18 case — WeaponLibrary/EnemyLibrary + flag 解析 | 单元（确定） |
-| `tests/test_author_flow.py` + `tests/test_intent_detector.py` | 11 case — Detector→Author→Keeper 全链路（全 mock） | 单元 |
-| `tests/test_escalation_harness.py` | 5 case — 正常/flavor/Patch/Reject/StructuralEdit | 集成（真实 LLM） |
+| `tests/test_harness_parallel.py` | 17 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/重复失败惩罚，含 `--mock` 模式 | 集成（真实 LLM） |
+| `tests/test_harness_stability.py` | 2 case 串行稳定性（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
 | `tests/test_escalation_real.py` | 5 case — 真实 LLM 升级流测试，含完整 prompt/response 日志 | 集成（真实 LLM） |
-| `tests/test_harness_parallel.py` | **NEW** — 17 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/重复失败惩罚，含 `--mock` 模式 | 集成（真实 LLM） |
-| `tests/test_harness_stability.py` | **NEW** — 2 case 串行稳定性测试（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
-| `tests/test_failure_penalty.py` | **NEW** — 2 case 失败惩罚链路：Judge 生成→Keeper 保留→Narrator 接收，全 mock | 单元 |
-| `tests/test_save_load_roundtrip.py` | **NEW** — 存档/读档全量 roundtrip：ItemManager/GameClock/EnemyManager/NPCManager/Memory | 集成 |
-| `tests/game_loop_harness.py` | ⚠ 已弃用 — 7 轮旧 pipeline（绕过 Keeper.process_turn，使用废弃的 `apply_side_effects`），待迁移到新 harness | 集成（真实 LLM） |
-| 其他 | test_judge, test_dependency_graph, test_directed_graph, test_entity, test_entity_resolvers, test_curator, test_integration, test_module_designer, test_markup | 单元 + 集成 |
+| `tests/game_loop_harness.py` | ⚠ 已弃用 — 旧 pipeline（绕过 Keeper.process_turn），待迁移到新 harness | 集成（真实 LLM） |
 
-**测试说明**：
-- 测试数据：`data/modules/test/l*_test.json` 及 `data/modules/常暗之厢/l*_test.json`
-- **Parallel Harness**：`python tests/test_harness_parallel.py`（17 case 并行），`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
-- **Stability Harness**：`python tests/test_harness_stability.py`（2 case 串行），日志 → `data/debug/test_stability/<ts>/`
+**运行方式**：
+- **Parallel Harness**：`python tests/test_harness_parallel.py`，`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
+- **Stability Harness**：`python tests/test_harness_stability.py`，日志 → `data/debug/test_stability/<ts>/`
 - Game Loop Harness（旧）：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
 
 ## @markup 副效果系统（7 种）
@@ -360,8 +345,7 @@ class NodeRuntimeState:
 
 **2026-05-22 修复**：失败实体的惩罚叙事曾因 enrich 步骤的两个 bug 丢失：
 - `judged_entities` 只收集成功实体 → enrich LLM 看不到惩罚内容
-- `all_outcomes[0].message` 无条件被 enrich 结果覆盖 → 惩罚叙事可能被擦除  
-详见 `tests/test_failure_penalty.py`（2 case，全部 mock）。
+- `all_outcomes[0].message` 无条件被 enrich 结果覆盖 → 惩罚叙事可能被擦除
 
 ## 特殊标记
 
