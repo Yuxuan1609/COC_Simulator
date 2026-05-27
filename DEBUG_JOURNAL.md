@@ -256,3 +256,17 @@
 ## 47. 审计报告 combat_outcome→combat dict 字段迁移
 
 - **症状/根因/解决**：`llm_player.py` 将战斗数据从 `combat_outcome: str` 升级为 `combat: {outcome, narrative, is_boss}`，审计各节共 6 处 `t.get("combat_outcome")` 引用全部迁移到 `t.get("combat")` / `t["combat"].get("outcome")`
+
+## 48. TimeAgent 时间偏差严重 — 10 轮仅推进 6 分钟
+
+- **症状**：llm_player 10 轮跑局中，T01-T10 总游戏时间仅从 G+5m 到 G+6m，搜索车厢、移动、阅读笔记等操作只推进 1 分钟
+- **根因**：`time_costs.json`（含 search/move/dialogue/combat/other 各类型时间基准）在 `init_game()` 加载到 `world.time_costs`，但从未传递给 TimeAgent。TimeAgent prompt 只有模糊的"综合所有行动评估总耗时"没有数值参考 → LLM 保守估计趋近 0-1 分钟
+- **解决**：(a) `TimeAgent.build_prompt()` 新增 `time_costs` 参数，注入 `【时间参考基准】` 节（search=1-45m, move=1-15m, dialogue=1-15m 等）；(b) `Keeper._run_time_agent()` 传入 `self.world.time_costs`
+- **效果**：3 轮测试从 ~5m 提升到 20m（G+10m→G+17m→G+20m），符合实际游戏时间观感
+
+## 49. combat_entry 绕过 Enrich → Narrator 感知不到战斗
+
+- **症状**：战斗叙事（"你侥幸战胜了..."）不进入 Enrich/Narrator 管线，LLM Player 和玩家都只能通过 Narrator 的 scene snapshot 间接感知战斗结果
+- **根因**：keeper 管线顺序为 Step 2.5 combat_entry（并行）∥ Step 3 enrich+TimeAgent → Step 3.5 collect enrich → Step 3.6 collect combat_entry → Step 3.7 resolve combat。combat_entry 在 enrich 之后收集，且 enrich_input 无战斗数据
+- **解决**：重构 keeper 管线为串行——Step 2.5 combat_entry（同步）→ Step 2.6 解析战斗 + Boss "at" 检查 → 战斗描述注入 `enrich_input.entities` → Step 3 enrich ∥ TimeAgent（并行）。Boss 遭遇注入 `"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"`，普通战斗注入 `"⚔ 你与{enemy_names}进入了战斗！"`
+- **教训**：Enrich 是 Narrator 的唯一数据源——任何需要 Narrator 感知的事件（战斗/Boss/NPC）必须在 enrich 之前注入 enrich_input

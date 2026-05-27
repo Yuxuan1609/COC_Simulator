@@ -30,31 +30,45 @@ class TimeAgent:
         self,
         actions: list[dict],
         current_input: str = "",
+        time_costs: dict | None = None,
     ) -> str:
         actions_text = ""
         for a in actions:
             tr = a.get("time_range")
             tr_text = f" 建议耗时={tr['min']}-{tr['max']}分钟" if tr else ""
-            actions_text += f"  [{a['type']}] {a['name']} (成功={a['success']}){tr_text}\n"
+            cat = a.get("time_category", "other")
+            actions_text += f"  [{a['type']}·{cat}] {a['name']} (成功={a['success']}){tr_text}\n"
+
+        # Build time cost reference from loaded time_costs.json
+        cost_ref = ""
+        if time_costs:
+            cost_ref = "【时间参考基准】\n"
+            for cat, info in time_costs.items():
+                if isinstance(info, dict) and "guideline" in info:
+                    cost_ref += f"  {cat}: {info['guideline']}\n"
 
         return f"""你是 TRPG 时间推进的判断者。基于玩家本轮的所有行动，评估时间推进情况。
-
+{cost_ref}
 玩家本轮输入：{current_input}
 
 本轮行动：
 {actions_text or '（无）'}
+
+请综合评估本轮所有行动的总耗时（分钟）。参考上述时间基准，根据行动复杂度和玩家输入的仔细程度做加减调整。
 
 返回 JSON：
 {{"time_delta": 0, "narrative_hint": "时间相关的叙事提示（可为空）"}}
 
 time_delta 是本轮总推进分钟数，默认 0。直接输出 JSON。"""
 
-    def assess(self, actions: list[dict] | None = None, current_input: str = "", **kwargs) -> dict:
+    def assess(self, actions: list[dict] | None = None, current_input: str = "",
+               time_costs: dict | None = None, **kwargs) -> dict:
         if self.monitor.degraded:
             return {"time_delta": 0, "narrative_hint": ""}
         prompt = self.build_prompt(
             actions=actions or [],
             current_input=current_input,
+            time_costs=time_costs,
             **kwargs,
         )
         _show_prompt("TimeAgent", prompt, system="你是 COC 7th KP 时间推进的判断者。基于玩家本轮所有行动评估时间消耗。\n\n评估要点：综合所有行动评估总耗时（越复杂越久）；如有 time_range 建议以此为参考；自由动作评估其自然耗时。\n\n输出格式：{\"time_delta\": 0, \"narrative_hint\": \"\"}。直接输出 JSON。")

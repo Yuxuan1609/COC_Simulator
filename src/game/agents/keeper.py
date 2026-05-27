@@ -404,9 +404,8 @@ class Keeper:
                             "skill_tier": outcome.skill_tier,
                         })
 
-        # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
-        combat_future = None
-        combat_executor = None
+        # Step 2.5: Combat entry detection — run BEFORE enrich so combat info flows into enrichment
+        combat_entry = None
         enemy_ctx = None
         if self.world and self.world.enemies and not self.world.enemies._combat_active:
             enemy_ctx = self.world.enemies.get_combat_context(
@@ -423,22 +422,90 @@ class Keeper:
                 enemy_context=enemy_ctx,
                 current_scene=self.world.current_location,
             )
-            combat_executor = ThreadPoolExecutor(max_workers=1)
-            combat_future = combat_executor.submit(
-                lambda p, **kw: self.monitor.call(
-                    lambda pp, **kkw: call_deepseek(pp, _label="combat_entry", **kkw),
-                    p, **kw,
-                ),
-                combat_prompt,
-                json_mode=True,
-                model=LLM_FLASH_MODEL,
-                reasoning_effort=RE_COMBAT_ENTRY,
-                system="你是 COC 7th KP 助理，负责根据玩家行为和场景内敌人习性判断是否进入回合制战斗。"
-                       "\n\n输出 JSON：{\"enter_combat\": true/false, \"enemy_instance_ids\": [...], \"reasoning\": \"简述理由\"}。直接输出 JSON。",
-                fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
-            )
+            try:
+                raw_result = call_deepseek(
+                    combat_prompt,
+                    json_mode=True,
+                    model=LLM_FLASH_MODEL,
+                    reasoning_effort=RE_COMBAT_ENTRY,
+                    _label="combat_entry",
+                    system="你是 COC 7th KP 助理，负责根据玩家行为和场景内敌人习性判断是否进入回合制战斗。"
+                           "\n\n输出 JSON：{\"enter_combat\": true/false, \"enemy_instance_ids\": [...], \"reasoning\": \"简述理由\"}。直接输出 JSON。",
+                    fallback_schema={"enter_combat": False, "enemy_instance_ids": [], "reasoning": ""},
+                )
+                result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
+                combat_entry = CombatEntryCheck(
+                    enter_combat=result.get("enter_combat", False),
+                    enemy_instance_ids=result.get("enemy_instance_ids", []),
+                    reasoning=result.get("reasoning", ""),
+                )
+            except Exception:
+                combat_entry = None
 
-        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — parallel with combat_entry
+        # Step 2.6: Resolve combat trigger & inject combat narrative into enrich_input
+        standoff_prompt = None
+        combat_init_result = None
+        if combat_entry and combat_entry.enter_combat:
+            avoidable_by_ref: dict[str, list[str]] = {}
+            hostile_iids: list[str] = []
+            for iid in combat_entry.enemy_instance_ids:
+                inst = self.world.enemies.get_by_id(iid) if self.world.enemies else None
+                if inst and "avoidable" in inst.flags:
+                    avoidable_by_ref.setdefault(inst.enemy_ref, []).append(iid)
+                elif inst:
+                    hostile_iids.append(iid)
+
+            if avoidable_by_ref:
+                first_ref = next(iter(avoidable_by_ref))
+                standoff_prompt = {
+                    "groups": {ref: iids for ref, iids in avoidable_by_ref.items()},
+                    "current_group": first_ref,
+                    "hostile_iids": hostile_iids,
+                    "all_enemy_iids": list(combat_entry.enemy_instance_ids),
+                    "reasoning": combat_entry.reasoning,
+                }
+                standoff_msg = f"你还有最后一次机会避免与{first_ref}的战斗——你要怎么做？"
+                all_outcomes.append(ActionOutcome(
+                    intent=ActionIntent(action="standoff"),
+                    success=True,
+                    message=standoff_msg,
+                    entity_id="STANDOFF",
+                    entity_type="standoff",
+                ))
+                enrich_input.entities.append({
+                    "entity_type": "standoff",
+                    "id": "STANDOFF",
+                    "name": f"对峙：{first_ref}",
+                    "result": standoff_msg,
+                    "success": True,
+                    "skill_tier": "",
+                })
+            elif hostile_iids:
+                enemies = [self.world.enemies.get_by_id(iid)
+                          for iid in hostile_iids
+                          if self.world.enemies and self.world.enemies.get_by_id(iid)]
+                if enemies and self.world.enemies:
+                    self.world.enemies.enter_combat(hostile_iids)
+                enemy_names = ", ".join(
+                    getattr(e, 'enemy_ref', getattr(e, 'name', '未知')) for e in enemies
+                )
+                combat_msg = f"⚔ 你与{enemy_names}进入了战斗！"
+                enrich_input.entities.append({
+                    "entity_type": "combat",
+                    "id": "COMBAT",
+                    "name": f"战斗：{enemy_names}",
+                    "result": combat_msg,
+                    "success": True,
+                    "skill_tier": "",
+                })
+                combat_init_result = CombatInit(
+                    enemies=enemies,
+                    player=self.world.player,
+                    scene=self.world.current_location,
+                    initiative_context=combat_entry.reasoning,
+                )
+
+        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input
         emphasis = ""
         enrich_future = None
         ta_future = None
@@ -478,7 +545,7 @@ class Keeper:
         if enrich_executor:
             enrich_executor.shutdown(wait=False)
 
-        # Boss "at" check: after scene change (moved here to let enrich run first)
+        # Boss "at" check: before enrich so combat info flows into enrichment
         boss_combat_init = None
         if self.world.bosses:
             at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
@@ -489,65 +556,21 @@ class Keeper:
                 if self._check_boss_requirements(boss_entity):
                     boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
                     self.world.bosses.set_active(boss_id)
+                    boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
+                    boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
+                    enrich_input.entities.append({
+                        "entity_type": "boss_encounter",
+                        "id": f"BOSS_{boss_id}",
+                        "name": f"Boss遭遇：{boss_name}",
+                        "result": boss_msg,
+                        "success": True,
+                        "skill_tier": "",
+                    })
                     break
+        if boss_combat_init:
+            combat_init_result = boss_combat_init
 
-        # Step 3.6: Collect combat entry result (skip if boss already triggered)
-        combat_entry = None
-        if not boss_combat_init and combat_future:
-            try:
-                raw_result = combat_future.result()
-                result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
-                combat_entry = CombatEntryCheck(
-                    enter_combat=result.get("enter_combat", False),
-                    enemy_instance_ids=result.get("enemy_instance_ids", []),
-                    reasoning=result.get("reasoning", ""),
-                )
-            except Exception:
-                combat_entry = None
-            finally:
-                combat_executor.shutdown(wait=False)
-
-        # Step 3.7: Build standoff_prompt or combat_init from combat_entry
-        standoff_prompt = None
-        combat_init_result = boss_combat_init  # may already be set by Boss "at" check
-        if not combat_init_result and combat_entry and combat_entry.enter_combat:
-            avoidable_by_ref: dict[str, list[str]] = {}
-            hostile_iids: list[str] = []
-            for iid in combat_entry.enemy_instance_ids:
-                inst = self.world.enemies.get_by_id(iid) if self.world.enemies else None
-                if inst and "avoidable" in inst.flags:
-                    avoidable_by_ref.setdefault(inst.enemy_ref, []).append(iid)
-                elif inst:
-                    hostile_iids.append(iid)
-
-            if avoidable_by_ref:
-                standoff_prompt = {
-                    "groups": {ref: iids for ref, iids in avoidable_by_ref.items()},
-                    "current_group": next(iter(avoidable_by_ref)),
-                    "hostile_iids": hostile_iids,
-                    "all_enemy_iids": list(combat_entry.enemy_instance_ids),
-                    "reasoning": combat_entry.reasoning,
-                }
-                first_ref = standoff_prompt["current_group"]
-                all_outcomes.append(ActionOutcome(
-                    intent=ActionIntent(action="standoff"),
-                    success=True,
-                    message=f"你还有最后一次机会避免与{first_ref}的战斗——你要怎么做？",
-                    entity_id="STANDOFF",
-                    entity_type="standoff",
-                ))
-            elif hostile_iids:
-                enemies = [self.world.enemies.get_by_id(iid)
-                          for iid in hostile_iids
-                          if self.world.enemies and self.world.enemies.get_by_id(iid)]
-                if enemies and self.world.enemies:
-                    self.world.enemies.enter_combat(hostile_iids)
-                combat_init_result = CombatInit(
-                    enemies=enemies,
-                    player=self.world.player,
-                    scene=self.world.current_location,
-                    initiative_context=combat_entry.reasoning,
-                )
+        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input
 
         # TimePressure comms dispatch (at most 1 per turn)
         tp = author.time_pressure if author else None
@@ -1055,7 +1078,8 @@ class Keeper:
         """Call TimeAgent with collected action summaries. Runs in parallel with enrich."""
         from game.agents.time_agent import TimeAgent
         ta = TimeAgent()
-        return ta.assess(actions=action_summaries, current_input=raw)
+        return ta.assess(actions=action_summaries, current_input=raw,
+                         time_costs=self.world.time_costs)
 
     def _build_scene_context_for_author(self) -> dict:
         """Build scene_context for AuthorRequest. Delegates to World snapshot."""
