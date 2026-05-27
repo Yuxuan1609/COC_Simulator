@@ -54,6 +54,8 @@ async def launcher_tab(request: Request, tab: str):
     config = _load_config()
     if tab == "module-gen":
         return templates.TemplateResponse(request, "partials/launcher-module-gen.html", {})
+    elif tab == "game-start":
+        return templates.TemplateResponse(request, "partials/launcher-game-start.html", {})
     elif tab == "config":
         return templates.TemplateResponse(request, "partials/launcher-config.html", {
             "config": config,
@@ -127,4 +129,58 @@ async def start_pipeline(
         f'  <p class="text-xs text-gray-500 mt-1">输出目录: {output_dir}</p>'
         f'  <p class="text-xs text-gray-500">可在控制台查看进度输出</p>'
         '</div>'
+    )
+
+
+@router.post("/api/pipeline/validate")
+async def validate_pipeline(
+    source: str = Form(""),
+    module_name: str = Form(""),
+    output_dir: str = Form(""),
+    start_from: str = Form(""),
+):
+    """Validate intermediate files exist for pipeline resume at given step."""
+    import os as _os
+
+    if not start_from:
+        if source and not _os.path.exists(str(PROJECT_ROOT / source)):
+            return HTMLResponse(
+                f'<span class="text-red-400">源文件不存在: {source}</span>'
+            )
+        return HTMLResponse(
+            '<span class="text-coc-green">将从 Step 1a 开始完整生成</span>'
+        )
+
+    mod_dir = output_dir or f"data/modules/{module_name}"
+
+    required = {
+        "step_2a": [f"{mod_dir}/module_step0.txt"],
+        "step_3a": [f"{mod_dir}/module_step0.txt", f"{mod_dir}/l2_keeper.json"],
+        "step_3b": [f"{mod_dir}/l2_keeper.json", f"{mod_dir}/l1_player.json", f"{mod_dir}/l3_designer.json"],
+    }
+
+    files_needed = required.get(start_from, [])
+    if not files_needed:
+        return HTMLResponse('<span class="text-gray-400">未知步骤</span>')
+
+    missing = [f for f in files_needed if not _os.path.exists(str(PROJECT_ROOT / f))]
+    if missing:
+        names = ", ".join(missing)
+        return HTMLResponse(
+            f'<span class="text-red-400">缺少文件: {names}</span>'
+        )
+
+    import json as _json
+    for f in files_needed:
+        fp = PROJECT_ROOT / f
+        if fp.suffix == ".json" and fp.exists():
+            try:
+                _json.loads(fp.read_text(encoding="utf-8"))
+            except Exception:
+                return HTMLResponse(
+                    f'<span class="text-red-400">JSON 格式错误: {f}</span>'
+                )
+
+    return HTMLResponse(
+        '<span class="text-coc-green">所有必需文件已就绪，可以续跑</span>'
     )
