@@ -277,7 +277,92 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ---
 
-## 12. 离线管线
+## 12. 配置系统
+
+### `src/config.py` (138 行)
+集中化配置，不含敏感信息。所有硬编码开关/阈值/魔法数字从此读取。
+
+| 分类 | 配置项 | 默认值 | 说明 |
+|------|--------|--------|------|
+| 子系统开关 | `WR0_ENABLED` | False | 创作者豁免，开启后 Author 不受世界规则约束 |
+| | `COMBAT_LLM_ENHANCEMENT` | False | 战斗 LLM 叙事增强（预留） |
+| | `SHOW_NON_TRIGGERABLE` | True | Parse prompt 是否展示未满足条件的实体 |
+| | `SHOW_COMPLETED` | False | Parse prompt 是否展示已完成实体 |
+| | `JUDGMENT_TIER2_ENABLED` | True | LLM 增强技能判定（Tier 2） |
+| 监控阈值 | `LLM_SLOW_THRESHOLD_MS` | 8000 | LLM 慢调用阈值 (ms) |
+| | `LLM_TIMEOUT_MS` | 45000 | LLM 超时阈值 (ms) |
+| | `LLM_MAX_CONSECUTIVE_FAILURES` | 3 | 触发降级的连续失败次数 |
+| | `LLM_DEGRADE_RECOVERY_COUNT` | 5 | 恢复所需连续成功次数 |
+| 游戏循环 | `MAX_ESCALATION_DEPTH` | 3 | Author Patch/StructuralEdit 递归上限 |
+| | `INTENT_COOLDOWN_WINDOW` | 3 | IntentDetector 去重窗口（回合数） |
+| | `COMMS_INTERVAL_MINUTES` | 15 | TimePressure 通信间隔 |
+| | `NPC_MEMORY_CAP` | 20 | NPC 对话记忆上限 |
+| 降级策略 | `DEGRADE_POLICY` | dict | 每个 Agent 的降级行为（fallback_model/skip/reject_all 等） |
+| 管线 | `PIPELINE_MAX_RETRIES` | 3 | LLM 调用最大重试 |
+| Prompt 覆盖 | `AGENT_SYSTEM_PROMPTS` | dict | 12 个 Agent 的 system prompt 覆盖（留空 = 用内置默认） |
+
+---
+
+## 13. GameClock
+
+### `src/game/clock.py` (57 行)
+纯确定性分钟计时器。不做 LLM 调用，不做叙事逻辑。
+
+| 属性/方法 | 功能 |
+|-----------|------|
+| `game_time: int` | 累计游戏分钟数 |
+| `day` | `game_time // 1440` |
+| `hour` | `(game_time % 1440) // 60` |
+| `time_of_day` | 5 段：夜间(<5) / 早晨(<8) / 白天(<17) / 黄昏(<20) / 夜间(≥20) |
+| `advance_time(minutes)` | 推进时钟 |
+| `get_time_flags()` | 返回 `{day:N: True, time:时间段: True}` 供 dependency_graph 检查 |
+| `to_dict()` / `from_dict()` | 序列化 |
+
+---
+
+## 14. Curator
+
+### `src/game/curator.py` (54 行)
+将 turn outcomes + world state 组装为 NarratorBrief。纯确定性，不调 LLM。
+
+| 方法 | 功能 |
+|------|------|
+| `assemble(outcomes, ambient_changes, emphasis)` | 组合 ActionOutcome 列表 + 场景快照 + 强调方向 → NarratorBrief |
+| `_build_snapshot()` | 从当前场景构建 SceneSnapshot（location/description/exits/perceptible_interactions/visible_npcs） |
+
+---
+
+## 15. TimeAgent
+
+### `src/game/agents/time_agent.py` (75 行)
+轻量 LLM 子 Agent。评估本轮行动的时间消耗，不写 Clock（由 Keeper 写）。
+
+| 方法 | 功能 |
+|------|------|
+| `assess(actions, current_input)` | LLM 评估：综合所有行动 + time_range 建议 → `{time_delta, narrative_hint}` |
+| `build_prompt(actions, current_input)` | 构建 prompt：列出每项行动类型、成功/失败、建议耗时范围 |
+
+数据流：Keeper 收集 action_summaries → `TimeAgent.assess()` → `time_delta > 0` 则 `clock.advance_time()` + `clock.time_context` 更新。
+
+---
+
+## 16. Author
+
+### `src/game/agents/author.py` (137 行)
+拥有 L3 设计者层。仅面向 Keeper，永远不直接面向玩家。
+
+| 方法 | 功能 |
+|------|------|
+| `handle_request(request, turn_number)` | 两级响应：**Patch**（填模组缺口，entities 为空 = Reject）或 **StructuralEdit**（触发补充管线） |
+| `assess_time_pressure(comms_packet)` | 接收 TimeCommsPacket，判断时间压力是否需要推进 → `{should_press, urgency_update, reason, signal}` |
+| `update_l3(l3_updates)` | 合并补充管线产出的 L3 更新 |
+| `_build_prompt(request)` | 构造 Author prompt（通过 `build_author_prompt()`） |
+
+WR0 独立可配（`config.py:WR0_ENABLED`）。降级时 `reject_all_structural=True`，仅接受 Patch。
+
+---
+
+## 17. 离线管线
 
 ### `src/module_designer/layered_pipeline.py` (~850 行)
 `run_pipeline()` — 渐进式解析入口（12 LLM 调用，含 Step 2b events+AT 合并、2.5 NPC 档案+归属合并），含 fallback 策略
@@ -299,18 +384,45 @@ L1/L2/L3 数据模型定义
 
 ---
 
-## 13. 前端
+## 18. 前端 v2 (FastAPI + HTMX + Tailwind)
+
+### `frontend/server.py` (72 行)
+FastAPI 统一入口，挂载 StaticFiles + Jinja2Templates + 5 个 router（files/launcher/character/game/editor）。`__main__` 模式自动 `webbrowser.open()`。
+
+### 路由
+
+| 文件 | 路由前缀 | 功能 |
+|------|----------|------|
+| `frontend/routers/launcher.py` | `/` | 启动页：模组生成（上传 docx → WebSocket 进度 → 下载 JSON）+ 参数配置（API Key、模型、阈值）+ 子页面导航 |
+| `frontend/routers/character.py` | `/character` | 3 步车卡向导（基本信息+属性 → 职业+技能 → 预览+导出）+ LLM 描述生成 (`/llm`) + 技能列表 (`/skills-list`) |
+| `frontend/routers/game.py` | `/game` | 游戏循环：初始化 (`/init`) → 回合 (`/turn`) + WebSocket 步骤进度推送 + 命令 (`/command`) + 状态查询 (`/state`, `/npcs`) |
+| `frontend/routers/editor.py` | `/editor` | JSON 轻量编辑器：文件浏览 + 加载/保存/校验 |
+| `frontend/routers/files.py` | `/files` | 可复用文件/目录浏览 API（共享组件） |
+
+### 模板
 
 | 文件 | 功能 |
 |------|------|
-| `frontend/game_server.py` | Web 游戏服务器（localhost:8080） |
-| `frontend/game.html` | 游戏循环 Web 界面 |
-| `frontend/server.py` | 车卡 Web 服务器 |
-| `frontend/character.html` / `.css` / `.js` | 5 步车卡向导（1920s 美学） |
+| `frontend/templates/base.html` | 根布局（Tailwind CDN + HTMX + Jinja2 blocks） |
+| `frontend/templates/launcher.html` | 启动页 |
+| `frontend/templates/character.html` | 车卡 3 步向导 |
+| `frontend/templates/game.html` | 游戏主界面（视觉小说布局 + 展开式会话） |
+| `frontend/templates/editor.html` | JSON 编辑器（3 栏布局） |
+| `frontend/templates/partials/` | 可复用组件：file-browser / step-indicator / help-*.html |
+
+### 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 服务器 | FastAPI + Jinja2 |
+| 交互 | HTMX (~14KB，声明式 AJAX，服务端渲染 HTML 片段) |
+| 样式 | Tailwind CSS v4 (CDN 开发) |
+| 实时 | WebSocket（游戏步骤进度 + 管线进度） |
+| 打包 | PyInstaller `--add-data` 模板+静态文件 + `--hidden-import` fastapi/uvicorn |
 
 ---
 
-## 14. 测试
+## 19. 测试
 
 | 文件 | 覆盖 | 类型 |
 |------|------|------|
@@ -333,7 +445,7 @@ L1/L2/L3 数据模型定义
 
 ---
 
-## 15. 关键数据流速查
+## 20. 关键数据流速查
 
 ```
 离线管线: .docx → layered_pipeline(12 LLM calls) → l1/l2/l3.json
@@ -368,7 +480,7 @@ L1/L2/L3 数据模型定义
 
 ---
 
-## 16. 环境约定
+## 21. 环境约定
 
 - **Python path**：所有命令需要 `PYTHONPATH="src"`（Windows 用 `set PYTHONPATH=src`）
 - **测试命令**：`cd C:/Users/micha/PyCharmMiscProject && $env:PYTHONPATH="src"; python tests/<file> --case B`
