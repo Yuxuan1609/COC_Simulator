@@ -56,7 +56,7 @@ class PreParseDisambiguator:
         try:
             response = call_deepseek(
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
-                thinking=False,
+                thinking=False, _label="pre_parse",
                 system="你是一个TRPG KP助理，擅长判断玩家输入是否清晰明确。你的唯一任务是消歧——判断输入是否需要进一步澄清，需要时生成引导性反问。",
                 fallback_schema={
                     "clarity": "clear",

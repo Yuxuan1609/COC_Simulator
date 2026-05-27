@@ -614,6 +614,8 @@ def build_pre_parse_prompt(
 }}
 
 直接输出 JSON。"""
+    _show_prompt("pre_parse", prompt)
+    return prompt
 
 
 # ── Author prompt ──
