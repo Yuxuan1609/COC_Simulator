@@ -109,13 +109,18 @@ class CombatSystem:
 
     # ── Public API ──
 
-    def run_combat(self, combat_init: CombatInit) -> CombatResult:
-        """Run full combat loop. Returns CombatResult."""
+    def run_combat(self, combat_init: CombatInit, player_action: str = "", max_rounds: int = 20) -> CombatResult:
+        """Run full combat loop. Returns CombatResult.
+        player_action: raw player input text, matched to available combat actions.
+        max_rounds: safety cap to prevent infinite loops.
+        """
         state = self._init_combat(combat_init)
         player = combat_init.player
         environment_actions = getattr(combat_init, 'environment_actions', [])
+        available = self._get_player_actions(player, environment_actions)
+        action_id = self._match_action(player_action, available)
 
-        while not state.finished:
+        while not state.finished and state.round <= max_rounds:
             alive_enemies = [e for e in state.enemies
                            if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') != 'dead']
             if not alive_enemies:
@@ -123,11 +128,13 @@ class CombatSystem:
                 break
 
             target = alive_enemies[0].instance_id
-            self._process_round(state, player, "punch", target, environment_actions)
+            self._process_round(state, player, action_id, target, environment_actions)
 
         outcome = "win"
         if state.player_hp <= 0:
             outcome = "loss"
+        elif state.round > max_rounds:
+            outcome = "draw"
 
         defeated = [e.instance_id for e in combat_init.enemies
                     if getattr(e, 'hp', 1) <= 0 or getattr(e, 'status', '') == 'dead']
@@ -221,6 +228,30 @@ class CombatSystem:
         first_actor = state.initiative_order[0]
         state.is_player_turn = (first_actor == "player")
         return state
+
+    def _match_action(self, raw_input: str, available: list[dict]) -> str:
+        """Match raw player input to an available combat action id."""
+        if not raw_input:
+            return "punch"
+        text = raw_input.lower()
+
+        # Check each available action's label against player input
+        for a in available:
+            label = a["label"].lower()
+            if label and label in text:
+                return a["id"]
+
+        # Keyword matching for fixed actions
+        if any(kw in text for kw in ("拳", "打", "punch")):
+            return "punch"
+        if any(kw in text for kw in ("踢", "脚", "kick")):
+            return "kick"
+        if any(kw in text for kw in ("闪", "躲", "回避", "dodge")):
+            return "dodge"
+        if any(kw in text for kw in ("逃", "跑", "flee")):
+            return "flee"
+
+        return "punch"
 
     # ── Player actions ──
 
