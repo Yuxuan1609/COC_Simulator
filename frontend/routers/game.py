@@ -133,6 +133,11 @@ async def process_turn(user_input: str = Form(...)):
 
     narrative = turn.get("narrative", "") if turn else ""
     brief = turn.get("brief", "") if turn else ""
+    combat = turn.get("combat") if turn else None
+    skill_results = turn.get("skill_results", []) if turn else []
+    game_over = turn.get("game_over", False) if turn else False
+    ending = turn.get("ending") if turn else None
+    timestamp = turn.get("timestamp", "") if turn else ""
 
     narrative_html = ""
     if brief:
@@ -151,7 +156,16 @@ async def process_turn(user_input: str = Form(...)):
             f'（没有返回叙事内容）</div>'
         )
 
-    return HTMLResponse(narrative_html)
+    return {
+        "brief": brief,
+        "narrative": narrative,
+        "narrative_html": narrative_html,
+        "combat": combat,
+        "skill_results": skill_results,
+        "game_over": game_over,
+        "ending": ending,
+        "timestamp": timestamp,
+    }
 
 
 @router.get("/api/game/player-status", response_class=HTMLResponse)
@@ -349,12 +363,25 @@ async def init_game_api(
     g["keeper"].world.set_player(inv)
     _game_instance = g
 
+    # Fire initial turn to trigger scene auto_triggers
+    initial_brief = ""
+    initial_narrative = ""
+    try:
+        from game_loop import run_turn
+        initial = run_turn(g, "[游戏开始]", _weapon_lib, _enemy_lib, _injector)
+        initial_brief = initial.get("brief", "") if initial else ""
+        initial_narrative = initial.get("narrative", "") if initial else ""
+    except Exception:
+        pass
+
     return {
         "success": True,
         "location": g["keeper"].world.current_location,
         "hp": inv.derived.HP,
         "san": inv.derived.SAN,
         "name": inv.name,
+        "initial_brief": initial_brief,
+        "initial_narrative": initial_narrative,
     }
 
 
