@@ -27,7 +27,8 @@ class Stats:
 @dataclass
 class DerivedStats:
     """衍生属性（从核心属性计算得出）"""
-    HP: int = 0          # 生命值 = floor((CON+SIZ)/10)
+    HP: int = 0          # 当前生命值
+    HP_MAX: int = 0      # 最大生命值 = floor((CON+SIZ)/10)
     MP: int = 0          # 魔法值 = floor(POW/5)
     SAN: int = 0         # 当前理智 = POW (初始)
     SAN_MAX: int = 99    # 最大理智 = 99 - 克苏鲁神话值
@@ -159,6 +160,7 @@ class Investigator:
         backstory: str = "",
         appearance: str = "",
         personal_description: str = "",
+        avatar_url: str = "",       # optional avatar image URL
     ):
         self.name = name
         self.age = age
@@ -176,6 +178,7 @@ class Investigator:
         self.backstory = backstory
         self.appearance = appearance
         self.personal_description = personal_description
+        self.avatar_url = avatar_url
 
     # ── 兼容旧 Player 接口 ──
 
@@ -266,6 +269,7 @@ class Investigator:
         return {
             "name": self.name,
             "hp": self.derived.HP,
+            "max_hp": self.derived.HP_MAX,
             "san": self.derived.SAN,
             "mp": self.derived.MP,
             "weapons": [w.name for w in self.weapons],
@@ -351,7 +355,7 @@ class Investigator:
             detail = f"SAN: {self.derived.SAN - delta_val} -> {self.derived.SAN}"
             return (self.derived.SAN, detail)
         elif upper == "HP":
-            self.derived.HP = max(0, self.derived.HP + delta_val)
+            self.derived.HP = max(0, min(self.derived.HP + delta_val, self.derived.HP_MAX))
             detail = f"HP: {self.derived.HP - delta_val} -> {self.derived.HP}"
             return (self.derived.HP, detail)
         elif upper == "MP":

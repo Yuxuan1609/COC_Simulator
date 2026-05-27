@@ -57,7 +57,8 @@ def to_dict(inv: Investigator) -> dict:
             "POW": inv.stats.POW, "EDU": inv.stats.EDU, "LUCK": inv.stats.LUCK,
         },
         "derived": {
-            "HP": inv.derived.HP, "MP": inv.derived.MP,
+            "HP": inv.derived.HP, "HP_MAX": inv.derived.HP_MAX,
+            "MP": inv.derived.MP,
             "SAN": inv.derived.SAN, "SAN_MAX": inv.derived.SAN_MAX,
             "MOV": inv.derived.MOV, "DB": inv.derived.DB,
             "BUILD": inv.derived.BUILD, "DODGE": inv.derived.DODGE,
@@ -88,6 +89,7 @@ def to_dict(inv: Investigator) -> dict:
         "equipment": list(getattr(inv, 'equipment', [])),
         "item_manager": inv.item_manager.to_dict() if inv.item_manager._items else {},
         "backstory": inv.backstory,
+        "avatar_url": inv.avatar_url,
     }
 
 
@@ -120,7 +122,8 @@ def from_dict(data: dict) -> Investigator:
     )
 
     derived = DerivedStats(
-        HP=derived_data.get("HP", 0), MP=derived_data.get("MP", 0),
+        HP=derived_data.get("HP", 0), HP_MAX=derived_data.get("HP_MAX", derived_data.get("HP", 0)),
+        MP=derived_data.get("MP", 0),
         SAN=derived_data.get("SAN", 0), SAN_MAX=derived_data.get("SAN_MAX", 99),
         MOV=derived_data.get("MOV", 8), DB=derived_data.get("DB", "0"),
         BUILD=derived_data.get("BUILD", 0), DODGE=derived_data.get("DODGE", 0),
@@ -164,6 +167,7 @@ def from_dict(data: dict) -> Investigator:
         backstory=data.get("backstory", ""),
         appearance=personal.get("appearance", ""),
         personal_description=personal.get("description", ""),
+        avatar_url=data.get("avatar_url", ""),
     )
     im_data = data.get("item_manager", {})
     if im_data:

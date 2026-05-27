@@ -167,6 +167,7 @@ async def export_character(
     stat_HP: int = Form(0), stat_MP: int = Form(0), stat_SAN: int = Form(0),
     stat_DODGE: int = Form(0), stat_DB: str = Form("0"), stat_BUILD: int = Form(0),
     skills_json: str = Form("{}"),
+    avatar_url: str = Form(""),
 ):
     import json as _json
     from datetime import datetime as _dt
@@ -181,7 +182,7 @@ async def export_character(
         APP=stat_APP, INT=stat_INT, POW=stat_POW, EDU=stat_EDU, LUCK=stat_LUCK,
     )
     inv.derived = DerivedStats(
-        HP=stat_HP, MP=stat_MP, SAN=stat_SAN, MOV=8,
+        HP=stat_HP, HP_MAX=stat_HP, MP=stat_MP, SAN=stat_SAN, MOV=8,
         DB=stat_DB, BUILD=stat_BUILD, DODGE=stat_DODGE,
     )
     skills = create_skill_list()
@@ -194,6 +195,7 @@ async def export_character(
     inv.appearance = appearance
     inv.description = description
     inv.backstory = backstory
+    inv.avatar_url = avatar_url.strip()
 
     data = investigator_to_dict(inv)
     data.setdefault("meta", {})
