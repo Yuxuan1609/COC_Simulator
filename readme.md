@@ -2,7 +2,63 @@
 
 基于 LLM 的 TRPG（桌上角色扮演游戏）KP 助手，COC 7th 规则。从玩家输入到沉浸式叙事生成的完整调用链。
 
-> **编码**：本项目 ~98% 的代码由 Claude Code / Open Code + DeepSeek V4 / Kimi 自动生成。作者主要负责需求分析、架构设计、提示词微调、测试验证与方向把控。
+> **编码**：本项目 ~98% 的代码由 Claude Code / Open Code + DeepSeek / Kimi 自动生成,DeepSeek V4 Pro贡献了90%以上的代码，Kimi用于前端审美辅助，此外Gemini没有参与代码编写但是用于辅助设计。作者主要负责需求分析、架构设计、提示词微调、Skills和其他Coding Agents的方法论管理、测试验证与方向把控。
+
+## 系统综述
+
+TRPG 调查员助手是一个**模块化、多层 LLM 协作的跑团游戏引擎**。它不只是一个"AI KP"——它是一套完整的模组创作→游戏运行→测试审计工具链。
+
+**核心思路**：将 TRPG 游戏分解为可独立演进的子系统——战斗、NPC、时间、检定、叙事、模组创作——每个子系统通过 dataclass 消息合约通信，可单独替换或增强。LLM 负责叙事与意图判定，确定性规则负责数值检定与状态管理。离线管线将模组文档编译为三层 JSON，运行时引擎消费 JSON 驱动游戏。
+
+```mermaid
+flowchart LR
+    subgraph Creation[模组创作]
+        S0[Step 0<br/>小说→模组] --> S1[Step 1-4<br/>模组→三层 JSON]
+        S1 --> L1[L1 玩家层]
+        S1 --> L2[L2 KP 层]
+        S1 --> L3[L3 设计层]
+    end
+
+    subgraph Runtime[运行时引擎]
+        UI[玩家输入] --> KP[Keeper<br/>Agent 层封装]
+        L2 -.-> KP
+        KP --> Judge[确定性闸门<br/>D100 / 需求 / 惩罚]
+        KP --> Enrich[叙事润色]
+        KP --> Combat[CombatSystem<br/>回合制战斗]
+        KP --> Author[Author<br/>动态创作]
+        KP --> Curator[策展器]
+        KP --> TA[TimeAgent<br/>时间推进]
+        Curator --> Nar[Narrator<br/>沉浸式叙事]
+        L1 -.-> Nar
+        L3 -.-> Author
+        Nar --> UI
+    end
+
+    subgraph Support[基础架构]
+        CL[GameClock] & EM[EnemyManager] & NM[NPCManager] & BM[BossManager] & MM[MemoryManager]
+        Lib[武器/敌人/法术库]
+        Markup[8 种 @markup 副效果]
+        Test[llm_player + audit + harness]
+    end
+
+    Runtime --> Support
+    Creation --> Support
+```
+
+**关键特性**：
+
+| 维度 | 说明 |
+|------|------|
+| 架构 | 4-Agent 协作（Keeper/Narrator/Author/TimeAgent）+ IntentDetector，13 个独立子系统 |
+| 管线 | 小说→模组→三层 JSON，13 次 LLM 调用，全自动渐进式解析 |
+| 战斗 | 独立回合制引擎，纯 Python/D100/公式，Boss 与普通战斗分流 |
+| NPC | LLM 对话 + 5 级态度状态机 + 跟随系统 + 记忆上下文注入 |
+| 检定 | COC 7th D100 + trait enhancement + 失败递增惩罚（难度→LLM 创意） |
+| 时间 | 确定性分钟计时器 + LLM 时间评估 + entity 时间约束 |
+| 扩展 | @markup 副效果系统（8 种），Author 运行时动态创作 |
+| 前端 | FastAPI + HTMX + Tailwind CSS v4，视觉小说风格沉浸布局 |
+| 测试 | 18 case 并行 harness + LLM 模拟玩家 + 日志双层审计 |
+| 数据 | 三层信息架构（玩家/KP/设计者），JSON 全量序列化 |
 
 ---
 
@@ -309,13 +365,15 @@ run_turn() 后处理:
 
 端到端集成测试为主，以真实 LLM 调用结果为准。
 
+Coding agent自己写的单元测试已全部通过并归档。
+
 | 文件 | 覆盖 | 类型 |
 |------|------|------|
-| `tests/test_harness_parallel.py` | 18 case：search/检定/依赖/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/Boss，含 `--mock` 模式 | 集成 |
-| `tests/test_harness_stability.py` | 2 case 串行稳定性（探索 + 压力），含完整 LLM 日志 | 集成 |
-| `tests/test_escalation_real.py` | 5 case Author 升级流，含完整 prompt/response 日志 | 集成 |
-| `tests/test_combat_smoke.py` | 6 case：基本战斗/写回/full_log/Boss分流/死亡信号/结构完整性 | 单元 |
-| `src/llm_player.py` | LLM 驱动模拟玩家自动化跑局 + TurnLogger + summary | 集成 |
+| `tests/test_harness_parallel.py` | 18 个单轮case：search/检定/依赖/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/Boss等方便快速测试，含 `--mock` 模式 | 半集成 |
+| `tests/test_harness_stability.py` | 2 case 串行稳定性（探索 + 压力），含完整 LLM 日志，基本被 llm_player 替代| 集成 |
+| `tests/test_escalation_real.py` | 5 case Author 升级流，含完整 prompt/response 日志 | Author系统级集成 |
+| `tests/test_combat_smoke.py` | 6 case：基本战斗/写回/full_log/Boss分流/死亡信号/结构完整性 | 战斗系统级集成 |
+| `src/llm_player.py` | LLM 驱动模拟玩家自动化跑局 + TurnLogger + summary （战斗系统因为非常独立，出于效率原因这个脚本不测） | 完整集成 |
 | `src/audit_player_log.py` | 对 llm_player 日志生成 markdown 审计报告 | 工具 |
 
 运行：`python tests/test_harness_parallel.py --mock` 快速验证，`--cases combat_entry,boss` 选 case。
@@ -347,7 +405,7 @@ run_turn() 后处理:
 
 | # | 事项 | 状态 |
 |----|------|------|
-| U1 | 自动化测试体系 | 30 轮跑局、战斗 Harness、子系统覆盖率 |
+| U1 | 自动化测试体系 | 30 轮跑局、战斗 Harness、子系统覆盖率 已完成基本版待优化| 
 | U2 | 战斗系统升级 | 回合上限保护、对峙完整接入、player_action 可选 |
 | U3 | Author "other" 消歧 | 二次确认或匹配置信度阈值 |
 | U4 | NPC 系统升级 | 态度硬性规则、半主动行为 |
