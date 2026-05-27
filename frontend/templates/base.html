@@ -4,46 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}TRPG 调查员助手{% endblock %}</title>
-  {# Production: use local Tailwind build; Development: use CDN #}
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            parchment: {
-              DEFAULT: '#d4c5a0',
-              light: '#e8dcc8',
-              dark: '#1a1410',
-            },
-            aged: {
-              gold: '#c9a060',
-              brown: '#8b5a3c',
-              dark: '#2a2418',
-              darker: '#1f1a10',
-            },
-            coc: {
-              red: '#8b3a3a',
-              green: '#3a6b3a',
-              dim: '#8a8278',
-            },
-            dk: {
-              bg:    '#111110',
-              panel: '#1a1a18',
-              border:'#3a3834',
-              text:  '#c8c4bc',
-              muted: '#8a8680',
-              faint: '#5a5650',
-            },
-          },
-          fontFamily: {
-            serif: ['Noto Serif SC', 'SimSun', 'serif'],
-            mono: ['JetBrains Mono', 'Consolas', 'monospace'],
-          },
-        },
-      },
-    }
-  </script>
+  {# Static compiled Tailwind CSS (no CDN) #}
+  <link rel="stylesheet" href="/static/css/tailwind-built.css">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <style>
     /* Base body — warm dark background, high-contrast text (design doc: #0d0d0d) */

@@ -258,9 +258,9 @@
     }
     // Keep at most 200 messages
     if (chatMessages.length > 200) chatMessages = chatMessages.slice(-200);
-    // Sync to expanded panel if visible
+    // Sync to expanded panel if visible (cap DOM nodes at 50)
     const panel = document.getElementById('chat-history');
-    if (panel) panel.innerHTML = chatMessages.join('');
+    if (panel && chatMessages.length > 50) { panel.innerHTML = chatMessages.slice(-50).join(''); }
   }
 
   // ── Send turn ──
@@ -289,15 +289,25 @@
       const formData = new FormData();
       formData.append('user_input', text);
       const resp = await fetch('/api/game/turn', { method: 'POST', body: formData });
-      const html = await resp.text();
+      const contentType = resp.headers.get('content-type') || '';
+
       if (!resp.ok) {
+        const errText = await resp.text();
         document.getElementById('compact-narrative').innerHTML =
-          '<span class="text-red-400">服务器错误 (' + resp.status + '): ' + html + '</span>';
+          '<span class="text-red-400">服务器错误 (' + resp.status + '): ' + errText + '</span>';
         throw new Error('Server error: ' + resp.status);
       }
-      console.log('[sendTurn] status:', resp.status, 'body length:', html.length);
-      document.getElementById('compact-narrative').innerHTML = html;
-      addToHistory(text, html);
+
+      if (contentType.includes('application/json')) {
+        // New JSON response format
+        const data = await resp.json();
+        handleTurnResponse(text, data);
+      } else {
+        // Legacy HTML response fallback
+        const html = await resp.text();
+        document.getElementById('compact-narrative').innerHTML = html;
+        addToHistory(text, html);
+      }
 
       // Scroll expanded panel if visible
       const chatHistory = document.getElementById('chat-history');
@@ -313,6 +323,80 @@
     compactInput.disabled = false;
     expandedInput.disabled = false;
     activeInput.focus();
+  }
+
+  // ── Handle structured turn response ──
+  function handleTurnResponse(userText, data) {
+    // Build display HTML
+    var parts = [];
+
+    // Skill results
+    if (data.skill_results && data.skill_results.length > 0) {
+      for (var i = 0; i < data.skill_results.length; i++) {
+        var sr = data.skill_results[i];
+        var tierLabel = sr.tier || 'regular';
+        var tierColor = tierLabel === 'extreme' ? 'text-yellow-300' :
+                        tierLabel === 'hard' ? 'text-coc-green' :
+                        tierLabel === 'regular' ? 'text-gray-300' : 'text-red-400';
+        var icon = sr.success ? '✓' : '✗';
+        parts.push(
+          '<div class="msg-skill px-3 py-1 text-xs ' + (sr.success ? 'text-coc-green' : 'text-coc-red') +
+          ' border-l-2 ' + (sr.success ? 'border-coc-green/50' : 'border-coc-red/50') + ' mb-1">' +
+          icon + ' ' + (sr.entity_id || '?') + ' <span class="' + tierColor + '">[' + tierLabel + ']</span>' +
+          '</div>'
+        );
+      }
+    }
+
+    // Combat
+    if (data.combat) {
+      var outcomeLabel = data.combat.outcome === 'win' ? '胜利' : data.combat.outcome === 'loss' ? '败北' : data.combat.outcome;
+      var outcomeColor = data.combat.outcome === 'win' ? 'text-coc-green' : 'text-coc-red';
+      parts.push(
+        '<div class="msg-combat px-3 py-2 text-sm border-l-2 border-yellow-600 bg-[#1a1400] mb-2">' +
+        '<span class="text-yellow-400">⚔ 战斗 ' + outcomeLabel + '</span>' +
+        (data.combat.narrative ? '<div class="text-gray-400 text-xs mt-1">' + data.combat.narrative + '</div>' : '') +
+        '</div>'
+      );
+    }
+
+    // Narrative (brief + narrative)
+    if (data.narrative_html) {
+      parts.push(data.narrative_html);
+    } else {
+      if (data.brief) {
+        parts.push(
+          '<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mb-2">' +
+          data.brief + '</div>'
+        );
+      }
+      if (data.narrative) {
+        parts.push(
+          '<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash">' +
+          data.narrative + '</div>'
+        );
+      }
+    }
+
+    var narrativeHtml = parts.join('');
+    if (!narrativeHtml) {
+      narrativeHtml = '<div class="msg-brief px-3 py-2 text-sm text-gray-500">（没有返回叙事内容）</div>';
+    }
+
+    document.getElementById('compact-narrative').innerHTML = narrativeHtml;
+    addToHistory(userText, narrativeHtml);
+
+    // Game over
+    if (data.game_over) {
+      var endingText = data.ending ? data.ending.name + ': ' + data.ending.narrative : '游戏结束';
+      setTimeout(function() {
+        document.getElementById('compact-narrative').innerHTML +=
+          '<div class="msg-ending px-3 py-3 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410] mt-3">' +
+          endingText + '</div>';
+        document.getElementById('user-input').disabled = true;
+        document.getElementById('user-input-expanded').disabled = true;
+      }, 500);
+    }
   }
 
   // ── Enter key ──
@@ -349,6 +433,7 @@
           (data.status === 'done' ? '✓' : '...') + '</span>';
       }
     };
+    ws.onopen = function() { wsRetry = 0; };
     ws.onerror = function() {};
     ws.onclose = function() {
       ws = null;
