@@ -9,8 +9,7 @@ import json
 
 from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
-from game.messages import TurnInput, CombatInit
-from game.combat import CombatSystem
+from game.messages import TurnInput, CombatInit, CombatResult
 from game.turn_logger import TurnLogger
 from config import WR0_ENABLED
 
@@ -252,7 +251,7 @@ def run_turn(game: dict, user_input: str,
     else:
         display_brief = str(brief) if brief else ""
 
-    # Combat entry: if process_turn returned CombatInit, run the combat system
+    # Combat entry: short-circuited — one-turn auto-win, combat engine bypassed
     combat_narrative = ""
     combat_result_outcome = None
     combat_is_boss = False
@@ -260,40 +259,41 @@ def run_turn(game: dict, user_input: str,
     combat_boss_loss = False
     combat_init = result.get("combat_init")
     if combat_init and combat_init.enemies:
-        try:
-            cs = CombatSystem(weapon_lib=weapon_lib)
-            combat_result = cs.run_combat(combat_init)
-            combat_narrative = combat_result.narrative
-            combat_result_outcome = combat_result.outcome
+        enemy_names = ", ".join(
+            getattr(e, 'enemy_ref', getattr(e, 'name', '未知敌人'))
+            for e in combat_init.enemies
+        )
+        defeated_ids = []
+        for ei in combat_init.enemies:
+            eid = getattr(ei, 'instance_id', '')
+            if eid:
+                defeated_ids.append(eid)
+            if hasattr(ei, 'hp'):
+                ei.hp = 0
 
-            # Write back HP/SAN to Investigator
-            player = combat_init.player
-            if player and hasattr(player, 'derived'):
-                player.derived.HP = max(0, combat_result.player_hp)
-                player.derived.SAN = max(0, combat_result.player_san)
+        combat_result_outcome = "win"
+        combat_narrative = f"你勇敢地面对{enemy_names}，凭借意志与技巧赢得了战斗。"
+        combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
 
-            # Callback to EnemyManager
-            result_dict = {
-                "outcome": combat_result.outcome,
-                "defeated_instance_ids": combat_result.defeated_instance_ids,
-            }
-            world.enemy_manager.exit_combat(result_dict)
+        # Write back HP/SAN (unchanged — no damage in short-circuit)
+        # Callback to EnemyManager
+        result_dict = {
+            "outcome": "win",
+            "defeated_instance_ids": defeated_ids,
+        }
+        world.enemy_manager.exit_combat(result_dict)
 
-            # Boss post-combat resolution
-            combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
-            if combat_is_boss:
-                world.bosses.resolve_outcome(combat_result)
-                if combat_result.outcome == "win":
-                    world.mark_completed(world.bosses.active_boss_id, "")
-                world.bosses.set_active(None)
-                if combat_result.outcome == "loss":
-                    combat_boss_loss = True
-            else:
-                # Regular enemy combat loss = game over
-                if combat_result.outcome == "loss":
-                    combat_death = True
-        except Exception:
-            combat_result_outcome = "error"
+        if combat_is_boss:
+            world.bosses.resolve_outcome(CombatResult(
+                outcome="win",
+                defeated_instance_ids=defeated_ids,
+                player_hp=combat_init.player.derived.HP if combat_init.player else 10,
+                player_san=combat_init.player.derived.SAN if combat_init.player else 60,
+                rounds=1,
+                narrative=combat_narrative,
+            ))
+            world.mark_completed(world.bosses.active_boss_id, "")
+            world.bosses.set_active(None)
 
     # Extract skill check results from outcomes for player display
     skill_results = []
@@ -446,18 +446,25 @@ def continue_standoff(keeper, player_input: str) -> dict:
 
     result["combat_init"] = combat_init
 
-    # Run combat if resolved into combat
+    # Run combat if resolved into combat (short-circuited — one-turn auto-win)
     if combat_init and combat_init.enemies:
-        try:
-            cs = CombatSystem(weapon_lib=keeper.world.weapon_library)
-            combat_result = cs.run_combat(combat_init)
-            result["combat_narrative"] = combat_result.narrative
-            result["combat_outcome"] = combat_result.outcome
-            keeper.world.enemy_manager.exit_combat({
-                "outcome": combat_result.outcome,
-                "defeated_instance_ids": combat_result.defeated_instance_ids,
-            })
-        except Exception:
-            result["combat_outcome"] = "error"
+        enemy_names = ", ".join(
+            getattr(e, 'enemy_ref', getattr(e, 'name', '未知敌人'))
+            for e in combat_init.enemies
+        )
+        defeated_ids = []
+        for ei in combat_init.enemies:
+            eid = getattr(ei, 'instance_id', '')
+            if eid:
+                defeated_ids.append(eid)
+            if hasattr(ei, 'hp'):
+                ei.hp = 0
+
+        result["combat_narrative"] = f"经过对峙，你凭借机智与勇气战胜了{enemy_names}。"
+        result["combat_outcome"] = "win"
+        keeper.world.enemy_manager.exit_combat({
+            "outcome": "win",
+            "defeated_instance_ids": defeated_ids,
+        })
 
     return result
