@@ -20,6 +20,7 @@ from ..messages import (
 from ..judge import Judge
 from ..curator import Curator
 from ..intent_detector import IntentDetector
+from ..pre_parse import PreParseDisambiguator
 from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt
 from llm import call_deepseek
 from config import MAX_ESCALATION_DEPTH, INTENT_COOLDOWN_WINDOW
@@ -42,6 +43,7 @@ class Keeper:
         self._last_comms_time = 0
 
         self.intent_detector = IntentDetector()
+        self.pre_parse = PreParseDisambiguator()
 
         self.judge = Judge(world)
         self.curator = Curator(world)
@@ -96,6 +98,18 @@ class Keeper:
 
         # Inject NPC ATs + interactions before normal parse
         self._inject_npc_at()
+
+        # Step 0: Pre-parse — disambiguation gate
+        pre_result = self.pre_parse.disambiguate(raw, self._build_world_brief())
+        if pre_result.clarity == "ambiguous":
+            return {
+                "brief": pre_result.question,
+                "narrative": pre_result.question,
+                "pre_parse_ambiguous": True,
+            }
+        # Use resolved_text as effective input when cross-turn integration happened
+        if pre_result.resolved_text:
+            raw = pre_result.resolved_text
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
         parse_result = self._parse(raw)
@@ -1001,6 +1015,22 @@ class Keeper:
         brief = self.curator.assemble(all_outcomes, ambient, "")
         return {"brief": brief,
                 "ending": None}
+
+    def _build_world_brief(self) -> str:
+        """Ultra-light scene overview for pre-parse disambiguator (≤200 tokens)."""
+        loc = self.world.current_location
+        interactions = self.world.get_available_interactions()
+        int_names = [i.name for i in interactions] if interactions else []
+        npc_names = list(self.world.npcs._npcs.keys()) if self.world.npcs else []
+        exits = [e.target for e in self.world.get_possible_exits()]
+        parts = [f"当前位置: {loc}"]
+        if int_names:
+            parts.append(f"可用互动: {', '.join(int_names[:8])}")
+        if npc_names:
+            parts.append(f"N PC: {', '.join(npc_names[:5])}")
+        if exits:
+            parts.append(f"出口: {', '.join(exits[:5])}")
+        return "; ".join(parts)
 
     def _build_world_snapshot(self) -> dict:
         """Lightweight snapshot for IntentDetector. Delegates to World."""

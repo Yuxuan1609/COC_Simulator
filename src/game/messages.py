@@ -138,9 +138,18 @@ class TimeCommsPacket:
 
 
 @dataclass
+class PreParseResult:
+    """Pre-parse disambiguator output."""
+    clarity: str = ""          # "clear" | "ambiguous"
+    interpretation: str = ""   # one-line interpretation of player intent
+    question: str = ""         # clarifying question (with 1-2 examples) when ambiguous
+    resolved_text: str = ""    # integrated text for Parse (e.g. "搜一下抽屉") when clear with context
+
+
+@dataclass
 class EnrichInput:
     """Typed intermediate structure for parse→enrich→curate pipeline (O8).
-    
+
     Replaces bare list[dict] for judged_entities and action_summaries.
     """
     entities: list[dict] = field(default_factory=list)  # judged entity records

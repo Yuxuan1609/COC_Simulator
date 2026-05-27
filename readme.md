@@ -49,7 +49,7 @@ flowchart LR
 
 | 维度 | 说明 |
 |------|------|
-| 架构 | 4-Agent 协作（Keeper/Narrator/Author/TimeAgent）+ IntentDetector，13 个独立子系统 |
+| 架构 | 4-Agent 协作（Keeper/Narrator/Author/TimeAgent）+ IntentDetector + PreParseDisambiguator，14 个独立子系统 |
 | 管线 | 小说→模组→三层 JSON，13 次 LLM 调用，全自动渐进式解析 |
 | 战斗 | 独立回合制引擎，纯 Python/D100/公式，Boss 与普通战斗分流 |
 | NPC | LLM 对话 + 5 级态度状态机 + 跟随系统 + 记忆上下文注入 |
@@ -230,7 +230,8 @@ API Key 不打包，启动后 Web 界面配置。`--onedir` 误报率低于 `--o
 ## 设计理念
 
 - **高内聚模块化**：每个子系统（CombatSystem / EnemyManager / NPCManager / Judge / Curator / Clock / SpellJudge）是独立可编辑的模块，通过 dataclass 消息合约通信，可脱离主循环单独测试。战斗不是唯一可编辑的系统——任何子系统都可以替换或增强
-- **Agent 层封装**：Keeper 不是传统意义上的单一 Agent，而是一层 Agent 集合的封装——内部持有 Judge（确定性）、Curator（确定性）、IntentDetector（LLM）、CombatSystem（独立引擎），并通过 ThreadPoolExecutor 并行编排 enrich / combat_entry / TimeAgent 三个 LLM 调用。对外只暴露 `process_turn()` 一个入口
+- **Agent 层封装**：Keeper 不是传统意义上的单一 Agent，而是一层 Agent 集合的封装——内部持有 Judge（确定性）、Curator（确定性）、IntentDetector（LLM）、PreParseDisambiguator（消歧网关）、CombatSystem（独立引擎），并通过 ThreadPoolExecutor 并行编排 enrich / combat_entry / TimeAgent 三个 LLM 调用。对外只暴露 `process_turn()` 一个入口
+- **消歧网关**：Parse 前插入 PreParseDisambiguator（flash 模型），对模糊输入反问引导而非强行匹配。跨 turn 上下文整合（"搜一下"+"抽屉"→"搜查抽屉"），连续 2 次模糊后兜底执行
 - **闭世界假设**：玩家可执行动作由模组预设 entity 界定。未匹配 entity 的输入走 search/other/Author 管线
 - **确定性+LLM 混合**：硬性条件（requirement/dependency/time_condition）确定性判断，叙事/意图判定 LLM 执行
 - **输出管线分离**：`skill_detail`（骰值/标记）走独立管线，不经过 Narrator——"叙事者只叙事"
@@ -249,6 +250,7 @@ API Key 不打包，启动后 Web 界面配置。`--onedir` 误报率低于 `--o
 | BossManager | `game/boss_manager.py` | 纯确定性 | Boss 发现（at/event 触发）、CombatInit 构造 | ✅ |
 | NPCManager | `game/npc_manager.py` | 确定性 + LLM | NPC 对话/态度状态机/跟随、记忆上下文注入 | ✅ |
 | IntentDetector | `game/intent_detector.py` | LLM flash | other 行为判定是否有叙事意图 | ✅ |
+| PreParseDisambiguator | `game/pre_parse.py` | LLM flash | Parse 前消歧网关，跨 turn 上下文整合，模糊输入反问引导 | ✅ |
 | TurnLogger | `game/turn_logger.py` | 纯 I/O | 每轮 player→enrich→narrator 全程记录 | ✅ |
 | SpellJudge | `game/spell_judge.py` | 确定性 + LLM | 法术识别/约束检查/Author 联动（U9 待实现） | — |
 | SpellLibrary | `library/spells.py` | 纯数据 | 法术库加载/查询（U9 待实现） | — |
@@ -300,6 +302,7 @@ Keeper.process_turn(turn_input, author)
 | Narrator | `src/game/agents/narrator.py` | 唯一面向玩家，L1 + NarratorBrief → 沉浸式叙事 |
 | Author | `src/game/agents/author.py` | Patch（填缺口）/ StructuralEdit（触发补充管线），WR0 独立可配 |
 | TimeAgent | `src/game/agents/time_agent.py` | 轻量 LLM 时间评估器，读 Clock 不写 |
+| PreParseDisambiguator | `src/game/pre_parse.py` | Parse 前消歧网关，模糊输入反问引导，跨 turn 上下文整合 |
 | IntentDetector | `src/game/intent_detector.py` | Parse 命中 other 时判断是否有实际叙事意图 |
 
 ## 项目结构
@@ -327,6 +330,7 @@ src/
 │   ├── boss_manager.py       # BossManager（Boss 发现/触发/战斗构造）
 │   ├── npc_manager.py        # NPCManager（对话/态度/跟随）
 │   ├── intent_detector.py    # IntentDetector
+│   ├── pre_parse.py           # PreParseDisambiguator（消歧网关）
 │   ├── turn_logger.py        # TurnLogger 回合日志
 │   └── agents/               # Keeper / Narrator / Author / TimeAgent
 ├── library/                  # 武器/敌人/Boss 资源库
@@ -407,7 +411,7 @@ Coding agent自己写的单元测试已全部通过并归档。
 |----|------|------|
 | U1 | 自动化测试体系 | 30 轮跑局、战斗 Harness、子系统覆盖率 已完成基本版待优化| 
 | U2 | 战斗系统升级 | 回合上限保护、对峙完整接入、player_action 可选 |
-| U3 | Author "other" 消歧 | 二次确认或匹配置信度阈值 |
+| U3 | ~~Author "other" 消歧~~ | ✅ 已完成 — Pre-Parse Disambiguator（pre-parse）：Parse 前的 flash 消歧网关，跨 turn 上下文整合，模糊输入反问引导 |
 | U4 | NPC 系统升级 | 态度硬性规则、半主动行为 |
 | U5 | 世界状态系统 | Logger 驱动的状态解读模型 |
 | U6 | LLM Provider 抽象 | 支持 OpenAI/Anthropic 多 provider |

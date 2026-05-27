@@ -576,6 +576,46 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
     return prompt
 
 
+# ── Pre-parse disambiguator prompt ──
+
+def build_pre_parse_prompt(
+    player_text: str,
+    ambiguity_context: str = "",
+    world_brief: str = "",
+) -> str:
+    """Pre-parse disambiguator: judge if player input is clear or ambiguous."""
+    ctx_block = ""
+    if ambiguity_context:
+        ctx_block = f"【上一轮消歧上下文】\n{ambiguity_context}\n"
+
+    world_block = ""
+    if world_brief:
+        world_block = f"【场景概览】\n{world_brief}\n"
+
+    return f"""{ctx_block}{world_block}【玩家输入】{player_text}
+
+判断这个输入是否足够清晰，可以直接交给KP解析执行。
+
+消歧原则：一个清晰的行动需同时满足 动作 + 目标对象。缺少任一为模糊。
+- 指代不明："跟他聊聊"（谁？）、"那个"（指什么？）→ ambiguous
+- 缺目标："搜一下"（搜什么？）→ ambiguous
+- 缺动作：仅提到具名对象但无明确动作 → ambiguous
+- 纯情绪/角色扮演（笑、哭、叹气）但无实际动作意图 → ambiguous
+- 有明确动作+目标："检查抽屉""去5号车厢""和乘务员说话"→ clear
+
+跨轮整合：若提供上一轮消歧上下文，尝试将本轮输入与上轮模糊意图整合。若能整合为清晰意图 → clear。
+
+返回 JSON：
+{{
+  "clarity": "clear" 或 "ambiguous",
+  "interpretation": "一句话解读玩家意图",
+  "resolved_text": "仅 clear 且存在跨轮上下文整合时填入——将上下文与本轮输入合并为完整清晰的行动描述。例如上文'搜一下'→本轮'抽屉'→整合为'搜查抽屉'。若无上下文整合则留空",
+  "question": "仅 ambiguous 时填入。自然语言开放式反问，附带1-2个简短示例引导玩家回答。例如'搜查哪里？比如你可以说\\'检查抽屉\\'、\\'翻找柜子\\''"
+}}
+
+直接输出 JSON。"""
+
+
 # ── Author prompt ──
 
 def _describe_value(obj, indent=0) -> str:

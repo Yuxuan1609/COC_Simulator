@@ -9,3 +9,4 @@ data/saves/*.json
 data/debug/
 CLAUDE.md
 素材/
+*.iml

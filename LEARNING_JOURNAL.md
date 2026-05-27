@@ -134,3 +134,14 @@
 - LLM 层：读完整回合摘要 + agent 日志（parse/enrich/narrator），输出结构化 findings（severity/turn/category/detail/suggestion）
 - 两层互补：确定性覆盖"是什么"，LLM 覆盖"为什么异常"和"怎么修"
 - 适用场景：任何需要从大量运行日志中提取可操作洞察的 LLM 应用测试
+
+## LLM 管线消歧网关（Pre-parse Gate）
+- 在重 LLM 处理（Parse）前插入轻量 flash 消歧网关，单职责：判断输入清晰度 + 模糊时生成引导反问
+- 跨 turn 上下文整合：缓存上轮模糊意图+反问，下轮输入到达时尝试整合为完整行动（"搜一下"+"抽屉"→"搜查抽屉"），通过 `resolved_text` 传递给下游
+- 兜底机制：连续 2 次模糊后第 3 次强制 clear，避免死循环
+- 适用场景：任何接受用户自然语言输入并需要精确 action/matching 的 LLM 系统——消歧放在输入端比放在匹配端更有效
+
+## 项目死代码周期性审计
+- 多维度系统性扫描：git 跟踪的临时备份（tmp_*）、stale worktree（`git worktree list`）、无引用源文件（grep import 全项目）、根目录过期文档（TODO/CHANGELOG）、IDE 生成文件（.iml）
+- 与"修改前后双向审计"互补：后者是改前改后检查，这个是全局垃圾回收
+- 最佳时机：完成一组非平凡改动后、或合并前——避免积累到不可管理的规模
