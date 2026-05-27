@@ -30,6 +30,19 @@
 </head>
 <body class="min-h-screen flex flex-col">
   {% block body %}{% endblock %}
+  {# File browser modal — shared across all pages #}
+  <div id="file-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
+       onclick="if(event.target===this)closeFileModal()">
+    <div class="bg-[#141414] border border-gray-600 rounded-lg p-4 w-[550px] max-h-[70vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-sm text-gray-300">选择文件</span>
+        <button class="text-gray-400 hover:text-gray-200 text-lg" onclick="closeFileModal()">&times;</button>
+      </div>
+      <div id="file-browser-content" class="file-listing-container">
+        <p class="text-sm text-gray-500">加载中...</p>
+      </div>
+    </div>
+  </div>
   <script>
     // Global file picker — available in all pages
     function openFileBrowser() {
