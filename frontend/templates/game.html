@@ -2,444 +2,303 @@
 {% block title %}TRPG 游戏{% endblock %}
 {% block body %}
 
-{# ═══════════════════ SETUP SCREEN ═══════════════════ #}
+{# ==================== SETUP SCREEN ==================== #}
 <div id="game-setup" class="h-screen flex bg-[#0d0d0d]">
   <nav class="w-56 border-r border-gray-800 bg-[#0f0f0f] flex flex-col p-4 gap-3">
     <h1 class="text-lg text-aged-gold font-bold tracking-wider border-b border-gray-800 pb-3">游戏设置</h1>
-    <a href="/" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded">
-      ← 返回启动页
-    </a>
+    <a href="/" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded">返回启动页</a>
   </nav>
-
   <div class="flex-1 overflow-y-auto p-6">
-    <h2 class="text-xl text-aged-gold mb-6 border-b border-gray-800 pb-3">选择游戏配置</h2>
-
+    <h2 class="text-xl text-aged-gold mb-6 border-b border-gray-800 pb-3">快速开始</h2>
     <form id="init-form" class="space-y-5 max-w-2xl" onsubmit="initGame(event)">
-
-      {# ── Module files ── #}
       <fieldset class="border border-gray-700 rounded-lg p-4">
         <legend class="text-sm text-aged-gold px-2">模组文件</legend>
         <div class="space-y-3">
           {% for label, id, placeholder in [
-            ('L2 KP 守秘人层', 'l2-path', 'data/modules/常暗之厢/l2_test.json'),
-            ('L1 玩家可见层', 'l1-path', 'data/modules/常暗之厢/l1_test.json'),
-            ('L3 设计者层', 'l3-path', 'data/modules/常暗之厢/l3_test.json'),
+            ('L2 KP 守秘人层', 'l2-path', 'data/modules/更新模组0526v2/l2_keeper.json'),
+            ('L1 玩家可见层', 'l1-path', 'data/modules/更新模组0526v2/l1_player.json'),
+            ('L3 设计者层', 'l3-path', 'data/modules/更新模组0526v2/l3_designer.json'),
           ] %}
-          <div>
-            <label class="block text-xs text-gray-300 mb-1">{{ label }}</label>
-            <div class="flex gap-2">
-              <input type="text" id="{{ id }}" name="{{ id.replace('-', '_') }}" placeholder="{{ placeholder }}"
-                     class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
-              <button type="button"
-                      hx-get="/api/files?dir=data/modules&target_input={{ id }}"
-                      hx-target="#file-browser-content"
-                      hx-swap="innerHTML"
-                      onclick="openFileBrowser()"
-                      class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#1a150c]">
-                浏览
-              </button>
-            </div>
-          </div>
-          {% endfor %}
+          <div><label class="block text-xs text-gray-300 mb-1">{{ label }}</label>
+            <input type="text" id="{{ id }}" name="{{ id.replace('-', '_') }}" placeholder="{{ placeholder }}"
+                   class="w-full bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
+          </div>{% endfor %}
         </div>
       </fieldset>
-
-      {# ── Investigator ── #}
       <fieldset class="border border-gray-700 rounded-lg p-4">
-        <legend class="text-sm text-aged-gold px-2">调查员角色卡</legend>
-        <div>
-          <div class="flex gap-2">
-            <input type="text" id="char-path" name="char_path" placeholder="investigator/test_character.json"
-                   class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
-            <button type="button"
-                    hx-get="/api/files?dir=investigator&target_input=char-path"
-                    hx-target="#file-browser-content"
-                    hx-swap="innerHTML"
-                    onclick="openFileBrowser()"
-                    class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold hover:border-aged-gold bg-[#1a150c]">
-              浏览
-            </button>
-            <a href="/character" class="px-3 py-1.5 border border-gray-600 rounded text-xs text-gray-400 hover:text-aged-gold bg-[#1a150c]">
-              + 新建
-            </a>
-          </div>
-          <p class="text-[10px] text-gray-500 mt-1">留空则自动创建默认调查员</p>
-        </div>
+        <legend class="text-sm text-aged-gold px-2">调查员（留空使用默认）</legend>
+        <input type="text" id="char-path" name="char_path" placeholder="investigator/test_character.json"
+               class="w-full bg-[#1a150c] border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:border-aged-gold focus:outline-none">
       </fieldset>
-
-      {# ── Standard libraries ── #}
-      <fieldset class="border border-gray-700 rounded-lg p-4">
-        <legend class="text-sm text-aged-gold px-2">标准库（可选，留空使用默认）</legend>
-        <div class="grid grid-cols-3 gap-3">
-          {% for label, id, placeholder in [
-            ('武器库', 'weapon-path', 'data/library/core/weapons.json'),
-            ('敌人库', 'enemy-path', 'data/library/core/enemies.json'),
-            ('Boss 库', 'boss-path', 'data/library/core/bosses.json'),
-          ] %}
-          <div>
-            <label class="block text-xs text-gray-300 mb-1">{{ label }}</label>
-            <div class="flex gap-1">
-              <input type="text" id="{{ id }}" name="{{ id.replace('-', '_') }}" placeholder="{{ placeholder }}"
-                     class="flex-1 bg-[#1a150c] border border-gray-600 rounded px-2 py-1.5 text-xs text-gray-200 focus:border-aged-gold focus:outline-none">
-              <button type="button"
-                      hx-get="/api/files?dir=data/library/core&target_input={{ id }}"
-                      hx-target="#file-browser-content"
-                      hx-swap="innerHTML"
-                      onclick="openFileBrowser()"
-                      class="px-2 py-1.5 border border-gray-600 rounded text-[10px] text-gray-400 hover:text-aged-gold bg-[#1a150c]">
-                ...
-              </button>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-      </fieldset>
-
-      <button type="submit"
-              class="px-8 py-2.5 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30 font-bold tracking-wider">
-        开始游戏
-      </button>
+      <button type="submit" class="px-8 py-2.5 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30 font-bold">开始游戏</button>
       <span id="init-error" class="text-red-400 text-sm"></span>
     </form>
-
-    {# File browser modal #}
-    <div id="file-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
-         onclick="if(event.target===this)closeFileModal()">
-      <div class="bg-[#141414] border border-gray-600 rounded-lg p-4 w-[550px] max-h-[70vh] overflow-y-auto">
-        <div class="flex justify-between items-center mb-2">
-          <span class="text-sm text-gray-300">选择文件</span>
-          <button class="text-gray-400 hover:text-gray-200 text-lg" onclick="closeFileModal()">&times;</button>
-        </div>
-        <div id="file-browser-content" class="file-listing-container">
-          <p class="text-sm text-gray-500">加载中...</p>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
-{# ═══════════════════ GAME SCREEN (hidden until init) ═══════════════════ #}
-<div id="game-screen" style="display:none" class="h-screen flex flex-col bg-black relative overflow-hidden">
+{# ==================== GAME SCREEN — Dual Panel ==================== #}
+<div id="game-screen" style="display:none" class="h-screen flex bg-[#0d0d0d] overflow-hidden">
 
-  <div id="scene-image" class="absolute inset-0 image-crossfade bg-gradient-to-b from-[#1a1410] via-[#2a1a0a] to-[#1a1410] z-0">
+  {# -- Left Panel: Scene + Narrative + Input -- #}
+  <div class="flex-1 flex flex-col min-w-0">
+
+    {# Top bar -- #}
+    <div class="flex justify-between items-start px-4 py-3 border-b border-gray-800 bg-[#0f0f0f] shrink-0">
+      <div id="hud-scene" class="text-sm font-bold text-aged-brown"></div>
+      <div class="flex gap-3 items-center text-[10px]">
+        <span id="time-display" class="text-gray-500 font-mono">--:--</span>
+        <span id="step-indicator" class="text-gray-500 font-mono"></span>
+        <button class="text-gray-500 hover:text-aged-gold" onclick="document.getElementById('help-panel').classList.toggle('hidden')">? 帮助</button>
+      </div>
+    </div>
+
+    {# Narrative area -- #}
+    <div class="flex-1 overflow-y-auto px-4 py-3 space-y-2" id="narrative-area">
+      <div id="compact-narrative" class="text-sm text-gray-400">游戏就绪。输入 /help 查看命令。</div>
+      <div id="help-panel" class="hidden text-xs text-gray-500 border border-gray-700 rounded p-2 bg-[#0f0f0f]">
+        <b class="text-gray-300">命令</b><br>
+        /scene | /char | /flags | /events<br>
+        /do 动作 | /save 槽位 | /load 槽位<br>
+        /reset | /help
+      </div>
+      <div id="chat-history" class="hidden space-y-2"></div>
+    </div>
+
+    {# Input bar -- #}
+    <div class="px-4 py-3 border-t border-gray-800 bg-[#0f0f0f] flex gap-2 shrink-0">
+      <input type="text" id="user-input" placeholder="输入你的行动..." autocomplete="off"
+             class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none">
+      <button onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">行动</button>
+      <span class="text-[10px] text-gray-500 self-center cursor-pointer" onclick="togglePanel(true)">▲ 展开</span>
+    </div>
+
+    {# Expanded panel -- #}
+    <div id="chat-panel" class="hidden px-4 py-3 border-t-2 border-aged-gold bg-[#0f0f0f] shrink-0" style="height:50%">
+      <div class="flex justify-between items-center mb-2 text-xs">
+        <span class="text-aged-brown">会话记录</span>
+        <button class="text-gray-400 hover:text-gray-200" onclick="togglePanel(false)">▼ 收起</button>
+      </div>
+      <div class="flex gap-2">
+        <input type="text" id="user-input-expanded" placeholder="输入你的行动..." autocomplete="off"
+               class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none">
+        <button onclick="sendTurn()" class="px-6 py-2 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">行动</button>
+      </div>
+    </div>
   </div>
 
-  <div id="hud" class="absolute top-3 left-3 z-20 bg-black/70 border border-white/10 rounded px-3 py-2 backdrop-blur-sm">
-    <div id="hud-scene" class="text-sm font-bold text-aged-brown"></div>
-    <div id="hud-stats" class="text-xs mt-0.5"></div>
-  </div>
-
-  <div id="step-indicator" class="absolute top-3 right-3 z-20 bg-black/50 rounded px-2 py-1 text-[10px] font-mono text-gray-500"></div>
-
-  <button class="absolute top-12 right-3 z-20 text-gray-500 hover:text-aged-gold text-xs"
-          onclick="document.getElementById('help-panel').classList.toggle('hidden')">? 帮助</button>
-
-  <div id="help-panel" class="hidden absolute top-20 right-3 z-20 bg-black/90 border border-gray-700 rounded p-3 w-56 text-xs text-gray-400">
-    <b class="text-gray-300">命令</b><br>
-    /scene | /char | /flags | /events<br>
-    /do &lt;动作&gt; | /trigger &lt;E1&gt;<br>
-    /save &lt;槽位&gt; | /load &lt;槽位&gt;<br>
-    /reset | /help
-  </div>
-
-  <div id="narrative-bar"
-       class="absolute bottom-0 left-0 right-0 z-20 bg-[#0a0806]/95 border-t border-aged-brown/30 p-3">
-    <div id="compact-narrative" class="text-sm text-parchment leading-relaxed line-clamp-2 mb-2">
-      <span class="text-gray-400">游戏就绪。输入 /help 查看命令。</span>
+  {# -- Right Panel: Character Card -- #}
+  <div class="w-72 border-l border-gray-800 bg-[#0f0f0f] flex flex-col overflow-y-auto shrink-0" id="char-panel">
+    <div id="char-panel-collapsed" class="p-3 cursor-pointer" onclick="toggleCharCard()">
+      <div class="flex items-center gap-3">
+        <div id="char-avatar" class="w-10 h-10 rounded bg-gray-800 flex items-center justify-center text-gray-500 text-xs shrink-0">?</div>
+        <div class="min-w-0 flex-1">
+          <div id="char-name" class="text-sm text-aged-gold truncate">调查员</div>
+          <div class="text-[10px] text-gray-500" id="char-desc">--</div>
+          <div class="flex gap-2 mt-1">
+            <div class="flex-1 h-1.5 bg-gray-700 rounded overflow-hidden">
+              <div id="char-hp-bar" class="h-full bg-coc-green" style="width:100%"></div>
+            </div>
+            <div class="flex-1 h-1.5 bg-gray-700 rounded overflow-hidden">
+              <div id="char-san-bar" class="h-full bg-aged-gold" style="width:100%"></div>
+            </div>
+          </div>
+          <div class="flex justify-between text-[9px] text-gray-500 mt-0.5">
+            <span>HP <span id="char-hp-text">?/?</span></span>
+            <span>SAN <span id="char-san-text">?</span></span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="flex items-center gap-3" onclick="event.stopPropagation()">
-      <input type="text" id="user-input"
-             placeholder="输入你的行动..."
-             class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none"
-             autocomplete="off" onclick="event.stopPropagation()">
-      <button onclick="event.stopPropagation(); sendTurn()"
-              class="px-4 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
-        行动
-      </button>
-      <span class="text-[10px] text-gray-500 ml-2 cursor-pointer" onclick="event.stopPropagation(); togglePanel(true)">▲ 展开</span>
-    </div>
-  </div>
-
-  <div id="chat-panel"
-       class="absolute bottom-0 left-0 right-0 z-30 bg-[#0a0806]/98 border-t-2 border-aged-gold hidden flex flex-col"
-       style="height:65%">
-    <div class="flex justify-between items-center px-4 py-2 border-b border-gray-800 text-xs">
-      <span class="text-aged-brown">会话记录</span>
-      <button class="text-gray-400 hover:text-gray-200" onclick="togglePanel(false)">▼ 收起</button>
-    </div>
-    <div id="chat-history" class="flex-1 overflow-y-auto px-4 py-3 space-y-2"></div>
-    <div class="px-4 py-2 border-t border-gray-800 flex gap-2">
-      <input type="text" id="user-input-expanded"
-             placeholder="输入你的行动..."
-             class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none"
-             autocomplete="off">
-      <button onclick="sendTurn()"
-              class="px-6 py-2 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">
-        行动
-      </button>
-    </div>
+    <div id="char-panel-expanded" class="hidden p-3 border-t border-gray-800"></div>
   </div>
 
 </div>
 
 <script>
-  // ── Game init ──
-    async function initGame(e) {
+  // == Character panel toggle ==
+  function toggleCharCard() {
+    const expanded = document.getElementById('char-panel-expanded');
+    if (expanded.classList.contains('hidden')) {
+      htmx.ajax('GET', '/api/game/character-card', '#char-panel-expanded');
+      expanded.classList.remove('hidden');
+    } else {
+      expanded.classList.add('hidden');
+    }
+  }
+
+  function updateCharHUD(data) {
+    if (!data) return;
+    const hp = data.hp || 0;
+    const hpMax = data.hp_max || hp || 10;
+    const san = data.san || 0;
+    document.getElementById('char-name').textContent = data.name || '调查员';
+    document.getElementById('char-hp-text').textContent = hp + '/' + hpMax;
+    document.getElementById('char-san-text').textContent = san;
+    document.getElementById('char-hp-bar').style.width = (hpMax > 0 ? (hp / hpMax * 100) : 0) + '%';
+    document.getElementById('char-san-bar').style.width = (san > 0 ? (san / 99 * 100) : 0) + '%';
+    if (data.avatar_url) {
+      document.getElementById('char-avatar').innerHTML = '<img src="' + data.avatar_url + '" class="w-10 h-10 rounded object-cover" onerror="this.parentElement.innerHTML=\'?\'">';
+    }
+    if (data.name) {
+      document.getElementById('char-desc').textContent = data.name;
+    }
+  }
+
+  // == Game init ==
+  async function initGame(e) {
     e.preventDefault();
     const form = document.getElementById('init-form');
     const fd = new FormData(form);
+    fd.append('weapon_path', '');
+    fd.append('enemy_path', '');
+    fd.append('boss_path', '');
     const errEl = document.getElementById('init-error');
     errEl.textContent = '';
-    // Validate module paths
     for (const id of ['l2-path', 'l1-path', 'l3-path']) {
       if (!document.getElementById(id).value.trim()) {
-        errEl.textContent = '请填写 ' + document.getElementById(id).previousElementSibling.textContent;
+        errEl.textContent = '请填写所有模组文件路径';
         return;
       }
     }
-
     try {
       const resp = await fetch('/api/game/init', { method: 'POST', body: fd });
       const text = await resp.text();
       if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; return; }
-
-      // Parse JSON response with HUD data
       const data = JSON.parse(text);
-      document.getElementById('hud-stats').innerHTML =
-        '<span class="text-gray-300">' + data.name + '</span>' +
-        '<span class="text-gray-500 ml-2">HP</span> <span class="text-coc-green">' + data.hp + '</span>' +
-        '<span class="text-gray-500 ml-2">SAN</span> <span class="text-aged-gold">' + data.san + '</span>';
+      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp, san: data.san, avatar_url: '' });
       document.getElementById('hud-scene').textContent = data.location;
-
-      // Switch to game screen
       document.getElementById('game-setup').style.display = 'none';
       document.getElementById('game-screen').style.display = '';
       document.getElementById('user-input').focus();
-
-      // Show initial system message in compact narrative
-      document.getElementById('compact-narrative').innerHTML =
-        '<span class="text-aged-gold">' + data.location + '</span> — 游戏已就绪';
-
-      // Start WebSocket
+      var initHtml = '<span class="text-aged-gold">' + (data.location || '') + '</span> -- 游戏已就绪';
+      if (data.initial_brief) initHtml += '<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mt-2">' + data.initial_brief + '</div>';
+      if (data.initial_narrative) initHtml += '<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash mt-2">' + data.initial_narrative + '</div>';
+      document.getElementById('compact-narrative').innerHTML = initHtml;
       connectWS();
-    } catch(e) {
-      errEl.textContent = '网络错误: ' + e.message;
-    }
+    } catch(e) { errEl.textContent = '网络错误: ' + e.message; }
   }
 
-  // ── Panel toggle ──
+  // == Panel toggle ==
   function togglePanel(show) {
     const panel = document.getElementById('chat-panel');
-    const bar = document.getElementById('narrative-bar');
-    const image = document.getElementById('scene-image');
-    if (show) {
-      panel.classList.remove('hidden');
-      if (bar) bar.style.display = 'none';
-      if (image) image.style.filter = 'brightness(0.4)';
-    } else {
-      panel.classList.add('hidden');
-      if (bar) bar.style.display = '';
-      if (image) image.style.filter = '';
-    }
+    const chatHistory = document.getElementById('chat-history');
+    if (show) { panel.classList.remove('hidden'); if (chatHistory) chatHistory.classList.remove('hidden'); }
+    else { panel.classList.add('hidden'); if (chatHistory) chatHistory.classList.add('hidden'); }
   }
 
-  // ── Chat history accumulator ──
+  // == Chat history ==
   let chatMessages = [];
-
   function addToHistory(userMsg, responseHtml) {
-    if (userMsg) {
-      chatMessages.push(
-        '<div class="msg-brief px-3 py-2 text-sm text-gray-500 border-l-2 border-gray-700 mb-2">' +
-        '&gt; ' + userMsg + '</div>'
-      );
-    }
-    if (responseHtml) {
-      chatMessages.push(responseHtml);
-    }
-    // Keep at most 200 messages
+    if (userMsg) chatMessages.push('<div class="msg-brief px-3 py-2 text-sm text-gray-500 border-l-2 border-gray-700 mb-2">&gt; ' + userMsg + '</div>');
+    if (responseHtml) chatMessages.push(responseHtml);
     if (chatMessages.length > 200) chatMessages = chatMessages.slice(-200);
-    // Sync to expanded panel if visible (cap DOM nodes at 50)
-    const panel = document.getElementById('chat-history');
-    if (panel && chatMessages.length > 50) { panel.innerHTML = chatMessages.slice(-50).join(''); }
-  }
-
-  // ── Send turn ──
-  async function sendTurn() {
-    const compactInput = document.getElementById('user-input');
-    const expandedInput = document.getElementById('user-input-expanded');
-    const text = (compactInput.value || expandedInput.value).trim();
-    if (!text) return;
-
-    // Determine which input is active (visible)
-    const barHidden = document.getElementById('narrative-bar').style.display === 'none';
-    const activeInput = barHidden ? expandedInput : compactInput;
-    const inactiveInput = barHidden ? compactInput : expandedInput;
-
-    activeInput.value = '';
-    inactiveInput.value = '';
-    compactInput.disabled = true;
-    expandedInput.disabled = true;
-    document.getElementById('step-indicator').innerHTML = 'parse ...';
-
-    // Show user message in compact bar while waiting
-    document.getElementById('compact-narrative').innerHTML =
-      '<span class="text-gray-500">' + text + '</span>';
-
-    try {
-      const formData = new FormData();
-      formData.append('user_input', text);
-      const resp = await fetch('/api/game/turn', { method: 'POST', body: formData });
-      const contentType = resp.headers.get('content-type') || '';
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        document.getElementById('compact-narrative').innerHTML =
-          '<span class="text-red-400">服务器错误 (' + resp.status + '): ' + errText + '</span>';
-        throw new Error('Server error: ' + resp.status);
-      }
-
-      if (contentType.includes('application/json')) {
-        // New JSON response format
-        const data = await resp.json();
-        handleTurnResponse(text, data);
-      } else {
-        // Legacy HTML response fallback
-        const html = await resp.text();
-        document.getElementById('compact-narrative').innerHTML = html;
-        addToHistory(text, html);
-      }
-
-      // Scroll expanded panel if visible
-      const chatHistory = document.getElementById('chat-history');
-      if (chatHistory) {
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-      }
-
-      htmx.ajax('GET', '/api/game/player-status', '#hud-stats');
-      htmx.ajax('GET', '/api/game/scene', '#hud-scene');
-    } catch(e) {
-      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">网络错误: ' + e.message + '</span>';
+    const ch = document.getElementById('chat-history');
+    if (ch && !ch.classList.contains('hidden')) {
+      ch.innerHTML = chatMessages.slice(-50).join('');
+      ch.scrollTop = ch.scrollHeight;
     }
-    compactInput.disabled = false;
-    expandedInput.disabled = false;
-    activeInput.focus();
   }
 
-  // ── Handle structured turn response ──
+  // == Handle turn response ==
   function handleTurnResponse(userText, data) {
-    // Build display HTML
     var parts = [];
-
-    // Skill results
     if (data.skill_results && data.skill_results.length > 0) {
       for (var i = 0; i < data.skill_results.length; i++) {
         var sr = data.skill_results[i];
-        var tierLabel = sr.tier || 'regular';
-        var tierColor = tierLabel === 'extreme' ? 'text-yellow-300' :
-                        tierLabel === 'hard' ? 'text-coc-green' :
-                        tierLabel === 'regular' ? 'text-gray-300' : 'text-red-400';
-        var icon = sr.success ? '✓' : '✗';
-        parts.push(
-          '<div class="msg-skill px-3 py-1 text-xs ' + (sr.success ? 'text-coc-green' : 'text-coc-red') +
-          ' border-l-2 ' + (sr.success ? 'border-coc-green/50' : 'border-coc-red/50') + ' mb-1">' +
-          icon + ' ' + (sr.entity_id || '?') + ' <span class="' + tierColor + '">[' + tierLabel + ']</span>' +
-          '</div>'
-        );
+        var tierColor = sr.tier === 'extreme' ? 'text-yellow-300' : sr.tier === 'hard' ? 'text-coc-green' : sr.tier === 'regular' ? 'text-gray-300' : 'text-red-400';
+        parts.push('<div class="msg-skill px-3 py-1 text-xs ' + (sr.success ? 'text-coc-green' : 'text-coc-red') + ' border-l-2 ' + (sr.success ? 'border-coc-green/50' : 'border-coc-red/50') + ' mb-1">' + (sr.success ? '[OK]' : '[FAIL]') + ' ' + (sr.entity_id || '?') + ' <span class="' + tierColor + '">[' + (sr.tier || 'regular') + ']</span></div>');
       }
     }
-
-    // Combat
     if (data.combat) {
       var outcomeLabel = data.combat.outcome === 'win' ? '胜利' : data.combat.outcome === 'loss' ? '败北' : data.combat.outcome;
-      var outcomeColor = data.combat.outcome === 'win' ? 'text-coc-green' : 'text-coc-red';
-      parts.push(
-        '<div class="msg-combat px-3 py-2 text-sm border-l-2 border-yellow-600 bg-[#1a1400] mb-2">' +
-        '<span class="text-yellow-400">⚔ 战斗 ' + outcomeLabel + '</span>' +
-        (data.combat.narrative ? '<div class="text-gray-400 text-xs mt-1">' + data.combat.narrative + '</div>' : '') +
-        '</div>'
-      );
+      parts.push('<div class="msg-combat px-3 py-2 text-sm border-l-2 border-yellow-600 bg-[#1a1400] mb-2"><span class="text-yellow-400">战斗 ' + outcomeLabel + '</span>' + (data.combat.narrative ? '<div class="text-gray-400 text-xs mt-1">' + data.combat.narrative + '</div>' : '') + '</div>');
     }
-
-    // Narrative (brief + narrative)
     if (data.narrative_html) {
       parts.push(data.narrative_html);
     } else {
-      if (data.brief) {
-        parts.push(
-          '<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mb-2">' +
-          data.brief + '</div>'
-        );
-      }
-      if (data.narrative) {
-        parts.push(
-          '<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash">' +
-          data.narrative + '</div>'
-        );
-      }
+      if (data.brief) parts.push('<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mb-2">' + data.brief + '</div>');
+      if (data.narrative) parts.push('<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash">' + data.narrative + '</div>');
     }
-
-    var narrativeHtml = parts.join('');
-    if (!narrativeHtml) {
-      narrativeHtml = '<div class="msg-brief px-3 py-2 text-sm text-gray-500">（没有返回叙事内容）</div>';
-    }
-
-    document.getElementById('compact-narrative').innerHTML = narrativeHtml;
-    addToHistory(userText, narrativeHtml);
-
-    // Game over
+    if (data.timestamp) document.getElementById('time-display').textContent = data.timestamp;
+    var html = parts.join('') || '<div class="msg-brief px-3 py-2 text-sm text-gray-500">（没有返回叙事内容）</div>';
+    document.getElementById('compact-narrative').innerHTML = html;
+    addToHistory(userText, html);
     if (data.game_over) {
       var endingText = data.ending ? data.ending.name + ': ' + data.ending.narrative : '游戏结束';
       setTimeout(function() {
-        document.getElementById('compact-narrative').innerHTML +=
-          '<div class="msg-ending px-3 py-3 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410] mt-3">' +
-          endingText + '</div>';
+        document.getElementById('compact-narrative').innerHTML += '<div class="msg-ending px-3 py-3 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410] mt-3">' + endingText + '</div>';
         document.getElementById('user-input').disabled = true;
         document.getElementById('user-input-expanded').disabled = true;
       }, 500);
     }
   }
 
-  // ── Enter key ──
+  // == Send turn ==
+  async function sendTurn() {
+    const compactInput = document.getElementById('user-input');
+    const expandedInput = document.getElementById('user-input-expanded');
+    const text = (compactInput.value || expandedInput.value).trim();
+    if (!text) return;
+    const barHidden = !document.getElementById('chat-panel').classList.contains('hidden');
+    const activeInput = barHidden ? expandedInput : compactInput;
+    const inactiveInput = barHidden ? compactInput : expandedInput;
+    activeInput.value = ''; inactiveInput.value = '';
+    compactInput.disabled = true; expandedInput.disabled = true;
+    document.getElementById('step-indicator').innerHTML = 'parse ...';
+    document.getElementById('compact-narrative').innerHTML = '<span class="text-gray-500">' + text + '</span>';
+    try {
+      const fd = new FormData(); fd.append('user_input', text);
+      const resp = await fetch('/api/game/turn', { method: 'POST', body: fd });
+      const ct = resp.headers.get('content-type') || '';
+      if (!resp.ok) {
+        const errText = await resp.text();
+        document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">服务器错误 (' + resp.status + '): ' + errText + '</span>';
+        throw new Error('Server error: ' + resp.status);
+      }
+      if (ct.includes('application/json')) {
+        handleTurnResponse(text, await resp.json());
+      } else {
+        const html = await resp.text();
+        document.getElementById('compact-narrative').innerHTML = html;
+        addToHistory(text, html);
+      }
+      try {
+        const psResp = await fetch('/api/game/player-status?format=json');
+        if (psResp.ok) updateCharHUD(await psResp.json());
+      } catch(e) {}
+      htmx.ajax('GET', '/api/game/scene', '#hud-scene');
+    } catch(e) {
+      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">网络错误: ' + e.message + '</span>';
+    }
+    compactInput.disabled = false; expandedInput.disabled = false;
+    activeInput.focus();
+  }
+
+  // == Enter key ==
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && (e.target.id === 'user-input' || e.target.id === 'user-input-expanded')) {
-      sendTurn();
-    }
+    if (e.key === 'Enter' && (e.target.id === 'user-input' || e.target.id === 'user-input-expanded')) sendTurn();
   });
 
-  // Close chat panel when clicking dimmed image
-  document.addEventListener('click', function(e) {
-    if (e.target.id === 'scene-image') {
-      const panel = document.getElementById('chat-panel');
-      if (panel && !panel.classList.contains('hidden')) togglePanel(false);
-    }
-  });
-
-  // ── WebSocket (only connected after game init) ──
-  let ws = null;
-  let wsRetry = 0;
+  // == WebSocket ==
+  let ws = null, wsRetry = 0;
   function connectWS() {
     if (ws) { try { ws.close(); } catch(e) {} }
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(protocol + '//' + location.host + '/api/game/progress');
+    ws.onopen = function() { wsRetry = 0; };
     ws.onmessage = function(e) {
       const data = JSON.parse(e.data);
       const indicator = document.getElementById('step-indicator');
       if (data.step === 'heartbeat') return;
-      if (data.step === 'complete') {
-        indicator.innerHTML = '<span class="text-aged-gold">完成</span>';
-      } else {
-        indicator.innerHTML =
-          data.step + ' <span class="' + (data.status === 'done' ? 'text-coc-green' : 'text-gray-500') + '">' +
-          (data.status === 'done' ? '✓' : '...') + '</span>';
-      }
+      if (data.step === 'complete') indicator.innerHTML = '<span class="text-aged-gold">完成</span>';
+      else indicator.innerHTML = data.step + ' <span class="' + (data.status === 'done' ? 'text-coc-green' : 'text-gray-500') + '">' + (data.status === 'done' ? '[OK]' : '...') + '</span>';
     };
-    ws.onopen = function() { wsRetry = 0; };
     ws.onerror = function() {};
     ws.onclose = function() {
       ws = null;
       if (document.getElementById('game-screen').style.display !== 'none') {
-        const delay = Math.min(1000 * Math.pow(2, wsRetry), 30000);
         wsRetry++;
+        const delay = Math.min(1000 * Math.pow(2, wsRetry), 30000);
         setTimeout(connectWS, delay);
       }
     };

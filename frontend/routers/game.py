@@ -168,14 +168,71 @@ async def process_turn(user_input: str = Form(...)):
     }
 
 
-@router.get("/api/game/player-status", response_class=HTMLResponse)
-async def player_status():
+@router.get("/api/game/character-card", response_class=HTMLResponse)
+async def character_card():
+    game = get_game()
+    world = game["keeper"].world
+    p = world.player
+    if not p:
+        return HTMLResponse('<span class="text-gray-500">无调查员</span>')
+
+    skills_list = list(p.skills.values()) if isinstance(p.skills, dict) else (p.skills if isinstance(p.skills, list) else [])
+    skills_html = "".join(
+        f'<div class="flex justify-between text-xs py-0.5"><span class="text-gray-400">{s.name}</span><span class="text-gray-300">{s.value}%</span></div>'
+        for s in skills_list[:12]
+    )
+    weapons = getattr(p, 'weapons', [])
+    weapons_html = "".join(
+        f'<div class="text-xs text-gray-400">  {w.name} ({getattr(w, "damage", "?")})</div>'
+        for w in weapons[:5]
+    ) or '<span class="text-xs text-gray-500">无</span>'
+    items = p.item_manager.describe() if hasattr(p, 'item_manager') and p.item_manager else "无"
+    avatar = getattr(p, 'avatar_url', '') or ""
+    stats = p.stats
+    derived = p.derived
+
+    avatar_block = f'<img src="{avatar}" class="w-12 h-12 rounded border border-gray-600 object-cover" onerror="this.style.display=\'none\'">' if avatar else '<div class="w-12 h-12 rounded bg-gray-800 flex items-center justify-center text-gray-500 text-xs">无</div>'
+
+    return HTMLResponse(
+        f'<div class="space-y-3">'
+        f'<div class="flex items-center gap-3">'
+        f'{avatar_block}'
+        f'<div>'
+        f'<div class="text-sm text-aged-gold">{p.name}</div>'
+        f'<div class="text-xs text-gray-500">{p.age}岁 {p.gender} {p.occupation or ""}</div>'
+        f'</div></div>'
+        f'<div class="text-xs text-gray-400">{getattr(p, "personal_description", "") or "（无描述）"}</div>'
+        f'<div class="grid grid-cols-4 gap-1 text-[11px]">'
+        f'{"".join(f"<div class=\"text-gray-500\">{k}</div><div class=\"text-gray-300\">{getattr(stats,k,0)}</div>" for k in ["STR","CON","SIZ","DEX","APP","INT","POW","EDU","LUCK"])}'
+        f'</div>'
+        f'<div class="flex gap-3 text-xs">'
+        f'<span class="text-coc-green">HP {derived.HP}/{derived.HP_MAX}</span>'
+        f'<span class="text-aged-gold">SAN {derived.SAN}</span>'
+        f'<span class="text-gray-400">MP {derived.MP}</span>'
+        f'<span class="text-gray-500">MOV {derived.MOV}</span>'
+        f'</div>'
+        f'<div class="border-t border-gray-800 pt-2">'
+        f'<div class="text-xs text-gray-500 mb-1">技能</div>{skills_html}'
+        f'</div>'
+        f'<div class="border-t border-gray-800 pt-2">'
+        f'<div class="text-xs text-gray-500 mb-1">武器</div>{weapons_html}'
+        f'<div class="text-xs text-gray-500 mt-1 mb-1">物品</div><span class="text-xs text-gray-400">{items}</span>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+@router.get("/api/game/player-status")
+async def player_status(format: str = ""):
     game = get_game()
     world = game["keeper"].world
     p = world.player
     if not p:
         return HTMLResponse('<span class="text-gray-600">未设置调查员</span>')
     hp, san = p.derived.HP, p.derived.SAN
+    has_avatar = getattr(p, 'avatar_url', '')
+    if format == "json":
+        return {"hp": hp, "hp_max": p.derived.HP_MAX, "san": san, "name": p.name, "avatar_url": has_avatar}
     return HTMLResponse(
         f'<div class="text-xs"><span class="text-gray-500">HP </span><span class="text-coc-green">{hp}</span>'
         f'<span class="text-gray-500 ml-2">SAN </span><span class="text-aged-gold">{san}</span></div>'
