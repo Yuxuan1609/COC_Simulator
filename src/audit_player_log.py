@@ -3,7 +3,7 @@ Audit LLM player logs -> markdown report.
 Usage: python -m audit_player_log <log_dir>
 """
 from __future__ import annotations
-import sys, json
+import sys, json, os
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
@@ -12,6 +12,119 @@ from collections import Counter
 def load_summary(log_dir: Path) -> dict:
     with open(log_dir / "_summary.json", "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _load_log_lines(log_dir: Path, filename: str) -> str:
+    """Load a log file, return truncated contents or empty string."""
+    path = log_dir / filename
+    if not path.exists():
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    # Keep last 8000 chars to stay within token budget
+    return content[-8000:] if len(content) > 8000 else content
+
+
+def _llm_audit(log_dir: Path, summary: dict, turn_logs_dir: Path) -> tuple[str, str]:
+    """Run LLM analysis on player log. Returns (report_section, llm_raw_response)."""
+    llm_path = str(log_dir / "audit_llm.txt")
+
+    # Collect data: turn summaries + key log slices
+    turns = summary.get("turns_detail", [])
+    turn_summaries = []
+    for t in turns:
+        skills = ", ".join(
+            f"{'✓' if r.get('success') else '✗'}{r.get('entity_id','?')}"
+            for r in t.get("skill_results", [])
+        ) or "-"
+        turn_summaries.append(
+            f"T{t['turn']:02d}: {t['input'][:50]} | "
+            f"skills={skills} | combat={t.get('combat_outcome') or '-'} | "
+            f"elapsed={t['elapsed_s']:.0f}s"
+        )
+
+    # Load key log samples
+    keeper_parse = _load_log_lines(log_dir, "keeper_parse.txt")
+    keeper_enrich = _load_log_lines(log_dir, "keeper_enrich.txt")
+    narrator = _load_log_lines(log_dir, "narrator.txt")
+
+    system = """你是TRPG测试审计专家。分析LLM玩家的运行日志，找出异常、退化、重复模式或系统问题。
+
+关注以下维度：
+1. 战斗系统：是否重复触发、HP/SAN变化是否合理、战斗摘要是否正常生成
+2. 技能检定：是否有连续失败、难度是否正常递增、是否有检定结果不合理
+3. NPC系统：是否有NPC互动、跟随是否正常
+4. 叙事质量：narrator输出是否有退化、是否有重复叙事、brief/narrative是否为空
+5. 时间系统：时间是否正常推进
+6. 管线健康：enrich是否有退化、parse匹配是否准确
+7. Author/IntentDetector：是否有异常触发
+8. 整体：是否有明显的系统bug模式
+
+返回 JSON：
+{
+  "findings": [
+    {"severity": "high|medium|low", "turn": N, "category": "类别", "detail": "具体发现", "suggestion": "修复建议"}
+  ],
+  "overall_assessment": "总体评价（100字以内）"
+}
+直接输出 JSON。"""
+
+    user = f"""分析以下TRPG跑团日志。
+
+【游戏概况】
+模组：{summary.get('module', '?')}
+回合数：{len(turns)}
+总耗时：{summary.get('total_elapsed_s', 0):.0f}s
+结束状态：{summary.get('game_over') or '未结束'}
+
+【回合摘要】
+{chr(10).join(turn_summaries)}
+
+【Keeper Parse 日志（最近部分）】
+{keeper_parse[:4000] or '（无）'}
+
+【Keeper Enrich 日志（最近部分）】
+{keeper_enrich[:2000] or '（无）'}
+
+【Narrator 日志（最近部分）】
+{narrator[:2000] or '（无）'}
+"""
+
+    try:
+        from llm import call_deepseek
+        from config_llm import LLM_FLASH_MODEL
+
+        response = call_deepseek(
+            user, json_mode=True, system=system,
+            model=LLM_FLASH_MODEL, reasoning_effort="low",
+            fallback_schema={"findings": [], "overall_assessment": ""},
+        )
+
+        resp_str = json.dumps(response, ensure_ascii=False, indent=2) if isinstance(response, dict) else str(response)
+        with open(llm_path, "w", encoding="utf-8") as f:
+            f.write(f"--- System ---\n{system}\n\n--- User ---\n{user}\n\n--- Response ---\n{resp_str}\n")
+
+        data = json.loads(resp_str) if isinstance(response, str) else response
+        findings = data.get("findings", [])
+        overall = data.get("overall_assessment", "")
+
+        lines = []
+        if overall:
+            lines.append(f"**LLM Assessment:** {overall}\n")
+        if findings:
+            lines.append("| Sev | Turn | Category | Detail | Suggestion |")
+            lines.append("|-----|------|----------|--------|------------|")
+            for f in findings:
+                lines.append(
+                    f"| {f.get('severity','?')} | {f.get('turn','?')} | "
+                    f"{f.get('category','?')} | {f.get('detail','')[:60]} | "
+                    f"{f.get('suggestion','')[:60]} |"
+                )
+        return "\n".join(lines), resp_str
+    except Exception as e:
+        with open(llm_path, "w", encoding="utf-8") as f:
+            f.write(f"--- System ---\n{system}\n\n--- User ---\n{user}\n\n--- Error ---\n{e}\n")
+        return f"*LLM audit failed: {e}*", ""
 
 
 def audit(log_dir: str) -> str:
@@ -114,6 +227,16 @@ def audit(log_dir: str) -> str:
         lines.extend(anomalies)
     else:
         lines.append("No anomalies detected.")
+    lines.append("")
+
+    # LLM-powered audit analysis
+    lines.append("## LLM Deep Analysis")
+    turn_logs_dir = ld / "turn_logs" if (ld / "turn_logs").exists() else None
+    llm_section, _ = _llm_audit(ld, s, turn_logs_dir)
+    if llm_section.strip():
+        lines.append(llm_section)
+    else:
+        lines.append("LLM audit skipped or failed.")
     lines.append("")
 
     # Recommendations

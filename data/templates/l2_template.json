@@ -20,6 +20,7 @@
             "on_extreme": "极难成功时的结果"
           },
           "difficulty": "regular",
+          "time_condition": [],
           "based_on": null
         }
       ],
@@ -58,6 +59,7 @@
             "on_extreme": "极难成功时的结果"
           },
           "difficulty": "regular",
+          "time_condition": [],
           "based_on": "I1"
         }
       ],
@@ -80,6 +82,7 @@
         "on_extreme": "极难成功时的结果"
       },
       "difficulty": "regular",
+      "time_condition": [],
       "based_on": "I1",
       "extra": {}
     }

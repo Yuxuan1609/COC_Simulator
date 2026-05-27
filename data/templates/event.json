@@ -7,6 +7,7 @@
       {"ref_type": "interaction", "ref_scene": "场景名", "ref_name": "互动名称"}
     ],
     "trigger": "触发方式 如 打开一扇门 或者 目击某个场景",
+    "time_condition": [],
     "irreversible_impact": "事件会带来的影响"
   }
 ]

@@ -110,6 +110,7 @@ def _slim_entity(entity: dict) -> dict:
     if entity.get("graded_result"):
         slimmed["graded_result"] = entity["graded_result"]
     slimmed["side_effects"] = entity.get("side_effects", [])
+    slimmed["time_condition"] = entity.get("time_condition", [])
     return slimmed
 
 
@@ -138,7 +139,7 @@ def _merge_phase2_fields(originals: list[dict], phase2_entities: list[dict]) -> 
             key = (p2e.get("name", ""), p2e.get("scene", ""))
             idx = by_name_scene.get(key, -1)
         if idx >= 0:
-            for field in ("type", "side_effects", "result", "graded_result"):
+            for field in ("type", "side_effects", "result", "graded_result", "time_condition"):
                 if field in p2e:
                     merged[idx][field] = p2e[field]
     return merged
@@ -367,6 +368,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - trigger 是触发场景描述：什么情况下玩家可以执行此互动。如 "玩家检查抽屉时"、"玩家进入此场景时"
 - result 是直接结果：互动直接产生的结果。如 "抽屉打开了，里面有一把钥匙"。如果此互动会导致游戏结局，result 必须以 ##END_结局名称:结局简述## 开头，如 "##END_真结局:电车冲出梦境## 调查员们成功..."
 - requirement 可描述是否需要消耗常见非剧情物品及数量（如"需要消耗1个急救包"）；result 可描述结果是否会失去常见消耗品（如"失去一个手电筒"）。具体数值由 Phase 2 标准化为 @consume_item
+- time_condition: 实体触发的时间约束。格式为 JSON 数组，每项 {"day": ">=N|<=N|N|ALL", "times": ["时段",...]}。数组内多项为 OR 关系，每项内 day 与 times 为 AND 关系，times 内各时段为 OR 关系。ALL 表示该维度不做限制。时段仅限：凌晨/早晨/白天/黄昏/夜间，天数从 1 开始。例：[{"day":">=2","times":["夜间"]}] 第2天及之后夜间触发，[] 表示无约束。大部分情况仅一个子项即可，多子项用于复杂时间要求
 - side_effects 是间接后果：与 result 不重合的附带影响。如 "开抽屉的声响吸引了隔壁车厢的怪物"。自然语言字符串列表
 - 互动完成即代表状态变更，不需要单独的 flag
 - type 涉及技能鉴定时，填入 graded_result（分级检定后果），此时 result 填 "##GRADED##"（占位标记），side_effects 留空。所有结果描述写入 graded_result 各等级中；type 为"无"时不填 graded_result
@@ -396,6 +398,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
       "side_effects": ["间接后果（与result不重合的附带影响），如：开抽屉的声响吸引了隔壁车厢的怪物。无条件则为空列表"],
       "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."},
       "difficulty": "regular",
+      "time_condition": [],
       "based_on": null
     }
   ],
@@ -417,6 +420,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 2. scene 使用场景中文名
 3. requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 I1 AND I2、(I1 OR I2) AND I3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述。不要和 trigger 混淆
 4. trigger 是触发场景：描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
+4a. time_condition: 时间触发约束，格式为 JSON 数组 [{"day": ">=2", "times": ["夜间"]}]。无约束填 []
 5. result 是直接结果：互动直接产生的可感知结果，不含间接影响。如果此互动会直接触发游戏结局，result 必须以 ##END_结局名称:结局简述## 开头（如 "##END_真结局:电车冲出梦境##"），后续再写正常结果文本
 6. side_effects 是间接后果：与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
 7. type 是涉及的技能鉴定名，不涉及则为"无"
@@ -467,6 +471,7 @@ STEP2B_COMBINED_SYSTEM = """你是一个 TRPG 模组解析助手，同时提取�
 - 所有 entity 使用统一的字段模型（id/type/name/requirement/trigger/result/side_effects/graded_result/difficulty/based_on）
 - based_on 指向派生的 interaction ID（非派生则留空）
 - requirement: 硬性前置用 entity ID + AND/OR/() 表达，裸 ID 默认指成功完成。特殊条件在 "||" 后用自然语言描述；trigger 是触发场景描述，两者不可混淆
+- time_condition: 同 Step 2a 格式，JSON 数组，每项 {"day": ">=N|<=N|N|ALL", "times": ["时段",...]}; 时段范围同（凌晨/早晨/白天/黄昏/夜间），天数从1开始。不填或 [] 表示不依赖时间
 - type 涉及技能鉴定时填 graded_result（四等级: on_failure/on_regular/on_hard/on_extreme），result 填 "##GRADED##"，side_effects 留空
 - result 是直接结果。如导致结局，必须以 ##END_结局名称:结局简述## 开头
 - side_effects 是与 result 不重合的间接后果
@@ -1304,11 +1309,12 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
 4. **结果嵌入**: @标记可嵌入 result / graded_result 各等级 / side_effects 等任何字段。graded_result 各等级为独立字符串，可独立含 @标记。
 5. 不允许自创 enemy_ref / weapon_ref / stat_name。
 6. type 为"无"的 entity 若无实质 side_effects 则保持原样。
+7. **time_condition 格式校验**: entity 若含 time_condition 字段，校验格式为 [{"day": ">=N|<=N|N|ALL", "times": ["时段",...]}]，时段仅限 凌晨/早晨/白天/黄昏/夜间，天数从1起。无约束则为 []
 
 输出格式:
 {
-  "interactions": [{ ...entity 字段..., "type": "标准技能名" }],
-  "auto_triggers": [{ ...entity 字段..., "type": "标准技能名" }]
+  "interactions": [{ ...entity 字段..., "type": "标准技能名", "time_condition": [] }],
+  "auto_triggers": [{ ...entity 字段..., "type": "标准技能名", "time_condition": [] }]
 }
 
 仅输出 JSON。

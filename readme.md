@@ -1,539 +1,358 @@
 # TRPG 调查员助手
 
-基于 LLM 的 TRPG（桌上角色扮演游戏）KP 助手，以《常暗之厢》模组为测试用例，实现从玩家输入到沉浸式叙事生成的完整调用链。COC 7th 规则。
+基于 LLM 的 TRPG（桌上角色扮演游戏）KP 助手，COC 7th 规则。从玩家输入到沉浸式叙事生成的完整调用链。
+
+> **编码**：本项目 ~98% 的代码由 Claude Code / Open Code + DeepSeek V4 / Kimi 自动生成。作者主要负责需求分析、架构设计、提示词微调、测试验证与方向把控。
+
+---
+
+# 玩家版 · 游戏指南
+
+## 这是什么
+
+一个由 LLM 担任 KP（守秘人）的文字跑团游戏。你创建调查员、探索场景、与 NPC 交互、战斗、发现线索，所有叙事由 AI 实时生成。
+
+## 安装与启动
+
+```bash
+pip install openai python-docx PyPDF2 ipython
+# 在项目根目录创建 .env: DEEPSEEK_API_KEY=your-key
+```
+
+```bash
+uvicorn frontend.server:app --reload    # 开发模式 → localhost:8080
+python run_game.py                      # 生产模式（自动打开浏览器）
+```
+
+## 前端页面
+
+| 路由 | 页面 | 做什么 |
+|------|------|--------|
+| `/` | 启动页 | 上传模组 docx 一键生成 → 配置参数 → 进入游戏 |
+| `/character` | 车卡创建 | 3 步向导：属性掷骰 → 职业+技能分配 → 预览导出 |
+| `/game` | 游戏循环 | 视觉小说风格沉浸布局，展开式会话面板 |
+| `/editor` | JSON 编辑器 | 浏览/编辑/校验模组 JSON 文件 |
+
+## 游戏内功能
+
+- **探索**：输入行动描述，系统匹配场景互动物/通行路径
+- **检定**：执行 D100 技能检定（45 项 COC 7th 标准技能），成功/失败影响叙事
+- **战斗**：回合制战斗系统，动作选项：攻击/闪避/逃跑/施法（未来）
+- **NPC 对话**：与场景内 NPC 自由交谈，态度和记忆影响回复
+- **搜索**：检定成功发现隐藏物品/线索/武器
+- **存档**：`/save <槽位>` 保存，`/load <槽位>` 读取，支持调查员长期存档
+
+## 调试命令
+
+| 命令 | 作用 |
+|------|------|
+| `/scene` | 查看当前场景完整信息 |
+| `/char` | 查看调查员角色卡（属性/技能/武器/物品） |
+| `/flags` | 查看已完成实体和运行时状态 |
+| `/events` | 查看已触发事件 |
+| `/help` | 帮助 |
+| `/spawn enemy <名称>` | 从敌人库生成敌人 |
+| `/spawn weapon <名称>` | 从武器库分发武器 |
+
+---
+
+# KP 版 · 模组配置与运行
+
+## 模组生成管线
+
+### 完整流程
+
+```
+纯小说/叙事文本
+  │ python run_step0.py <小说路径>         ← Step 0: 小说→模组格式（1 次 LLM，pro/max）
+  ▼ data/modules/<名称>/module_step0.txt
+  │ python run_pipeline.py --auto ...       ← Step 1-4: 模组文本→三层 JSON（12 次 LLM）
+  ▼ data/modules/<名称>/l1/l2/l3.json
+  │ 浏览器 localhost:8080                   ← 启动游戏
+  ▼ 玩家体验
+```
+
+### Step 0 — 叙事转模组
+
+将纯小说/叙事文本改写为结构化模组文档。输出可直接进入管线 Step 1a。
+
+```bash
+python run_step0.py "我的小说.txt"                           # 自动输出到 data/modules/
+python run_step0.py "小说.txt" "data/modules/模组名/out.txt"  # 指定输出路径
+```
+
+LLM 做两阶段处理：先以原作者视角理解剧情脉络/世界观/驱动力 → 再以模组设计师身份改写为场景+线索+NPC+敌人+多结局。输出含 9 个标准章节（module_overview / scenes / npcs / enemies / clues_and_items / events_summary / endings / locations_and_map）。
+
+### Step 1-4 — 模组→三层 JSON
+
+将结构化模组文档（docx 或 Step 0 输出）解析为三层 JSON：
+
+```bash
+python run_pipeline.py                                          # 交互式向导
+python run_pipeline.py --auto --docx "常暗之厢.docx" --module 常暗之厢
+python run_pipeline.py --config config.json                     # 从配置文件
+python run_pipeline.py --config config.json --start-from step_3a # 断点续跑
+```
+
+12 次 LLM 调用，7 步渐进式解析：
+
+| 步骤 | 内容 | 并行 |
+|------|------|------|
+| Step 1a/1b | 结构化提取（meta/scenes/characters/enemies/weapons/boss）+ 精修模组 | 2 并行 |
+| Step 2a | Interactions + scene_movements | — |
+| Step 2b/2c | Events+AT（合并）∥ L1 玩家层 ∥ L3 设计者层 | 3 并行 |
+| Step 2_boss | Boss 遭遇详述（从 Step 1a boss_hints + interactions/AT 派生） | — |
+| Step 3a/2.5 | 去重/冲突/结局验证 ∥ NPC 档案+实体归属 | 2 并行 |
+| Step 3b | L1↔L2↔L3 交叉核对（确定性优先 + LLM gap-fill） | — |
+| Step 3.5 | 依赖图构建 + 循环检测 | — |
+| Phase 2 | type 标准化 + side_effects → @markup | — |
+
+每步含 `_with_fallback` 保底策略。Step 3b 确定性优先将 prompt 从 40K token 压缩到 ~2K。
+
+## 启动页可配参数
+
+| 参数 | 说明 |
+|------|------|
+| API Key | DeepSeek API 密钥（首次启动在界面配置） |
+| 模型 | `deepseek-v4-pro`（重推理）/ `deepseek-v4-flash`（轻量） |
+| TimeAgent | 时间推进 LLM 评估开关 |
+| WR0 | 创作者豁免（Author 不受世界规则约束） |
+| Tier 2 Judgment | LLM 增强技能判定开关 |
+
+## @markup 副效果系统（8 种）
+
+| 标记 | 效果 | 应用路径 |
+|------|------|----------|
+| `@spawn_enemy(enemy_ref="", scene="", quantity=1)` | 生成敌人实例 | EnemyManager.spawn() → combat entry |
+| `@grant_weapon(weapon_ref="", scene="", quantity=1)` | 武器放置到场景 | SceneWeapon → search 发现 → 拾取 |
+| `@stat_change(stat_name="", delta=-1, narrative="")` | 修改属性 + 更新描述 | Investigator.modify_stat() |
+| `@item_gain(item_name="", quantity=1)` | 获得物品 | ItemManager.add() |
+| `@consume_item(item_name="", quantity=1)` | 消耗物品 | ItemManager.remove() + LLM 模糊匹配 |
+| `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | NPCManager.set_state() |
+| `@npc_follow(npc_name="", follow=true/false)` | NPC 跟随/离开 | NPCManager.set_following() |
+| `@grant_spell(spell_ref="")` | 获得法术（U9 预留） | Investigator.known_spells |
+
+## 时间系统
+
+确定性分钟计时器（`GameClock`），LLM TimeAgent 评估额外耗时。模组 Entity 支持 `time_condition` 字段：
+
+```
+time_condition: [{"day": ">=2", "times": ["夜间"]}]  # 第2天起夜间触发
+time_condition: []  # 无时间约束
+```
+
+## 战斗系统
+
+COC 7th 回合制。Boss 战斗与普通战斗分流：
+
+| 类型 | 失败后果 |
+|------|----------|
+| 普通战斗 loss | 角色死亡，游戏结束 |
+| Boss 战斗 loss | 返回 `combat_boss_loss` 信号，不强制结束 |
+
+## 失败惩罚
+
+多次检定同一实体失败时三层递增：难度提升 → 计数累加 → LLM 创意惩罚（扣 HP/SAN、刷怪、NPC 变敌对等）。
+
+## 公开发行打包
+
+```bash
+pyinstaller -F --noconsole --name "TRPG助手" \
+  --add-data "frontend/templates;frontend/templates" \
+  --add-data "frontend/static;frontend/static" \
+  --add-data "data;data" --add-data "src;src" \
+  --hidden-import fastapi --hidden-import uvicorn --hidden-import jinja2 --hidden-import openai \
+  run_game.py
+```
+
+API Key 不打包，启动后 Web 界面配置。`--onedir` 误报率低于 `--onefile`。需在对应系统分别打包。
+
+---
+
+# 开发者版 · 架构与设计
+
+## 设计理念
+
+- **高内聚模块化**：每个子系统（CombatSystem / EnemyManager / NPCManager / Judge / Curator / Clock / SpellJudge）是独立可编辑的模块，通过 dataclass 消息合约通信，可脱离主循环单独测试。战斗不是唯一可编辑的系统——任何子系统都可以替换或增强
+- **Agent 层封装**：Keeper 不是传统意义上的单一 Agent，而是一层 Agent 集合的封装——内部持有 Judge（确定性）、Curator（确定性）、IntentDetector（LLM）、CombatSystem（独立引擎），并通过 ThreadPoolExecutor 并行编排 enrich / combat_entry / TimeAgent 三个 LLM 调用。对外只暴露 `process_turn()` 一个入口
+- **闭世界假设**：玩家可执行动作由模组预设 entity 界定。未匹配 entity 的输入走 search/other/Author 管线
+- **确定性+LLM 混合**：硬性条件（requirement/dependency/time_condition）确定性判断，叙事/意图判定 LLM 执行
+- **输出管线分离**：`skill_detail`（骰值/标记）走独立管线，不经过 Narrator——"叙事者只叙事"
+
+## 子系统总览
+
+所有子系统均可独立编辑、替换、测试：
+
+| 子系统 | 文件 | 类型 | 职责 | 独立测试 |
+|--------|------|------|------|----------|
+| GameClock | `game/clock.py` | 纯确定性 | 分钟计时器，day/hour/time_of_day，自动注入 time flags | ✅ |
+| Judge | `game/judge.py` | 确定性 + LLM | requirement 检查、D100 检定、失败惩罚、trait enhancement | — |
+| Curator | `game/curator.py` | 纯确定性 | outcomes + ambient → NarratorBrief | — |
+| CombatSystem | `game/combat.py` | 确定性 + LLM | 回合制战斗引擎，伤害公式/护甲/D100/先攻 | ✅ smoke |
+| EnemyManager | `game/enemy_manager.py` | 纯确定性 | 敌人实例追踪、spawn/status/combat 生命周期 | ✅ |
+| BossManager | `game/boss_manager.py` | 纯确定性 | Boss 发现（at/event 触发）、CombatInit 构造 | ✅ |
+| NPCManager | `game/npc_manager.py` | 确定性 + LLM | NPC 对话/态度状态机/跟随、记忆上下文注入 | ✅ |
+| IntentDetector | `game/intent_detector.py` | LLM flash | other 行为判定是否有叙事意图 | ✅ |
+| TurnLogger | `game/turn_logger.py` | 纯 I/O | 每轮 player→enrich→narrator 全程记录 | ✅ |
+| SpellJudge | `game/spell_judge.py` | 确定性 + LLM | 法术识别/约束检查/Author 联动（U9 待实现） | — |
+| SpellLibrary | `library/spells.py` | 纯数据 | 法术库加载/查询（U9 待实现） | — |
+| SideEffects | `game/side_effects.py` | 纯解析 | 8 种 @markup → dataclass 解析器 | ✅ |
+| Investigator | `investigator/` | 纯规则 | COC 7th 车卡、D100 检定、物品/武器管理 | ✅ |
+
+## 三层信息架构
+
+| 层 | 拥有者 | 职责 |
+|----|--------|------|
+| L1 玩家可见层 | Narrator | 场景初始感知信息，面向玩家 |
+| L2 KP 守秘人层 | Keeper | 场景/互动/事件/AT/NPC/敌人/Boss 完整数据 |
+| L3 设计者层 | Author | 模组设计意图、叙事线、时间压力、结局条件 |
+
+## Keeper — Agent 层封装
+
+Keeper 不是单一 Agent，而是对以下组件的编排封装，统一入口 `process_turn()`：
+
+```
+Keeper.process_turn(turn_input, author)
+  ├── _inject_npc_at()          确定性：注入当前场景 NPC 专属 entity
+  ├── _parse(raw)               LLM flash：玩家输入 → entity 匹配
+  ├── Judge._execute_entity()   确定性+LLM：requirement/D100/@markup/失败惩罚
+  ├── [enrich ∥ combat_entry ∥ TimeAgent]  三路并行（ThreadPoolExecutor）
+  ├── 对峙 / CombatInit          确定性：avoidable 敌人走对峙，hostile 进战斗
+  ├── Author 响应                确定性+LLM：Patch / StructuralEdit / Reject
+  ├── _apply_pending()          确定性：统一执行延期 side_effects + move
+  ├── Curator.assemble()        确定性：组装 NarratorBrief
+  └── return                     dict 包含 brief / combat_init / standoff_prompt / ...
+```
+
+内部组件通过 dataclass 合约通信（`ActionOutcome` / `NarratorBrief` / `CombatInit`），各组件不感知其他组件的内部实现。
+
+## 多 Agent 数据流
+
+```
+玩家输入 → parse(LLM) → judge(确定) → [enrich(LLM) ∥ combat_entry(LLM) ∥ TimeAgent(LLM)]
+  → [对峙(optional)] → curate → narrator(LLM) → 输出
+      ↓ other+有意义                     ↓ enter_combat
+  Author(LLM)                         CombatSystem
+  ├─ Patch → integrate → 递归         ├─ 战斗回合循环
+  ├─ StructuralEdit → supplement       └─ CombatResult → exit_combat
+  └─ Reject → 注入提示
+```
+
+| Agent | 文件 | 职责 |
+|-------|------|------|
+| Keeper | `src/game/agents/keeper.py` | Agent 层封装，回合编配（详上） |
+| Narrator | `src/game/agents/narrator.py` | 唯一面向玩家，L1 + NarratorBrief → 沉浸式叙事 |
+| Author | `src/game/agents/author.py` | Patch（填缺口）/ StructuralEdit（触发补充管线），WR0 独立可配 |
+| TimeAgent | `src/game/agents/time_agent.py` | 轻量 LLM 时间评估器，读 Clock 不写 |
+| IntentDetector | `src/game/intent_detector.py` | Parse 命中 other 时判断是否有实际叙事意图 |
 
 ## 项目结构
 
 ```
-.
-├── data/
-│   ├── abstract.txt                         # 模组背景设定（供叙事参考）
-│   ├── occupations.json                     # COC 7th 标准职业数据
-│   ├── skill_checks.json                    # COC 7th 45 项技能定义（名称、关联属性、基础值、分类）
-│   ├── library/
-│   │   ├── core/
-│   │   │   ├── weapons.json                 # 核心武器库（10 件）
-│   │   │   ├── enemies.json                 # 核心敌人库（4 种神话生物/人类，含 [flag] 标记）
-│   │   │   └── bosses.json                  # 核心 Boss 库（3 种剧情敌人，含 boss_mechanics）
-│   │   └── extensions/                      # 用户自定义武器/敌人扩展包
-│   ├── templates/
-│   │   ├── l1_template.json                 # L1 玩家可见层模板
-│   │   ├── l2_template.json                 # L2 KP 守秘人层模板
-│   │   ├── l3_template.json                 # L3 设计者层模板
-│   │   ├── scene.json                       # 场景模板
-│   │   └── event.json                       # 事件模板
-│   ├── modules/
-│   │   ├── 常暗之厢/                           # 主测试模组
-│   │   ├── 深渊之口/                           # 新模组
-│   │   ├── test/                              # 单元测试用模组
-│   │   └── supplements/                       # 补充管线输出（Author StructuralEdit）
-├── src/
-│   ├── scenario_core.py                     # 数据类、有向图、世界状态 Facade、记忆管理、Entity/##GRADED##/##END_
-│   ├── llm.py                               # DeepSeek API 封装（可配置模型、思考模式）
-│   ├── trpg_display.py                      # Notebook UI 显示组件
-│   ├── utils.py                             # 文件解析、Token 估算、掷骰、技能定义加载
-│   ├── prompts.py                           # LLM Prompt 构建器（Keeper/Narrator/Author/CombatEntry/Standoff/StatNarrative/ConsumeFuzzy）
-│   ├── game_loop.py                         # 多 Agent 入口：init_game() + run_turn() + continue_standoff()
-│   ├── game/                                # Multi-Agent 游戏循环
-│   │   ├── messages.py                      #   消息 dataclass（NarratorBrief, CombatEntryCheck, CombatInit, CombatResult 等）
-│   │   ├── side_effects.py                  #   Side effect dataclass（7 种）+ @markup 解析器（纯函数）
-│   │   ├── clock.py                         #   GameClock — 确定性分钟计时器（day/hour/time_of_day）
-│   │   ├── judge.py                         #   确定性闸门（需求 + 技能检定 + @markup + ##GRADED##）
-│   │   ├── curator.py                       #   策展器：outcomes → NarratorBrief
-│   │   ├── combat.py                        #   CombatSystem：COC 7th 回合制战斗（独立于 Keeper 管线）
-│   │   ├── enemy_manager.py                 #   EnemyInstance + EnemyManager：敌人追踪层
-│   │   ├── boss_manager.py                  #   BossManager：Boss 信息挂钩 + CombatInit 构造（不参与 spawn）
-│   │   ├── npc_manager.py                   #   NPC + NPCManager：NPC 全量管理（对话/态度/跟随/序列化）
-│   │   ├── intent_detector.py               #   意图检测器（Parse other → Author trigger）
-│   │   └── agents/
-│   │       ├── keeper.py                    #   KP 守秘人（回合编配：parse→judge→enrich∥combat_entry→standoff→curate）
-│   │       ├── narrator.py                  #   叙事者（唯一面向玩家，L1 + NarratorBrief → 叙事）
-│   │       ├── author.py                    #   作者（L3 + AuthorRequest → ModulePatch/StructuralEdit）
-│   │       └── time_agent.py               #   TimeAgent — 轻量 LLM 时间评估器（读 Clock，不写 Clock）
-│   ├── library/                             # 武器/敌人资源库
-│   │   ├── weapons.py                       #   LibraryWeapon + WeaponLibrary
-│   │   ├── enemies.py                       #   LibraryEnemy（含 [flag] 解析）+ EnemyLibrary
-│   │   ├── bosses.py                       #   LibraryBoss + BossLibrary
-│   │   ├── judgment.py                      #   双层判定引擎（T1 确定性 + T2 LLM 增强）
-│   │   └── injector.py                      #   内容注入（离线预填充 + 运行时动态注入）
-│   ├── module_designer/                     # 三层信息引擎
-│   │   ├── l1_player.py                     #   L1 玩家可见层数据模型
-│   │   ├── l2_keeper.py                     #   L2 KP 守秘人层数据模型 (含 AutoTrigger)
-│   │   ├── l3_designer.py                   #   L3 设计者层数据模型
-│   │   ├── layered_schema.py                #   JSON Schema 定义 + 三层验证
-│   │   ├── layered_parser.py                #   渐进式解析 (prompt builders + system prompts，含 Phase 2 7 种 @markup)
-│   │   ├── layered_pipeline.py              #   管线编排 (并行 + retry/fallback + 最终验证)
-│   │   ├── supplement_pipeline.py           #   补充管线（Author StructuralEdit 触发）
-│   │   └── dependency_graph.py              #   依赖有向图 (构建 + 循环检测)
-│   └── investigator/                        # COC 7th 调查员车卡系统
-│       ├── __init__.py                      # 公开 API
-│       ├── models.py                        # 数据类 + 技能检定 + 战斗预留 + ItemManager + modify_stat
-│       ├── rules.py                         # COC 7th 规则引擎（纯函数）
-│       └── serialization.py                 # JSON 序列化 / 反序列化
-├── frontend/
-│   ├── server.py                              # FastAPI 统一入口（v2，替换旧的 server.py + game_server.py）
-│   ├── routers/
-│   │   ├── launcher.py                        #   启动页 + 模组生成 API + 参数配置 API
-│   │   ├── character.py                       #   车卡创建 API（3 步向导 + LLM 描述生成）
-│   │   ├── game.py                            #   游戏循环 API + WebSocket 步骤进度推送
-│   │   ├── editor.py                          #   JSON 轻量编辑器 API
-│   │   └── files.py                           #   文件浏览 API（共享组件）
-│   ├── templates/
-│   │   ├── base.html                          #   根布局（Tailwind CDN + HTMX + Jinja2 block）
-│   │   ├── launcher.html                      #   启动页（模组生成 + 参数配置 + 导航）
-│   │   ├── character.html                     #   车卡 3 步向导
-│   │   ├── game.html                          #   游戏主界面（视觉小说布局 + 展开式会话）
-│   │   ├── editor.html                        #   JSON 轻量编辑器（3 栏布局）
-│   │   └── partials/
-│   │       ├── file-browser.html              #   可复用文件/目录选择器
-│   │       ├── step-indicator.html            #   WebSocket 驱动的处理步骤指示器
-│   │       └── help-*.html                    #   上下文相关用户指南
-│   └── static/
-│       └── fonts/                             #   捆绑的 Noto Serif SC 字体（生产环境用）
-├── run_pipeline.py                          # 管线 CLI 入口（配置向导 + 手动/自动模式）
-├── notebooks/
-│   ├── notebook_simplified.ipynb            # 主游戏循环（导入 src/ 模块）
-│   ├── parser_test.ipynb                    # 管线驱动与测试（交互式）
-│   └── _parser_layered_export.py            # 管线一键运行脚本（命令行可执行）
-├── docs/
-│   └── superpowers/
-│       ├── specs/                           # 设计文档（含 combat-entry-detection-design）
-│       └── plans/                           # 实现计划（含 combat-entry-detection-plan）
-├── logs/                                    # Prompt 日志（每次运行生成，含技能检定记录）
-└── .env                                     # DeepSeek API Key（不纳入版本控制）
+run_step0.py                  # Step 0: 小说→模组格式（独立于管线）
+run_pipeline.py               # 管线 CLI 入口
+src/
+├── scenario_core.py          # Entity/Node/Edge/DirectedGraph/ScenarioWorld/MemoryManager
+├── game_loop.py              # init_game() + run_turn() + continue_standoff()
+├── prompts.py                # LLM Prompt 构建器（所有 Agent）
+├── llm.py                    # DeepSeek API 封装
+├── config.py                 # 集中化配置（开关/阈值/魔法数字）
+├── config_llm.py             # LLM 模型/推理强度配置
+├── llm_player.py             # LLM 驱动模拟玩家，自动化跑局测试
+├── audit_player_log.py       # 日志审计（确定性 + LLM 双层分析）
+├── game/
+│   ├── messages.py           # 消息 dataclass（14 种）
+│   ├── side_effects.py       # 8 种 side effect + @markup 解析器
+│   ├── clock.py              # GameClock 确定性分钟计时器
+│   ├── judge.py              # 确定性闸门（requirement + D100 + 失败惩罚）
+│   ├── curator.py            # outcomes → NarratorBrief
+│   ├── combat.py             # CombatSystem 独立回合制战斗
+│   ├── enemy_manager.py      # EnemyInstance + EnemyManager
+│   ├── boss_manager.py       # BossManager（Boss 发现/触发/战斗构造）
+│   ├── npc_manager.py        # NPCManager（对话/态度/跟随）
+│   ├── intent_detector.py    # IntentDetector
+│   ├── turn_logger.py        # TurnLogger 回合日志
+│   └── agents/               # Keeper / Narrator / Author / TimeAgent
+├── library/                  # 武器/敌人/Boss 资源库
+├── investigator/             # COC 7th 调查员系统（models/rules/serialization）
+└── module_designer/          # 三层信息引擎（管线所有步骤）
+frontend/
+├── server.py                 # FastAPI 统一入口
+├── routers/                  # launcher / character / game / editor / files
+├── templates/                # Jinja2 模板（base + 页面 + partials）
+└── static/fonts/             # 捆绑字体
 ```
 
-## 核心模块
+## 战斗系统（独立可编辑）
 
-### `scenario_core.py`
-
-纯 Python 数据模块，不依赖 LLM 或 UI。一级 Facade 组合 5 个子系统。
-
-- **数据类**：`Node`（场景节点）、`Edge`（连接边）、`Entity`（统一 entity）、`Requirement`（前置条件）、`ActionResult`（统一返回类型）
-- **DirectedGraph**：管理所有场景节点、连接关系和全局事件
-- **ScenarioWorld**：运行时状态 Facade —— 当前位置、已触发事件、已完成交互、runtime_state/dependency_graph。挂载子系统：
-  - `clock: GameClock` — 确定性分钟计时器（`game_time`/`day`/`hour`/`time_of_day`/`advance_time()`）
-  - `memory: MemoryManager` — 分层记忆（近期原始记录 + 远期压缩摘要 + 关键发现追踪）
-  - `enemies: EnemyManager` — 敌人实例追踪层
-  - `npcs: NPCManager` — NPC 全量管理
-  - `bosses: BossManager` — Boss 遭遇管理
-- **MemoryManager**：分层记忆 —— 近期原始记录 + 远期压缩摘要 + 关键发现追踪
-- **##GRADED## / ##END_**：分级检定结果 + 结局嵌入
-
-> Side effect dataclass（7 种）和 @markup 解析器已迁至 `src/game/side_effects.py`。
-
-### `src/game/` — Multi-Agent 游戏循环
-
-2026-05-16 重构。4-Agent 架构替代单体 `handle_user_input()`：
-
-| Agent | 层 | 职责 | 文件 |
-|-------|----|------|------|
-| Keeper | L2 | 回合编配：parse→judge→enrich∥combat_entry→standoff→curate | `src/game/agents/keeper.py` |
-| Narrator | L1 | 唯一面向玩家，生成沉浸式叙事 | `src/game/agents/narrator.py` |
-| Author | L3 | 两级响应：Patch（填缺口）/ StructuralEdit（触发补充管线），WR0 独立可配 | `src/game/agents/author.py` |
-| IntentDetector | — | Parse 命中 other 时并行检测是否存在实际叙事意图 | `src/game/intent_detector.py` |
-
-**支持系统**：
-- **Side Effects**（`side_effects.py`）：7 种 dataclass（ItemGain/ConsumeItem/StatChange/SpawnEnemy/GrantWeapon/NPCStateChange/NPCFollow）+ `parse_markup()`/`parse_markup_all()` 纯函数解析器
-- **GameClock**（`clock.py`）：确定性分钟计时器 — `game_time`/`day`/`hour`/`time_of_day`/`advance_time()`/`get_time_flags()`。不做 LLM 调用
-- **TimeAgent**（`agents/time_agent.py`）：轻量 LLM 时间评估器 — 读 Clock 状态，评估额外时间消耗，不写 Clock。Author 管理叙事时间压力
-- **Judge**（`judge.py`）：确定性闸门 — requirement 检查 + COC 7th D100 检定 + ##GRADED## 分级 + LLM 失败惩罚 + trait enhancement
-- **Curator**（`curator.py`）：策展器 — outcomes + ambient → NarratorBrief
-- **CombatSystem**（`combat.py`）：COC 7th 回合制战斗，独立于 Keeper 管线。接收 CombatInit，返回 CombatResult
-- **EnemyManager**（`enemy_manager.py`）：纯追踪层 — 敌人实例管理、位置/状态/flag 查询、combat entry 上下文
-- **BossManager**（`boss_manager.py`）：Boss 信息管理 — 不参与 spawn，从 L2 预设 `boss_encounters` + `BossLibrary` 构造 CombatInit。Boss 作为独立子系统，与 Enemy 并行但不注册到 EnemyManager。Boss 战斗复用 CombatSystem（`_resolve_boss_action_stub` 为未来 LLM 增强预留），接入点纯确定性（`engage_type: "at"/"event"` 自动触发），接出后标记 `runtime_state` completed。Boss ID 自动注册到 `dependency_graph` 和 `runtime_state`，支持其他 entity 通过依赖边引用 Boss 击败状态。序列化完整支持 `to_dict()/from_dict()`（含 `library` 属性代理 `_library`）
-- **NPCManager**（`npc_manager.py`）：NPC 全量管理 — LLM 对话（态度/记忆上下文注入）、5 级态度状态机、被动跟随（`@npc_follow` markup）、初始化从 L2 `npc_profiles`
-- **Combat Entry Detection**（keeper.py 内）：确定性闸门（active enemy in range）→ LLM 判定（flash，与 enrich 并行）→ CombatEntryCheck
-- **对峙阶段**（keeper.py 内）：avoidable 敌人 → 语义匹配 LLM → D100 检定 → trait enhancement
-
-**数据流**：
+`src/game/combat.py` — 纯 Python，不依赖 LLM 或管线。
 
 ```
-玩家输入 → parse(LLM) → judge(确定) → [enrich(LLM) ∥ combat_entry(LLM)] → [对峙(可选)] → curate → narrator(LLM) → 输出
-                                           ↓ other+有意义                                         ↓ enter_combat
-                                      Author(LLM)                                          CombatSystem
-                                      ├─ Patch → integrate → 递归                          ├─ 战斗回合循环
-                                      ├─ Structural → supplement pipeline                  └─ CombatResult → EnemyManager.exit_combat
-                                      └─ Reject → 注入提示
+CombatInit → CombatSystem.run_combat() → CombatResult
+
+内部:
+  CombatState: round / enemies / player_hp / log / full_log
+  _process_round(): 按先攻序 → 玩家动作 → 敌人动作 → 判定存活
+  _generate_combat_narrative(): LLM flash 全轮次摘要（≤120 字）
+
+CombatResult: {outcome, defeated_instance_ids, narrative, player_hp, player_san, rounds}
+
+run_turn() 后处理:
+  - HP/SAN → player.derived 回写
+  - Boss Combat: win → mark_completed; loss → combat_boss_loss
+  - Regular Combat: loss → combat_death + game_over
 ```
 
-入口：`init_game()` 加载所有 JSON + EnemyLibrary + WeaponLibrary + 初始化三 Agent，`run_turn()` 驱动每回合。
-仅 `keeper.world` 暴露 ScenarioWorld，L3 数据内聚在 Author。
+独立烟雾测试：`tests/test_combat_smoke.py`（6 case，无需 LLM）。
 
-**Enricher（`src/game/agents/keeper.py:642-657` + `src/prompts.py:495-544`）**：
-
-parse → judge 之后、curate → narrator 之前的软缓冲层。职责是**合并润色**——将分散的实体触发结果（含成功和失败）转化为连贯的叙事段落，但不做任何裁决或状态变更。
-
-- **输入**：`judged_entities`（修复后包含失败实体，含失败惩罚叙事）、`user_input`、`world.build_snapshot()`（世界状态/场景现状/时间块）
-- **输出**：`{"results": "合并叙事", "reasoning": "整合逻辑", "emphasis_hint": "叙事方向"}`
-- **覆写规则**（2026-05-22 修复）：enrich 结果只覆写第一个**成功且非 AT** 的 outcome.message，失败实体的惩罚叙事不受影响。失败实体的 result 如含明确后果（扣血/刷怪等）则保留原文入叙事，仅当 result 为简单"检定失败"时才改为晦涩模糊。
-- **并行**：与 `combat_entry(LLM)` 和 `TimeAgent(LLM)` 在同一线程池中并行执行
-- **提示词**见上方 `丰富后的enrich提示词` 章节详细展示
-
-**输出管线分离**：`skill_detail`（检定骰值、难度递增标记、失败惩罚标记）和 `TimeAgent` 的时间信息走独立输出管线（CLI `skill_results` + 日志 `skill_checks.txt`），不经过 Narrator。Narrator 仅接收已完成的叙事文本（`ActionOutcome.message`），保持"叙事者只叙事"的职责边界。
-
-**CombatSystem（`src/game/combat.py`）**：
-- 独立于 Keeper 管线，接收 `CombatInit`，返回 `CombatResult`
-- 伤害掷骰（1D6+DB 等公式）、护甲减免、D100 技能检定（格斗/射击/闪避）
-- 先攻排序、逐轮处理、玩家/敌人动作编排
-
-
-**Boss 战斗系统**：
-
-Boss 与普通敌人（Enemy）并行管理，但设计上独立：
-
-| 维度 | Enemy | Boss |
-|------|-------|------|
-| 管理器 | `EnemyManager` | `BossManager` |
-| 生成 | `spawn()` / `@spawn_enemy` | 无 spawn，纯自动触发 |
-| 触发 | LLM 判定 → 对峙 | 确定性 `at`/`event` 触发 |
-| 实例 | 持久化 `EnemyInstance`（注册到 EnemyManager） | 瞬态 `EnemyInstance`（战斗后丢弃） |
-| 击败状态 | `EnemyManager._dead` | `runtime_state[boss_id].completed` |
-| 战斗 | `CombatSystem.run_combat()` | 复用 `CombatSystem.run_combat()` |
-| 特殊机制 | `combat_behavior` 字段 | `boss_mechanics` 字段 |
-
-**Boss 事件流**：`keeper.process_turn()` 内
-1. **`at` 触发**（场景进入后）→ 依赖图事件触发后立即检查
-2. **`event` 触发**（回合处理末尾）→ Judge / Enrich / Author 之后检查
-3. 触发条件满足 → `BossManager.build_combat_init()` 创建瞬态 `EnemyInstance` → `set_active()` → 返回 `CombatInit`
-4. `game_loop.run_turn()` 检测到 `combat_init` → 运行 `CombatSystem.run_combat()`
-5. 战斗结果 → `win` 则 `world.mark_completed(boss_id)` → `set_active(None)`
-
-**Boss 依赖图集成**：`ScenarioWorld._register_boss_nodes()` 在 `load_dependency_graph()` 后自动将 `boss_encounters` 中的每个 Boss ID 注册到 `dependency_graph.nodes` 和 `runtime_state`。其他 entity 可通过依赖边引用 Boss 击败状态（`{source: "I_SOMETHING", target: "BOSS_ID", dep_type: "boss"}`）
-
-### `src/library/` — 武器/敌人资源库
-
-独立包，零外部依赖。提供结构化武器和敌人数据、双层判定引擎和内容注入。
-
-- **WeaponLibrary / EnemyLibrary**：加载核心库 + 用户扩展 JSON，支持按年代/稀有度/类型/关键词搜索
-- **EnemyLibrary**：`LibraryEnemy.from_dict()` 从 `combat_behavior` 前缀提取 `[flag]`（`adjacent_aware` / `avoidable`）
-- **JudgmentEngine**：T1 确定性检定（D100 技能检定、伤害公式掷骰、SAN 损失计算）+ T2 LLM 增强上下文构建（可开关）
-- **ContentInjector**：离线注入（模组构建时根据 L3 危险等级自动填充 encounter/weapon 槽位）+ 运行时动态注入
-
-### `src/investigator/` — COC 7th 调查员车卡系统
-
-- **`models.py`**：`Stats`（8 项核心属性 + LUCK）、`DerivedStats`、`Skill`（45 项 COC 标准技能）、`Occupation`、`Weapon`、`InventoryItem`、`ItemManager`、`Investigator`（主类，含 `check_skill()` / `modify_stat()` / `add_weapon()` / `item_manager`）
-- **`rules.py`**：纯函数规则引擎 —— 掷骰生成、衍生属性计算、技能点分配、年龄修正、信用评级、DB 计算
-- **`serialization.py`**：JSON 序列化/反序列化
-- `combat_check()` / `damage_roll()` 已由 `src/game/combat.py` 的 CombatSystem 接管，旧 stub 已移除
-- **默认测试角色卡**：`investigator/Sothoth_character` — 测试时使用的预设调查员，可针对性利用其角色特性（属性、技能、物品等）进行测试
-
-### `src/module_designer/` — 三层信息引擎
-
-渐进式解析流程（12 次 LLM 调用）：
-
-1. Step 1a/1b — 结构化提取 + 精修模组 (2 并行)。Step 1a 同时输出敌人/武器/Boss 约束
-2. Step 2a — Interactions + scene_movements
-3. Step 2b/2c — Events+AT (合并) ∥ L1 ∥ L3 (3 并行)。AT 自动生成 AT_WORLD 世界初始化实体
-4. Step 3a ∥ Step 2.5 — 去重/冲突/结局验证 ∥ NPC 档案+实体归属 (2 并行)
-5. 组装 L2 → Step 3b: L1↔L2↔L3 交叉核对（确定性优先 + LLM gap-fill）
-6. Step 3.5 — 依赖图构建 + 循环检测
-7. Phase 2 — type 标准化 + side_effects → `@函数(参数)` (7 种：spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow)
-
-每步含 `_with_fallback` 保底策略。详细过程见 `docs/superpowers/specs/NEXT-SESSION.md`。
-
-### `prompts.py`
-
-LLM Prompt 构建器。覆盖 Keeper parse/enrich、Narrator、Author、combat entry detection、standoff match、stat narrative、consume item fuzzy match、combat narrative。
-
-### `game_loop.py` — 入口
-
-- `init_game()`：加载 L1/L2/L3 JSON + EnemyLibrary/WeaponLibrary/BossLibrary → 构建 DirectedGraph → ScenarioWorld（初始化 GameClock/EnemyManager/NPCManager/BossManager）→ Keeper/Narrator/Author
-- `run_turn()`：驱动回合，处理 debug 命令 → `keeper.process_turn()` → 检测 `combat_init` → `CombatSystem.run_combat()` → `narrator.narrate()` → 返回 `{brief, narrative, full, combat, standoff_prompt}`
-- `continue_standoff()`：处理对峙阶段的玩家回避尝试 → 检测结果调用 CombatSystem → 返回 `{avoided, combat_init, message, combat_narrative}`
-
-### 已知缺口
-
-> G9/G10 已于 2026-05-23 修复。移入测试表。
-
-### 待优化（按优先级）
-
-| P | # | 问题 | 说明 |
-|---|----|------|------|
-| **1** | O9 | 战斗叙事缺失 — `CombatResult.narrative` 始终为空 | ♻ 接口已就绪 — `CombatSystem.__init__` 接收 `llm_enhancement` 参数（默认读取 `config.py:COMBAT_LLM_ENHANCEMENT=False`），`_generate_combat_narrative()` 占位 |
-
-
-### 待升级（按优先级）
-
-| # | 问题 | 说明 |
-|----|------|------|
-| U1 | 自动化测试体系 | ♻ `test_harness_parallel.py`（17 case，探索+检定）、`test_harness_stability.py`（2 case，串行多轮）稳定通过。`llm_player.py` + `audit_player_log.py` + `stress_profile.json` 已实现（本 session）。待完成：30 轮完整跑局、战斗 Harness、子系统覆盖率达标 |
-| U2 | 战斗系统升级 | ♻ Boss 系统已完成。待完成：LLM 战斗叙事增强（`COMBAT_LLM_ENHANCEMENT`）、回合上限保护（防死循环）、对峙流程完整接入 |
-| U3 | Author "other 行为" 意图消歧 | 玩家输入 "我想试试能不能跳过去" 可能意味（a）真正做动作需检定（b）仅 RP 描述。建议引入二次确认（Keeper 反问玩家）或实体匹配置信度阈值 |
-| U4 | NPC 系统统一升级 | ♻ 本 session NPC 对话架构重构——bound entity 走主管线，npc_interact 短路返回。O19/O20 已解决。待完成：态度层级硬性规则、半主动行为、状态语法 |
-| U5 | 世界状态系统 | ✅ 序列化已实现（G9/G10，全部子系统 `to_dict/from_dict`）。待完成：基于 Logger 的世界状态解读模型（`TurnLogger` 数据已就绪） |
-| U6 | LLM Provider 抽象 | `config_llm.template.py` 已预留 `LLM_PROVIDER` 字段。远期支持 OpenAI/Anthropic 等多 provider 切换 |
-| U7 | 跨模组持久化与战役系统 | 结局事件系统 (O14) 已实施，但缺乏模组间状态传递。待实现：(1) 调查员信息永久化；(2) 模组 Patch 永久化；(3) 调查员经历写入；(4) 多模组拼接战役——模组队列、结局分支路由、全局世界状态延续；(5) 局末 LLM Epilogue Judge：基于局内经历摘要做角色成长审判，包括法术获取（`@grant_spell`）、属性/技能永久修改——此子功能与 U9 法术体系共享接口 |
-| U9 | 法术体系 | COC 7th 规则包含法术/咒文系统，当前项目未实现。待设计：法术学习/施放、SAN 代价、魔法书、施法检定等完整机制 |
-
-### 待升级（有生之年）
-| U8 | 多人模式（Hotseat） | 同机多人轮流操作，各自独立调查员角色卡，共享世界状态。类似传统 TRPG 桌面局的数字版——KP 主持，多个调查员轮流输入行动 |
-
-## 设计文档
-
-- Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
-- Escalation 重设计: `docs/superpowers/specs/2026-05-19-escalation-redesign.md`
-- 战斗进入/脱出判定: `docs/superpowers/specs/2026-05-19-combat-entry-detection-design.md`
-- 时间系统: `docs/superpowers/specs/2026-05-19-time-system-design.md`
-- 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
-- Boss/剧情敌人 & NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
-- Implementation Plan: `docs/superpowers/plans/2026-05-20-boss-npc-plan.md`
-- ScenarioWorld 重构: `docs/superpowers/specs/2026-05-22-world-refactor-design.md`
-- **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md` — 每个模块标注文件-类/函数-功能拆解，供快速定位代码
-- **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md` — 三层架构说明、源文档写法、@markup 系统、敌人/Boss/NPC 设计、叙事线/时间压力配置、写作检查清单
-- **战斗系统详解**: `docs/combat-system.md` — CombatSystem 回合制逻辑、回避/逃跑/攻击的动作互作用、伤害计算链、LLM 增强预留接口
-
-## 测试
+## 测试策略
 
 端到端集成测试为主，以真实 LLM 调用结果为准。
 
-| 文件 | 覆盖范围 | 类型 |
-|------|----------|------|
-| `tests/test_harness_parallel.py` | 17 case 并行，覆盖 search/检定/依赖链/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/重复失败惩罚，含 `--mock` 模式 | 集成（真实 LLM） |
-| `tests/test_harness_stability.py` | 2 case 串行稳定性（正常探索 + 混合压力），3 轮/每轮 3 turn，含完整 LLM 日志 | 集成（真实 LLM） |
-| `tests/test_escalation_real.py` | 5 case — 真实 LLM 升级流测试，含完整 prompt/response 日志 | 集成（真实 LLM） |
-| `tests/game_loop_harness.py` | ⚠ 已弃用 — 旧 pipeline（绕过 Keeper.process_turn），待迁移到新 harness | 集成（真实 LLM） |
+| 文件 | 覆盖 | 类型 |
+|------|------|------|
+| `tests/test_harness_parallel.py` | 18 case：search/检定/依赖/AT/NPC/武器/move/对峙/战斗/道具/属性/结局/Boss，含 `--mock` 模式 | 集成 |
+| `tests/test_harness_stability.py` | 2 case 串行稳定性（探索 + 压力），含完整 LLM 日志 | 集成 |
+| `tests/test_escalation_real.py` | 5 case Author 升级流，含完整 prompt/response 日志 | 集成 |
+| `tests/test_combat_smoke.py` | 6 case：基本战斗/写回/full_log/Boss分流/死亡信号/结构完整性 | 单元 |
+| `src/llm_player.py` | LLM 驱动模拟玩家自动化跑局 + TurnLogger + summary | 集成 |
+| `src/audit_player_log.py` | 对 llm_player 日志生成 markdown 审计报告 | 工具 |
 
-**运行方式**：
-- **Parallel Harness**：`python tests/test_harness_parallel.py`，`--mock` 快速验证，`--cases search,npc_dialogue` 选择 case
-- **Stability Harness**：`python tests/test_harness_stability.py`，日志 → `data/debug/test_stability/<ts>/`
-- Game Loop Harness（旧）：`cd tests && python game_loop_harness.py`（需 API Key），日志 → `data/debug/test_harness/<ts>/`
-
-## @markup 副效果系统（7 种）
-
-| 标记 | 效果 | 应用路径 |
-|------|------|----------|
-| `@spawn_enemy(enemy_ref="", scene="", quantity=1)` | 生成敌人实例 | EnemyManager.spawn() → combat entry detection |
-| `@grant_weapon(weapon_ref="", scene="", quantity=1)` | 武器放置到场景 | SceneWeapon → search 发现 → 确认拾取 → Investigator.add_weapon |
-| `@stat_change(stat_name="", delta=-1, narrative="")` | 修改属性 + 更新描述 | Investigator.modify_stat() + LLM narrative 描述更新 |
-| `@item_gain(item_name="", quantity=1)` | 获得物品 | ItemManager.add(name, quantity) |
-| `@consume_item(item_name="", quantity=1)` | 消耗物品 | ItemManager.remove() + LLM 模糊匹配保底 |
-| `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | NPCManager.set_state() |
-| `@npc_follow(npc_name="", follow=true/false)` | 设置 NPC 跟随状态 | NPCManager.set_following() |
-
-## 失败惩罚系统
-
-多次鉴定同一实体失败时触发三层递增惩罚（`src/game/judge.py:173-225`）：
-
-| 失败次数 | 惩罚 | 说明 |
-|----------|------|------|
-| **第 1 次** | 难度递增 | 该实体鉴定难度永久提升一级（`regular`→`hard`→`extreme`），记录在 `NodeRuntimeState.escalated_difficulty` |
-| **第 2 次** | 无额外惩罚 | 仅递增 `retries` 计数 |
-| **第 3 次及以后** | LLM 创意惩罚 | 调用 `evaluate_failure_penalty()`（`src/llm.py:344-422`），生成失败叙事 + 可选 @markup 副作用（扣HP/SAN、刷怪、NPC变敌对等） |
-
-**惩罚数据流**：
-
-```
-Judge._execute_entity()
-  ├── 失败 → escalate_difficulty（首次）/ retries++
-  ├── retries>=2 → evaluate_failure_penalty(LLM) → {narrative, markup_effects}
-  │                  ├── narrative → ActionOutcome.message
-  │                  └── markup_effects → parse_markup_all() → ActionOutcome.side_effects
-  ├── Keeper._apply_side_effects() → 世界状态变更（扣血/刷敌/物品等）
-  └── Keeper._enrich() → 合并叙事（含惩罚叙事）→ Curator → Narrator → 玩家
-```
-
-**状态追踪**（`src/scenario_core.py:201-207`）：
-```python
-@dataclass
-class NodeRuntimeState:
-    completed: bool
-    result_tier: str       # fumble|failure|regular|hard|extreme
-    retries: int           # 失败重试次数
-    escalated_difficulty: str  # 持久化的难度提升
-```
-每个实体一份状态，持久化存档。CLI 下 `/flags` 命令可查看。
-
-**2026-05-22 修复**：失败实体的惩罚叙事曾因 enrich 步骤的两个 bug 丢失：
-- `judged_entities` 只收集成功实体 → enrich LLM 看不到惩罚内容
-- `all_outcomes[0].message` 无条件被 enrich 结果覆盖 → 惩罚叙事可能被擦除
+运行：`python tests/test_harness_parallel.py --mock` 快速验证，`--cases combat_entry,boss` 选 case。
 
 ## 特殊标记
 
 | 标记 | 含义 |
 |------|------|
-| `##GRADED##` | 实际结果在 graded_result 中（failure/regular/hard/extreme 四级） |
+| `##GRADED##` | 分级检定结果（failure/regular/hard/extreme 四级） |
 | `##END_名称:简述##` | 触发游戏结局 |
-| `[adjacent_aware]` | Enemy flag：跨场景可感知（确定性闸门扩展到相邻场景） |
-| `[avoidable]` | Enemy flag：存在非战斗绕过途径，触发对峙阶段（语义匹配→D100 检定） |
+| `[adjacent_aware]` | Enemy flag：跨场景可感知 |
+| `[avoidable]` | Enemy flag：存在非战斗绕过途径，触发对峙 |
 
-## 环境配置
+## 设计文档索引
 
-```bash
-pip install openai python-docx PyPDF2 ipython
-```
+- Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
+- 战斗系统: `docs/combat-system.md`
+- 时间系统: `docs/superpowers/specs/2026-05-19-time-system-design.md`
+- Boss/NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
+- 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
+- ScenarioWorld: `docs/superpowers/specs/2026-05-22-world-refactor-design.md`
+- NPC-Entity 分离: `docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
+- 前端 v2: `docs/superpowers/specs/2026-05-25-frontend-redesign-design.md`
+- 法术体系: `docs/superpowers/specs/2026-05-27-magic-system-design.md`
+- **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md`
+- **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md`
 
-在项目根目录创建 `.env` 文件（已纳入 .gitignore）：
+## 待升级
 
-```
-DEEPSEEK_API_KEY=your-key
-```
-
-`src/llm.py` 启动时自动加载 `.env`，无需手动 export。
-
-## 核心 LLM 调用
-
-`call_deepseek(prompt, *, json_mode, system, model, thinking, reasoning_effort)`
-
-- `model`: 模型名称（默认 `deepseek-v4-pro`）
-- `thinking`: 思考模式开关（默认 True）
-- `reasoning_effort`: 推理强度 `"low"/"medium"/"high"/"max"`（默认 `"high"`）
-- `json_mode=True`：结构化判定（temperature=0.2）；`json_mode=False`：叙事生成（temperature=0.7）
-
-## 运行
-
-### 管线 CLI（模组解析）
-
-```bash
-python run_pipeline.py                          # 交互式向导
-python run_pipeline.py --auto --docx "常暗之厢.docx" --module 常暗之厢  # 自动
-python run_pipeline.py --config config.json     # 从配置文件
-python run_pipeline.py --config config.json --start-from step_3a  # 断点续跑
-```
-
-### 前端车卡（调查员创建） + 游戏 + 编辑器
-
-```bash
-uvicorn frontend.server:app --reload             # 开发模式 → localhost:8080
-python run_game.py                               # 生产模式（含自动打开浏览器）
-```
-
-浏览器打开 `http://localhost:8080` 进入启动页面，可选择车卡（`/character`）、游戏（`/game`）、编辑器（`/editor`）。
-
-Jupyter 交互：`notebooks/notebook_simplified.ipynb`
-
-### 调试命令（Web/CLI 通用）
-
-| 命令 | 作用 |
-|------|------|
-| `/scene` | 查看当前场景完整信息 |
-| `/char` | 查看当前调查员角色卡（含武器、物品） |
-| `/do <动作名>` | 直接执行交互（跳过 LLM） |
-| `/trigger <E1>` | 手动触发事件 |
-| `/spawn enemy <名称>` | 从敌人库生成敌人 |
-| `/spawn weapon <名称>` | 从武器库分发武器 |
-| `/save <槽位>` / `/load <槽位>` | 存档/读档 |
-| `/charsave` / `/charload` | 调查员长期存档 |
-| `/inject [toggle\|status]` | 运行时注入状态 |
-| `/help` | 帮助 |
-
-## 公开发行打包
-
-PyInstaller 方案：
-
-```bash
-pip install pyinstaller
-
-pyinstaller -F --noconsole --name "TRPG助手" \
-  --add-data "frontend/templates;frontend/templates" \
-  --add-data "frontend/static;frontend/static" \
-  --add-data "data;data" \
-  --add-data "src;src" \
-  --add-data "investigator;investigator" \
-  --add-data "logs;logs" \
-  --hidden-import fastapi \
-  --hidden-import uvicorn \
-  --hidden-import jinja2 \
-  --hidden-import openai \
-  run_game.py
-```
-
-- API Key：`.env` 不打包，首次启动引导用户在 Web 界面配置（Launcher → 参数配置）
-- 杀软误报：`--onedir`（文件夹分发）误报率低于 `--onefile`
-- 跨平台：Windows/macOS/Linux 分别需在对应系统打包
-
-## Frontend v2 重构 (2026-05-25)
-
-> ✅ 已完成。vanilla HTML/CSS/JS + `http.server` 原型已替换为 FastAPI + HTMX + Tailwind CSS。
-
-### 技术栈
-
-| 层 | 技术 | 说明 |
+| # | 事项 | 状态 |
 |----|------|------|
-| 服务器 | **FastAPI** | async 路由 + WebSocket + Jinja2 模板，统一替换两个旧的 http.server |
-| 前端交互 | **HTMX** (~14KB) | 声明式 AJAX，服务端渲染 HTML 片段，最小化手写 JS |
-| 样式 | **Tailwind CSS v4** | CDN 开发 → 独立构建生产部署 |
-| 实时推送 | **WebSocket** | 游戏回合处理步骤进度 + 模组生成管线进度 |
-| 打包 | **PyInstaller** | `--add-data` 模板 + 静态文件 + `--hidden-import` fastapi/uvicorn |
-
-### 页面架构
-
-| 路由 | 页面 | 功能 |
-|------|------|------|
-| `/` | **Launcher 启动页** | 模组生成向导（上传 docx → 管线进度 → 下载 JSON）+ 参数配置（API Key、模型、阈值、开关）+ 子页面导航 |
-| `/character` | **车卡创建** | 3 步向导（基本信息+属性掷骰 → 职业+技能分配 → 预览+导出 JSON），LLM 辅助描述生成 |
-| `/game` | **游戏循环** | 视觉小说风格沉浸式布局：全屏氛围图 + HUD 叠加 + 底部紧凑叙事栏 + 点击展开完整会话面板 + WebSocket 步骤指示器 |
-| `/editor` | **JSON 编辑器** | 轻量 3 栏布局（文件浏览 + JSON 树形展开 + 校验状态），非完整 IDE |
-
-### 设计文档
-
-- 设计规格：`docs/superpowers/specs/2026-05-25-frontend-redesign-design.md`
-- 实现计划：`docs/superpowers/plans/2026-05-25-frontend-redesign-plan.md`
-
-### 代码分离
-
-```
-frontend/          ← 表示层（导入 src/）
-src/               ← 游戏引擎（不导入 frontend/）
-```
-
-### 前端优化 (2026-05-26)
-
-> ♻ 基于 `2026-05-25-frontend-redesign-audit.md` 交叉审计报告修复。
-
-**已修复（18 项）**：
-
-| 级别 | 项 | 内容 |
-|------|----|------|
-| 🔴 | B1-B3 | 武器库/敌人库/注入器初始化 + `run_turn` 传参；`weapon_path`/`enemy_path`/`boss_path` 参数生效 |
-| 🔴 | B4 | 角色导出含完整 `Stats`/`DerivedStats`/`Skills`（隐藏表单跨 step 持久化） |
-| 🔴 | B5 | `GET /character/skills-list` 端点，职业选择后自动展示技能 |
-| 🔴 | B6 | `text-coc-green` 替代 `text-green-400` 统一 HUD 颜色 |
-| 🟠 | H1 | `.line-clamp-2` CSS polyfill 兼容 Tailwind v4 CDN |
-| 🟠 | H6 | `GET /api/game/state` + `GET /api/game/npcs` 端点 |
-| 🟠 | H7 | editor `POST /save` + `POST /validate` 端点 |
-| 🟡 | M3 | WebSocket 重连指数退避（1s→2s→4s… 上限 30s） |
-| 🟡 | M6 | 删除 `game.html` 重复 `openFileBrowser()` |
-| 🟡 | M11 | 游戏初始化 L1/L2/L3 路径非空校验 |
-| 🟡 | M12 | `/llm` 触发 LLM 外貌/个人描述自动生成 |
-| 🔵 | L1 | 统一背景色 `#0d0d0d`（与设计文档一致） |
-| 🔵 | L4 | `border-l-3` → `border-l-2` |
-| 🔵 | L5 | `loadPath()` 改为 `htmx.ajax()` |
-| ⬜ | — | 新增 `POST /api/game/command` 端点（/scene /char /save /load /flags /events /reset /help） |
-| ⬜ | — | ★ 修复 Starlette 1.1.0 `TemplateResponse` 签名变更 `(name,ctx)→(req,name,ctx)`（10 处） |
-| ⬜ | — | 创建 `frontend/static/fonts/` 空目录占位 |
-
-**待优化（需后续迭代）**：
-
-| P | # | 问题 | 说明 |
-|---|----|------|------|
-| 1 | F1 | WebSocket 实时步骤进度 | 当前所有步骤在 `run_turn` 完成后一次性推送 `done`，无实时反馈。需在 `src/` Keeper 管线各阶段插入 `_push_progress()` 调用 |
-| 2 | F2 | 场景图片系统 | `data/images/` 不存在，`scene-image` 只有 CSS 渐变。需 image 目录 + `/api/game/current-image` 端点 + 前端渐变 -> 图片切换 |
-| 3 | F3 | `get_game()` 线程安全 | `run_turn` 在线程池中执行，`get_game()` 无锁。并发访问 `/api/game/turn` 时可能重复初始化 |
-| 4 | F4 | 角色创建 session 持久化 | 3 step 向导使用 HTMX 无状态切换，步骤间数据不持久。需 sessionStorage 或服务端 session |
-| 5 | F5 | `static/fonts/` 字体文件 | 设计文档要求捆绑 Noto Serif SC (~5MB)，当前 woff2 文件缺失 |
-| 6 | F6 | `get_game()` `start_node` 硬编码 | `"测试房间"` 硬编码 fallback，部分模组可能 KeyError |
-| 7 | F7 | Scene 端点输出精简 | `/api/game/scene` 返回全量描述+出口挤入 HUD，应只显示场景名 |
-| 8 | F8 | `requirements-dev.txt` | 计划文档要求创建，当前不存在 |
-| 9 | F9 | 生产环境 Tailwind 独立构建 | `static/tailwind.css` 未构建，当前依赖 CDN |
-| 10 | F10 | 错误边界改进 | `run_turn` 异常只返回通用 HTML，无有意义的用户提示 |
-
-> 审计完整报告见项目根目录 `2026-05-25-frontend-redesign-audit.md`
-
-## NPC-Entity 分离 (2026-05-25)
-
-- **NPC 场景分配**：Step 1a `characters` 输出 `scenes`（首次出现的主要场景）、`can_follow`（bool）、`follow_condition`（文本描述）。管线后处理注入到 `npc_profiles[].scene` / `.can_follow` / `.follow_requirements`。
-- **NPC 实体绑定**：Step 2.5（LLM，与 Step 3a 并行）同时完成 NPC 行为档案生成 + entity 归属判定。输出 `npc_profiles` 中每个 NPC 包含 `bound_entities` 列表，管线后处理提取为 `entity_bindings` 传入 `_bind_npc_entities()` 优先使用，fallback 到确定性子串匹配。
-- **模组生成 prompt**：Step 2a/2b prompt 排除纯 NPC 对话和跟随事件。跟随 entity 由管线根据 Step 1a `can_follow` 确定性注入（O20）。
-- **运行时**：NPC 专属 entity（`[NPC_INTERACT]`/`[NPC_AT]`）由 `_inject_npc_at()` 注入当前场景 node，parse 按普通 interaction/auto_trigger 类型匹配 → 走主 judge→enrich→curate→narrator 管道。已完成 entity 默认不注入。NPC 一般性对话（无匹配 entity）由 parse 返回 `npc_interact` → `talk_to()` 直接生成对话并短路返回，不经过主 enrich/narrator 管道。`npc_interact` 后置确定性检查：NPC 不存在 → `（没有叫「XX」的 NPC）`；NPC 不在当前场景 → `（XX 不在当前场景）`；关键词检测跟随请求。
-- **独立输出**：`run_turn()` 返回 `npcs_visible` (in_scene/following) 和 `npc_events`（对话/跟随/状态事件）。
-- **NPC 跟随**：两种触发源——O20 管线注入的 `@npc_follow` entity（经主 parse→judge→side_effect 路径）+ 玩家对话关键词检测（`npc_interact` 路径）。统一检查 `can_follow` + 存活状态。`follow_requirements` 保留为 Step 1a 生成的文本描述供将来 LLM 评估，当前运行时不做确定性求值。
-- **run_pipeline.py CLI**：LLM call 日志目录使用语义化步骤名（如 `step1a_structured_extract`）替代编号。Step 3a+2.5 两路并行。
-- **设计文档**：`docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
-- **实现计划**：`docs/superpowers/plans/2026-05-25-npc-entity-separation-plan.md`
-
-## 管线提示词重构 (2026-05-25 / 2026-05-26)
-
-- **主管线**：全部步骤 system prompt 重构——角色定义、规则、输出格式、字段约束从 user prompt 移入 system prompt。User prompt 仅保留动态数据（章节文本、entity 列表、场景/角色名、库引用）。
-- **合并优化 (2026-05-26)**：Step 2b events+AT 合并 (4→3 并行)，Step 2.5+2.5b 合并 (3→2 并行)，总 LLM 调用从 14 减到 12。Step 3b 改为确定性优先 + LLM gap-fill（prompt 从 40K token 降到 ~2K）。
-- **补充管线**：`story` 输出半结构化——综述（200字）、每场景可用互动、叙事线、driving force、涉及敌人（仅普通敌人库），由 `enemy_names` 参数约束。Step 2 消费的 story 自动组装为 markdown 格式。
+| U1 | 自动化测试体系 | 30 轮跑局、战斗 Harness、子系统覆盖率 |
+| U2 | 战斗系统升级 | 回合上限保护、对峙完整接入、player_action 可选 |
+| U3 | Author "other" 消歧 | 二次确认或匹配置信度阈值 |
+| U4 | NPC 系统升级 | 态度硬性规则、半主动行为 |
+| U5 | 世界状态系统 | Logger 驱动的状态解读模型 |
+| U6 | LLM Provider 抽象 | 支持 OpenAI/Anthropic 多 provider |
+| U7 | 跨模组持久化 | 调查员永久化、Patch 永久化、战役系统、Epilogue Judge |
+| U8 | 多人模式 (Hotseat) | 同机多调查员轮流操作 |
+| U9 | 法术体系 | 战斗法术 + 轻量探索法术，SpellJudge + @grant_spell |

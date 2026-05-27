@@ -113,3 +113,24 @@
 - 关键细节：(a) 依赖检查用 `python -c "import X"` 而非 `pip list | grep`，更快且跨平台；(b) 失败时给出可操作的下一步（下载链接、手动命令）；(c) `chcp 65001` 解决 Windows 中文终端乱码
 - 前端 server.py 默认自动打开浏览器（`--no-open` 可关闭），省去用户手动访问的步骤
 - 适用于任何需要分发给非技术用户的 Python 项目
+
+## Pipeline 字段新增模式：先验运行时后补管线
+- 新增跨层字段（如 time_condition）时，先检查运行时是否已就绪（clock 已注入 day:X/time:X flags，judge flag: 处理器已就绪），再补管线生成端（prompt schema + Phase 2 透传 + 模板）
+- 关键发现：运行时基础设施完整但管线零支持 → 字段天然容易实现，只因"没人告诉 LLM 可以输出这个"
+- 与"统一数据源"互补——运行时通过 snapshot/build_snapshot 暴露能力，管线通过 prompt 约束让 LLM 按格式产出
+
+## 确定性检查的放置顺序影响下游 LLM 调用
+- Boss "at" 检查原在 enrich 之前，触发时直接 return → enrich 被跳过，outcomes 无润色
+- 将此类检查移到 enrich 之后、combat_entry 之前：enrich 正常执行，Boss 触发仍可 early return 但润色已完成
+- 通用规则：确定性短路检查应放在所有并行 LLM 步骤的 result 收集之后、最终 curate 之前
+
+## 战斗结果信号分流 — 不在战斗层处理死亡
+- Boss loss vs 普通 loss 返回不同布尔信号（combat_boss_loss / combat_death），由 game_loop 消费
+- 战斗层只产出 CombatResult（纯数据），裁决层（game_loop）决定 game_over。两层都不直接"毙角色"
+- 与"子系统并行合约"互补——CombatResult 是合约，信号分流是消费端的裁决逻辑
+
+## LLM 日志审计的双层架构
+- 确定性层：统计计数（技能通过率、战斗次数、实体覆盖）+ 基于阈值的异常检测（连续失败、降级次数）
+- LLM 层：读完整回合摘要 + agent 日志（parse/enrich/narrator），输出结构化 findings（severity/turn/category/detail/suggestion）
+- 两层互补：确定性覆盖"是什么"，LLM 覆盖"为什么异常"和"怎么修"
+- 适用场景：任何需要从大量运行日志中提取可操作洞察的 LLM 应用测试

@@ -255,6 +255,9 @@ def run_turn(game: dict, user_input: str,
     # Combat entry: if process_turn returned CombatInit, run the combat system
     combat_narrative = ""
     combat_result_outcome = None
+    combat_is_boss = False
+    combat_death = False
+    combat_boss_loss = False
     combat_init = result.get("combat_init")
     if combat_init and combat_init.enemies:
         try:
@@ -262,6 +265,13 @@ def run_turn(game: dict, user_input: str,
             combat_result = cs.run_combat(combat_init)
             combat_narrative = combat_result.narrative
             combat_result_outcome = combat_result.outcome
+
+            # Write back HP/SAN to Investigator
+            player = combat_init.player
+            if player and hasattr(player, 'derived'):
+                player.derived.HP = max(0, combat_result.player_hp)
+                player.derived.SAN = max(0, combat_result.player_san)
+
             # Callback to EnemyManager
             result_dict = {
                 "outcome": combat_result.outcome,
@@ -270,11 +280,18 @@ def run_turn(game: dict, user_input: str,
             world.enemy_manager.exit_combat(result_dict)
 
             # Boss post-combat resolution
-            if world.bosses and world.bosses.active_boss_id:
+            combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
+            if combat_is_boss:
                 world.bosses.resolve_outcome(combat_result)
                 if combat_result.outcome == "win":
                     world.mark_completed(world.bosses.active_boss_id, "")
                 world.bosses.set_active(None)
+                if combat_result.outcome == "loss":
+                    combat_boss_loss = True
+            else:
+                # Regular enemy combat loss = game over
+                if combat_result.outcome == "loss":
+                    combat_death = True
         except Exception:
             combat_result_outcome = "error"
 
@@ -321,10 +338,17 @@ def run_turn(game: dict, user_input: str,
             narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
             scene_update = ""
     else:
-        # Keeper returned early with plain-text brief/narrative (boss trigger, weapon pickup, etc.)
+        # Keeper returned early with plain-text brief/narrative (boss trigger, weapon pickup, combat, etc.)
         narrative_brief = display_brief or result.get("narrative", "") or "（处理中）"
         narrative = result.get("narrative", "") or ""
         scene_update = ""
+        if _turn_logger:
+            _turn_logger.log(
+                player_input=user_input,
+                enrich_result=result.get("enrich"),
+                narrator_brief=narrative_brief,
+                narrator_narrative=narrative,
+            )
 
     # Surface pending weapon offer to player (narrator may omit the pickup prompt)
     if keeper._weapon_offer:
@@ -361,12 +385,15 @@ def run_turn(game: dict, user_input: str,
         "combat": {
             "outcome": combat_result_outcome,
             "narrative": combat_narrative,
+            "is_boss": combat_is_boss,
         } if combat_result_outcome else None,
+        "combat_death": combat_death,
+        "combat_boss_loss": combat_boss_loss,
         "standoff_prompt": standoff,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "ending": ending,
         "scene_update": scene_update,
-        "game_over": ending.get("game_over", False) if ending else False,
+        "game_over": ending.get("game_over", False) if ending else False or combat_death,
         "time_agent": result.get("time_agent"),
         "npcs_visible": npcs_visible,
         "npc_events": npc_events_out,

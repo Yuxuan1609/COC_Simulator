@@ -161,6 +161,12 @@ class Keeper:
                 entity = self._find_entity_by_id(eid)
                 if not entity:
                     continue
+                # Time condition check — independent of requirement/dependency_graph
+                if self.world and self.world.clock:
+                    from scenario_core import check_time_condition as _check_tc
+                    tc = entity.get("time_condition", "") if isinstance(entity, dict) else getattr(entity, "time_condition", "")
+                    if not _check_tc(tc, self.world.clock.day, self.world.clock.time_of_day):
+                        continue
                 intent = ActionIntent(
                     action=entry_type,
                     target=entity.name if entry_type == "interaction" else "",
@@ -384,15 +390,6 @@ class Keeper:
                             "skill_tier": outcome.skill_tier,
                         })
 
-        # Boss "at" check: after scene change
-        if self.world.bosses:
-            at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
-            for boss_entity in at_bosses:
-                if self._check_boss_requirements(boss_entity):
-                    combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.world.bosses.set_active(boss_entity.get("id", boss_entity.get("boss_ref", "unknown")))
-                    return {"combat_init": combat_init, "brief": "", "narrative": ""}
-
         # Step 2.5: Combat entry detection — deterministic gate + LLM (parallel with enrich)
         combat_future = None
         combat_executor = None
@@ -467,9 +464,22 @@ class Keeper:
         if enrich_executor:
             enrich_executor.shutdown(wait=False)
 
-        # Step 3.6: Collect combat entry result
+        # Boss "at" check: after scene change (moved here to let enrich run first)
+        boss_combat_init = None
+        if self.world.bosses:
+            at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
+            for boss_entity in at_bosses:
+                boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
+                if self.world.is_entity_completed(boss_id):
+                    continue
+                if self._check_boss_requirements(boss_entity):
+                    boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.world.bosses.set_active(boss_id)
+                    break
+
+        # Step 3.6: Collect combat entry result (skip if boss already triggered)
         combat_entry = None
-        if combat_future:
+        if not boss_combat_init and combat_future:
             try:
                 raw_result = combat_future.result()
                 result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
@@ -485,8 +495,8 @@ class Keeper:
 
         # Step 3.7: Build standoff_prompt or combat_init from combat_entry
         standoff_prompt = None
-        combat_init_result = None
-        if combat_entry and combat_entry.enter_combat:
+        combat_init_result = boss_combat_init  # may already be set by Boss "at" check
+        if not combat_init_result and combat_entry and combat_entry.enter_combat:
             avoidable_by_ref: dict[str, list[str]] = {}
             hostile_iids: list[str] = []
             for iid in combat_entry.enemy_instance_ids:
@@ -635,13 +645,17 @@ class Keeper:
                 message=f"⚠ {w}"))
 
         # Boss "event" check: after judge completes
+        # Don't return early — let curate run so enrich/narrator output is preserved
         if self.world.bosses:
             event_bosses = self.world.bosses.check_by_engage_type("event")
             for boss_entity in event_bosses:
+                boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
+                if self.world.is_entity_completed(boss_id):
+                    continue
                 if self._check_boss_requirements(boss_entity):
-                    combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.world.bosses.set_active(boss_entity.get("id", boss_entity.get("boss_ref", "unknown")))
-                    return {"combat_init": combat_init, "brief": "", "narrative": ""}
+                    combat_init_result = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    self.world.bosses.set_active(boss_id)
+                    break  # only handle one boss per turn; curate + return below
 
         # Step 5: Curate
         ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
@@ -800,6 +814,7 @@ class Keeper:
                     graded_result=ent.get("graded_result"),
                     difficulty=ent.get("difficulty", ""),
                     extra=ent.get("extra"),
+                    time_condition=ent.get("time_condition", ""),
                 ))
                 self.world._npc_injected_at_ids.add(eid)
             # Inject bound auto_triggers
@@ -825,6 +840,7 @@ class Keeper:
                     graded_result=at.get("graded_result"),
                     difficulty=at.get("difficulty", ""),
                     extra=at.get("extra"),
+                    time_condition=at.get("time_condition", ""),
                 ))
                 self.world._npc_injected_at_ids.add(eid)
 
@@ -856,6 +872,7 @@ class Keeper:
                     trigger=f"你请求{npc.name}跟随你一起行动",
                     result=f"{npc.name}加入了你的队伍，你可以随时与其交谈",
                     side_effects=[], difficulty="None",
+                    time_condition="",
                 ))
 
     def _parse(self, raw: str) -> list[dict]:
@@ -1120,6 +1137,7 @@ class Keeper:
                 trigger=inter.get("trigger", ""), result=inter.get("result", ""),
                 side_effects=inter.get("side_effects", []),
                 graded_result=inter.get("graded_result"), difficulty=inter.get("difficulty", ""),
+                time_condition=inter.get("time_condition", ""),
             )
             for inter in scene_data.get("interactions", [])
         ]
@@ -1131,6 +1149,7 @@ class Keeper:
                 trigger=at.get("trigger", ""), result=at.get("result", ""),
                 side_effects=at.get("side_effects", []),
                 graded_result=at.get("graded_result"), difficulty=at.get("difficulty", ""),
+                time_condition=at.get("time_condition", ""),
             )
             for at in scene_data.get("auto_triggers", [])
         ]
@@ -1286,6 +1305,7 @@ class Keeper:
                 side_effects=ent_data.get("side_effects", []),
                 graded_result=ent_data.get("graded_result"),
                 difficulty=ent_data.get("difficulty", ""),
+                time_condition=ent_data.get("time_condition", ""),
             )
             if entity.entity_type == "event":
                 self.world.graph.events[entity.id] = entity

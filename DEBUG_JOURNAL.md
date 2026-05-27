@@ -180,3 +180,27 @@
 - **根因**：`server.py:40` 中 `app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")))` 要求目录存在，但 git 不追踪空目录
 - **解决**：`mkdir frontend\static\fonts` 创建目录占位；审计 L3 项同时闭合
 - **教训**：任何 `StaticFiles.mount` 都应用 `os.makedirs(dir, exist_ok=True)` 兜底，或用 try/except 跳过不存在的静态目录
+
+## 35. Boss 战斗重复触发 — 已完成状态未过滤
+
+- **症状**：llm_player 6 轮中 T4/T5/T6 连续触发 combat（`combat_outcome=win`），同一 Boss 每回合重复进入战斗。`brief` 始终为 "（处理中）"，enrich/narrator 无输出
+- **根因**：`keeper.process_turn()` 的 Boss "at" 和 "event" 检查只判断 `_check_boss_requirements()`，不检查 `runtime_state` 中 Boss 是否已完成。`check_by_engage_type("event")` 不按场景过滤，所有 event 型 Boss 每回合都检查 → 需求为空的 Boss 无条件重复触发
+- **解决**：两个 Boss 检查路径都加 `world.is_entity_completed(boss_id)` 过滤，已完成 Boss 跳过
+
+## 36. Boss "at" 检查过早 return 导致 enrich 被跳过
+
+- **症状**：llm_player 战斗回合 `brief="（处理中）"`，narrator 输出为空，enrich degrade 计数递增
+- **根因**：Boss "at" 检查在 `process_turn()` 的 Step 2（Judge）之后立即执行，触发时直接 `return {"combat_init": ..., "brief": "", "narrative": ""}` — 此时 enrich 尚未启动
+- **解决**：将 Boss "at" 检查从 Judge 之后移到 Step 3.5（enrich 结果收集）之后，同时在 Boss 触发时不再 early return，改为设置 `combat_init_result` 让函数继续走到 curate
+
+## 37. TurnLogger 战斗回合漏记
+
+- **症状**：llm_player turn_logs 目录只有 turn_01/02/03，T4-T6 缺失
+- **根因**：`game_loop.run_turn()` 中 `_turn_logger.log()` 只在 `if hasattr(brief, 'scene_snapshot')` 分支内调用。战斗回合 Keeper 返回空 brief（无 scene_snapshot），走 else 分支 → TurnLogger 未调用
+- **解决**：在 else 分支也加 `_turn_logger.log()` 调用，用 display_brief / result.narrative 替代 narrator 输出
+
+## 38. llm_player monkey-patch 用 modify_stat 写 SAN
+
+- **症状**：`modify_stat("SAN", -san_loss)` 不生效——SAN 是 DerivedStats 字段，不是 Stats 核心属性
+- **根因**：`Investigator.modify_stat()` 只处理 8 项核心属性（STR/CON/SIZ/...），HP/SAN/MP 等派生属性在 `DerivedStats` 上。monkey-patch 错误地用 `modify_stat` 写 SAN
+- **解决**：改为 `player.derived.SAN = max(0, player.derived.SAN - san_loss)`，与 HP 写入一致

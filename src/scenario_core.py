@@ -91,7 +91,8 @@ class Entity:
     side_effects: list[str] = field(default_factory=list)  # @markup strings
     graded_result: dict | None = None
     difficulty: str = ""           # None/regular/hard/extreme
-    extra: dict | None = None      # time_range, time_gated, etc.
+    extra: dict | None = None      # time_range, etc.
+    time_condition: str = ""      # JSON list of {"day": ">=N|<=N|N|ALL", "times": ["时段",...]}, e.g. [{"day":">=2","times":["夜间","早晨"]}]. [] = no constraint
 
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
@@ -132,6 +133,48 @@ def has_ending(text: str) -> tuple[str | None, str | None]:
     if match:
         return match.group(1), match.group(2)
     return None, None
+
+
+_TIME_CONDITION_TIMES = {"凌晨", "早晨", "白天", "黄昏", "夜间"}
+
+
+def check_time_condition(time_condition: str, day: int, time_of_day: str) -> bool:
+    """Check if current game time satisfies entity's time_condition.
+
+    time_condition format: JSON array of {"day": ">=N|<=N|N|ALL", "times": ["时段",...]},
+    or []/"" for no constraint.
+
+    Returns True if no constraint or any entry matches (OR logic within array).
+    Each entry is AND between day condition and times check.
+    """
+    if not time_condition or time_condition == "[]":
+        return True
+    try:
+        entries = json.loads(time_condition)
+    except (json.JSONDecodeError, TypeError):
+        return True  # malformed -> allow
+    if not isinstance(entries, list) or not entries:
+        return True
+    for entry in entries:
+        day_str = entry.get("day", "ALL") if isinstance(entry, dict) else "ALL"
+        times = entry.get("times", ["ALL"]) if isinstance(entry, dict) else ["ALL"]
+        # check day
+        if day_str != "ALL":
+            if day_str.startswith(">="):
+                if day < int(day_str[2:]):
+                    continue
+            elif day_str.startswith("<="):
+                if day > int(day_str[2:]):
+                    continue
+            else:
+                if day != int(day_str):
+                    continue
+        # check times
+        times_set = set(times)
+        if "ALL" not in times_set and time_of_day not in times_set:
+            continue
+        return True
+    return False
 
 
 
@@ -243,6 +286,7 @@ class DirectedGraph:
                     side_effects=inter.get("side_effects", []),
                     graded_result=inter.get("graded_result"),
                     difficulty=inter.get("difficulty", ""),
+                    time_condition=inter.get("time_condition", ""),
                 ))
 
             auto_triggers = []
@@ -257,6 +301,7 @@ class DirectedGraph:
                     side_effects=at.get("side_effects", []),
                     graded_result=at.get("graded_result"),
                     difficulty=at.get("difficulty", ""),
+                    time_condition=at.get("time_condition", ""),
                 ))
 
             from_edges = [
@@ -296,6 +341,7 @@ class DirectedGraph:
                 side_effects=item.get("side_effects", []),
                 graded_result=item.get("graded_result"),
                 difficulty=item.get("difficulty", ""),
+                time_condition=item.get("time_condition", ""),
             )
 
     # ── 查询 ──
@@ -412,6 +458,7 @@ class DirectedGraph:
                     side_effects=inter.get("side_effects", []),
                     graded_result=inter.get("graded_result"),
                     difficulty=inter.get("difficulty", ""),
+                    time_condition=inter.get("time_condition", ""),
                 )
                 for inter in node_data.get("interactions", [])
             ]
@@ -428,6 +475,7 @@ class DirectedGraph:
                     side_effects=at.get("side_effects", []),
                     graded_result=at.get("graded_result"),
                     difficulty=at.get("difficulty", ""),
+                    time_condition=at.get("time_condition", ""),
                 )
                 for at in node_data.get("auto_triggers", [])
             ]
@@ -457,6 +505,7 @@ class DirectedGraph:
                 side_effects=ev_data.get("side_effects", []),
                 graded_result=ev_data.get("graded_result"),
                 difficulty=ev_data.get("difficulty", ""),
+                time_condition=ev_data.get("time_condition", ""),
             )
         return graph
 

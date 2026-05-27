@@ -70,6 +70,7 @@ class CombatAction:
     hp_after: int = 0
     narrative: str = ""
     success: bool = False
+    round_num: int = 0
 
 
 @dataclass
@@ -84,6 +85,7 @@ class CombatState:
     is_player_turn: bool = True
     finished: bool = False
     log: list[CombatAction] = field(default_factory=list)
+    full_log: list[CombatAction] = field(default_factory=list)
     _player_dodging: bool = False
 
 
@@ -130,12 +132,10 @@ class CombatSystem:
         defeated = [e.instance_id for e in combat_init.enemies
                     if getattr(e, 'hp', 1) <= 0 or getattr(e, 'status', '') == 'dead']
 
-        # Placeholder: LLM-enhanced combat narrative (O9)
-        combat_narrative = ""
-        if self.llm_enhancement:
-            combat_narrative = self._generate_combat_narrative(
-                state, combat_init.player, combat_init.scene
-            )
+        # LLM combat summary narrative
+        combat_narrative = self._generate_combat_narrative(
+            state, combat_init.player, combat_init.scene
+        )
 
         return CombatResult(
             outcome=outcome,
@@ -147,13 +147,52 @@ class CombatSystem:
         )
 
     def _generate_combat_narrative(self, state, player, scene: str) -> str:
-        """Generate LLM combat summary narrative (O9 — not yet implemented).
-        
-        Placeholder: collects all per-action narratives from state.log
-        and calls build_combat_narrative_prompt() → LLM.
-        Currently returns empty string until COMBAT_LLM_ENHANCEMENT is enabled.
-        """
-        return ""
+        """Generate LLM combat summary from full round log."""
+        if not state.full_log:
+            return ""
+        try:
+            from llm import call_deepseek
+            from config_llm import LLM_FLASH_MODEL
+
+            log_lines = []
+            enemies_desc = ", ".join(
+                f"{getattr(e, 'enemy_ref', getattr(e, 'name', '未知'))}"
+                for e in state.enemies
+            )
+
+            for a in state.full_log:
+                hp_info = f" HP{a.hp_before}→{a.hp_after}" if a.damage > 0 else ""
+                actor = "调查员" if a.actor == "player" else a.actor
+                log_lines.append(
+                    f"第{a.round_num}轮 {actor} {a.action_type}"
+                    f"({a.skill_name}={a.skill_value} D100={a.roll} {a.tier})"
+                    f" 伤害{a.damage}{hp_info}"
+                )
+
+            player_name = getattr(player, 'name', '调查员') if player else '调查员'
+            prompt = f"""你是TRPG战斗叙事者。根据以下战斗记录生成一段简洁的摘要。
+
+【场景】{scene}
+【调查员】{player_name}
+【敌人】{enemies_desc}
+
+【战斗日志】
+{chr(10).join(log_lines)}
+
+返回 JSON：
+{{"summary": "战斗摘要（中文≤120字），包含关键回合和最终结果"}}
+直接输出 JSON。"""
+
+            import json as _json
+            response = call_deepseek(
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是TRPG战斗叙事者，简洁概述战斗过程。",
+                fallback_schema={"summary": ""},
+            )
+            data = _json.loads(response) if isinstance(response, str) else response
+            return data.get("summary", "") or ""
+        except Exception:
+            return ""
 
     # ── Init ──
 
@@ -428,7 +467,9 @@ class CombatSystem:
         for idx, iid in enumerate(state.initiative_order):
             if iid == "player":
                 pa = self._resolve_player_action(state, player, player_action_id, target_iid, environment_actions)
+                pa.round_num = state.round
                 state.log.append(pa)
+                state.full_log.append(pa)
                 if state.finished:
                     return state.log
                 continue
@@ -438,7 +479,9 @@ class CombatSystem:
                 continue
 
             ea = self._resolve_enemy_action(state, enemy, player)
+            ea.round_num = state.round
             state.log.append(ea)
+            state.full_log.append(ea)
 
             if state.player_hp <= 0:
                 state.finished = True

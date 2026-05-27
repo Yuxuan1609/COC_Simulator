@@ -94,7 +94,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         player = game["keeper"].world.player
         san_loss = min(10, player.derived.SAN // 6)
         hp_loss = min(4, player.derived.HP // 4)
-        player.modify_stat("SAN", -san_loss)
+        player.derived.SAN = max(0, player.derived.SAN - san_loss)
         player.derived.HP = max(1, player.derived.HP - hp_loss)
         return CombatResult(
             outcome="win",
@@ -124,6 +124,18 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     set_llm_log_dir(str(log_dir))
     turn_logger = TurnLogger(log_dir=str(log_dir / "turn_logs"))
     set_turn_logger(turn_logger)
+
+    def _log_player_call(turn: int, system_prompt: str, user_prompt: str, response):
+        """Write full player LLM interaction (system + user + response) to log."""
+        player_log_path = log_dir / "player_llm.txt"
+        resp_str = json.dumps(response, ensure_ascii=False, indent=2) if isinstance(response, dict) else str(response)
+        with open(player_log_path, "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"Turn {turn}\n")
+            f.write(f"{'='*60}\n")
+            f.write(f"--- System ---\n{system_prompt}\n\n")
+            f.write(f"--- User ---\n{user_prompt}\n\n")
+            f.write(f"--- Response ---\n{resp_str}\n\n")
 
     short_history: list[str] = []
     long_memory = ""
@@ -172,6 +184,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
                 response = json.loads(response)
             action = response.get("action", "环顾四周")
             reasoning = response.get("reasoning", "")
+            _log_player_call(turn + 1, system, user, json.dumps(response, ensure_ascii=False, indent=2))
         except Exception as e:
             print(f"  [WARN] LLM call failed: {e}")
             action = "环顾四周"
@@ -217,7 +230,11 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             break
 
         if (turn + 1) % compress_interval == 0:
+            before_compress = list(short_history)
             long_memory = compress_memory(short_history)
+            _log_player_call(turn + 1, MEMORY_COMPRESS_SYSTEM,
+                           MEMORY_COMPRESS_TEMPLATE.format(short_history="\n".join(before_compress)),
+                           long_memory)
             short_history = []
 
         turn += 1
