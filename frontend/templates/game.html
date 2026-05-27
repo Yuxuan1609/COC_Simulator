@@ -303,5 +303,23 @@
       }
     };
   }
+
+  // == Auto-detect initialized game on page load ==
+  (async function() {
+    try {
+      const resp = await fetch('/api/game/state');
+      if (!resp.ok) return;
+      const state = await resp.json();
+      if (state.location && state.name) {
+        updateCharHUD({ name: state.name, hp: state.hp, hp_max: state.hp, san: state.san });
+        document.getElementById('hud-scene').textContent = state.location;
+        document.getElementById('game-setup').style.display = 'none';
+        document.getElementById('game-screen').style.display = '';
+        document.getElementById('user-input').focus();
+        document.getElementById('compact-narrative').innerHTML = '<span class="text-aged-gold">' + state.location + '</span> -- 游戏已就绪';
+        connectWS();
+      }
+    } catch(e) {}
+  })();
 </script>
 {% endblock %}
