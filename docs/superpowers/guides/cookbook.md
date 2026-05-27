@@ -384,41 +384,222 @@ L1/L2/L3 数据模型定义
 
 ---
 
-## 18. 前端 v2 (FastAPI + HTMX + Tailwind)
+## 18. 前端 v2 (FastAPI + HTMX + Static Tailwind)
 
-### `frontend/server.py` (72 行)
-FastAPI 统一入口，挂载 StaticFiles + Jinja2Templates + 5 个 router（files/launcher/character/game/editor）。`__main__` 模式自动 `webbrowser.open()`。
+**设计思路**：Server-rendered SPA（Single Page Application）风格，每页是一个完整的 Jinja2 模板。交互通过 HTMX 声明式 AJAX 实现（无 React/Vue），页面间导航用 `<a href>` 全页加载。游戏回合用 `fetch()` + JSON 响应驱动，不依赖 HTMX 的回合流程。WebSocket 仅用于流水线步骤推送，不承载游戏数据。
 
-### 路由
+### 18.1 项目结构
 
-| 文件 | 路由前缀 | 功能 |
-|------|----------|------|
-| `frontend/routers/launcher.py` | `/` | 启动页：模组生成（上传 docx → WebSocket 进度 → 下载 JSON）+ 参数配置（API Key、模型、阈值）+ 子页面导航 |
-| `frontend/routers/character.py` | `/character` | 3 步车卡向导（基本信息+属性 → 职业+技能 → 预览+导出）+ LLM 描述生成 (`/llm`) + 技能列表 (`/skills-list`) |
-| `frontend/routers/game.py` | `/game` | 游戏循环：初始化 (`/init`) → 回合 (`/turn`) + WebSocket 步骤进度推送 + 命令 (`/command`) + 状态查询 (`/state`, `/npcs`) |
-| `frontend/routers/editor.py` | `/editor` | JSON 轻量编辑器：文件浏览 + 加载/保存/校验 |
-| `frontend/routers/files.py` | `/files` | 可复用文件/目录浏览 API（共享组件） |
+```
+frontend/
+├── server.py                    # FastAPI 入口，挂载 5 个 router + StaticFiles + Jinja2
+├── static/css/tailwind-built.css # 预编译静态 Tailwind（不再用 CDN）
+├── templates/
+│   ├── base.html                # 根布局：CSS 引入 + HTMX + 全局 JS + 文件浏览模态框
+│   ├── launcher.html            # 启动页：3-tab 导航（模组生成/开始游戏/其他工具）
+│   ├── game.html                # 游戏主界面：双面板布局 + 设置屏幕
+│   ├── character.html           # 3 步车卡向导外壳
+│   ├── editor.html              # JSON 编辑器 3 栏布局
+│   └── partials/
+│       ├── launcher-module-gen.html    # 模组生成表单 + 流水线步骤 + 库配置
+│       ├── launcher-game-start.html   # 开始游戏表单（L1/L2/L3 + 角色）
+│       ├── launcher-config.html       # 全局设置（模型/thinking/debug）
+│       ├── char-step1.html / step2 / step3  # 车卡 3 步向导 partials
+│       ├── file-listing.html          # 文件浏览器列表（/api/files 返回）
+│       └── help-*.html               # 帮助文本（game/editor/character）
+└── routers/
+    ├── launcher.py   # /           启动页 + /api/pipeline/start + /api/pipeline/validate
+    ├── game.py       # /game       游戏循环 API + WebSocket + 角色卡
+    ├── character.py  # /character  车卡创建 API + LLM 描述生成
+    ├── editor.py     # /editor     JSON 编辑 API
+    └── files.py      # /api/files  文件/目录浏览 API
+```
 
-### 模板
+### 18.2 设计理念
 
-| 文件 | 功能 |
+| 原则 | 说明 |
 |------|------|
-| `frontend/templates/base.html` | 根布局（Tailwind CDN + HTMX + Jinja2 blocks） |
-| `frontend/templates/launcher.html` | 启动页 |
-| `frontend/templates/character.html` | 车卡 3 步向导 |
-| `frontend/templates/game.html` | 游戏主界面（视觉小说布局 + 展开式会话） |
-| `frontend/templates/editor.html` | JSON 编辑器（3 栏布局） |
-| `frontend/templates/partials/` | 可复用组件：file-browser / step-indicator / help-*.html |
+| HTMX 声明式 | 所有数据加载/表单提交用 `hx-get`/`hx-post`/`hx-target`/`hx-swap` 属性声明，无手写 AJAX |
+| 返回 HTML 片段 | 后端端点返回 Jinja2 渲染的 HTML partial，HTMX 直接 swap 到目标 DOM |
+| 游戏回合例外 | `/api/game/turn` 返回 JSON（非 HTML），前端 `handleTurnResponse()` 解析后构造 DOM |
+| 全局共享组件放 base.html | 文件浏览模态框 `#file-modal`、`openFileBrowser()`/`closeFileModal()`/`pickFile()` 在 base.html 中定义 |
+| 静态 CSS | 预编译 `tailwind-built.css`，包含全部使用的 utility class，避免 CDN 运行时编译的内存泄漏 |
+| 双面板游戏布局 | 左 60% 叙事区 + 右 40% 角色面板，收起态显示头像+HP/SAN 条，点击展开完整卡 |
 
-### 技术栈
+### 18.3 各页面详细说明
 
-| 层 | 技术 |
-|----|------|
-| 服务器 | FastAPI + Jinja2 |
-| 交互 | HTMX (~14KB，声明式 AJAX，服务端渲染 HTML 片段) |
-| 样式 | Tailwind CSS v4 (CDN 开发) |
-| 实时 | WebSocket（游戏步骤进度 + 管线进度） |
-| 打包 | PyInstaller `--add-data` 模板+静态文件 + `--hidden-import` fastapi/uvicorn |
+#### server.py (`frontend/server.py`)
+- FastAPI app，注册 5 个 router（顺序：files → launcher → character → game → editor）
+- 自动从 `config_llm.template.py` 创建配置模板
+- `if __name__ == "__main__"`：自动 `webbrowser.open()`，`uvicorn.run("127.0.0.1", 8080)`
+- `app.mount("/static", StaticFiles(...))` 提供静态 CSS
+
+#### base.html (`frontend/templates/base.html`)
+- 引入 `<link rel="stylesheet" href="/static/css/tailwind-built.css">`
+- 引入 `<script src="https://unpkg.com/htmx.org@2.0.4">`
+- 内联 CSS：`narrative-flash` 动画、`line-clamp-*`、`image-crossfade`
+- 全局 JS 函数：`openFileBrowser()` / `closeFileModal()` / `pickFile(path, targetId)`
+- `#file-modal` 模态框（`hidden fixed inset-0 z-50`），内含 `#file-browser-content` HTMX swap 目标
+
+#### launcher.html — 启动页 3 标签布局
+- 左侧 nav (w-56)：模组生成 / 开始游戏 / 其他工具 三个 nav-link
+- 底部链接：创建调查员 / JSON 编辑器
+- 右侧 `#tab-content`：通过 HTMX 加载 active tab 的 partial
+- Tab 切换逻辑：`onclick` 内联 JS 更新 nav-link active 样式 + `hx-get` 加载对应 partial
+
+#### launcher-module-gen.html — 模组生成标签
+- 表单 `hx-post="/api/pipeline/start"` `hx-trigger="submit"`
+- 字段：source(docx/txt) + module_name + output_dir
+- 标准库配置：weapon_path / enemy_path / boss_path（含文件浏览器按钮）
+- 步骤选择器 `hx-post="/api/pipeline/validate"` → 显示校验结果
+- 提交按钮 "开始生成"
+
+#### launcher-game-start.html — 开始游戏标签
+- 表单 `id="init-form"`（无 onsubmit，用 button onclick）
+- 3 个模组文件输入（L2/L1/L3）+ 角色卡路径 + 文件浏览器
+- "开始游戏" 按钮调用内联 `startGame()` 函数：POST `/api/game/init` → 成功后 `window.location.href = '/game'`
+- **JS 作用域注意**：`startGame()` 定义在此文件末尾的 `<script>` 中，因为 launcher 页面没有 game.html 的 JS 上下文
+
+#### launcher-config.html — 其他工具 & 设置标签
+- JSON 编辑器链接
+- 全局 LLM 配置表单：model / flash_model / llm_timeout_ms / reasoning_effort
+- Checkbox：thinking / combat_llm_enhancement / debug_mode
+- `hx-post="/api/config/save"` 保存到 `config.json`
+
+#### game.html — 游戏主界面（双面板）
+
+**设置屏幕** (`#game-setup`，初始可见):
+- 简化版的快速开始表单（与 launcher 的 game-start 独立）
+- 3 个模组文件输入 + 角色卡路径
+- 页面加载时自动检测 `/api/game/state`：如果游戏已初始化，直接跳到游戏屏幕
+
+**游戏屏幕** (`#game-screen`，初始隐藏，双面板):
+
+左面板（flex-1）:
+- 顶栏：场景名 (`#hud-scene`) + 时间显示 (`#time-display`) + 步骤指示器 (`#step-indicator`) + 帮助按钮
+- 叙事区 (`#narrative-area`)：`#compact-narrative` 显示当前回合结果 + `#help-panel`（默认隐藏）+ `#chat-history`（展开面板时可见）
+- 底部输入栏：`#user-input` + "行动"按钮 + "▲ 展开"
+- 展开面板 (`#chat-panel`)：`#user-input-expanded` + "行动"按钮
+
+右面板 (w-72, `#char-panel`):
+- 收起态 (`#char-panel-collapsed`)：头像占位 (`#char-avatar`) + 角色名 (`#char-name`) + 描述 (`#char-desc`) + HP/SAN 进度条 (`#char-hp-bar` / `#char-san-bar`) + 数值文本
+- 点击 → `toggleCharCard()`：展开 `#char-panel-expanded`，通过 `htmx.ajax('GET', '/api/game/character-card')` 加载完整卡
+
+**关键 JS 函数**（定义在 game.html 的 `<script>` 中）:
+| 函数 | 功能 |
+|------|------|
+| `initGame(e)` | 设置屏幕的表单提交：POST `/api/game/init` → 解析 JSON → `updateCharHUD()` → 切换到游戏屏幕 → `connectWS()` |
+| `sendTurn()` | 发送回合：POST `/api/game/turn` → 按 content-type 分派（JSON → `handleTurnResponse()`，HTML → 直接渲染）→ 刷新 HUD/npc/场景 |
+| `handleTurnResponse(userText, data)` | 解析 JSON 回合响应：skill_results → combat → narrative_html → game_over |
+| `toggleCharCard()` | 点击角色面板 → HTMX 加载 `/api/game/character-card` 展开 |
+| `updateCharHUD(data)` | 更新角色面板 HP/SAN 进度条和数值 + 头像 |
+| `togglePanel(show)` | 展开/收起聊天面板 |
+| `addToHistory(userMsg, responseHtml)` | 追加到 `chatMessages[]`，限制 200 条 + 渲染最近 50 条 |
+| `connectWS()` | WebSocket `/api/game/progress`，接收流水线步骤推送，`onopen` 重置 `wsRetry`，`onclose` 指数退避重连 |
+| 页面加载检测 | IIFE 调用 `/api/game/state`，如果已初始化则跳过设置屏幕 |
+
+#### 部分 (partials)
+| 文件 | 加载方式 | 功能 |
+|------|----------|------|
+| `file-listing.html` | `/api/files` 返回 | 文件浏览器：面包屑 + 目录列表 + 文件列表，`onclick="pickFile(path, targetId)"` |
+| `help-game.html` | 硬编码在 game.html 的 `#help-panel` | 命令参考文本（已弃用，改用内联 HTML） |
+| `char-step1/2/3.html` | `/character/step/{n}` | 车卡 3 步向导 |
+
+### 18.4 后端 API 端点详情
+
+#### launcher.py 端点
+| 路由 | 方法 | 功能 | 返回 |
+|------|------|------|------|
+| `/` | GET | 启动页 | launcher.html |
+| `/launcher/tabs/{tab}` | GET | 动态加载 tab partial | launcher-module-gen / game-start / config |
+| `/api/config/save` | POST | 保存 config.json | 纯文本 "配置已保存" |
+| `/api/config/load` | GET | 读取 config.json | JSON |
+| `/api/pipeline/start` | POST | 启动模组生成管线（子进程） | HTML 状态消息 |
+| `/api/pipeline/validate` | POST | 校验续跑中间文件 | HTML 校验结果 |
+
+#### game.py 端点
+| 路由 | 方法 | 功能 | 返回 |
+|------|------|------|------|
+| `/game` | GET | 游戏页面 | game.html |
+| `/api/game/init` | POST | 初始化游戏引擎 + 自动跑 [游戏开始] 首回合 | JSON `{success, location, hp, san, name, initial_brief, initial_narrative}` |
+| `/api/game/turn` | POST | 回合入口。`/` 开头走 `_handle_slash_command()` 短路，否则走 `run_turn()` | JSON `{brief, narrative, narrative_html, combat, skill_results, game_over, ending, timestamp}` |
+| `/api/game/player-status` | GET | 玩家 HP/SAN。`?format=json` 返回 JSON 含 `hp_max` + `avatar_url` | HTML 或 JSON |
+| `/api/game/scene` | GET | 当前场景信息 | HTML |
+| `/api/game/npcs` | GET | 当前场景可见 NPC | HTML |
+| `/api/game/state` | GET | 完整游戏状态快照 | JSON `{location, turn, hp, san, name}` |
+| `/api/game/character-card` | GET | 完整角色卡 HTML（属性/技能/武器/物品/头像） | HTML |
+| `/api/game/command` | POST | 旧命令端点（仍可用，斜杠命令现在走 process_turn 短路） | HTML |
+| `/api/game/progress` | WebSocket | 流水线步骤推送 `{step, status}` | JSON stream |
+
+**斜杠命令列表**（`_handle_slash_command()` 处理）:
+`/help` `/scene` `/char` `/flags` `/events` `/save <slot>` `/load <slot>` `/quit` `/exit` `/reset`
+
+#### character.py 端点
+| 路由 | 方法 | 功能 |
+|------|------|------|
+| `/character` | GET | 车卡向导页 |
+| `/character/step/{n}` | GET | 步骤 1/2/3 partial |
+| `/character/roll` | POST | 掷骰生成属性 |
+| `/character/skills-list` | GET | 按职业加载技能列表 |
+| `/character/generate-description` | POST | LLM 生成外貌/个人描述 |
+| `/character/export` | POST | 导出 Investigator JSON（含 `avatar_url`） |
+
+#### editor.py 端点
+| 路由 | 方法 | 功能 |
+|------|------|------|
+| `/editor` | GET | JSON 编辑器页 |
+| `/editor/load?path=` | GET | 加载 JSON 为可折叠树 |
+| `/editor/save` | POST | 保存 JSON 到文件 |
+| `/editor/validate` | POST | 校验 JSON 结构 |
+
+#### files.py 端点
+| 路由 | 方法 | 功能 |
+|------|------|------|
+| `/api/files?dir=&target_input=` | GET | 文件浏览器：面包屑 + 目录 + 文件列表 |
+
+### 18.5 数据流关键路径
+
+**从启动到游戏**：
+```
+Launcher(/) → 点击"模组生成"tab → hx-get /launcher/tabs/module-gen
+           → 点击"开始游戏"tab → hx-get /launcher/tabs/game-start
+           → 填写表单 → 点击"开始游戏" → startGame()
+           → POST /api/game/init → 初始化 game_instance
+           → 成功 → window.location.href = '/game'
+Game(/game) → 页面加载 → IIFE fetch /api/game/state
+           → 已初始化 → 跳过设置屏幕 → updateCharHUD() → connectWS()
+```
+
+**单回合流程**：
+```
+用户输入 → sendTurn() → POST /api/game/turn (FormData)
+  ├─ 以 "/" 开头 → _handle_slash_command() → 返回 JSON {narrative_html: cmd_result}
+  └─ 否则 → run_turn() → 返回 JSON {brief, narrative, combat, skill_results, ...}
+       → handleTurnResponse() → 构建 HTML → 更新 #compact-narrative
+       → fetch /api/game/player-status?format=json → updateCharHUD()
+       → htmx.ajax GET /api/game/scene → #hud-scene
+```
+
+**WebSocket 进度流**：
+```
+connectWS() → ws://host/api/game/progress
+  ← {step: "parse", status: "running"}
+  ← {step: "parse", status: "done"}
+  ...
+  ← {step: "complete"}
+→ 更新 #step-indicator
+→ 断连时指数退避重连，wsRetry 在 onopen 清零
+```
+
+### 18.6 常见问题排查
+
+| 问题 | 检查点 |
+|------|--------|
+| 按钮无反应 | (a) 函数是否定义在当前页面的 `<script>` 中（HTMX partial 的 JS 作用域） (b) hx-post 目标元素是否存在 |
+| 文件浏览器不弹出 | `#file-modal` 是否在 base.html 中（`{% block body %}` 之后） |
+| 样式缺失 | `tailwind-built.css` 是否包含该类（浏览器 DevTools → Elements → Styles → 搜索 class） |
+| 斜杠命令不生效 | `process_turn` 的 `/` 开头拦截是否在 `get_game()` 之前执行 |
+| 页面加载显示设置屏幕 | `/api/game/state` 是否返回已初始化的游戏（检查 `_game_instance` 全局变量） |
 
 ---
 

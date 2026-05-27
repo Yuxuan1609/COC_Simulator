@@ -139,7 +139,28 @@
 - 在重 LLM 处理（Parse）前插入轻量 flash 消歧网关，单职责：判断输入清晰度 + 模糊时生成引导反问
 - 跨 turn 上下文整合：缓存上轮模糊意图+反问，下轮输入到达时尝试整合为完整行动（"搜一下"+"抽屉"→"搜查抽屉"），通过 `resolved_text` 传递给下游
 - 兜底机制：连续 2 次模糊后第 3 次强制 clear，避免死循环
+- **元命令白名单**：消歧网关必须排除斜杠命令（`/help`、`/scene` 等）——在 LLM 调用前就拦截，否则会被消歧 LLM 误判为模糊输入返回反问文本
 - 适用场景：任何接受用户自然语言输入并需要精确 action/matching 的 LLM 系统——消歧放在输入端比放在匹配端更有效
+
+## Tailwind CDN + HTMX 动态页面的内存泄漏
+- Tailwind CDN 在浏览器运行时动态编译：HTMX 每次 swap 新 HTML 片段（含新 class）→ CDN 增量追加 `<style>` → 样式表无限增长，最终浏览器 OOM
+- 解决方案：预编译静态 CSS 文件，包含项目中所有使用到的 utility class。长远考虑用 Tailwind CLI（`npx tailwindcss -i input.css -o output.css`）基于模板自动生成
+- 同样触发条件：任何 CDN 运行时编译方案 + 长生命周期单页应用（HTMX/Turbo/Unpoly/LiveView）都会遇到
+
+## Jinja2 extends 中的共享 UI 组件——放在 base.html 而非页面模板
+- 跨页面共享的 UI 组件（文件浏览器模态框、通知弹窗）应放在 `base.html` 的 `{% block body %}{% endblock %}` 之后，避免页面重写时被删除
+- JavaScript 函数（`openFileBrowser()`、`closeFileModal()`）也放在 base.html 中，与 DOM 元素同层
+- 反例：本 session 重写 `launcher.html` 和 `game.html` 时意外删除了两处的 `#file-modal`，因为模态框是页面模板的一部分而非共享组件
+
+## HTMX Partial 加载中的 JS 跨页面作用域
+- HTMX 通过 `hx-get` 加载 HTML partial 时，partial 内的 `onsubmit="fn()"` 引用函数必须在**当前页面的全局作用域**中定义——函数只存在于定义它的模板所 extend 的页面中
+- 本 session 案例：Launcher 页通过 HTMX 加载 `launcher-game-start.html` partial，其中调用 `initGame()`，但该函数定义在 `game.html` 的 `<script>` 块中，launcher 页面不可见
+- 解决：在 partial 文件末尾内联所需 JS 函数；或把跨页面共享的函数提升到 `base.html`
+
+## Subagent 批量前端重写的回归风险
+- 大规模 HTML 模板重写（本 session 重写了 `game.html`、`launcher.html` 及 3 个 partials）后，交互功能（按钮、模态框、表单提交）极容易断裂
+- 每次重写后应执行的功能回归检查清单：(a) 所有按钮 onclick/hx-post 是否触发 (b) 共享 DOM 元素（模态框）是否仍存在 (c) JS 函数是否在正确的页面作用域内 (d) CSS 静态文件中是否遗漏了新页面使用的 class
+- Subagent 天然不感知"页面 B 的某个功能依赖页面 A 中的某个 DOM 元素"——Plan 必须在 Task 末尾显式列出回归检查项
 
 ## 项目死代码周期性审计
 - 多维度系统性扫描：git 跟踪的临时备份（tmp_*）、stale worktree（`git worktree list`）、无引用源文件（grep import 全项目）、根目录过期文档（TODO/CHANGELOG）、IDE 生成文件（.iml）

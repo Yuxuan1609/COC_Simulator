@@ -204,3 +204,32 @@
 - **症状**：`modify_stat("SAN", -san_loss)` 不生效——SAN 是 DerivedStats 字段，不是 Stats 核心属性
 - **根因**：`Investigator.modify_stat()` 只处理 8 项核心属性（STR/CON/SIZ/...），HP/SAN/MP 等派生属性在 `DerivedStats` 上。monkey-patch 错误地用 `modify_stat` 写 SAN
 - **解决**：改为 `player.derived.SAN = max(0, player.derived.SAN - san_loss)`，与 HP 写入一致
+
+## 39. Tailwind CDN 导致浏览器标签页内存泄漏
+
+- **症状**：`python frontend/server.py` 运行一段时间后浏览器卡死/系统变慢，后端单独跑正常
+- **根因**：`base.html` 使用 `<script src="https://cdn.tailwindcss.com">` 运行时编译，HTMX 每次返回新 HTML 片段带新 class → CDN 编译器增量追加到 `<style>` → 样式表无限增长
+- **解决**：替换为预编译的静态 `tailwind-built.css`，包含项目中全部使用到的 utility class。同时给 `chatMessages` 渲染加 `slice(-50)` DOM 上限，WebSocket `wsRetry` 在 `onopen` 时清零
+
+## 40. 文件浏览器模态框被页面重写意外删除
+
+- **症状**：Launcher 和 Game 页面的文件浏览按钮无反应，控制台无报错
+- **根因**：重写 `launcher.html` 和 `game.html` 时把 `#file-modal` + `#file-browser-content` 删除了，`base.html` 中的 `openFileBrowser()` 仍然调用 `getElementById('file-modal')` 返回 null
+- **解决**：将 `#file-modal` 移到 `base.html` 的 `{% block body %}{% endblock %}` 之后作为全局共享组件，所有页面继承。同时补上静态 CSS 中缺失的 `bg-[#141414]`、`w-[550px]`、`max-h-[70vh]` 等 class
+
+## 41. Launcher 页"开始游戏"按钮失灵 — JS 跨页面作用域
+
+- **症状**：Launcher 的"开始游戏"标签中点击按钮无反应
+- **根因**：表单 `onsubmit="initGame(event)"` 调用 `initGame()`，但该函数定义在 `game.html` 的 `<script>` 中。Launcher 页面通过 HTMX 加载 partial，`game.html` 的 JS 不在当前页面上下文中
+- **解决**：在 `launcher-game-start.html` 末尾内联 `startGame()` 函数，`POST /api/game/init` 成功后 `window.location.href = '/game'` 跳转。同时在 `game.html` 加页面加载自动检测 —— 如果 `/api/game/state` 返回已初始化的游戏，直接切换到游戏界面跳过设置屏幕
+
+## 42. Pre-parse 消歧网关拦截斜杠命令
+
+- **症状**：游戏中输入 `/help`、`/scene` 等命令无效，被当作普通文本进入 LLM 管线
+- **根因**：`keeper.process_turn()` 中的 `pre_parse.disambiguate()` 对 ALL 输入执行消歧，包括斜杠命令。消歧 LLM 可能对 `/help` 返回 ambiguous，导致返回反问文本而非执行命令
+- **解决**：在 `game.py` 的 `process_turn` 入口处拦截 —— 输入以 `/` 开头直接走 `_handle_slash_command()` 同步处理，跳过整个 LLM 管线。同时新增 `/quit`（原 `quit` 无斜杠）
+
+## 43. game.html API 返回格式切换遗漏 — 后端已改 JSON 但遗留 HTMLResponse 异常路径
+
+- **症状**：（潜在）后端 `process_turn` 成功时返回 dict（JSON），但 try/except 和 get_game 失败路径仍返回 `HTMLResponse`，前端 `sendTurn()` 按 `content-type` 自适应兼容
+- **根因/解决**：`process_turn` 三个返回路径中两个是 `HTMLResponse`（错误场景），一个是 `dict`（成功）。前端 `sendTurn()` 通过 `resp.headers.get('content-type')` 分派，HTML 走旧逻辑，JSON 调用 `handleTurnResponse()`。这种混合模式是过渡方案，长期建议统一为 JSON
