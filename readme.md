@@ -414,3 +414,4 @@ Coding agent自己写的单元测试已全部通过并归档。
 | U7 | 跨模组持久化 | 调查员永久化、Patch 永久化、战役系统、Epilogue Judge |
 | U8 | 多人模式 (Hotseat) | 同机多调查员轮流操作 |
 | U9 | 法术体系 | 战斗法术 + 轻量探索法术，SpellJudge + @grant_spell |
+| U10 | LLM 调用成本优化 | 统一测试各管线步骤 + 运行时 Agent 的 thinking/reasoning_effort 最低可接受配置。`call_deepseek` 已支持按需关闭 thinking（非思考模式下自动跳传 `reasoning_effort`），待逐步骤验证哪些可以降级为 flash + 非思考 + low effort |

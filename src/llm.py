@@ -148,8 +148,10 @@ def call_deepseek(
     _label: 日志文件标签（绕过全局 _current_log_label 的并行竞态）
     """
     _model = model if model is not None else LLM_DEFAULT_MODEL
-    _reasoning_effort = reasoning_effort if reasoning_effort is not None else LLM_REASONING_EFFORT
     _thinking = thinking if thinking is not None else LLM_THINKING_ENABLED
+    _reasoning_effort = reasoning_effort if reasoning_effort is not None else LLM_REASONING_EFFORT
+    # reasoning_effort is only valid when thinking is enabled
+    _reasoning_kw = {"reasoning_effort": _reasoning_effort} if _thinking else {}
 
     # Capture log label at entry to avoid race conditions with parallel calls
     _log_label = _label if _label is not None else _current_log_label
@@ -177,7 +179,7 @@ def call_deepseek(
                     ],
                     temperature=_temperature,
                     max_tokens=_max_tokens,
-                    reasoning_effort=_reasoning_effort,
+                    **_reasoning_kw,
                     response_format={"type": "json_object"},
                     extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}},
                     timeout=timeout,
@@ -241,11 +243,11 @@ def call_deepseek(
                 ],
                 temperature=_temperature,
                 max_tokens=_max_tokens,
-                reasoning_effort=_reasoning_effort,
+                **_reasoning_kw,
                 timeout=timeout,
                 extra_body={"thinking": {"type": "enabled" if _thinking else "disabled"}}
             )
-            result = response.choices[0].message.content.strip()
+            result = (response.choices[0].message.content or "").strip()
             _duration = (_time.time() - _t0) * 1000
             if _s.enabled:
                 _s.record(label=_current_log_label or "llm", model=_model,
