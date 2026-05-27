@@ -233,3 +233,26 @@
 
 - **症状**：（潜在）后端 `process_turn` 成功时返回 dict（JSON），但 try/except 和 get_game 失败路径仍返回 `HTMLResponse`，前端 `sendTurn()` 按 `content-type` 自适应兼容
 - **根因/解决**：`process_turn` 三个返回路径中两个是 `HTMLResponse`（错误场景），一个是 `dict`（成功）。前端 `sendTurn()` 通过 `resp.headers.get('content-type')` 分派，HTML 走旧逻辑，JSON 调用 `handleTurnResponse()`。这种混合模式是过渡方案，长期建议统一为 JSON
+
+## 44. llm_player exploration 模式下 player 为 None 导致 AttributeError
+
+- **症状**：`AttributeError: 'NoneType' object has no attribute 'name'`，llm_player 启动即崩溃
+- **根因**：`run_llm_player()` 中 `set_player()` 只在 `test_mode == "stress" and combat_testing.mode == "buff_investigator"` 时执行，stress_profile.json 的 test_mode 为 "exploration" → player 永远是 None
+- **解决**：`init_game()` 后加 fallback — 如果 `world.player is None`，从 `data/investigator/combat_test_character.json` 加载默认调查员；若文件不存在则 `roll_stats()` 创建随机角色
+- **教训**：入口函数中的状态初始化不要只针对部分配置分支——所有分支都应保证核心状态（player）被设置
+
+## 45. Windows cp932 终端 em dash (—) 崩溃
+
+- **症状**：`UnicodeEncodeError: 'cp932' codec can't encode character '\u2014'` — llm_player print 时 em dash 崩溃
+- **根因**：与 Debug #29（GBK emoji）同类问题，Windows 中文终端默认 cp932 编码
+- **解决**：`$env:PYTHONIOENCODING = 'utf-8'` 强制使用 UTF-8
+
+## 46. 审计 time_state 跨回合 span 为 0
+
+- **症状**：审计报告 Summary 显示 `Time span: D0 夜间 → D0 夜间 (+0m)`，但 TimeAgent 节显示 total delta=5m
+- **根因**：`llm_player.py` 在 `run_turn()` 返回后才捕获 `clock` 状态——每轮的 time_state 已是 post-turn 值。当多轮未推进时间时，`last.game_time - first.game_time = 0`
+- **解决**：Summary time span 改用 `sum(time_agent.time_delta)` 累加，而非 time_state 的 game_time 差值；`_audit_time()` 标注 Initial/Final 状态为 "after T01/Tn"
+
+## 47. 审计报告 combat_outcome→combat dict 字段迁移
+
+- **症状/根因/解决**：`llm_player.py` 将战斗数据从 `combat_outcome: str` 升级为 `combat: {outcome, narrative, is_boss}`，审计各节共 6 处 `t.get("combat_outcome")` 引用全部迁移到 `t.get("combat")` / `t["combat"].get("outcome")`

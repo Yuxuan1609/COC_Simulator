@@ -17,6 +17,7 @@ from investigator import load_investigator
 from llm_player_prompts import (
     PLAYER_SYSTEM, PLAYER_USER_TEMPLATE,
     MEMORY_COMPRESS_SYSTEM, MEMORY_COMPRESS_TEMPLATE,
+    TEST_MODE_STRESS, TEST_MODE_EXPLORATION, TEST_MODE_ROLEPLAY,
 )
 
 
@@ -37,9 +38,17 @@ def build_player_prompt(
     desc = snap.get("description", "")[:200]
     npcs = ", ".join(n["name"] for n in snap.get("npcs_in_scene", [])) or "无"
 
+    test_mode = profile.get("test_mode", "exploration")
     strategy = ", ".join(profile.get("player_strategy", []))
 
-    system = PLAYER_SYSTEM.format(player_strategy=strategy)
+    if test_mode == "stress":
+        mode_section = TEST_MODE_STRESS.format(player_strategy=strategy)
+    elif test_mode == "roleplay":
+        mode_section = TEST_MODE_ROLEPLAY
+    else:
+        mode_section = TEST_MODE_EXPLORATION
+
+    system = PLAYER_SYSTEM.format(test_mode_section=mode_section)
     user = PLAYER_USER_TEMPLATE.format(
         hp=p.get("hp", "?"), max_hp=p.get("max_hp", "?"),
         san=p.get("san", "?"), mp=p.get("mp", "?"),
@@ -86,31 +95,27 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         start_node="6号车厢",
     )
 
-    # Monkey-patch combat → auto-win (combat tested separately)
-    # Frame as costly Pyrrhic victory so the LLM player learns to avoid combat
-    from game.combat import CombatSystem, CombatResult
-    _orig_run_combat = CombatSystem.run_combat
-    def _auto_win_combat(self, combat_init):
-        player = game["keeper"].world.player
-        san_loss = min(10, player.derived.SAN // 6)
-        hp_loss = min(4, player.derived.HP // 4)
-        player.derived.SAN = max(0, player.derived.SAN - san_loss)
-        player.derived.HP = max(1, player.derived.HP - hp_loss)
-        return CombatResult(
-            outcome="win",
-            defeated_instance_ids=[e.instance_id for e in combat_init.enemies],
-            player_hp=player.derived.HP,
-            player_san=player.derived.SAN,
-            rounds=1,
-            narrative=(
-                f"你侥幸战胜了敌人，但付出了惨重代价（SAN -{san_loss}，HP -{hp_loss}）。"
-                f"你意识到正面冲突极其危险，应尽量通过潜行、回避或交涉来规避战斗。"
-            ),
-        )
-    CombatSystem.run_combat = _auto_win_combat
+    # Ensure a player is always set (default investigator if none provided)
+    if game["keeper"].world.player is None:
+        from investigator import load_investigator, Investigator
+        from investigator.rules import roll_stats, calc_derived, create_skill_list
+        char_path = PROJECT_ROOT / "data" / "investigator" / "combat_test_character.json"
+        if char_path.exists():
+            game["keeper"].world.set_player(load_investigator(str(char_path)))
+        else:
+            inv = Investigator(name="测试调查员", age=25, gender="男")
+            inv.stats = roll_stats()
+            inv.skills = create_skill_list()
+            inv.derived = calc_derived(inv.stats, inv.age)
+            game["keeper"].world.set_player(inv)
 
+    # Combat is short-circuited in game_loop.run_turn() (auto-win, Pyrrhic victory narrative).
+    # CombatSystem.run_combat() is only used in standalone smoke tests.
+
+    # Buff investigator only in stress mode with combat testing enabled
     ct = profile.get("combat_testing", {})
-    if ct.get("mode") == "buff_investigator":
+    test_mode = profile.get("test_mode", "exploration")
+    if test_mode == "stress" and ct.get("mode") == "buff_investigator":
         char_path = PROJECT_ROOT / "data" / "investigator" / "combat_test_character.json"
         if char_path.exists():
             game["keeper"].world.set_player(load_investigator(str(char_path)))
@@ -211,14 +216,24 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         )
         last_narrative = {"brief": brief, "narrative": narrative}
 
+        clock = game["keeper"].world.clock
+        time_state = {
+            "day": clock.day,
+            "hour": clock.hour,
+            "time_of_day": clock.time_of_day,
+            "game_time_minutes": clock.game_time,
+        }
         summary_log.append({
             "turn": turn + 1, "input": action, "reasoning": reasoning,
             "brief": brief, "narrative": narrative,
             "skill_results": skill_results,
-            "combat_outcome": combat["outcome"] if combat else None,
+            "combat": combat,
             "npc_events": npc_events,
+            "npcs_visible": result.get("npcs_visible", {"in_scene": [], "following": []}),
             "ending": ending.get("name") if ending else None,
             "elapsed_s": round(dt, 1),
+            "time_state": time_state,
+            "time_agent": result.get("time_agent"),
         })
 
         print(f"  T{turn+1:02d} [{dt:.1f}s]: {action[:50]}")

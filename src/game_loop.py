@@ -272,7 +272,10 @@ def run_turn(game: dict, user_input: str,
                 ei.hp = 0
 
         combat_result_outcome = "win"
-        combat_narrative = f"你勇敢地面对{enemy_names}，凭借意志与技巧赢得了战斗。"
+        combat_narrative = (
+            f"你侥幸战胜了{enemy_names}，但战斗极其惨烈。"
+            f"你深深意识到正面冲突的危险——应尽可能通过潜行、回避或交涉来规避战斗。"
+        )
         combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
 
         # Write back HP/SAN (unchanged — no damage in short-circuit)

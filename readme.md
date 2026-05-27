@@ -419,3 +419,5 @@ Coding agent自己写的单元测试已全部通过并归档。
 | U8 | 多人模式 (Hotseat) | 同机多调查员轮流操作 |
 | U9 | 法术体系 | 战斗法术 + 轻量探索法术，SpellJudge + @grant_spell |
 | U10 | LLM 调用成本优化 | 统一测试各管线步骤 + 运行时 Agent 的 thinking/reasoning_effort 最低可接受配置。`call_deepseek` 已支持按需关闭 thinking（非思考模式下自动跳传 `reasoning_effort`），待逐步骤验证哪些可以降级为 flash + 非思考 + low effort |
+| U11 | 审计 Agent 重构 | 当前审计 LLM prompt 仅分析玩家视角数据（input + brief/narrative + skill + combat），已移除原始管线日志。后续需要设计**多 Agent 分层审计架构**：L1 快速扫描（每回合逐条打分 → 异常触发）→ L2 深层分析（异常回合聚合上下文，分别调用战斗/NPC/叙事等专项 Agent 深入诊断）→ L3 报告合成（汇总各专项 Agent 结论生成完整报告）。当前简化版作为 baseline，复杂 Agent 设计待后续实现。 |
+| U12 | Narrator 大失败叙事处理 | 当前大失败（fumble, D100≥96）在 SEARCH 等默认成功 entity 上不体现叙事后果。后续在 Narrator 中接入大失败信号，生成误导性描述或紧张氛围（如"你看错了门牌号""一阵眩晕让你错过了重要细节"），不影响机制层面但增强沉浸感。低优先级。 |

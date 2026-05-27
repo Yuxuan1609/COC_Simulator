@@ -1,4 +1,5 @@
 {
+  "test_mode": "exploration",
   "player_strategy": ["NPC", "Enemy", "Boss", "Combat", "TimeAgent", "Author"],
   "audit_targets": [
     "NPC", "Enemy", "Boss", "Combat",
@@ -15,11 +16,7 @@
     "module_name": "更新模组0526v2"
   },
   "combat_testing": {
-    "mode": "buff_investigator",
-    "buff_investigator": {
-      "combat_skills_boost": 30,
-      "dodge_boost": 30
-    }
+    "mode": "normal"
   },
   "audit_config": {
     "anomaly_thresholds": {

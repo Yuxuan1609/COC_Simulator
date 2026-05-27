@@ -68,7 +68,7 @@ def calc_derived(stats: Stats, age: int = 20, cthulhu_mythos: int = 0) -> Derive
     db, build = _calc_db_build(stats.STR + stats.SIZ)
 
     return DerivedStats(
-        HP=hp, MP=mp, SAN=san, SAN_MAX=san_max,
+        HP=hp, HP_MAX=hp, MP=mp, SAN=san, SAN_MAX=san_max,
         MOV=mov, DB=db, BUILD=build, DODGE=dodge,
     )
 

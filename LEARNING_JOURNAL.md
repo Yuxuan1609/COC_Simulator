@@ -98,7 +98,16 @@
 - `str.format()` 中中文花括号 `{关键行动}` 被误解析为 format key → 全部转义为 `{{关键行动}}`
 - 适用场景：任何调用外部 API 的生产代码——超时不是优化，是必须
 
-## 审计驱动的前端修复清单执行模式
+## 审计的 overfetch-and-filter 数据增强模式
+- 增强审计覆盖不需要改核心逻辑——`run_turn()` 已经返回了 `time_agent`/`npcs_visible`/`combat` 等字段，只需在日志收集端（`llm_player.py` 的 `summary_log`）多捕获几个已有返回值，审计端（`audit_player_log.py`）按需读取
+- 关键教训：time_state 是 post-turn 快照，跨回合 span 不能用 `last - first`，应改用 `sum(time_agent.time_delta)` 累加真实推进量
+- 与"统一数据源"互补——后者是减少碎片化构建，这个是利用已存在但未收集的数据
+
+## LLM 判定 prompt 中计算链路的显式化
+- 技能检定的 trait enhancement prompt 原写法"思考骰子调整量→映射到等级"过于跳跃，LLM 容易跳过数值步骤直接选等级
+- 改进为显式三步：**确定虚拟骰子 = 原始 ± 调整量 → 代入 COC 公式映射 → 得出等级**，配合带具体数字的计算示例（`D100=20−15=5≤25→hard`）
+- 通用模式：任何需要 LLM 执行多步数值推演的 prompt，把中间步骤写成显式公式链，并在示例中展示完整计算过程，避免 LLM 跳过中间步骤直跳结论
+- 适用场景：骰子修正、时间推进估算、伤害计算等任何需要 LLM 从原始值→调整→结果值→终态映射的场景
 - 审计报告按严重度（阻断/高危/中危/低危）分级，每级明确文件路径 + 影响 + 修复方向，可落地为 `todowrite` 列表逐个击破
 - 模板类修复批量进行（base.html 统一 CSS → game.html JS 逻辑 → partials），Pydantic 路由类需要精确匹配 starlette/fastapi 版本签名
 - 一次性批量修改多个 `TemplateResponse` 签名时，用 `grep` 列出全部 10 个调用点后统一修正，避免遗漏
