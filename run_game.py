@@ -105,7 +105,7 @@ def run_game(character_path: str = None):
         if not cmd:
             continue
 
-        if cmd in ("exit", "quit"):
+        if cmd in ("exit", "quit", "/quit", "/exit"):
             print("[info] 游戏结束。")
             break
         elif cmd.startswith("/scene"):

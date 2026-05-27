@@ -94,11 +94,97 @@ async def game_page(request: Request):
     return templates.TemplateResponse(request, "game.html", {})
 
 
+def _handle_slash_command(cmd: str) -> str:
+    """Handle slash commands synchronously, return HTML."""
+    global _game_instance
+    game = get_game()
+    world = game["keeper"].world
+    p = world.player
+    cmd = cmd.strip().lower()
+    lines = []
+    if cmd == "/help":
+        names = ["/scene", "/char", "/flags", "/events",
+                 "/save <slot>", "/load <slot>", "/quit", "/reset", "/help"]
+        lines = [f'<div class="text-xs text-gray-500">{"  ".join(names)}</div>']
+    elif cmd == "/scene":
+        loc = world.current_location
+        desc = world.get_current_description()
+        lines.append(f'<div class="font-bold text-aged-brown">{loc}</div>')
+        lines.append(f'<div class="text-xs text-gray-500 mt-1">{desc}</div>')
+        for e in world.get_possible_exits():
+            lines.append(f'<div class="text-xs text-gray-600">→ {e.target}：{e.method}</div>')
+    elif cmd == "/char":
+        if p:
+            lines.append(f'<div class="text-sm text-aged-gold">{p.name} (HP {p.derived.HP} SAN {p.derived.SAN})</div>')
+            lines.append(f'<div class="text-xs text-gray-500">属性: {" ".join(f"{k}={getattr(p.stats,k,0)}" for k in ["STR","CON","SIZ","DEX","APP","INT","POW","EDU","LUCK"])}</div>')
+        else:
+            lines.append('<div class="text-xs text-gray-500">未设置调查员</div>')
+    elif cmd == "/flags":
+        rs = world.runtime_state or {}
+        if rs:
+            for k, v in rs.items():
+                c = "text-green-400" if v.get("completed") else "text-gray-500"
+                lines.append(f'<div class="text-xs {c}">{k}: {v}</div>')
+        else:
+            lines.append('<div class="text-xs text-gray-500">无状态</div>')
+    elif cmd == "/events":
+        triggered = world.triggered_events or []
+        if triggered:
+            for ev in triggered:
+                lines.append(f'<div class="text-xs text-gray-400">{ev}</div>')
+        else:
+            lines.append('<div class="text-xs text-gray-500">无已触发事件</div>')
+    elif cmd.startswith("/save"):
+        slot = cmd.replace("/save", "").strip() or "1"
+        try:
+            from game_loop import save_game
+            save_game(game, str(PROJECT_ROOT / f"save_{slot}.json"))
+            lines.append(f'<div class="text-xs text-green-400">已存档到 save_{slot}.json</div>')
+        except Exception as e:
+            lines.append(f'<div class="text-xs text-red-400">存档失败: {e}</div>')
+    elif cmd.startswith("/load"):
+        slot = cmd.replace("/load", "").strip() or "1"
+        spath = str(PROJECT_ROOT / f"save_{slot}.json")
+        if Path(spath).exists():
+            try:
+                from game_loop import load_game
+                load_game(game, spath)
+                lines.append(f'<div class="text-xs text-green-400">已从 save_{slot}.json 读档</div>')
+            except Exception as e:
+                lines.append(f'<div class="text-xs text-red-400">读档失败: {e}</div>')
+        else:
+            lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
+    elif cmd in ("/quit", "/exit"):
+        _game_instance = None
+        lines.append('<div class="text-xs text-green-400">游戏已退出。返回启动页以重新开始。</div>')
+    elif cmd == "/reset":
+        _game_instance = None
+        lines.append('<div class="text-xs text-green-400">游戏已重置，刷新页面以重新开始</div>')
+    else:
+        lines.append(f'<div class="text-xs text-gray-500">未知命令: {cmd}。输入 /help 查看可用命令。</div>')
+    return "".join(lines)
+
+
 @router.post("/api/game/turn")
 async def process_turn(user_input: str = Form(...)):
     import asyncio
     import traceback
     from game_loop import run_turn
+
+    # Route slash commands directly — skip LLM pipeline
+    stripped = user_input.strip()
+    if stripped.startswith("/"):
+        cmd_html = await _handle_slash_command(stripped)
+        return {
+            "brief": stripped,
+            "narrative": "",
+            "narrative_html": cmd_html,
+            "combat": None,
+            "skill_results": [],
+            "game_over": False,
+            "ending": None,
+            "timestamp": "",
+        }
 
     try:
         game = get_game()
@@ -247,8 +333,8 @@ async def game_command(cmd: str = Form(...)):
     cmd = cmd.strip().lower()
     lines = []
     if cmd == "/help":
-        names = ["/scene", "/char", "/flags", "/events", "/do <动作>", "/trigger <E1>",
-                 "/save <槽位>", "/load <槽位>", "/reset", "/help"]
+        names = ["/scene", "/char", "/flags", "/events",
+                 "/save <slot>", "/load <slot>", "/quit", "/reset", "/help"]
         lines = [f'<div class="text-xs text-gray-500">{"  ".join(names)}</div>']
     elif cmd == "/scene":
         loc = world.current_location
@@ -298,6 +384,10 @@ async def game_command(cmd: str = Form(...)):
                 lines.append(f'<div class="text-xs text-red-400">读档失败: {e}</div>')
         else:
             lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
+    elif cmd in ("/quit", "/exit"):
+        global _game_instance
+        _game_instance = None
+        lines.append('<div class="text-xs text-green-400">游戏已退出。返回启动页以重新开始。</div>')
     elif cmd == "/reset":
         global _game_instance
         _game_instance = None
