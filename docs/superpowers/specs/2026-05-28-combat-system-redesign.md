@@ -42,8 +42,7 @@
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `multi_attack` | `int` | `1` | 每轮攻击次数 |
-| `resistances` | `dict[str, float]` | `{}` | `{"穿刺": 0.5, "火焰": 0}` |
-| `vulnerabilities` | `dict[str, float]` | `{}` | `{"钝击": 2.0}` |
+| `damage_multipliers` | `dict[str, float]` | `{}` | 伤害倍率：`>1.0`=易伤，`<1.0`=抗性，`0`=免疫，`1.0`=正常（可省略） |
 | `dodge_bonus` | `int` | `0` | 闪避 D100 修正 |
 | `special_rules` | `str` | `""` | 自由文本 |
 
@@ -52,8 +51,7 @@
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `multi_attack` | `int` | `1` | 同上 |
-| `resistances` | `dict[str, float]` | `{}` | 同上 |
-| `vulnerabilities` | `dict[str, float]` | `{}` | 同上 |
+| `damage_multipliers` | `dict[str, float]` | `{}` | 同上 |
 | `dodge_bonus` | `int` | `0` | 同上 |
 | `phases` | `list[Phase]` | `[]` | 阶段定义 |
 | `special_rules` | `str` | `""` | 自由文本，含 Boss AI 决策规则 |
@@ -65,7 +63,7 @@
 class Phase:
     trigger: str         # "hp_below_pct:0.5" 或 "round:3"
     name: str            # "二阶段：核心暴露"
-    overrides: dict      # {field: new_value}，覆盖 multi_attack/resistances/等
+    overrides: dict      # {field: new_value}，覆盖 multi_attack/damage_multipliers/等
     description: str     # 人类可读，"触手断裂，核心暴露在空气中"
 ```
 
@@ -177,7 +175,7 @@ class CombatResult:
 
 武器/敌人/Boss 库的 JSON 文件需要新增上述结构化字段。`special_rules` 和 `phases` 由模组作者/KP 填写。
 
-```json
+```jsonc
 // 武器示例
 {
   "name": "火焰喷射器",
@@ -193,8 +191,7 @@ class CombatResult:
 {
   "boss_ref": "深潜者祭司",
   "multi_attack": 2,
-  "resistances": {"穿刺": 0.5, "火焰": 0.25},
-  "vulnerabilities": {"钝击": 1.5},
+  "damage_multipliers": {"穿刺": 0.5, "火焰": 0.25, "钝击": 1.5},
   "phases": [
     {
       "trigger": "hp_below_pct:0.5",
@@ -219,12 +216,33 @@ class CombatResult:
 - boss.special_rules
 - enemy.special_rules
 - 玩家额外描述
-- 当前战场快照（所有实体 HP/status/phase）
+- 战场快照（由 _build_battle_snapshot() 辅助函数生成）
 
 输出：同结构的 RoundResult JSON
 ```
 
 LLM 模型：flash 模型（`LLM_FLASH_MODEL`），`json_mode=True`，fallback 到确定性原值。
+
+### _build_battle_snapshot() 辅助函数
+
+每轮调用，生成 LLM 所需的战场上下文字符串（不含 D100 掷骰值，掷骰已含在 RoundResult 中）：
+
+```python
+def _build_battle_snapshot(state: CombatState, player, boss_phase: str = "") -> str:
+    """返回 ≤500 字符的战场快照，含轮数、HP、阶段、实体状态。"""
+    lines = [
+        f"第{state.round}轮",
+        f"调查员 HP:{state.player_hp}/{state.player_hp_max} SAN:{state.player_san}",
+    ]
+    if boss_phase:
+        lines.append(f"Boss当前阶段:{boss_phase}")
+    for e in state.enemies:
+        hp_pct = f"{getattr(e, 'hp', 0)}/{getattr(e, 'hp_max', getattr(e, 'hp', 0))}"
+        phase = getattr(e, '_current_phase', '')
+        phase_str = f" 阶段:{phase}" if phase else ""
+        lines.append(f"[{e.instance_id}] {e.enemy_ref} HP:{hp_pct} status:{getattr(e, 'status', '?')}{phase_str}")
+    return "\n".join(lines)
+```
 
 ## 九、待后续
 
