@@ -48,8 +48,7 @@ NPC: {npcs}
 NPC状态: {npc_states}
 
 【本轮叙事】
-{brief}
-{narrative}
+{turn_output}
 
 【最近行动】
 {short_history}

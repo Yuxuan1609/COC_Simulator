@@ -43,6 +43,10 @@ class GameClock:
     def to_dict(self) -> dict:
         return {
             "game_time": self.game_time,
+            "game_time_minutes": self.game_time,
+            "day": self.day,
+            "hour": self.hour,
+            "time_of_day": self.time_of_day,
             "time_context": self.time_context,
         }
 

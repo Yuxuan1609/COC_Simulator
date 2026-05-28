@@ -153,7 +153,7 @@ class PlayerFacingSnapshot:
     scene_name: str = ""
     scene_description: str = ""        # L1 immersive third-person description
     exits: list[dict] = field(default_factory=list)  # [{"target":"...","method":"..."}]
-    time: dict = field(default_factory=dict)          # {"day":1,"time_of_day":"夜间","game_time_minutes":120}
+    time: dict = field(default_factory=dict)          # {"game_time": 0, "time_context": ""}
     npcs: list[dict] = field(default_factory=list)    # [{"name":"...","brief":"...","demeanor":"..."}]
     combat: dict | None = None         # {"outcome","narrative","is_boss"} or None
     skill_checks: list[SkillCheckResult] = field(default_factory=list)

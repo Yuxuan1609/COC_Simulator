@@ -197,3 +197,13 @@
 - 不要依赖 `python -m py_compile` 通过就认为没问题——f-string 缺变量不报语法错，只是运行时输出空白
 - 本 session 案例：并行 session 在 `build_step2b_combined_prompt` 误删了 f-string 中的 `{scene_list}`，编译通过但 prompt 中场景列表为空
 - 与"修改后追溯上下游"互补——后者是改自己的下游影响，这个是防别人的并行修改覆盖自己的改动
+
+## 序列化边界上的键名校对：dict.get 的无声失败陷阱
+
+- **问题**：`clock.to_dict()` 返回 `{"game_time": 120}`，但三个消费者（Python 后端、JS 前端、CLI）都按 docstring 写的 `{"day": 1, "time_of_day": "夜间", "game_time_minutes": 120}` 去读取。`dict.get("day")` 返回 `None`，`if None:` 自然跳过——不报错、不崩溃、不出异常，输出只是**静默丢失**
+- **根因**：dataclass 注释（"这个字段的格式是 {day:...}"）与数据源函数（`clock.to_dict()`）的返回值没有交叉验证。注释是人的猜测，to_dict() 是机器的事实——当两者不一致时，所有消费者都会被误导
+- **模式**：序列化边界上使用 `dict.get()` + falsy guard 的组合（`if t.get("day"):`）极易产生无声失败。防御措施：
+  1. 在**数据源侧**写 docstring 时必须与实际返回值逐键对照（不能凭记忆）
+  2. 在**消费者侧**新增字段消费时，从实际响应中抓一条 JSON 检查每个键是否存在
+  3. 如果架构允许，用 dataclass/typed dict 替代裸 dict 做数据合约——字段缺失在构造时即报错，而非静默跳过
+- 适用：任何跨语言/Python→JS/后端→前端的 dict 序列化边界

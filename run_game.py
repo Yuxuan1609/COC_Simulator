@@ -244,17 +244,23 @@ def _format_snapshot_chapters(snap: dict) -> str:
         )
         chapters.append(f"## 角色\n{npc_prose}。")
     
-    # Time
+    # Time — clock.to_dict() returns {"game_time": int, "time_context": str}
     t = snap.get("time", {})
     if t:
         parts = []
-        if t.get("day"):
-            parts.append(f"第{t['day']}天")
-        if t.get("time_of_day"):
-            parts.append(t["time_of_day"])
-        if t.get("game_time_minutes"):
-            h, m = divmod(t["game_time_minutes"], 60)
-            parts.append(f"{h:02d}:{m:02d}")
+        gt = t.get("game_time", 0)
+        day = gt // 1440 if gt else 0
+        hour_val = (gt % 1440) // 60 if gt else 0
+        min_val = gt % 60
+        if day:
+            parts.append(f"第{day}天")
+        if hour_val < 5: tod = "夜间"
+        elif hour_val < 8: tod = "早晨"
+        elif hour_val < 17: tod = "白天"
+        elif hour_val < 20: tod = "黄昏"
+        else: tod = "夜间"
+        parts.append(tod)
+        parts.append(f"{hour_val:02d}:{min_val:02d}")
         if parts:
             chapters.append(f"## 时间\n{'，'.join(parts)}\u3002")
     

@@ -232,6 +232,14 @@ async def process_turn(user_input: str = Form(...)):
         from dataclasses import asdict
         player_snapshot = asdict(player_snapshot)
 
+    # Format dynamic turn text from snapshot
+    turn_dynamic_text = ""
+    try:
+        from game_loop import format_turn_dynamic
+        turn_dynamic_text = format_turn_dynamic(player_snapshot, brief, narrative)
+    except Exception:
+        pass
+
     narrative_html = ""
     if brief:
         narrative_html += (
@@ -259,6 +267,7 @@ async def process_turn(user_input: str = Form(...)):
         "ending": ending,
         "timestamp": timestamp,
         "player_snapshot": player_snapshot,
+        "turn_dynamic_text": turn_dynamic_text,
     }
 
 

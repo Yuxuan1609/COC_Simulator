@@ -391,6 +391,8 @@ def run_turn(game: dict, user_input: str,
             {"name": n.get("name", ""), "brief": n.get("brief", ""), "demeanor": n.get("demeanor", "")}
             for n in brief.scene_snapshot.visible_npcs
         ]
+    if not scene_description:
+        scene_description = world.get_current_description()
     exits_data = [
         {"target": e.target, "method": e.method}
         for e in world.get_possible_exits()
@@ -530,3 +532,88 @@ def continue_standoff(keeper, player_input: str) -> dict:
         })
 
     return result
+
+
+def format_turn_dynamic(
+    player_snapshot: PlayerFacingSnapshot | dict | None,
+    brief: str = "",
+    narrative: str = "",
+) -> str:
+    """将 PlayerFacingSnapshot 的动态信息（时间/战斗/技能检定）+ Narrator 输出格式化为纯文本。
+
+    仅包含动态变化的信息（不包含 scene_name/scene_description/exits/npcs 等静态场景信息）。
+    CLI 和未来客户端可直接调用此函数获取结构化文本输出。
+    """
+    if player_snapshot is None:
+        player_snapshot = {}
+
+    snap = player_snapshot if isinstance(player_snapshot, dict) else {
+        "time": getattr(player_snapshot, "time", {}),
+        "combat": getattr(player_snapshot, "combat", None),
+        "skill_checks": getattr(player_snapshot, "skill_checks", []),
+    }
+
+    parts = []
+
+    # Time — clock.to_dict() returns {"game_time": int, "time_context": str}
+    # Compute day/time_of_day from game_time (minutes since start)
+    t = snap.get("time", {}) if isinstance(snap, dict) else {}
+    if t:
+        game_time = t.get("game_time", 0)
+        day = game_time // 1440 if game_time else 0
+        hour_val = (game_time % 1440) // 60 if game_time else 0
+        if hour_val < 5: tod = "夜间"
+        elif hour_val < 8: tod = "早晨"
+        elif hour_val < 17: tod = "白天"
+        elif hour_val < 20: tod = "黄昏"
+        else: tod = "夜间"
+        time_str = ""
+        if day:
+            time_str += f"第{day}天 "
+        h, m = divmod(game_time, 60)
+        time_str += f"{h:02d}:{m:02d}"
+        if time_str:
+            parts.append(f"[时间] {time_str}")
+
+    # Combat
+    c = snap.get("combat") if isinstance(snap, dict) else getattr(player_snapshot, "combat", None) if player_snapshot else None
+    if c:
+        label = {"win": "胜利", "loss": "败北", "flee": "逃脱"}.get(c.get("outcome", ""), c.get("outcome", ""))
+        parts.append(f"[战斗] {label}")
+        if c.get("narrative"):
+            parts.append(c["narrative"])
+
+    # Skill checks (original D100 + LLM trait enhancement)
+    sc_list = snap.get("skill_checks", []) if isinstance(snap, dict) else getattr(player_snapshot, "skill_checks", []) if player_snapshot else []
+    if sc_list:
+        sc_lines = []
+        for sc in sc_list:
+            scd = sc if isinstance(sc, dict) else {"entity_id": getattr(sc, "entity_id", ""), "skill_name": getattr(sc, "skill_name", ""), "tier": getattr(sc, "tier", ""), "raw_roll": getattr(sc, "raw_roll", 0), "target": getattr(sc, "target", 0), "success": getattr(sc, "success", False), "enhancement": getattr(sc, "enhancement", None)}
+            status = "OK" if scd.get("success") else "FAIL"
+            tier = scd.get("tier", "")
+            roll_info = f"D100={scd.get('raw_roll', 0)}/{scd.get('target', 0)}" if scd.get("raw_roll") else ""
+            enh = scd.get("enhancement")
+            enh_text = ""
+            if enh:
+                enh_tier = enh.get("tier") if isinstance(enh, dict) else getattr(enh, "tier", "")
+                enh_reason = enh.get("reason") if isinstance(enh, dict) else getattr(enh, "reason", "")
+                enh_override = enh.get("detail_override") if isinstance(enh, dict) else getattr(enh, "detail_override", "")
+                if enh_override:
+                    enh_text = f" 增强: {enh_override}"
+                elif enh_tier and enh_tier != tier:
+                    enh_text = f" →{enh_tier}"
+                elif enh_reason and len(enh_reason) < 80:
+                    enh_text = f" ({enh_reason[:60]})"
+            sc_lines.append(f"  [{status}] {scd.get('entity_id', '?')} [{tier}] {roll_info}{enh_text}")
+        if sc_lines:
+            parts.append("[技能检定]\n" + "\n".join(sc_lines))
+
+    # Brief
+    if brief:
+        parts.append(f"[概要] {brief}")
+
+    # Narrative
+    if narrative:
+        parts.append(f"[叙事]\n{narrative}")
+
+    return "\n\n".join(parts)

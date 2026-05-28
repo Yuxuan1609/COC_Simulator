@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from llm import call_deepseek
-from game_loop import init_game, run_turn, set_turn_logger
+from game_loop import init_game, run_turn, set_turn_logger, format_turn_dynamic
 from game.turn_logger import TurnLogger
 from investigator import load_investigator
 from llm_player_prompts import (
@@ -29,6 +29,7 @@ def load_profile(path: str) -> dict:
 def build_player_prompt(
     world, narrative_result: dict, short_history: list[str],
     long_memory: str, profile: dict,
+    player_snapshot=None,
 ) -> tuple[str, str]:
     snap = world.build_snapshot()
     p = snap.get("player", {})
@@ -42,6 +43,10 @@ def build_player_prompt(
         f"{n['name']}({n.get('state','?')}{', 跟随中' if n.get('following') else ''})"
         for n in npcs_raw
     ) or "无"
+
+    brief = narrative_result.get("brief", "")
+    narrative = narrative_result.get("narrative", "")
+    turn_output = format_turn_dynamic(player_snapshot, brief, narrative)
 
     test_mode = profile.get("test_mode", "exploration")
     strategy = ", ".join(profile.get("player_strategy", []))
@@ -59,8 +64,7 @@ def build_player_prompt(
         san=p.get("san", "?"), mp=p.get("mp", "?"),
         weapons=weapons, inventory=inv,
         location=loc, description=desc, npcs=npcs, npc_states=npc_states,
-        brief=narrative_result.get("brief", ""),
-        narrative=narrative_result.get("narrative", ""),
+        turn_output=turn_output,
         short_history="\n".join(short_history[-5:]) or "（游戏开始）",
         long_memory=long_memory or "（无）",
     )
@@ -164,6 +168,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     t0 = time.perf_counter()
     turn = 0
     last_narrative = {"brief": "", "narrative": ""}
+    last_snapshot = None
 
     while turn < max_turns:
         elapsed = time.perf_counter() - t0
@@ -176,6 +181,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             system, user = build_player_prompt(
                 game["keeper"].world, last_narrative,
                 short_history, long_memory, profile,
+                player_snapshot=last_snapshot,
             )
         except Exception as e:
             print(f"  [WARN] build_player_prompt failed: {e}")
@@ -220,6 +226,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             f"T{turn+1}: {action} → {str(brief)[:80]}"
         )
         last_narrative = {"brief": brief, "narrative": narrative}
+        last_snapshot = result.get("player_snapshot")
 
         clock = game["keeper"].world.clock
         time_state = {
