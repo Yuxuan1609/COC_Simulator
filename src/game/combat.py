@@ -573,6 +573,51 @@ class CombatSystem:
 
         return action
 
+    # ── Phase system ──
+
+    def _check_phase(self, state, enemy) -> str | None:
+        """Check if any phase triggers on this enemy. Returns phase name or None."""
+        phases = getattr(enemy, 'phases', [])
+        if not phases:
+            return None
+        current = getattr(enemy, '_current_phase', '')
+        for ph in phases:
+            trigger = ph.get("trigger", "") if isinstance(ph, dict) else getattr(ph, "trigger", "")
+            name = ph.get("name", "") if isinstance(ph, dict) else getattr(ph, "name", "")
+            if name == current:
+                continue
+            if trigger.startswith("hp_below_pct:"):
+                pct = float(trigger.split(":", 1)[1])
+                enemy_hp_max = getattr(enemy, 'hp_max', 10)
+                if enemy_hp_max <= 0:
+                    enemy_hp_max = 1
+                if getattr(enemy, 'hp', 0) / enemy_hp_max <= pct:
+                    return name
+            elif trigger.startswith("round:"):
+                target_round = int(trigger.split(":", 1)[1])
+                if state.round >= target_round:
+                    return name
+        return None
+
+    def _apply_phase(self, enemy, phase_name: str, phases: list) -> str:
+        """Apply phase overrides to enemy. Returns narration string."""
+        for ph in phases:
+            if isinstance(ph, dict):
+                p_name = ph.get("name", "")
+                overrides = ph.get("overrides", {})
+                description = ph.get("description", "")
+            else:
+                p_name = getattr(ph, "name", "")
+                overrides = getattr(ph, "overrides", {})
+                description = getattr(ph, "description", "")
+            if p_name == phase_name:
+                for field, value in overrides.items():
+                    setattr(enemy, field, value)
+                enemy._current_phase = phase_name
+                state._boss_current_phase = phase_name
+                return description
+        return ""
+
     # ── Round processing ──
 
     def _process_round(self, state, player, player_action_id: str,
@@ -608,6 +653,13 @@ class CombatSystem:
                 if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') != 'dead']
         if not alive:
             state.finished = True
+
+        for enemy in state.enemies:
+            if getattr(enemy, 'hp', 1) <= 0 or getattr(enemy, 'status', '') == 'dead':
+                continue
+            triggered = self._check_phase(state, enemy)
+            if triggered:
+                desc = self._apply_phase(enemy, triggered, getattr(enemy, 'phases', []))
 
         state.round += 1
         return state.log
