@@ -13,3 +13,6 @@ CLAUDE.md
 
 # Uploaded avatars
 frontend/static/uploads/avatars/*
+
+# Frontend assets (素材背景图/视频，不纳入版本管理)
+frontend/static/assets/

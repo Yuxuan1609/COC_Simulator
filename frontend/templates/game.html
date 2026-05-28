@@ -1,10 +1,11 @@
 {% extends "base.html" %}
 {% block title %}TRPG 游戏{% endblock %}
+{% block asset_context %}game{% endblock %}
 {% block body %}
 
 {# ==================== SETUP SCREEN ==================== #}
-<div id="game-setup" class="h-screen flex bg-[#0d0d0d]">
-  <nav class="w-56 border-r border-gray-800 bg-[#0f0f0f] flex flex-col p-4 gap-3">
+<div id="game-setup" class="h-screen flex">
+  <nav class="w-56 border-r border-gray-800/60 bg-[#0f0f0f]/90 flex flex-col p-4 gap-3">
     <h1 class="text-lg text-aged-gold font-bold tracking-wider border-b border-gray-800 pb-3">游戏设置</h1>
     <a href="/" class="block px-3 py-2 text-sm text-gray-400 hover:text-aged-gold hover:bg-[#1a1a1a] rounded">返回启动页</a>
   </nav>
@@ -36,46 +37,93 @@
   </div>
 </div>
 
-{# ==================== GAME SCREEN — Dual Panel ==================== #}
-<div id="game-screen" style="display:none" class="h-screen flex bg-[#0d0d0d] overflow-hidden">
+{# ==================== GAME SCREEN ==================== #}
+<div id="game-screen" style="display:none" class="h-screen flex overflow-hidden relative">
 
-  {# -- Left Panel: Scene + Narrative + Input -- #}
-  <div class="flex-1 flex flex-col min-w-0">
+  {# -- Scene Info Card (左上角，绝对定位) -- #}
+  <div id="scene-card" class="scene-card absolute top-3 left-3 z-20 rounded-lg overflow-hidden max-w-xs transition-all duration-300">
+    {# 收起态 -- #}
+    <div id="scene-card-collapsed" class="flex items-center gap-2 px-3 py-2 cursor-pointer" onclick="toggleSceneCard()">
+      <svg class="w-4 h-4 text-aged-gold shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      <span id="scene-card-name" class="text-sm text-aged-gold font-bold truncate">--</span>
+      <span id="scene-card-time" class="text-[10px] text-gray-500 font-mono ml-auto shrink-0">--:--</span>
+      <svg class="w-3 h-3 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+    </div>
+    {# 展开态 -- #}
+    <div id="scene-card-expanded" class="hidden px-3 pb-3 border-t border-aged-gold/20">
+      <div class="pt-2 space-y-2">
+        {# 场景描述 -- #}
+        <div id="scene-card-desc" class="text-xs text-gray-400 leading-relaxed">--</div>
+        {# 时间 -- #}
+        <div class="flex items-center gap-2 text-[10px]">
+          <svg class="w-3 h-3 text-aged-brown" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span id="scene-card-time-full" class="text-gray-500">--</span>
+        </div>
+        {# 出口 -- #}
+        <div id="scene-card-exits-wrap" class="hidden">
+          <div class="text-[10px] text-gray-500 font-bold mb-1">出口</div>
+          <div id="scene-card-exits" class="flex flex-wrap gap-1"></div>
+        </div>
+        {# NPC -- #}
+        <div id="scene-card-npcs-wrap" class="hidden">
+          <div class="text-[10px] text-gray-500 font-bold mb-1">在场角色</div>
+          <div id="scene-card-npcs" class="space-y-1"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    {# Top bar -- #}
-    <div class="flex justify-between items-start px-4 py-3 border-b border-gray-800 bg-[#0f0f0f] shrink-0">
-      <div id="hud-scene" class="text-sm font-bold text-aged-brown"></div>
+  {# -- Left Panel: Narrative + Input -- #}
+  <div class="flex-1 flex flex-col min-w-0 pt-12">{# pt-12 for scene card clearance #}
+
+    {# Top bar (simplified) -- #}
+    <div class="flex justify-between items-center px-4 py-2 border-b border-gray-800/60 bg-[#0f0f0f]/80 shrink-0">
       <div class="flex gap-3 items-center text-[10px]">
-        <span id="time-display" class="text-gray-500 font-mono">--:--</span>
         <span id="step-indicator" class="text-gray-500 font-mono"></span>
-        <button class="text-gray-500 hover:text-aged-gold" onclick="document.getElementById('help-panel').classList.toggle('hidden')">? 帮助</button>
+      </div>
+      <div class="flex gap-3 items-center">
+        <button class="text-[10px] text-gray-500 hover:text-aged-gold flex items-center gap-1" onclick="document.getElementById('help-panel').classList.toggle('hidden')">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          帮助
+        </button>
       </div>
     </div>
 
     {# Narrative area -- #}
-    <div class="flex-1 overflow-y-auto px-4 py-3 space-y-2" id="narrative-area">
-      <div id="compact-narrative" class="text-sm text-gray-400">游戏就绪。输入 /help 查看命令。</div>
-      <div id="help-panel" class="hidden text-xs text-gray-500 border border-gray-700 rounded p-2 bg-[#0f0f0f]">
+    <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3" id="narrative-area">
+      {# Help panel -- #}
+      <div id="help-panel" class="hidden text-xs text-gray-500 border border-gray-700 rounded p-3 bg-[#0f0f0f]/90">
         <b class="text-gray-300">命令</b><br>
         /scene | /char | /flags | /events<br>
         /do 动作 | /save 槽位 | /load 槽位<br>
         /reset | /help
       </div>
-      <div id="chat-history" class="hidden space-y-2"></div>
+      {# Turn output container -- #}
+      <div id="turn-output" class="space-y-3">
+        <div class="turn-empty text-sm text-gray-500 italic">游戏就绪。输入 /help 查看命令。</div>
+      </div>
+      {# Chat history (for expanded panel) -- #}
+      <div id="chat-history" class="hidden space-y-3"></div>
     </div>
 
     {# Input bar -- #}
-    <div class="px-4 py-3 border-t border-gray-800 bg-[#0f0f0f] flex gap-2 shrink-0">
+    <div class="px-4 py-3 border-t border-gray-800/60 bg-[#0f0f0f]/80 flex gap-2 shrink-0">
       <input type="text" id="user-input" placeholder="输入你的行动..." autocomplete="off"
              class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none">
-      <button onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30">行动</button>
-      <span class="text-[10px] text-gray-500 self-center cursor-pointer" onclick="togglePanel(true)">▲ 展开</span>
+      <button onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30 flex items-center gap-1">
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+        行动
+      </button>
+      <span class="text-[10px] text-gray-500 self-center cursor-pointer hover:text-gray-300" onclick="togglePanel(true)">▲ 展开</span>
     </div>
 
     {# Expanded panel -- #}
-    <div id="chat-panel" class="hidden px-4 py-3 border-t-2 border-aged-gold bg-[#0f0f0f] shrink-0" style="height:50%">
+    <div id="chat-panel" class="hidden px-4 py-3 border-t-2 border-aged-gold bg-[#0f0f0f]/90 shrink-0" style="height:45%">
       <div class="flex justify-between items-center mb-2 text-xs">
-        <span class="text-aged-brown">会话记录</span>
+        <span class="text-aged-brown flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          会话记录
+        </span>
         <button class="text-gray-400 hover:text-gray-200" onclick="togglePanel(false)">▼ 收起</button>
       </div>
       <div class="flex gap-2">
@@ -86,35 +134,111 @@
     </div>
   </div>
 
-  {# -- Right Panel: Character Card -- #}
-  <div class="w-72 border-l border-gray-800 bg-[#0f0f0f] flex flex-col overflow-y-auto shrink-0" id="char-panel">
+  {# -- Right Panel: Character Card (Optimized) -- #}
+  <div class="w-72 border-l border-gray-800/60 char-glass flex flex-col overflow-y-auto shrink-0" id="char-panel">
+    {# Collapsed state -- #}
     <div id="char-panel-collapsed" class="p-3 cursor-pointer" onclick="toggleCharCard()">
       <div class="flex items-center gap-3">
-        <div id="char-avatar" class="w-10 h-10 rounded bg-gray-800 flex items-center justify-center text-gray-500 text-xs shrink-0">?</div>
+        <div id="char-avatar" class="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-gray-500 text-xs shrink-0 border border-gray-700 overflow-hidden">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        </div>
         <div class="min-w-0 flex-1">
-          <div id="char-name" class="text-sm text-aged-gold truncate">调查员</div>
-          <div class="text-[10px] text-gray-500" id="char-desc">--</div>
-          <div class="flex gap-2 mt-1">
-            <div class="flex-1 h-1.5 bg-gray-700 rounded overflow-hidden">
-              <div id="char-hp-bar" class="h-full bg-coc-green" style="width:100%"></div>
+          <div id="char-name" class="text-sm text-aged-gold font-bold truncate">调查员</div>
+          <div id="char-occupation" class="text-[10px] text-gray-500">--</div>
+          <div class="flex gap-2 mt-1.5">
+            <div class="flex-1">
+              <div class="flex justify-between text-[9px] text-gray-500 mb-0.5"><span>HP</span><span id="char-hp-text">?/?</span></div>
+              <div class="h-1.5 bg-gray-800 rounded overflow-hidden">
+                <div id="char-hp-bar" class="h-full bg-coc-green rounded transition-all duration-500" style="width:100%"></div>
+              </div>
             </div>
-            <div class="flex-1 h-1.5 bg-gray-700 rounded overflow-hidden">
-              <div id="char-san-bar" class="h-full bg-aged-gold" style="width:100%"></div>
+            <div class="flex-1">
+              <div class="flex justify-between text-[9px] text-gray-500 mb-0.5"><span>SAN</span><span id="char-san-text">?</span></div>
+              <div class="h-1.5 bg-gray-800 rounded overflow-hidden">
+                <div id="char-san-bar" class="h-full bg-aged-gold rounded transition-all duration-500" style="width:100%"></div>
+              </div>
             </div>
-          </div>
-          <div class="flex justify-between text-[9px] text-gray-500 mt-0.5">
-            <span>HP <span id="char-hp-text">?/?</span></span>
-            <span>SAN <span id="char-san-text">?</span></span>
           </div>
         </div>
       </div>
     </div>
-    <div id="char-panel-expanded" class="hidden p-3 border-t border-gray-800"></div>
+    {# Expanded state -- #}
+    <div id="char-panel-expanded" class="hidden p-3 border-t border-gray-800/60 space-y-3"></div>
   </div>
 
 </div>
 
 <script>
+  // == Scene Info Card ==
+  let sceneCardExpanded = false;
+  function toggleSceneCard() {
+    sceneCardExpanded = !sceneCardExpanded;
+    const expanded = document.getElementById('scene-card-expanded');
+    const card = document.getElementById('scene-card');
+    if (sceneCardExpanded) {
+      expanded.classList.remove('hidden');
+      card.classList.remove('scene-card');
+      card.classList.add('scene-card-expanded');
+    } else {
+      expanded.classList.add('hidden');
+      card.classList.remove('scene-card-expanded');
+      card.classList.add('scene-card');
+    }
+  }
+
+  function updateSceneCard(snap) {
+    if (!snap) return;
+    // Collapsed
+    document.getElementById('scene-card-name').textContent = snap.scene_name || '--';
+    var timeStr = '';
+    if (snap.time) {
+      if (snap.time.day) timeStr += '第' + snap.time.day + '天 ';
+      if (snap.time.game_time_minutes !== undefined) {
+        var h = Math.floor(snap.time.game_time_minutes / 60);
+        var m = snap.time.game_time_minutes % 60;
+        timeStr += (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+      } else if (snap.time.time_of_day) {
+        timeStr += snap.time.time_of_day;
+      }
+    }
+    document.getElementById('scene-card-time').textContent = timeStr || '--:--';
+
+    // Expanded
+    document.getElementById('scene-card-desc').textContent = snap.scene_description || '（无场景描述）';
+    document.getElementById('scene-card-time-full').textContent = timeStr || '--';
+
+    // Exits
+    var exitsWrap = document.getElementById('scene-card-exits-wrap');
+    var exitsEl = document.getElementById('scene-card-exits');
+    var exits = snap.exits || [];
+    if (exits.length > 0) {
+      exitsWrap.classList.remove('hidden');
+      exitsEl.innerHTML = exits.map(function(e) {
+        return '<span class="text-[10px] px-1.5 py-0.5 bg-gray-800 rounded text-gray-400 border border-gray-700">' + (e.target || '?') + '<span class="text-gray-600"> · ' + (e.method || '?') + '</span></span>';
+      }).join('');
+    } else {
+      exitsWrap.classList.add('hidden');
+    }
+
+    // NPCs
+    var npcsWrap = document.getElementById('scene-card-npcs-wrap');
+    var npcsEl = document.getElementById('scene-card-npcs');
+    var npcs = snap.npcs || [];
+    if (npcs.length > 0) {
+      npcsWrap.classList.remove('hidden');
+      npcsEl.innerHTML = npcs.map(function(n) {
+        var demeanor = n.demeanor || '';
+        return '<div class="flex items-center gap-2 text-xs">' +
+          '<span class="w-1.5 h-1.5 rounded-full bg-aged-gold shrink-0"></span>' +
+          '<span class="text-gray-300">' + (n.name || '?') + '</span>' +
+          (demeanor ? '<span class="text-gray-500 text-[10px]">' + demeanor + '</span>' : '') +
+          '</div>';
+      }).join('');
+    } else {
+      npcsWrap.classList.add('hidden');
+    }
+  }
+
   // == Character panel toggle ==
   function toggleCharCard() {
     const expanded = document.getElementById('char-panel-expanded');
@@ -137,10 +261,12 @@
     document.getElementById('char-hp-bar').style.width = (hpMax > 0 ? (hp / hpMax * 100) : 0) + '%';
     document.getElementById('char-san-bar').style.width = (san > 0 ? (san / 99 * 100) : 0) + '%';
     if (data.avatar_url) {
-      document.getElementById('char-avatar').innerHTML = '<img src="' + data.avatar_url + '" class="w-10 h-10 rounded object-cover" onerror="this.parentElement.innerHTML=\'?\'">';
+      document.getElementById('char-avatar').innerHTML = '<img src="' + data.avatar_url + '" class="w-12 h-12 rounded-full object-cover" onerror="this.parentElement.innerHTML=\'<svg class=\\\'w-6 h-6\\\' fill=\\\'none\\\' stroke=\\\'currentColor\\\' viewBox=\\\'0 0 24 24\\\'><path stroke-linecap=\\\'round\\\' stroke-linejoin=\\\'round\\\' stroke-width=\\\'1.5\\\' d=\\\'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z\\\'/></svg>\'">';
     }
-    if (data.name) {
-      document.getElementById('char-desc').textContent = data.name;
+    if (data.occupation) {
+      document.getElementById('char-occupation').textContent = data.occupation;
+    } else {
+      document.getElementById('char-occupation').textContent = data.name || '--';
     }
   }
 
@@ -165,15 +291,19 @@
       const text = await resp.text();
       if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; return; }
       const data = JSON.parse(text);
-      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp, san: data.san, avatar_url: '' });
-      document.getElementById('hud-scene').textContent = data.location;
+      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp, san: data.san, avatar_url: '', occupation: '' });
       document.getElementById('game-setup').style.display = 'none';
       document.getElementById('game-screen').style.display = '';
       document.getElementById('user-input').focus();
-      var initHtml = '<span class="text-aged-gold">' + (data.location || '') + '</span> -- 游戏已就绪';
-      if (data.initial_brief) initHtml += '<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mt-2">' + data.initial_brief + '</div>';
-      if (data.initial_narrative) initHtml += '<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash mt-2">' + data.initial_narrative + '</div>';
-      document.getElementById('compact-narrative').innerHTML = initHtml;
+      // Initial turn output
+      var turnHtml = '';
+      if (data.initial_brief) {
+        turnHtml += '<div class="turn-brief px-3 py-2 text-xs text-gray-500 border-l-2 border-gray-700 bg-[#0f0f0f]/50 rounded-r">' + data.initial_brief + '</div>';
+      }
+      if (data.initial_narrative) {
+        turnHtml += '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' + data.initial_narrative + '</div>';
+      }
+      document.getElementById('turn-output').innerHTML = turnHtml || '<div class="turn-empty text-sm text-gray-500 italic">游戏已就绪</div>';
       connectWS();
     } catch(e) { errEl.textContent = '网络错误: ' + e.message; }
   }
@@ -189,7 +319,7 @@
   // == Chat history ==
   let chatMessages = [];
   function addToHistory(userMsg, responseHtml) {
-    if (userMsg) chatMessages.push('<div class="msg-brief px-3 py-2 text-sm text-gray-500 border-l-2 border-gray-700 mb-2">&gt; ' + userMsg + '</div>');
+    if (userMsg) chatMessages.push('<div class="history-user px-3 py-1 text-xs text-gray-600 border-l-2 border-gray-700 mb-1">&gt; ' + userMsg + '</div>');
     if (responseHtml) chatMessages.push(responseHtml);
     if (chatMessages.length > 200) chatMessages = chatMessages.slice(-200);
     const ch = document.getElementById('chat-history');
@@ -201,40 +331,30 @@
 
   // == Handle turn response ==
   function handleTurnResponse(userText, data) {
-    var parts = [];
     var snap = data.player_snapshot;
 
-    // Scene info from snapshot
-    if (snap && snap.scene_name) {
-      var sceneInfo = '<span class="text-aged-gold">' + snap.scene_name + '</span>';
-      if (snap.time && snap.time.time_of_day) {
-        sceneInfo += ' <span class="text-gray-600">·</span> <span class="text-aged-brown">' + snap.time.time_of_day + '</span>';
-      }
-      var exits = snap.exits || [];
-      if (exits.length > 0) {
-        sceneInfo += ' <span class="text-gray-600">| 出口:</span> ';
-        sceneInfo += exits.map(function(e) { return e.target; }).join(', ');
-      }
-      var npcs = snap.npcs || [];
-      if (npcs.length > 0) {
-        sceneInfo += ' <span class="text-gray-600">| NPC:</span> ';
-        sceneInfo += npcs.map(function(n) { return n.name; }).join(', ');
-      }
-      document.getElementById('hud-scene').innerHTML = sceneInfo;
-    }
+    // Update scene card
+    if (snap) updateSceneCard(snap);
+
+    // Build turn output HTML
+    var turnParts = [];
 
     // Combat
     var combatData = (snap && snap.combat) || data.combat;
     if (combatData) {
       var outcomeLabel = combatData.outcome === 'win' ? '胜利' : combatData.outcome === 'loss' ? '败北' : combatData.outcome;
-      parts.push('<div class="msg-combat px-3 py-2 text-sm border-l-2 border-yellow-600 bg-[#1a1400] mb-2"><span class="text-yellow-400">战斗 ' + outcomeLabel + '</span>' + (combatData.narrative ? '<div class="text-gray-400 text-xs mt-1">' + combatData.narrative + '</div>' : '') + '</div>');
+      var outcomeColor = combatData.outcome === 'win' ? 'text-coc-green' : combatData.outcome === 'loss' ? 'text-coc-red' : 'text-yellow-400';
+      turnParts.push('<div class="turn-combat px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r">' +
+        '<div class="flex items-center gap-2"><svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
+        '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + outcomeLabel + '</span></div>' +
+        (combatData.narrative ? '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' + combatData.narrative + '</div>' : '') +
+        '</div>');
     }
 
     // Skill checks from snapshot
     var skillChecks = (snap && snap.skill_checks) || data.skill_results || [];
     if (skillChecks.length > 0) {
-      for (var i = 0; i < skillChecks.length; i++) {
-        var sc = skillChecks[i];
+      var skillsHtml = skillChecks.map(function(sc) {
         var eid = sc.entity_id || '?';
         var tier = sc.tier || 'regular';
         var success = sc.success !== false;
@@ -242,36 +362,54 @@
         var diceInfo = sc.raw_roll ? ('D100=' + sc.raw_roll + '/' + sc.target) : '';
         var enh = sc.enhancement;
         var enhText = '';
-        if (enh) {
-          enhText = ' ' + (enh.detail_override || (enh.tier ? '→' + enh.tier : ''));
-        }
-        parts.push('<div class="msg-skill px-3 py-1 text-xs ' + (success ? 'text-coc-green' : 'text-coc-red') + ' border-l-2 ' + (success ? 'border-coc-green/50' : 'border-coc-red/50') + ' mb-1">' + (success ? '[OK]' : '[FAIL]') + ' ' + eid + ' <span class="' + tierColor + '">[' + tier + ']</span> <span class="text-gray-600">' + diceInfo + '</span><span class="text-yellow-400">' + enhText + '</span></div>');
-      }
+        if (enh) enhText = ' ' + (enh.detail_override || (enh.tier ? '→' + enh.tier : ''));
+        return '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border ' +
+          (success ? 'border-coc-green/40 bg-coc-green/10 text-coc-green' : 'border-coc-red/40 bg-coc-red/10 text-coc-red') + '">' +
+          '<span class="font-bold">' + (success ? 'OK' : 'FAIL') + '</span>' +
+          '<span class="text-gray-400">' + eid + '</span>' +
+          '<span class="' + tierColor + '">[' + tier + ']</span>' +
+          (diceInfo ? '<span class="text-gray-500">' + diceInfo + '</span>' : '') +
+          (enhText ? '<span class="text-yellow-400">' + enhText + '</span>' : '') +
+          '</span>';
+      }).join('');
+      turnParts.push('<div class="turn-skills flex flex-wrap gap-1.5 px-1">' + skillsHtml + '</div>');
     }
-    if (data.narrative_html) {
-      parts.push(data.narrative_html);
-    } else {
-      if (data.brief) parts.push('<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mb-2">' + data.brief + '</div>');
-      if (data.narrative) parts.push('<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash">' + data.narrative + '</div>');
+
+    // Brief
+    if (data.brief) {
+      turnParts.push('<div class="turn-brief px-3 py-2 text-xs text-gray-500 border-l-2 border-gray-700 bg-[#0f0f0f]/50 rounded-r">' + data.brief + '</div>');
     }
-    if (snap && snap.time && snap.time.day) {
-      var timeStr = '第' + snap.time.day + '天 ';
-      if (snap.time.game_time_minutes !== undefined) {
-        var h = Math.floor(snap.time.game_time_minutes / 60);
-        var m = snap.time.game_time_minutes % 60;
-        timeStr += (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
-      }
-      document.getElementById('time-display').textContent = timeStr;
-    } else if (data.timestamp) {
-      document.getElementById('time-display').textContent = data.timestamp;
+    // Narrative
+    if (data.narrative) {
+      turnParts.push('<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' + data.narrative + '</div>');
     }
-    var html = parts.join('') || '<div class="msg-brief px-3 py-2 text-sm text-gray-500">（没有返回叙事内容）</div>';
-    document.getElementById('compact-narrative').innerHTML = html;
-    addToHistory(userText, html);
+    // Fallback if nothing
+    if (turnParts.length === 0 && data.narrative_html) {
+      turnParts.push(data.narrative_html);
+    }
+    if (turnParts.length === 0) {
+      turnParts.push('<div class="turn-empty text-sm text-gray-500 italic">（没有返回叙事内容）</div>');
+    }
+
+    var turnHtml = '<div class="turn-card space-y-2 pb-3 border-b border-gray-800/40">' + turnParts.join('') + '</div>';
+
+    // Append to output area
+    var outputArea = document.getElementById('turn-output');
+    // Remove empty placeholder if present
+    var empty = outputArea.querySelector('.turn-empty');
+    if (empty) empty.remove();
+    outputArea.insertAdjacentHTML('beforeend', turnHtml);
+    outputArea.scrollTop = outputArea.scrollHeight;
+
+    addToHistory(userText, turnHtml);
+
+    // Game over
     if (data.game_over) {
       var endingText = data.ending ? data.ending.name + ': ' + data.ending.narrative : '游戏结束';
       setTimeout(function() {
-        document.getElementById('compact-narrative').innerHTML += '<div class="msg-ending px-3 py-3 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410] mt-3">' + endingText + '</div>';
+        outputArea.insertAdjacentHTML('beforeend',
+          '<div class="turn-ending px-4 py-3 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410]/80 mt-2">' +
+          '<div class="font-bold mb-1">结局</div>' + endingText + '</div>');
         document.getElementById('user-input').disabled = true;
         document.getElementById('user-input-expanded').disabled = true;
       }, 500);
@@ -289,32 +427,34 @@
     const inactiveInput = barHidden ? compactInput : expandedInput;
     activeInput.value = ''; inactiveInput.value = '';
     compactInput.disabled = true; expandedInput.disabled = true;
-    document.getElementById('step-indicator').innerHTML = 'parse ...';
-    document.getElementById('compact-narrative').innerHTML = '<span class="text-gray-500">' + text + '</span>';
+    document.getElementById('step-indicator').innerHTML = '<span class="text-gray-500">思考中...</span>';
     try {
       const fd = new FormData(); fd.append('user_input', text);
       const resp = await fetch('/api/game/turn', { method: 'POST', body: fd });
       const ct = resp.headers.get('content-type') || '';
       if (!resp.ok) {
         const errText = await resp.text();
-        document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">服务器错误 (' + resp.status + '): ' + errText + '</span>';
+        var errHtml = '<div class="turn-error px-3 py-2 text-sm text-red-400 border-l-2 border-red-500 bg-[#1a0a0a]/80">服务器错误 (' + resp.status + '): ' + errText + '</div>';
+        document.getElementById('turn-output').insertAdjacentHTML('beforeend', errHtml);
         throw new Error('Server error: ' + resp.status);
       }
       if (ct.includes('application/json')) {
         handleTurnResponse(text, await resp.json());
       } else {
         const html = await resp.text();
-        document.getElementById('compact-narrative').innerHTML = html;
+        document.getElementById('turn-output').insertAdjacentHTML('beforeend',
+          '<div class="turn-card pb-3 border-b border-gray-800/40">' + html + '</div>');
         addToHistory(text, html);
       }
       try {
         const psResp = await fetch('/api/game/player-status?format=json');
         if (psResp.ok) updateCharHUD(await psResp.json());
       } catch(e) {}
-      htmx.ajax('GET', '/api/game/scene', '#hud-scene');
     } catch(e) {
-      document.getElementById('compact-narrative').innerHTML = '<span class="text-red-400">网络错误: ' + e.message + '</span>';
+      document.getElementById('turn-output').insertAdjacentHTML('beforeend',
+        '<div class="turn-error px-3 py-2 text-sm text-red-400 border-l-2 border-red-500 bg-[#1a0a0a]/80">网络错误: ' + e.message + '</div>');
     }
+    document.getElementById('step-indicator').innerHTML = '';
     compactInput.disabled = false; expandedInput.disabled = false;
     activeInput.focus();
   }
@@ -357,11 +497,10 @@
       const state = await resp.json();
       if (state.location && state.name) {
         updateCharHUD({ name: state.name, hp: state.hp, hp_max: state.hp, san: state.san });
-        document.getElementById('hud-scene').textContent = state.location;
         document.getElementById('game-setup').style.display = 'none';
         document.getElementById('game-screen').style.display = '';
         document.getElementById('user-input').focus();
-        document.getElementById('compact-narrative').innerHTML = '<span class="text-aged-gold">' + state.location + '</span> -- 游戏已就绪';
+        document.getElementById('turn-output').innerHTML = '<div class="turn-empty text-sm text-gray-500 italic">' + state.location + ' — 游戏已就绪</div>';
         connectWS();
       }
     } catch(e) {}

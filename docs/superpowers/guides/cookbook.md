@@ -384,7 +384,7 @@ L1/L2/L3 数据模型定义
 
 ---
 
-## 18. 前端 v2 (FastAPI + HTMX + Static Tailwind)
+## 18. 前端 v2 (FastAPI + HTMX + Precompiled Tailwind)
 
 **设计思路**：Server-rendered SPA（Single Page Application）风格，每页是一个完整的 Jinja2 模板。交互通过 HTMX 声明式 AJAX 实现（无 React/Vue），页面间导航用 `<a href>` 全页加载。游戏回合用 `fetch()` + JSON 响应驱动，不依赖 HTMX 的回合流程。WebSocket 仅用于流水线步骤推送，不承载游戏数据。
 
@@ -392,27 +392,37 @@ L1/L2/L3 数据模型定义
 
 ```
 frontend/
-├── server.py                    # FastAPI 入口，挂载 5 个 router + StaticFiles + Jinja2
-├── static/css/tailwind-built.css # 预编译静态 Tailwind（不再用 CDN）
+├── server.py                    # FastAPI 入口，挂载 6 个 router + StaticFiles + Jinja2
+├── static/
+│   ├── css/tailwind-built.css   # 预编译静态 Tailwind（94 行手攒 utility class，无 CDN）
+│   ├── js/
+│   │   └── assets.js            # 素材背景轮播系统（自动检测 context → 加载 → 轮播）
+│   ├── assets/                  # 素材背景资源（按页面上下文分文件夹）
+│   │   ├── module-gen/          # 模组生成/启动页背景
+│   │   ├── game/                # 游戏页背景
+│   │   └── character/           # 角色创建页背景
+│   └── uploads/avatars/         # 车卡头像上传目录
 ├── templates/
-│   ├── base.html                # 根布局：CSS 引入 + HTMX + 全局 JS + 文件浏览模态框
-│   ├── launcher.html            # 启动页：3-tab 导航（模组生成/开始游戏/其他工具）
-│   ├── game.html                # 游戏主界面：双面板布局 + 设置屏幕
-│   ├── character.html           # 3 步车卡向导外壳
-│   ├── editor.html              # JSON 编辑器 3 栏布局
+│   ├── base.html                # 根布局：CSS + HTMX + 背景层(#asset-bg-container) + 遮罩层 + 全局 JS + #file-modal
+│   ├── launcher.html            # 启动页：4-tab 导航 + 底部快捷链接（asset_context=launcher）
+│   ├── game.html                # 游戏主界面：双面板 + 场景信息卡（左上角）+ 回合卡片堆叠
+│   ├── character.html           # 3 步车卡向导 + 全局 JS helper（asset_context=character）
+│   ├── editor.html              # JSON 编辑器 3 栏（asset_context=editor）
 │   └── partials/
 │       ├── launcher-module-gen.html    # 模组生成表单 + 流水线步骤 + 库配置
-│       ├── launcher-game-start.html   # 开始游戏表单（L1/L2/L3 + 角色）
-│       ├── launcher-config.html       # 全局设置（模型/thinking/debug）
-│       ├── char-step1.html / step2 / step3  # 车卡 3 步向导 partials
-│       ├── file-listing.html          # 文件浏览器列表（/api/files 返回）
-│       └── help-*.html               # 帮助文本（game/editor/character）
+│       ├── launcher-step0.html         # 小说→模组 Step 0 表单
+│       ├── launcher-game-start.html   # 开始游戏表单
+│       ├── launcher-config.html       # 全局设置
+│       ├── char-step1.html / step2 / step3  # 车卡 3 步向导
+│       ├── file-listing.html          # 文件浏览器列表
+│       └── help-*.html               # 帮助文本
 └── routers/
-    ├── launcher.py   # /           启动页 + /api/pipeline/start + /api/pipeline/validate
-    ├── game.py       # /game       游戏循环 API + WebSocket + 角色卡
-    ├── character.py  # /character  车卡创建 API + LLM 描述生成
-    ├── editor.py     # /editor     JSON 编辑 API
-    └── files.py      # /api/files  文件/目录浏览 API
+    ├── launcher.py   # /           启动页 + tab + /api/pipeline/* + /api/step0/* + /api/config/*
+    ├── game.py       # /game       游戏循环 + WebSocket + 角色卡 + 场景/NPC
+    ├── character.py  # /character  车卡 + LLM 描述 + .zip 导出
+    ├── editor.py     # /editor     JSON 编辑（load/save/validate）
+    ├── files.py      # /api/files  文件浏览
+    └── assets.py     # /api/assets 素材列表/随机抽取（背景轮播后端）
 ```
 
 ### 18.2 设计理念
@@ -421,42 +431,57 @@ frontend/
 |------|------|
 | HTMX 声明式 | 所有数据加载/表单提交用 `hx-get`/`hx-post`/`hx-target`/`hx-swap` 属性声明，无手写 AJAX |
 | 返回 HTML 片段 | 后端端点返回 Jinja2 渲染的 HTML partial，HTMX 直接 swap 到目标 DOM |
-| 游戏回合例外 | `/api/game/turn` 返回 JSON（非 HTML），前端 `handleTurnResponse()` 解析后构造 DOM |
+| 游戏回合例外 | `/api/game/turn` 返回 JSON（非 HTML），前端 `handleTurnResponse()` 解析 `player_snapshot` 后构造 DOM |
 | 全局共享组件放 base.html | 文件浏览模态框 `#file-modal`、`openFileBrowser()`/`closeFileModal()`/`pickFile()` 在 base.html 中定义 |
-| 静态 CSS | 预编译 `tailwind-built.css`，包含全部使用的 utility class，避免 CDN 运行时编译的内存泄漏 |
-| 双面板游戏布局 | 左 60% 叙事区 + 右 40% 角色面板，收起态显示头像+HP/SAN 条，点击展开完整卡 |
+| 预编译静态 CSS | 手攒 `tailwind-built.css`（94 行），包含全部使用的 utility class + 自定义颜色 token + 动画 |
+| 双面板游戏布局 | 左 flex-1 叙事区 + 右 w-72 角色面板，收起态显示头像+HP/SAN 条，点击展开完整卡 |
+| PlayerFacingSnapshot 驱动 UI | 游戏回合 JSON 响应包含 `player_snapshot` 字段，前端从中取场景名/时间/出口/NPC/技能/战斗信息渲染 HUD
 
 ### 18.3 各页面详细说明
 
 #### server.py (`frontend/server.py`)
-- FastAPI app，注册 5 个 router（顺序：files → launcher → character → game → editor）
+- FastAPI app，注册 6 个 router（顺序：files → launcher → character → game → editor → assets）
 - 自动从 `config_llm.template.py` 创建配置模板
 - `if __name__ == "__main__"`：自动 `webbrowser.open()`，`uvicorn.run("127.0.0.1", 8080)`
-- `app.mount("/static", StaticFiles(...))` 提供静态 CSS
+- `app.mount("/static", StaticFiles(...))` 提供静态 CSS/JS/素材
 
 #### base.html (`frontend/templates/base.html`)
 - 引入 `<link rel="stylesheet" href="/static/css/tailwind-built.css">`
 - 引入 `<script src="https://unpkg.com/htmx.org@2.0.4">`
-- 内联 CSS：`narrative-flash` 动画、`line-clamp-*`、`image-crossfade`
+- 引入 `<script src="/static/js/assets.js">`（素材背景轮播系统，所有页面共享）
+- `body[data-asset-context]`：每个子模板通过 `{% block asset_context %}` 设置页面上下文（launcher/game/character/editor）
+- **背景层体系**（z-index 层级）：
+  - `#asset-bg-container` (z=0)：固定全屏，由 `assets.js` 注入图片/视频元素
+  - `#content-overlay` (z=1)：固定全屏，半透明遮罩 `rgba(13,13,13,0.72)`，保证文字可读性
+  - `#main-content` (z=2)：实际页面内容包裹层
+- 内联 CSS：`narrative-flash` 动画、`line-clamp-*`、`.scene-card` / `.scene-card-expanded` / `.char-glass`（毛玻璃效果）
 - 全局 JS 函数：`openFileBrowser()` / `closeFileModal()` / `pickFile(path, targetId)`
-- `#file-modal` 模态框（`hidden fixed inset-0 z-50`），内含 `#file-browser-content` HTMX swap 目标
+- `#file-modal` 模态框（z=50），内含 `#file-browser-content` HTMX swap 目标
 
-#### launcher.html — 启动页 3 标签布局
-- 左侧 nav (w-56)：模组生成 / 开始游戏 / 其他工具 三个 nav-link
-- 底部链接：创建调查员 / JSON 编辑器
-- 右侧 `#tab-content`：通过 HTMX 加载 active tab 的 partial
-- Tab 切换逻辑：`onclick` 内联 JS 更新 nav-link active 样式 + `hx-get` 加载对应 partial
+#### launcher.html — 启动页 4 标签布局
+- 左侧 nav (w-56)：**模组生成** / **小说转模组 (Step 0)** / **开始游戏** / **其他工具** 四个 nav-link
+- 底部快捷链接：创建调查员 / JSON 编辑器
+- 右侧 `#tab-content`：页面加载时自动 `hx-get="/launcher/tabs/module-gen"` 加载首个 tab
+- Tab 切换逻辑：`onclick` 内联 JS 更新所有 nav-link active 样式 + `hx-get` 加载对应 partial
 
-#### launcher-module-gen.html — 模组生成标签
+#### launcher-module-gen.html — 模组生成标签（Step 1+ 管线）
 - 表单 `hx-post="/api/pipeline/start"` `hx-trigger="submit"`
-- 字段：source(docx/txt) + module_name + output_dir
-- 标准库配置：weapon_path / enemy_path / boss_path（含文件浏览器按钮）
-- 步骤选择器 `hx-post="/api/pipeline/validate"` → 显示校验结果
-- 提交按钮 "开始生成"
+- 字段：source(docx/txt) + module_name + output_dir，均含文件浏览器按钮
+- 标准库配置（3 列 grid）：weapon_path / enemy_path / boss_path（含文件浏览器按钮）
+- 步骤选择器：完整生成 / 续跑 Step 2a / 续跑 Step 3a / 仅交叉核对(Step 3b)，选择时 `hx-post="/api/pipeline/validate"` 校验中间文件
+- `/api/pipeline/start` 后台 `subprocess.run(run_pipeline.py)`，线程异步执行，立即返回"已启动"状态
+
+#### launcher-step0.html — 小说转模组（Step 0 独立步骤）
+- 独立于管线，将纯小说/叙事文本转为 9 章节结构化模组文档
+- 表单 `hx-post="/api/step0/start"`：输入 txt 源文件路径 + 模组名称
+- 输出固定路径：`data/modules/{模组名}/module_step0.txt`
+- `/api/step0/start` 后台 `subprocess.run(run_step0.py)`，线程异步执行
+- 底部说明：转换完成后如何在"模组生成" tab 中将 txt 传入 Step 1+ 管线
 
 #### launcher-game-start.html — 开始游戏标签
 - 表单 `id="init-form"`（无 onsubmit，用 button onclick）
-- 3 个模组文件输入（L2/L1/L3）+ 角色卡路径 + 文件浏览器
+- 3 个模组文件输入（L2/L1/L3）+ 角色卡路径，均含文件浏览器按钮
+- **"+ 新建"** 链接跳转到 `/character` 车卡页面
 - "开始游戏" 按钮调用内联 `startGame()` 函数：POST `/api/game/init` → 成功后 `window.location.href = '/game'`
 - **JS 作用域注意**：`startGame()` 定义在此文件末尾的 `<script>` 中，因为 launcher 页面没有 game.html 的 JS 上下文
 
@@ -466,44 +491,67 @@ frontend/
 - Checkbox：thinking / combat_llm_enhancement / debug_mode
 - `hx-post="/api/config/save"` 保存到 `config.json`
 
-#### game.html — 游戏主界面（双面板）
+#### game.html — 游戏主界面（双面板 + 场景信息卡）
 
 **设置屏幕** (`#game-setup`，初始可见):
-- 简化版的快速开始表单（与 launcher 的 game-start 独立）
+- 左侧导航 + 快速开始表单（与 launcher 的 game-start 独立）
 - 3 个模组文件输入 + 角色卡路径
 - 页面加载时自动检测 `/api/game/state`：如果游戏已初始化，直接跳到游戏屏幕
 
-**游戏屏幕** (`#game-screen`，初始隐藏，双面板):
+**游戏屏幕** (`#game-screen`，初始隐藏，双面板 + 场景卡):
 
-左面板（flex-1）:
-- 顶栏：场景名 (`#hud-scene`) + 时间显示 (`#time-display`) + 步骤指示器 (`#step-indicator`) + 帮助按钮
-- 叙事区 (`#narrative-area`)：`#compact-narrative` 显示当前回合结果 + `#help-panel`（默认隐藏）+ `#chat-history`（展开面板时可见）
-- 底部输入栏：`#user-input` + "行动"按钮 + "▲ 展开"
-- 展开面板 (`#chat-panel`)：`#user-input-expanded` + "行动"按钮
+**场景信息卡** (`#scene-card`，绝对定位左上角):
+- 收起态：小横条，显示场景名 (`#scene-card-name`) + 时间 (`#scene-card-time`) + 展开图标
+- 展开态：面板，展示场景描述、完整时间、出口列表（标签式）、在场 NPC（带点状标记 + 神态）
+- `updateSceneCard(snap)`：从 `player_snapshot` 更新所有字段
+
+左面板（flex-1，`pt-12` 为场景卡留出空间）:
+- 顶栏：步骤指示器 + 帮助按钮（场景名已移至场景卡）
+- 叙事区 (`#narrative-area`)：`#turn-output` 为每回合输出容器，每条用 `.turn-card` 包裹
+  - `.turn-combat`：战斗结果卡片（带图标 + 胜负标签 + 叙事）
+  - `.turn-skills`：技能检定标签组（inline-flex 小标签，颜色区分 OK/FAIL + tier）
+  - `.turn-brief`：Brief 灰色小字卡片
+  - `.turn-narrative`：Narrative parchment 色卡片（aged-gold 左边框 + narrative-flash 动画）
+  - `.turn-ending`：结局通知卡片
+- 底部输入栏：`#user-input` + 行动按钮（带图标）+ "▲ 展开"
+- 展开面板 (`#chat-panel`)：会话记录标题 + `#user-input-expanded` + 行动按钮 + "▼ 收起"
 
 右面板 (w-72, `#char-panel`):
-- 收起态 (`#char-panel-collapsed`)：头像占位 (`#char-avatar`) + 角色名 (`#char-name`) + 描述 (`#char-desc`) + HP/SAN 进度条 (`#char-hp-bar` / `#char-san-bar`) + 数值文本
-- 点击 → `toggleCharCard()`：展开 `#char-panel-expanded`，通过 `htmx.ajax('GET', '/api/game/character-card')` 加载完整卡
+- 收起态：圆形大头像 (`w-12 h-12 rounded-full`) + 名字 + 职业 + HP/SAN 进度条（带标签和动画过渡）
+- 展开态：`#char-panel-expanded` 通过 HTMX 加载 `/api/game/character-card`，返回分层结构：
+  - 头部：头像 + 名字 + 年龄/性别/职业
+  - 属性区：3x3 网格卡片（STR/CON/SIZ/DEX/APP/INT/POW/EDU/LUCK）
+  - 状态区：HP/SAN 进度条 + MP/MOV/DB/BUILD/DODGE 一行
+  - 技能区：按分类折叠（details/summary），分类包括 战斗/操作/感知/知识/社交，按数值降序排列
+  - 武器区：列表
+  - 物品区：文本描述
 
 **关键 JS 函数**（定义在 game.html 的 `<script>` 中）:
 | 函数 | 功能 |
 |------|------|
-| `initGame(e)` | 设置屏幕的表单提交：POST `/api/game/init` → 解析 JSON → `updateCharHUD()` → 切换到游戏屏幕 → `connectWS()` |
-| `sendTurn()` | 发送回合：POST `/api/game/turn` → 按 content-type 分派（JSON → `handleTurnResponse()`，HTML → 直接渲染）→ 刷新 HUD/npc/场景 |
-| `handleTurnResponse(userText, data)` | 解析 JSON 回合响应：skill_results → combat → narrative_html → game_over |
-| `toggleCharCard()` | 点击角色面板 → HTMX 加载 `/api/game/character-card` 展开 |
-| `updateCharHUD(data)` | 更新角色面板 HP/SAN 进度条和数值 + 头像 |
+| `initGame(e)` | 设置屏幕表单提交 → POST `/api/game/init` → 解析 JSON → `updateCharHUD()` → 切换到游戏屏幕 → `connectWS()` |
+| `sendTurn()` | 发送回合 → POST `/api/game/turn` → JSON → `handleTurnResponse()`，HTML → 直接插入 `#turn-output` |
+| `handleTurnResponse(userText, data)` | 解析 JSON → `updateSceneCard(snap)` 更新场景卡 → 构建 `.turn-card`（combat/skills/brief/narrative）→ 追加到 `#turn-output` → 检测 game_over |
+| `toggleSceneCard()` | 展开/收起场景信息卡，切换 CSS class |
+| `updateSceneCard(snap)` | 从 `player_snapshot` 更新场景名/时间/描述/出口/NPC |
+| `toggleCharCard()` | 展开/收起角色面板 → HTMX 加载角色卡 |
+| `updateCharHUD(data)` | 更新角色面板收起态（头像/名字/职业/HP/SAN 条） |
 | `togglePanel(show)` | 展开/收起聊天面板 |
-| `addToHistory(userMsg, responseHtml)` | 追加到 `chatMessages[]`，限制 200 条 + 渲染最近 50 条 |
-| `connectWS()` | WebSocket `/api/game/progress`，接收流水线步骤推送，`onopen` 重置 `wsRetry`，`onclose` 指数退避重连 |
-| 页面加载检测 | IIFE 调用 `/api/game/state`，如果已初始化则跳过设置屏幕 |
+| `addToHistory(userMsg, responseHtml)` | 追加到 `chatMessages[]`，限制 200 条 |
+| `connectWS()` | WebSocket 进度流，指数退避重连 |
 
 #### 部分 (partials)
 | 文件 | 加载方式 | 功能 |
 |------|----------|------|
-| `file-listing.html` | `/api/files` 返回 | 文件浏览器：面包屑 + 目录列表 + 文件列表，`onclick="pickFile(path, targetId)"` |
-| `help-game.html` | 硬编码在 game.html 的 `#help-panel` | 命令参考文本（已弃用，改用内联 HTML） |
-| `char-step1/2/3.html` | `/character/step/{n}` | 车卡 3 步向导 |
+| `file-listing.html` | `/api/files` 返回，HTMX swap 到 `.file-listing-container` | 文件浏览器：面包屑（含 HTMX 导航）+ 目录列表 + 文件列表（按扩展名过滤 .json/.docx/.txt/.pdf/.md），`onclick="pickFile(path, targetId)"` |
+| `help-game.html` | — | 游戏帮助文本参考（当前已弃用，帮助命令改由 `_handle_slash_command()` 内联生成 HTML） |
+| `help-editor.html` | — | JSON 编辑器参考文档（@markup 标记说明） |
+| `help-character.html` | — | COC 7th 属性/技能参考文档 |
+| `char-step1/2/3.html` | `/character/step/{n}` | 车卡 3 步向导 partial |
+| `launcher-module-gen.html` | `/launcher/tabs/module-gen` | 模组生成表单 |
+| `launcher-step0.html` | `/launcher/tabs/step0` | 小说→模组 Step 0 表单 |
+| `launcher-game-start.html` | `/launcher/tabs/game-start` | 快速开始游戏表单 |
+| `launcher-config.html` | `/launcher/tabs/config` | 全局设置表单 |
 
 ### 18.4 后端 API 端点详情
 
@@ -511,18 +559,19 @@ frontend/
 | 路由 | 方法 | 功能 | 返回 |
 |------|------|------|------|
 | `/` | GET | 启动页 | launcher.html |
-| `/launcher/tabs/{tab}` | GET | 动态加载 tab partial | launcher-module-gen / game-start / config |
-| `/api/config/save` | POST | 保存 config.json | 纯文本 "配置已保存" |
+| `/launcher/tabs/{tab}` | GET | 动态加载 tab partial（module-gen / step0 / game-start / config） | launcher-module-gen / launcher-step0 / launcher-game-start / launcher-config |
+| `/api/config/save` | POST | 保存 config.json（model/thinking/reasoning_effort/debug） | 纯文本 "配置已保存 ✓" |
 | `/api/config/load` | GET | 读取 config.json | JSON |
-| `/api/pipeline/start` | POST | 启动模组生成管线（子进程） | HTML 状态消息 |
-| `/api/pipeline/validate` | POST | 校验续跑中间文件 | HTML 校验结果 |
+| `/api/pipeline/start` | POST | 启动模组生成管线（子进程 `run_pipeline.py`） | HTML 状态消息 |
+| `/api/pipeline/validate` | POST | 校验续跑中间文件存在性 + JSON 合法性 | HTML 校验结果 |
+| `/api/step0/start` | POST | 启动 Step 0 小说→模组转换（子进程 `run_step0.py`） | HTML 状态消息 |
 
 #### game.py 端点
 | 路由 | 方法 | 功能 | 返回 |
 |------|------|------|------|
 | `/game` | GET | 游戏页面 | game.html |
 | `/api/game/init` | POST | 初始化游戏引擎 + 自动跑 [游戏开始] 首回合 | JSON `{success, location, hp, san, name, initial_brief, initial_narrative}` |
-| `/api/game/turn` | POST | 回合入口。`/` 开头走 `_handle_slash_command()` 短路，否则走 `run_turn()` | JSON `{brief, narrative, narrative_html, combat, skill_results, game_over, ending, timestamp}` |
+| `/api/game/turn` | POST | 回合入口。`/` 开头走 `_handle_slash_command()` 短路，否则走 `run_turn()` | JSON `{brief, narrative, narrative_html, combat, skill_results, game_over, ending, timestamp, player_snapshot}` |
 | `/api/game/player-status` | GET | 玩家 HP/SAN。`?format=json` 返回 JSON 含 `hp_max` + `avatar_url` | HTML 或 JSON |
 | `/api/game/scene` | GET | 当前场景信息 | HTML |
 | `/api/game/npcs` | GET | 当前场景可见 NPC | HTML |
@@ -557,14 +606,25 @@ frontend/
 |------|------|------|
 | `/api/files?dir=&target_input=` | GET | 文件浏览器：面包屑 + 目录 + 文件列表 |
 
+#### assets.py 端点（素材背景系统）
+| 路由 | 方法 | 功能 | 返回 |
+|------|------|------|------|
+| `/api/assets/list?context=` | GET | 列出指定页面上下文的素材（图片+视频） | JSON `{images:[], videos:[], context, folder}` |
+| `/api/assets/random?context=` | GET | 随机返回一个素材（可过滤 type=image/video） | JSON `{url, type, name}` |
+
+**Context 映射**：`launcher` → `module-gen` / `game` → `game` / `character` → `character` / `editor` → `game`
+
+**前端轮播**：`assets.js` 自动检测 `body[data-asset-context]` → 加载列表 → 图片/视频淡入淡出轮播（默认 30s，可配置 `AssetCarousel.setInterval(ms)`）
+
 ### 18.5 数据流关键路径
 
 **从启动到游戏**：
 ```
 Launcher(/) → 点击"模组生成"tab → hx-get /launcher/tabs/module-gen
+           → （可选）点击"小说转模组(Step 0)"tab → hx-get /launcher/tabs/step0
            → 点击"开始游戏"tab → hx-get /launcher/tabs/game-start
            → 填写表单 → 点击"开始游戏" → startGame()
-           → POST /api/game/init → 初始化 game_instance
+           → POST /api/game/init → 初始化 game_instance + 自动跑首回合
            → 成功 → window.location.href = '/game'
 Game(/game) → 页面加载 → IIFE fetch /api/game/state
            → 已初始化 → 跳过设置屏幕 → updateCharHUD() → connectWS()
@@ -574,10 +634,11 @@ Game(/game) → 页面加载 → IIFE fetch /api/game/state
 ```
 用户输入 → sendTurn() → POST /api/game/turn (FormData)
   ├─ 以 "/" 开头 → _handle_slash_command() → 返回 JSON {narrative_html: cmd_result}
-  └─ 否则 → run_turn() → 返回 JSON {brief, narrative, combat, skill_results, ...}
-       → handleTurnResponse() → 构建 HTML → 更新 #compact-narrative
+  └─ 否则 → run_turn() → 返回 JSON {brief, narrative, combat, skill_results, player_snapshot, ...}
+       → handleTurnResponse() → updateSceneCard(snap) 更新场景卡
+                              → 构建 .turn-card（combat/skills/brief/narrative）
+                              → 追加到 #turn-output（可滚动历史）
        → fetch /api/game/player-status?format=json → updateCharHUD()
-       → htmx.ajax GET /api/game/scene → #hud-scene
 ```
 
 **WebSocket 进度流**：
@@ -600,6 +661,42 @@ connectWS() → ws://host/api/game/progress
 | 样式缺失 | `tailwind-built.css` 是否包含该类（浏览器 DevTools → Elements → Styles → 搜索 class） |
 | 斜杠命令不生效 | `process_turn` 的 `/` 开头拦截是否在 `get_game()` 之前执行 |
 | 页面加载显示设置屏幕 | `/api/game/state` 是否返回已初始化的游戏（检查 `_game_instance` 全局变量） |
+| 素材背景不显示 | (a) `frontend/static/assets/<context>/` 是否有文件 (b) 浏览器 Network 面板 `/api/assets/list` 是否 200 (c) `body[data-asset-context]` 是否正确设置 |
+| 背景素材遮挡内容 | 检查 `#content-overlay` 是否存在且 `z-index` 在 `#asset-bg-container` 之上 |
+| 场景卡不更新 | 检查 `handleTurnResponse()` 是否调用了 `updateSceneCard(snap)`，以及 `player_snapshot` 是否包含 `scene_name` |
+| 角色卡展开太密 | 正常现象——展开态采用分层折叠设计，技能区使用 `<details>` 分类折叠，点击分类标题展开 |
+
+### 18.7 素材系统详解
+
+**目录结构**：
+```
+素材/                          # 原始素材库（项目根目录）
+├── images_src/               # 39 张图片（自动归类）
+├── videos_src/               # 14 个视频（自动归类）
+├── module_gen/               # 模组生成用素材子集
+├── game_run/                 # 游戏运行用素材子集
+└── character_create/         # 角色创建用素材子集
+
+frontend/static/assets/       # 前端实际服务的素材
+├── module-gen/               # 5 个文件（launcher 共用）
+├── game/                     # 10 个文件（7 图 + 3 视频）
+└── character/                # 5 个文件
+```
+
+**后端**：`assets.py`
+- `CONTEXT_MAP` 将页面上下文映射到物理文件夹
+- `/api/assets/list?context=`：返回 `{images:[{url,type,name}], videos:[...]}`
+- `/api/assets/random?context=&type_filter=`：随机抽取单个素材
+
+**前端**：`assets.js`（`frontend/static/js/assets.js`）
+- `AssetCarousel.init()`：检测 `body[data-asset-context]` → fetch 列表 → 创建 `#asset-bg-container` → 轮播
+- `AssetCarousel.setInterval(ms)`：动态调整轮播间隔（默认 30000ms）
+- `AssetCarousel.destroy()`：清理轮播
+- 配置项：`CONFIG.interval` / `CONFIG.fadeDuration` / `CONFIG.videoMuted` / `CONFIG.videoLoop`
+- 图片用 CSS `background-image` 展示，视频用 `<video>` 元素展示
+- 切换时新元素 opacity 0→1，旧元素延迟 `fadeDuration` 后移除
+
+**添加新素材**：将文件放入 `frontend/static/assets/<context>/` 即可，无需重启服务（StaticFiles 实时读取）
 
 ---
 

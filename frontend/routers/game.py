@@ -270,49 +270,124 @@ async def character_card():
     if not p:
         return HTMLResponse('<span class="text-gray-500">无调查员</span>')
 
-    skills_list = list(p.skills.values()) if isinstance(p.skills, dict) else (p.skills if isinstance(p.skills, list) else [])
-    skills_html = "".join(
-        f'<div class="flex justify-between text-xs py-0.5"><span class="text-gray-400">{s.name}</span><span class="text-gray-300">{s.value}%</span></div>'
-        for s in skills_list[:12]
-    )
-    weapons = getattr(p, 'weapons', [])
-    weapons_html = "".join(
-        f'<div class="text-xs text-gray-400">  {w.name} ({getattr(w, "damage", "?")})</div>'
-        for w in weapons[:5]
-    ) or '<span class="text-xs text-gray-500">无</span>'
-    items = p.item_manager.describe() if hasattr(p, 'item_manager') and p.item_manager else "无"
-    avatar = getattr(p, 'avatar_url', '') or ""
     stats = p.stats
     derived = p.derived
+    avatar = getattr(p, 'avatar_url', '') or ""
 
-    avatar_block = f'<img src="{avatar}" class="w-12 h-12 rounded border border-gray-600 object-cover" onerror="this.style.display=\'none\'">' if avatar else '<div class="w-12 h-12 rounded bg-gray-800 flex items-center justify-center text-gray-500 text-xs">无</div>'
+    # --- Header block ---
+    avatar_block = (
+        f'<img src="{avatar}" class="w-14 h-14 rounded-full object-cover border-2 border-gray-700" onerror="this.style.display=\'none\'">'
+        if avatar else
+        '<div class="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center text-gray-500 border-2 border-gray-700">'
+        '<svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'
+        '</div>'
+    )
+
+    header = (
+        f'<div class="flex items-center gap-3 pb-3 border-b border-gray-800/60">'
+        f'{avatar_block}'
+        f'<div class="min-w-0">'
+        f'<div class="text-sm font-bold text-aged-gold truncate">{p.name}</div>'
+        f'<div class="text-[10px] text-gray-500">{p.age}岁 {p.gender} {p.occupation or ""}</div>'
+        f'</div></div>'
+    )
+
+    # --- Stats grid (3x3) ---
+    stat_labels = {"STR": "力量", "CON": "体质", "SIZ": "体型", "DEX": "敏捷", "APP": "外貌",
+                   "INT": "智力", "POW": "意志", "EDU": "教育", "LUCK": "幸运"}
+    stats_cells = "".join(
+        f'<div class="text-center p-1.5 bg-[#1a150c]/60 rounded border border-gray-800/40">'
+        f'<div class="text-[10px] text-gray-500">{stat_labels.get(k, k)}</div>'
+        f'<div class="text-sm font-bold text-gray-300">{getattr(stats, k, 0)}</div>'
+        f'</div>'
+        for k in ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "LUCK"]
+    )
+    stats_html = (
+        f'<div class="pt-2"><div class="text-[10px] text-gray-500 font-bold mb-1.5">属性</div>'
+        f'<div class="grid grid-cols-3 gap-1.5">{stats_cells}</div></div>'
+    )
+
+    # --- Derived stats bar ---
+    hp_pct = min(100, max(0, (derived.HP / derived.HP_MAX * 100) if derived.HP_MAX else 0))
+    san_pct = min(100, max(0, derived.SAN / 99 * 100))
+    derived_html = (
+        f'<div class="pt-2"><div class="text-[10px] text-gray-500 font-bold mb-1.5">状态</div>'
+        f'<div class="space-y-2">'
+        f'<div><div class="flex justify-between text-[10px] text-gray-500 mb-0.5"><span>HP</span><span class="text-coc-green">{derived.HP}/{derived.HP_MAX}</span></div>'
+        f'<div class="h-1.5 bg-gray-800 rounded overflow-hidden"><div class="h-full bg-coc-green rounded transition-all duration-500" style="width:{hp_pct}%"></div></div></div>'
+        f'<div><div class="flex justify-between text-[10px] text-gray-500 mb-0.5"><span>SAN</span><span class="text-aged-gold">{derived.SAN}</span></div>'
+        f'<div class="h-1.5 bg-gray-800 rounded overflow-hidden"><div class="h-full bg-aged-gold rounded transition-all duration-500" style="width:{san_pct}%"></div></div></div>'
+        f'<div class="flex gap-3 text-[10px] text-gray-400 pt-1">'
+        f'<span>MP <span class="text-gray-300">{derived.MP}</span></span>'
+        f'<span>MOV <span class="text-gray-300">{derived.MOV}</span></span>'
+        f'<span>DB <span class="text-gray-300">{derived.DB}</span></span>'
+        f'<span>BUILD <span class="text-gray-300">{derived.BUILD}</span></span>'
+        f'<span>DODGE <span class="text-gray-300">{derived.DODGE}</span></span>'
+        f'</div></div></div>'
+    )
+
+    # --- Skills by category ---
+    skills_list = list(p.skills.values()) if isinstance(p.skills, dict) else (p.skills if isinstance(p.skills, list) else [])
+    cats = {}
+    for s in skills_list:
+        cat = getattr(s, 'category', '其他')
+        cats.setdefault(cat, []).append(s)
+    cat_order = ["战斗", "操作", "感知", "知识", "社交", "其他"]
+    cat_colors = {"战斗": "text-red-400/70", "操作": "text-blue-400/70", "感知": "text-green-400/70",
+                  "知识": "text-purple-400/70", "社交": "text-yellow-400/70", "其他": "text-gray-500"}
+
+    skills_sections = []
+    for cat in cat_order:
+        if cat not in cats:
+            continue
+        items = cats[cat]
+        items_html = "".join(
+            f'<div class="flex justify-between items-center py-0.5">'
+            f'<span class="text-xs text-gray-400">{s.name}</span>'
+            f'<span class="text-xs font-mono {cat_colors.get(cat, "text-gray-500")}">{s.value}%</span>'
+            f'</div>'
+            for s in sorted(items, key=lambda x: -x.value)
+        )
+        skills_sections.append(
+            f'<details class="group">'
+            f'<summary class="flex items-center justify-between cursor-pointer py-1 text-[10px] text-gray-500 hover:text-gray-300 list-none">'
+            f'<span class="flex items-center gap-1"><span class="w-1 h-1 rounded-full {cat_colors.get(cat, "bg-gray-500")}"></span>{cat} ({len(items)})</span>'
+            f'<span class="text-gray-600 group-open:rotate-180 transition-transform">▼</span>'
+            f'</summary>'
+            f'<div class="pl-3 border-l border-gray-800/40 ml-1 space-y-0.5">{items_html}</div>'
+            f'</details>'
+        )
+    skills_html = (
+        f'<div class="pt-2 border-t border-gray-800/60">'
+        f'<div class="text-[10px] text-gray-500 font-bold mb-1.5">技能 ({len(skills_list)})</div>'
+        f'<div class="space-y-1">{"".join(skills_sections)}</div></div>'
+    ) if skills_list else ''
+
+    # --- Weapons ---
+    weapons = getattr(p, 'weapons', [])
+    weapons_html = (
+        f'<div class="pt-2 border-t border-gray-800/60">'
+        f'<div class="text-[10px] text-gray-500 font-bold mb-1.5">武器 ({len(weapons)})</div>'
+        f'<div class="space-y-1">'
+        + "".join(
+            f'<div class="flex justify-between text-xs text-gray-400 py-0.5">'
+            f'<span>{w.name}</span><span class="text-gray-500">{getattr(w, "damage", "?")}</span>'
+            f'</div>'
+            for w in weapons
+        )
+        + '</div></div>'
+    ) if weapons else ''
+
+    # --- Items ---
+    items_desc = p.item_manager.describe() if hasattr(p, 'item_manager') and p.item_manager else "无"
+    items_html = (
+        f'<div class="pt-2 border-t border-gray-800/60">'
+        f'<div class="text-[10px] text-gray-500 font-bold mb-1.5">物品</div>'
+        f'<div class="text-xs text-gray-400 leading-relaxed">{items_desc}</div></div>'
+    )
 
     return HTMLResponse(
-        f'<div class="space-y-3">'
-        f'<div class="flex items-center gap-3">'
-        f'{avatar_block}'
-        f'<div>'
-        f'<div class="text-sm text-aged-gold">{p.name}</div>'
-        f'<div class="text-xs text-gray-500">{p.age}岁 {p.gender} {p.occupation or ""}</div>'
-        f'</div></div>'
-        f'<div class="text-xs text-gray-400">{getattr(p, "personal_description", "") or "（无描述）"}</div>'
-        f'<div class="grid grid-cols-4 gap-1 text-[11px]">'
-        f'{"".join(f"<div class=\"text-gray-500\">{k}</div><div class=\"text-gray-300\">{getattr(stats,k,0)}</div>" for k in ["STR","CON","SIZ","DEX","APP","INT","POW","EDU","LUCK"])}'
-        f'</div>'
-        f'<div class="flex gap-3 text-xs">'
-        f'<span class="text-coc-green">HP {derived.HP}/{derived.HP_MAX}</span>'
-        f'<span class="text-aged-gold">SAN {derived.SAN}</span>'
-        f'<span class="text-gray-400">MP {derived.MP}</span>'
-        f'<span class="text-gray-500">MOV {derived.MOV}</span>'
-        f'</div>'
-        f'<div class="border-t border-gray-800 pt-2">'
-        f'<div class="text-xs text-gray-500 mb-1">技能</div>{skills_html}'
-        f'</div>'
-        f'<div class="border-t border-gray-800 pt-2">'
-        f'<div class="text-xs text-gray-500 mb-1">武器</div>{weapons_html}'
-        f'<div class="text-xs text-gray-500 mt-1 mb-1">物品</div><span class="text-xs text-gray-400">{items}</span>'
-        f'</div>'
-        f'</div>'
+        header + stats_html + derived_html + skills_html + weapons_html + items_html
     )
 
 
@@ -325,8 +400,19 @@ async def player_status(format: str = ""):
         return HTMLResponse('<span class="text-gray-600">未设置调查员</span>')
     hp, san = p.derived.HP, p.derived.SAN
     has_avatar = getattr(p, 'avatar_url', '')
+    occupation = getattr(p, 'occupation', '')
+    occ_name = getattr(occupation, 'name', '') if occupation else ''
     if format == "json":
-        return {"hp": hp, "hp_max": p.derived.HP_MAX, "san": san, "name": p.name, "avatar_url": has_avatar}
+        return {
+            "hp": hp,
+            "hp_max": p.derived.HP_MAX,
+            "san": san,
+            "name": p.name,
+            "avatar_url": has_avatar,
+            "occupation": occ_name,
+            "age": p.age,
+            "gender": p.gender,
+        }
     return HTMLResponse(
         f'<div class="text-xs"><span class="text-gray-500">HP </span><span class="text-coc-green">{hp}</span>'
         f'<span class="text-gray-500 ml-2">SAN </span><span class="text-aged-gold">{san}</span></div>'

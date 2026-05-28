@@ -57,6 +57,8 @@ from frontend.routers import game
 app.include_router(game.router)
 from frontend.routers import editor
 app.include_router(editor.router)
+from frontend.routers import assets
+app.include_router(assets.router)
 
 
 @app.get("/health")

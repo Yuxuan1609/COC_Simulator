@@ -56,7 +56,7 @@ flowchart LR
 | 检定 | COC 7th D100 + trait enhancement + 失败递增惩罚（难度→LLM 创意） |
 | 时间 | 确定性分钟计时器 + LLM 时间评估 + entity 时间约束 |
 | 扩展 | @markup 副效果系统（8 种），Author 运行时动态创作 |
-| 前端 | FastAPI + HTMX + Tailwind CSS v4，视觉小说风格沉浸布局 |
+| 前端 | FastAPI + HTMX + 预编译 Tailwind CSS + 素材背景轮播系统，视觉小说风格沉浸布局 |
 | 测试 | 18 case 并行 harness + LLM 模拟玩家 + 日志双层审计 |
 | 数据 | 三层信息架构（玩家/KP/设计者），JSON 全量序列化 |
 
@@ -84,10 +84,10 @@ python run_game.py                      # 生产模式（自动打开浏览器�
 
 | 路由 | 页面 | 做什么 |
 |------|------|--------|
-| `/` | 启动页 | 上传模组 docx 一键生成 → 配置参数 → 进入游戏 |
-| `/character` | 车卡创建 | 3 步向导：属性掷骰 → 职业+技能分配 → 预览导出 |
-| `/game` | 游戏循环 | 视觉小说风格沉浸布局，展开式会话面板 |
-| `/editor` | JSON 编辑器 | 浏览/编辑/校验模组 JSON 文件 |
+| `/` | 启动页 | 4 个 Tab：模组生成管线 → 小说转模组 (Step 0) → 开始游戏 → 全局设置 |
+| `/character` | 车卡创建 | 3 步向导：基本信息+属性掷骰 → 职业+技能分配 → 预览导出 .zip |
+| `/game` | 游戏循环 | 视觉小说风格沉浸布局，双面板（叙事+角色卡），展开式会话面板 |
+| `/editor` | JSON 编辑器 | 三栏布局：文件树 → JSON 可折叠树 → 校验状态，支持保存和验证 |
 
 ## 游戏内功能
 
@@ -112,7 +112,10 @@ python run_game.py                      # 生产模式（自动打开浏览器�
 | `## 战斗` | CombatSystem | 胜负结果 + 叙事摘要 |
 
 - **CLI** (`run_game.py`)：输出为半结构化 Markdown，每个 `##` 章节下为自然语言正文
-- **前端** (`game.html`)：应从此类取数据渲染 UI（当前部分接入，待完善）
+- **前端** (`game.html`)：PlayerFacingSnapshot 分为两部分展示：
+  - **动态信息**（叙事区）：每回合的 Narrator 叙事 + Brief + 技能检定标签 + 战斗结果卡片，按 `.turn-card` 逐回合堆叠
+  - **静态信息**（场景信息卡，左上角可展开面板）：场景名/描述/时间/出口列表/NPC 列表，每回合自动同步更新
+- **角色卡**（右侧面板）：收起态显示头像+HP/SAN 进度条；展开态分层展示属性网格/状态条/分类折叠技能/武器/物品
 
 ## 调试命令
 
@@ -193,11 +196,13 @@ python run_pipeline.py --config config.json --start-from step_3a # 断点续跑
 
 | 参数 | 说明 |
 |------|------|
-| API Key | DeepSeek API 密钥（首次启动在界面配置） |
+| API Key | DeepSeek API 密钥（在 `src/config_llm.py` 配置或在界面设置） |
 | 模型 | `deepseek-v4-pro`（重推理）/ `deepseek-v4-flash`（轻量） |
 | TimeAgent | 时间推进 LLM 评估开关 |
 | WR0 | 创作者豁免（Author 不受世界规则约束） |
 | Tier 2 Judgment | LLM 增强技能判定开关 |
+
+启动页顶栏含 4 个 Tab：模组生成（Step 1+ 管线）、小说转模组（Step 0 独立步骤）、开始游戏（直接启动）、其他工具（全局设置 + JSON 编辑器入口）。
 
 ## @markup 副效果系统（8 种）
 
