@@ -52,6 +52,12 @@ def _apply_armor(damage: int, armor: str) -> int:
     return max(0, damage - reduction)
 
 
+def _apply_damage_multiplier(damage: int, damage_type: str, multipliers: dict) -> int:
+    """Apply enemy damage multipliers: >1=vuln, <1=resist, 0=immune."""
+    mult = multipliers.get(damage_type, 1.0)
+    return max(0, int(damage * mult))
+
+
 # ── Data structures ──
 
 @dataclass
@@ -66,6 +72,7 @@ class CombatAction:
     tier: str = ""            # fumble|failure|regular|hard|extreme
     target: str = ""
     damage: int = 0
+    damage_type: str = "物理"
     hp_before: int = 0
     hp_after: int = 0
     narrative: str = ""
@@ -87,6 +94,11 @@ class CombatState:
     log: list[CombatAction] = field(default_factory=list)
     full_log: list[CombatAction] = field(default_factory=list)
     _player_dodging: bool = False
+    _player_concealed: bool = False
+    _player_aiming: bool = False
+    _player_charged: bool = False
+    _boss_current_phase: str = ""
+    _boss_hp_max: int = 0
 
 
 # ── Combat system ──
@@ -227,6 +239,13 @@ class CombatSystem:
 
         first_actor = state.initiative_order[0]
         state.is_player_turn = (first_actor == "player")
+        for e in combat_init.enemies:
+            if getattr(e, 'boss_mechanics', ''):
+                state._boss_hp_max = getattr(e, 'hp', state.player_hp)
+                break
+        for e in state.enemies:
+            if not hasattr(e, 'hp_max') or not getattr(e, 'hp_max', 0):
+                e.hp_max = getattr(e, 'hp', 10)
         return state
 
     def _match_action(self, raw_input: str, available: list[dict]) -> str:
@@ -250,6 +269,12 @@ class CombatSystem:
             return "dodge"
         if any(kw in text for kw in ("逃", "跑", "flee")):
             return "flee"
+        if any(kw in text for kw in ("隐蔽", "潜行", "潜入", "conceal", "hide")):
+            return "conceal"
+        if any(kw in text for kw in ("瞄准", "aim")):
+            return "aim"
+        if any(kw in text for kw in ("蓄力", "charge")):
+            return "charge"
 
         return "punch"
 
@@ -265,6 +290,12 @@ class CombatSystem:
             {"id": "dodge", "label": "回避", "skill": "回避",
              "value": self._skill_value(player, "回避"), "damage": None},
             {"id": "flee", "label": "逃跑", "skill": None, "value": None, "damage": None},
+            {"id": "conceal", "label": "隐蔽", "skill": "潜行",
+             "value": self._skill_value(player, "潜行"), "damage": None},
+            {"id": "aim", "label": "瞄准", "skill": None,
+             "value": None, "damage": None},
+            {"id": "charge", "label": "蓄力", "skill": None,
+             "value": None, "damage": None},
         ]
         for w in getattr(player, 'weapons', []):
             weapon_skill = getattr(w, 'skill_name', '') or getattr(w, 'skill_used', '')
@@ -273,6 +304,10 @@ class CombatSystem:
                 "id": f"weapon:{w.name}", "label": w.name,
                 "skill": weapon_skill, "damage": w.damage,
                 "value": skill_val,
+                "damage_type": getattr(w, 'damage_type', '物理'),
+                "armor_piercing": getattr(w, 'armor_piercing', 0),
+                "attack_bonus": getattr(w, 'attack_bonus', 0),
+                "multi_attack": getattr(w, 'multi_attack', 1),
             })
         if environment_actions:
             for ea in environment_actions:
@@ -326,6 +361,34 @@ class CombatSystem:
                 state.finished = True
             return action
 
+        if action_id == "conceal":
+            action.action_type = "conceal"
+            action.skill_name = "潜行"
+            action.skill_value = self._skill_value(player, "潜行")
+            action.roll = random.randint(1, 100)
+            action.success = action.roll <= action.skill_value
+            action.tier = self._get_tier(action.roll, action.skill_value) if action.success else "failure"
+            if action.success:
+                state._player_concealed = True
+                action.narrative = "你隐蔽在阴影中，下次攻击获得优势。"
+            else:
+                action.narrative = "你试图藏匿但暴露了位置。"
+            return action
+
+        if action_id == "aim":
+            action.action_type = "aim"
+            action.success = True
+            state._player_aiming = True
+            action.narrative = "你专注瞄准，下次攻击命中率提升。"
+            return action
+
+        if action_id == "charge":
+            action.action_type = "charge"
+            action.success = True
+            state._player_charged = True
+            action.narrative = "你蓄势待发，下次攻击伤害提升。"
+            return action
+
         # Attack actions
         actions = self._get_player_actions(player, environment_actions)
         match = next((a for a in actions if a["id"] == action_id), None)
@@ -338,8 +401,17 @@ class CombatSystem:
         action.skill_name = match["skill"]
         action.skill_value = match["value"]
         action.roll = random.randint(1, 100)
-        action.success = action.roll <= action.skill_value
-        action.tier = self._get_tier(action.roll, action.skill_value) if action.success else "failure"
+        effective_skill = action.skill_value
+        if match.get("attack_bonus"):
+            effective_skill += match["attack_bonus"]
+        if getattr(state, '_player_aiming', False):
+            effective_skill += 20
+            state._player_aiming = False
+        if getattr(state, '_player_concealed', False):
+            effective_skill += 10
+            state._player_concealed = False
+        action.success = action.roll <= effective_skill
+        action.tier = self._get_tier(action.roll, effective_skill) if action.success else "failure"
 
         if action.success:
             if match.get("damage") is not None:
@@ -349,8 +421,20 @@ class CombatSystem:
                     en_str = enemy_attrs.get("STR", 50)
                     en_siz = enemy_attrs.get("SIZ", 50)
                     damage = _roll_damage(match["damage"], en_str, en_siz)
-                    armor = enemy.armor if hasattr(enemy, 'armor') else ""
-                    final_damage = _apply_armor(damage, armor)
+                    armor = getattr(enemy, 'armor', '') or ''
+                    armor_val = 0
+                    if armor:
+                        m_armor = re.search(r"(\d+)", armor)
+                        armor_val = int(m_armor.group(1)) if m_armor else 0
+                    ap = match.get("armor_piercing", 0)
+                    effective_armor_val = max(0, armor_val - ap)
+                    final_damage = max(0, damage - effective_armor_val)
+                    dm_type = match.get("damage_type", "物理")
+                    multipliers = getattr(enemy, 'damage_multipliers', {})
+                    final_damage = _apply_damage_multiplier(final_damage, dm_type, multipliers)
+                    if getattr(state, '_player_charged', False):
+                        final_damage = int(final_damage * 1.5)
+                        state._player_charged = False
                     action.damage = final_damage
                     action.hp_before = getattr(enemy, 'hp', 10)
                     if not hasattr(enemy, 'hp'):
@@ -405,7 +489,8 @@ class CombatSystem:
             target="player",
         )
         enemy_attrs = getattr(enemy, 'attributes', {})
-        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2
+        dodge_bonus = getattr(enemy, 'dodge_bonus', 0)
+        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2 + dodge_bonus
         action.skill_value = enemy_skill
         action.roll = random.randint(1, 100)
 
@@ -452,7 +537,8 @@ class CombatSystem:
         )
 
         enemy_attrs = enemy.attributes if hasattr(enemy, 'attributes') else {}
-        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2
+        dodge_bonus = getattr(enemy, 'dodge_bonus', 0)
+        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2 + dodge_bonus
         action.skill_value = enemy_skill
         action.roll = random.randint(1, 100)
 
