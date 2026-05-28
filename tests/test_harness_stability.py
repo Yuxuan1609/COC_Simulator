@@ -1,6 +1,7 @@
 """
-Mini Stability Test Harness — 2 cases, 3 turns serial, real LLM calls.
-Tests system stability: normal flow + mixed stress.
+Mini Stability Test Harness — 2 cases, real LLM calls.
+Case A: weapon & item acquisition test (5-6 turns).
+Case B: NPC interaction test (5 turns).
 Uses Keeper.process_turn() via init_game() + run_turn().
 
 Usage:
@@ -21,9 +22,9 @@ TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_ROOT = os.path.join(os.path.dirname(__file__), "..", "data", "debug", "test_stability", TIMESTAMP)
 
 PROJECT_ROOT = os.path.dirname(__file__)
-L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "更新模组0526v2", "l2_keeper.json")
-L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "更新模组0526v2", "l1_player.json")
-L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "更新模组0526v2", "l3_designer.json")
+L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "测试模组0528v2", "l2_keeper_test.json")
+L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "测试模组0528v2", "l1_player.json")
+L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "测试模组0528v2", "l3_designer.json")
 CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.json")
 
 
@@ -177,18 +178,24 @@ def _setup_llm_logging(case_dir, case_name):
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Case A: Normal Exploration (3 turns)
+#  Case A: Weapon & Item Acquisition (6 turns)
 # ═══════════════════════════════════════════════════════════════
 
 CASE_A = {
-    "name": "A_normal_exploration",
+    "name": "A_item_acquisition",
     "turns": [
         ("环顾四周，仔细搜索这个车厢",
-         "search: 侦查检定, discover interactions and scene weapons"),
-        ("仔细查看门上的便签内容",
-         "I1: 无检定互动, 获取初始信息"),
-        ("仔细查看电车示意图了解车厢布局",
-         "I2: 无检定互动, 了解列车结构"),
+         "search: 6号厢, 发现手电筒/撬棍, 拾取所有武器"),
+        ("检查座椅下方看看有没有什么东西",
+         "I19: 获取火柴 @item_gain"),
+        ("检查车厢内的应急柜",
+         "I18: 侦查检定, 获取急救包/绷带/碘伏 @item_gain"),
+        ("前往5号车厢",
+         "move: 6号车厢 → 5号车厢"),
+        ("仔细搜索5号车厢",
+         "search: 5号厢, I4寻找报纸, 发现小刀(座位缝隙)"),
+        ("翻找这节车厢的垃圾桶",
+         "I21: 侦查检定, 获取胶带/扎带 @item_gain"),
     ],
 }
 
@@ -244,14 +251,33 @@ def run_case(case, case_dir):
                 "description": description,
                 "elapsed": round(elapsed, 1),
             }
+
+            # ── 从 PlayerFacingSnapshot 读取调查员武器/物品 ──
+            held_weapons = []
+            held_items = []
             if isinstance(turn_result, dict):
                 brief = str(turn_result.get("brief", ""))
+                snapshot = turn_result.get("player_snapshot")
+                if snapshot:
+                    inv = getattr(snapshot, "investigator", None) if hasattr(snapshot, "investigator") else snapshot.get("investigator") if isinstance(snapshot, dict) else None
+                    if inv:
+                        held_weapons = [w.name if hasattr(w, "name") else str(w) for w in getattr(inv, "weapons", [])]
+                        im = getattr(inv, "item_manager", None)
+                        if im:
+                            for it in getattr(im, "list_all", lambda: [])():
+                                if hasattr(it, "name"):
+                                    held_items.append(f"{it.name} x{getattr(it, 'quantity', 1)}")
+                                elif isinstance(it, dict):
+                                    held_items.append(f"{it.get('name', '?')} x{it.get('quantity', 1)}")
+
                 turn_data.update({
                     "brief": brief[:300],
                     "has_ending": turn_result.get("ending") is not None,
                     "has_combat": turn_result.get("combat") is not None,
                     "has_standoff": turn_result.get("standoff_prompt") is not None,
                     "skill_results": turn_result.get("skill_results"),
+                    "held_weapons": held_weapons,
+                    "held_items": held_items,
                 })
             results.append(turn_data)
 
@@ -262,6 +288,8 @@ def run_case(case, case_dir):
                 "brief": str(turn_result.get("brief", ""))[:500] if isinstance(turn_result, dict) else str(turn_result),
                 "ending": str(turn_result.get("ending")) if isinstance(turn_result, dict) else None,
                 "combat_outcome": turn_result.get("combat", {}).get("outcome") if isinstance(turn_result, dict) and turn_result.get("combat") else None,
+                "held_weapons": held_weapons,
+                "held_items": held_items,
             }
             with open(os.path.join(case_dir, f"turn_{turn_num + 1:02d}.json"), "w", encoding="utf-8") as f:
                 json.dump(turn_log, f, ensure_ascii=False, indent=2)
@@ -273,6 +301,10 @@ def run_case(case, case_dir):
                 status += " COMBAT"
             if turn_data.get("has_standoff"):
                 status += " STANDOFF"
+            if held_weapons:
+                status += f" WPN:{held_weapons}"
+            if held_items:
+                status += f" ITM:{held_items}"
             print(f"    => {elapsed:.1f}s{status}")
 
         summary = {

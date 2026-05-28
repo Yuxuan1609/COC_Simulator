@@ -1,7 +1,10 @@
 """Message types for inter-agent communication."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from investigator.models import Investigator
 
 
 @dataclass
@@ -157,6 +160,7 @@ class PlayerFacingSnapshot:
     npcs: list[dict] = field(default_factory=list)    # [{"name":"...","brief":"...","demeanor":"..."}]
     combat: dict | None = None         # {"outcome","narrative","is_boss"} or None
     skill_checks: list[SkillCheckResult] = field(default_factory=list)
+    investigator: Optional[Investigator] = None  # 调查员对象，可读取 weapons / item_manager
 
 
 @dataclass

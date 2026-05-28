@@ -455,6 +455,7 @@ def run_turn(game: dict, user_input: str,
         npcs=scene_npcs,
         combat=combat_data,
         skill_checks=skill_checks_out,
+        investigator=world.player,
     )
 
     return {

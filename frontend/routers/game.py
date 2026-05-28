@@ -310,14 +310,29 @@ async def character_card():
         '</div>'
     )
 
+    # 职业名称（兼容字符串或 Occupation 对象）
+    occ_name = ""
+    if p.occupation:
+        occ_name = p.occupation if isinstance(p.occupation, str) else getattr(p.occupation, 'name', '')
+
     header = (
         f'<div class="flex items-center gap-3 pb-3 border-b border-gray-800/60">'
         f'{avatar_block}'
         f'<div class="min-w-0">'
         f'<div class="text-sm font-bold text-aged-gold truncate">{p.name}</div>'
-        f'<div class="text-[10px] text-gray-500">{p.age}岁 {p.gender} {p.occupation or ""}</div>'
+        f'<div class="text-[10px] text-gray-500">{p.age}岁 {p.gender} {occ_name}</div>'
         f'</div></div>'
     )
+
+    # --- Introduction: appearance + personal description ---
+    intro_parts = []
+    if getattr(p, 'appearance', ''):
+        intro_parts.append(f'<div class="text-[10px] text-gray-400"><span class="text-gray-500">外貌：</span>{p.appearance}</div>')
+    if getattr(p, 'personal_description', ''):
+        intro_parts.append(f'<div class="text-[10px] text-gray-400 leading-relaxed">{p.personal_description}</div>')
+    intro_html = (
+        f'<div class="space-y-1.5 pt-2">{ "".join(intro_parts) }</div>'
+    ) if intro_parts else ''
 
     # --- Stats grid (3x3) ---
     stat_labels = {"STR": "力量", "CON": "体质", "SIZ": "体型", "DEX": "敏捷", "APP": "外貌",
@@ -414,7 +429,7 @@ async def character_card():
     )
 
     return HTMLResponse(
-        header + stats_html + derived_html + skills_html + weapons_html + items_html
+        header + intro_html + stats_html + derived_html + skills_html + weapons_html + items_html
     )
 
 
