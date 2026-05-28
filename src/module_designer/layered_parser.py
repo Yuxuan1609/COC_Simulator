@@ -519,7 +519,8 @@ STEP2B_COMBINED_SYSTEM = """你是一个 TRPG 模组解析助手，同时提取�
 @item_gain(item_name="物品名", quantity=数量)
 示例: ["@spawn_enemy(enemy_ref=\"Clicker\", scene=\"2号车厢\", quantity=3)", "@item_gain(item_name=\"手电筒\", quantity=1)"]
 每个 @标记 必须是独立的一条数组元素，格式严格为 @函数(参数=值, ...)
-enemy_ref 和 weapon_ref 必须来自约束列表，@spawn_enemy / @grant_weapon 总调用次数不超过对应 max_count"""
+enemy_ref 和 weapon_ref 必须来自约束列表，@spawn_enemy / @grant_weapon 总调用次数不超过对应 max_count
+特别说明：@grant_weapon 的 scene 为空字符串（scene=""）表示直接授予调查员，无需放置到场景中。"""
 
 
 def build_step2b_combined_prompt(
@@ -1365,6 +1366,8 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
    @consume_item(item_name="物品名", quantity=1, narrative="消耗原因（可选）")
    @npc_state_change(npc_name="NPC名", new_state="新状态")
    @npc_follow(npc_name="NPC名", follow=true)
+
+   特别说明：@grant_weapon 的 scene 为空字符串（scene=""）表示直接授予调查员，无需放置到场景中等待搜索发现。scene 有值时，武器放置到对应场景中，由调查员通过搜索发现并拾取。
 
    无法归入以上类型的保留原自然语言。
 

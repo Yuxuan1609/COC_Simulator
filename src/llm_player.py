@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from llm import call_deepseek
-from game_loop import init_game, run_turn, set_turn_logger, format_turn_dynamic
+from game_loop import init_game, run_turn, set_turn_logger
 from game.turn_logger import TurnLogger
 from investigator import load_investigator
 from llm_player_prompts import (
