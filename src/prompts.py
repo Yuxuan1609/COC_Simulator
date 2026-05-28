@@ -314,6 +314,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             parts.append(f"条件=\"{soft}\"")
         return f"  {prefix} " + " ".join(parts)
 
+    completed_scene: list[str] = []
+    completed_npc: list[str] = []
+
     if node:
         # Collect all NPC-bound entity IDs for the current scene
         npc_bound_interact_ids: set[str] = set()
@@ -326,9 +329,6 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                     npc_bound_interact_ids.add(e.get("id", ""))
                 for e in npc.bound_auto_triggers:
                     npc_bound_at_ids.add(e.get("id", ""))
-
-        completed_scene: list[str] = []
-        completed_npc: list[str] = []
 
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
