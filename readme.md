@@ -71,7 +71,7 @@ flowchart LR
 ## 安装与启动
 
 ```bash
-pip install openai python-docx PyPDF2 ipython
+pip install openai python-docx PyPDF2 ipython fastapi uvicorn jinja2 websockets
 # 在项目根目录创建 .env: DEEPSEEK_API_KEY=your-key
 ```
 

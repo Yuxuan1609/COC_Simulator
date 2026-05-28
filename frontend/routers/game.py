@@ -19,6 +19,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 # ── Game instance (lazy init) ──
 _game_instance: dict | None = None
+_game_quit: bool = False  # prevents auto-reinit after /quit
 _weapon_lib = None
 _enemy_lib = None
 _injector = None
@@ -47,8 +48,10 @@ def _init_libraries(weapon_path="", enemy_path="", boss_path=""):
     _injector = ContentInjector(_weapon_lib, _enemy_lib)
 
 
-def get_game() -> dict:
-    global _game_instance
+def get_game() -> dict | None:
+    global _game_instance, _game_quit
+    if _game_quit:
+        return None
     if _game_instance is None:
         from game_loop import init_game
         from investigator import load_investigator, Investigator
@@ -155,10 +158,13 @@ def _handle_slash_command(cmd: str) -> str:
         else:
             lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
     elif cmd in ("/quit", "/exit"):
+        global _game_quit
         _game_instance = None
+        _game_quit = True
         lines.append('<div class="text-xs text-green-400">游戏已退出。返回启动页以重新开始。</div>')
     elif cmd == "/reset":
         _game_instance = None
+        _game_quit = False
         lines.append('<div class="text-xs text-green-400">游戏已重置，刷新页面以重新开始</div>')
     else:
         lines.append(f'<div class="text-xs text-gray-500">未知命令: {cmd}。输入 /help 查看可用命令。</div>')
@@ -189,6 +195,19 @@ async def process_turn(user_input: str = Form(...)):
 
     try:
         game = get_game()
+        if game is None:
+            return {
+                "brief": "",
+                "narrative": "",
+                "narrative_html": '<div class="text-gray-500 text-sm">游戏已退出。请返回启动页重新开始。</div>',
+                "combat": None,
+                "skill_results": [],
+                "game_over": True,
+                "ending": None,
+                "timestamp": "",
+                "player_snapshot": None,
+                "turn_dynamic_text": "",
+            }
     except Exception as e:
         traceback.print_exc()
         return HTMLResponse(
@@ -489,10 +508,13 @@ async def game_command(cmd: str = Form(...)):
         else:
             lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
     elif cmd in ("/quit", "/exit"):
+        global _game_quit
         _game_instance = None
+        _game_quit = True
         lines.append('<div class="text-xs text-green-400">游戏已退出。返回启动页以重新开始。</div>')
     elif cmd == "/reset":
         _game_instance = None
+        _game_quit = False
         lines.append('<div class="text-xs text-green-400">游戏已重置，刷新页面以重新开始</div>')
     else:
         lines.append(f'<div class="text-xs text-gray-500">未知命令: {cmd}。输入 /help 查看可用命令。</div>')
@@ -558,7 +580,8 @@ async def init_game_api(
     enemy_path: str = Form(""),
     boss_path: str = Form(""),
 ):
-    global _game_instance
+    global _game_instance, _game_quit
+    _game_quit = False
     import os
     from datetime import datetime
     from game_loop import init_game
