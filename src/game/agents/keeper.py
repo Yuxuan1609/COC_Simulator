@@ -136,6 +136,7 @@ class Keeper:
                 dialogue = self.world.npcs.talk_to(
                     npc_name, raw,
                     lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
+                    world=self.world,
                 )
                 self._npc_events.append(f"{npc_name}：{dialogue}")
                 # Detect follow request via keyword match

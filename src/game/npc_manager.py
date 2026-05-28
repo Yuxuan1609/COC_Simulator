@@ -115,8 +115,13 @@ class NPCManager:
 
     # ── 交互 ──
 
-    def talk_to(self, npc_name: str, player_input: str, llm_call) -> str:
-        """State gate -> can_interact gate -> inject profile/memory context -> LLM -> append memory."""
+    def talk_to(self, npc_name: str, player_input: str, llm_call, world=None) -> str:
+        """State gate -> can_interact gate -> interact_requirements gate -> inject profile/memory context -> LLM -> append memory.
+
+        can_interact: NPC 是否具备互动能力（false = 永远不可自由对话，需 interact_unlock entity 解锁）。
+        interact_requirements: 互动需满足的前置条件（|| 前硬性 entity ID，|| 后软性自然语言）。
+        两者均满足时才能进行自由对话。
+        """
         npc = self._npcs.get(npc_name)
         if not npc:
             return f"（{npc_name} 不在此处。）"
@@ -127,6 +132,19 @@ class NPCManager:
 
         if not npc.can_interact:
             return f"（{npc.name} 似乎不愿与你交谈。）"
+
+        # Check interact_requirements (hard part evaluated against runtime_state)
+        if npc.interact_requirements and npc.interact_requirements.strip():
+            req = npc.interact_requirements.strip()
+            if "||" in req:
+                hard, _ = req.split("||", 1)
+                hard = hard.strip()
+            else:
+                hard = req
+            if hard and world and hasattr(world, 'runtime_state'):
+                from scenario_core import parse_hard_requirement
+                if not parse_hard_requirement(hard, world.runtime_state):
+                    return f"（{npc.name} 暂时不愿与你交谈。）"
 
         triggers_text = ""
         if npc.interaction_triggers:
@@ -242,7 +260,7 @@ class NPCManager:
         if not npc:
             return {"brief": f"（{npc_name} 不在此处。）"}
 
-        dialogue = self.talk_to(npc_name, user_input, llm_text)
+        dialogue = self.talk_to(npc_name, user_input, llm_text, world=world)
 
         matched_entity_ids = []
         follow_request = False

@@ -207,22 +207,24 @@ STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
 {
   "module_meta": {"title": "模组标题", "author": "原作者（未知则留空）", "era": "年代（如1920s）", "theme": "核心主题", "expected_duration": "预计时长", "player_count": "建议人数", "estimated_duration": 240, "comms_interval": 10, "starting_time_of_day": "夜间"},
   "scenes": ["场景中文名", ...],
-  "characters": [
-    {
-      "name": "角色中文名",
-      "id": "NPC_1",
-      "scenes": ["场景A", "场景B"],
-      "can_follow": true,
-      "follow_condition": "跟随的前置条件（自然语言描述，如"需要先救下该角色""无条件"等）"
-    },
-    {
-      "name": "角色中文名",
-      "id": "NPC_2",
-      "scenes": ["场景A"],
-      "can_follow": false,
-      "follow_condition": ""
-    }
-  ],
+   "characters": [
+     {
+       "name": "角色中文名",
+       "id": "NPC_1",
+       "role": "身份/职务/别称（如"乘务员"、"调查记者"、"列车长"等。提取模组文本中对该角色的身份定位，用简短中文短语表达，≤10字）",
+       "scenes": ["场景A", "场景B"],
+       "can_follow": true,
+       "follow_condition": "跟随的前置条件（自然语言描述，如"需要先救下该角色""无条件"等）"
+     },
+     {
+       "name": "角色中文名",
+       "id": "NPC_2",
+       "role": "记者",
+       "scenes": ["场景A"],
+       "can_follow": false,
+       "follow_condition": ""
+     }
+   ],
   "boss_encounters": [
     {
       "boss_ref": "Boss库中的名称",
@@ -379,6 +381,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - **模组中提到的可获取物品（clues_and_items 章节：clues 为剧情关键物品/线索，items 为非剧情普通物品，需结合精修模组原文和常识判断）必须在对应场景的 entity 中通过 result 或 graded_result 明确表达为可获取状态，确保每个物品都有对应的 entity 承载其获取路径**
 - **entity 的 result/trigger/side_effects 中涉及 NPC 名称时，必须使用已知角色列表中的名称，不允许自创或使用别名**
 - NPC互动是否生成 entity 的判断标准：entity 必须有可感知的游戏机制后果——技能检定、物品给予/消耗、属性变化、NPC状态变更（受伤/死亡等）、触发新的事件、场景永久性变化。单纯的NPC对话/交谈/打听消息（无机制后果的信息传递）不生成 entity，由运行时 NPC 对话系统处理。
+- **双路径 entity**：如果某个互动的结果或难度取决于前方某个关键事件的完成状态（如 NPC 是否已被救醒），可以为同一目标创建两个 entity：一个用于前置条件未满足时（更高难度或不同方式），一个用于前置条件已满足时（更低难度或 NPC 辅助）。两个 entity 通过不同的 requirement 区分，互为平行路径而非重复。
 - NPC 跟随/离开实体由管线根据 Step 1a 的 can_follow 字段自动生成，你不要手动创建。
 - 仅输出 JSON，不要任何解释性文字
 
@@ -435,9 +438,22 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 """
 
 
+def _format_char_list(characters: list[dict]) -> str:
+    """Format character list with role/identity info in parentheses."""
+    lines = []
+    for c in (characters or []):
+        name = c.get("name", "?")
+        role = (c.get("role", "") or "").strip()
+        entry = f"- {c.get('id', '?')}: {name}"
+        if role:
+            entry += f"（{role}）"
+        lines.append(entry)
+    return "\n".join(lines) if lines else "（无）"
+
+
 def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict] = None, skill_names: list[str] = None) -> str:
     scene_list = "\n".join(f"- {s}" for s in scenes)
-    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
+    char_list = _format_char_list(characters)
     skills_str = "\n".join(f"- {s}" for s in (skill_names or []))
     return f"""已知场景列表:
 {scene_list}
@@ -519,11 +535,10 @@ def build_step2b_combined_prompt(
         f"- {i['id']}: {i['name']} → {i.get('result', '')} (场景 {i['scene']})"
         for i in interactions
     )
-    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in (characters or []))
+    char_list = _format_char_list(characters)
     enemy_list = "\n".join(f"- {e['enemy_ref']} (max {e.get('max_count',1)})" for e in (enemies or []))
     weapon_list = "\n".join(f"- {w['weapon_ref']} (max {w.get('max_count',1)})" for w in (weapons or []))
     return f"""已知场景:
-{scene_list}
 
 已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
 {char_list if char_list else "（无）"}
@@ -598,7 +613,7 @@ STEP2C_L1_SYSTEM = f"""你是一个 TRPG 模组解析助手，专门提取「玩
 
 def build_step2c_l1_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict]) -> str:
     scene_list = "\n".join(f"- {s}" for s in scenes)
-    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
+    char_list = _format_char_list(characters)
     return f"""已知场景列表（必须使用这些场景名作为 JSON key）:
 {scene_list}
 
@@ -660,7 +675,7 @@ STEP2C_L3_SYSTEM = f"""你是一个优秀的 TRPG 模组设计师，专门提取
 def build_step2c_l3_prompt(chapters: dict[str, str], scenes: list[dict], characters: list[dict], step1_meta: dict = None) -> str:
     meta_ref = json.dumps(step1_meta, ensure_ascii=False, indent=2) if step1_meta else "（无）"
     scene_list = "\n".join(f"- {s}" for s in scenes)
-    char_list = "\n".join(f"- {c['id']}: {c['name']}" for c in characters) if characters else "（无）"
+    char_list = _format_char_list(characters)
     return f"""已知场景列表:
 {scene_list}
 
@@ -700,7 +715,7 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
 - initial_state：NPC 初始存活状态，默认 "alive"
 - initial_attitude：NPC 初始态度，默认 "neutral"（可选值：hostile / wary / neutral / friendly / allied）
 - initial_following：初始是否已跟随玩家，默认 false
-- can_interact：NPC 是否接受玩家自由对话（默认 true；若模组中 NPC 只参与固定 entity 互动、不接受任意闲聊则 false）
+- can_interact：NPC 是否具备互动能力（默认 true）。若 false，表示 NPC 从本质上不能自由对话（如昏迷、充满敌意、只出现于固定演出），需通过 interact_unlock entity 解锁。此字段描述 NPC 的"本质属性"，与 interact_requirements（条件性门禁）互补：两者同时满足时互动才可用
 - can_follow：NPC 是否可能跟随调查员行动
 - Step 1a 初步判断仅作参考，基于 L1/L2/L3 完整信息做出最终判断
 - 只使用提供的信息，不编造新角色或新能力
@@ -717,11 +732,11 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
   - 硬性条件（entity ID 引用）放在 || 之前，格式与 requirement 字段一致：entity ID + AND/OR/()，如 I3 AND I5、(I1 OR I2) AND I3。裸 entity ID 默认指该实体成功完成
   - 软性条件（自然语言描述如信任/关系/剧情状态）放在 || 之后
   - 无条件则留空字符串
-- interact_requirements：NPC 自由对话的解锁条件
-  - 格式同 follow_requirements
-  - can_interact=true 且无条件则留空字符串
-  - can_interact=false 时，描述在什么条件下可解锁自由对话（或留空表示永远不可自由对话）
-  - 注：entity 互动（bound_entities 中的 entity）不受 can_interact 影响，始终可通过正常管线触发
+- interact_requirements：NPC 自由对话的前置条件（即使 can_interact=true 也需满足）
+  - 格式同 follow_requirements：硬性 entity ID 条件（|| 前）+ 软性自然语言条件（|| 后）
+  - 无条件则留空字符串——NPC 从开局即可自由对话
+  - 注：can_interact 是 NPC 本质属性（"能否对话"），interact_requirements 是条件门禁（"何时能对话"）。例如 can_interact=true + interact_requirements="I6" 表示 NPC 有能力对话，但需先完成 I6
+  - 注：entity 互动（bound_entities 中的 entity）不受 can_interact 或 interact_requirements 影响，始终可通过正常管线触发
 
 ## 输出格式
 {
@@ -739,7 +754,7 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
       "can_interact": true,
       "can_follow": true,
       "follow_requirements": "I3 AND I5 || NPC信任调查员后愿意跟随",
-      "interact_requirements": "",
+      "interact_requirements": "I6 || 救治NPC后他愿意交谈",
       "bound_entities": ["I1", "AT2"]
     }
   }
@@ -747,7 +762,7 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
 
 规则：
 - 必须覆盖 L3 characters 中的所有角色
-- can_follow / can_interact 基于完整 L1+L2+L3 信息综合判断，Step 1a 的初步判断仅作参考
+- can_follow / can_interact 基于完整 L1+L2+L3 信息综合判断，Step 1a 的初步判断仅作参考。can_interact 与 interact_requirements 独立评估：前者是 NPC 的本质互动能力，后者是条件性门禁。两者同时满足时自由对话才可用
 - bound_entities：该 NPC 专属的 entity ID 列表（scene 通用 entity 不列入）
 - follow_requirements / interact_requirements：|| 前为硬性 entity ID 条件，|| 后为软性自然语言条件；纯硬性或纯软性可省略 || 的另一侧
 - 仅输出 JSON，不要任何解释性文字"""
@@ -795,6 +810,7 @@ def build_step25_combined_prompt(
             step1a_hints.append({
                 "name": c.get("name", ""),
                 "id": c.get("id", ""),
+                "role": c.get("role", ""),
                 "scenes": c.get("scenes", []),
                 "can_follow_hint": c.get("can_follow"),
                 "follow_condition_hint": c.get("follow_condition", ""),
@@ -939,6 +955,7 @@ STEP3A_SYSTEM = """你是一个 TRPG 逻辑验证助手，专门做模组信息�
 重要原则：
 - interaction/event/auto_trigger统称为entity
 - **唯一去重条件**：两个 entity 描述的是同一件事情的发生（判断标准：指代同一事件，不仅仅是同一 based_on 源，也不是文字相似）。仅在这种情况下合并为一个。
+- **双路径 entity 保护**：如果两个 entity 实现同一目标但前置条件不同（如 I7 无 NPC 帮助 hard 难度，I8 有 NPC 帮助 regular 难度），它们代表不同的游戏路径，不是重复 entity，绝对不应合并。
 - 合并时优先保留 auto_trigger 和 interaction（event 的信息合入保留方，不丢失）
 - graded_result 在 type != "无" 时强制填写至少1条；type == "无" 时删除空 graded_result
 - result 和 side_effects 信息重合时修剪一方。result 为 "##GRADED##" 时跳过此检查
