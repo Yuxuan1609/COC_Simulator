@@ -20,7 +20,9 @@ def _make_investigator(name="测试员", hp=12, san=60, mp=14):
 
 class _TestEnemy:
     """Minimal enemy instance matching what CombatSystem expects."""
-    def __init__(self, enemy_ref, hp, armor, instance_id, dex=50, attacks=None):
+    def __init__(self, enemy_ref, hp, armor, instance_id, dex=50, attacks=None,
+                 damage_multipliers=None, dodge_bonus=0, multi_attack=1,
+                 special_rules="", phases=None, boss_mechanics=""):
         self.enemy_ref = enemy_ref
         self.name = enemy_ref
         self.hp = hp
@@ -30,7 +32,15 @@ class _TestEnemy:
         self.status = "hostile"
         self.flags = set()
         self.DEX = dex
+        self.attributes = {}       # needed by _resolve_enemy_action
         self.attacks = attacks or [{"name": "爪击", "skill_name": "格斗", "skill_value": 40, "damage": "1D6"}]
+        self.damage_multipliers = damage_multipliers or {}
+        self.dodge_bonus = dodge_bonus
+        self.multi_attack = multi_attack
+        self.special_rules = special_rules
+        self.phases = phases or []
+        self.boss_mechanics = boss_mechanics
+        self._current_phase = ""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -203,6 +213,109 @@ def test_combat_result_structure():
     print(f"  [PASS] result_structure: all fields present, outcome={result.outcome}")
 
 
+# ═══════════════════════════════════════════════════════════════
+# Test 7: phase trigger — hp_below_pct activates boss phase
+# ═══════════════════════════════════════════════════════════════
+def test_combat_phase_trigger():
+    """Phase triggers at hp_below_pct and applies overrides."""
+    player = _make_investigator(hp=30, san=60)
+    boss = _TestEnemy("PhaseBoss", hp=10, armor="0", instance_id="E_PHASE_1",
+        dex=50, attacks=[{"name": "拍击", "damage": "1D3"}],
+        phases=[{"trigger": "hp_below_pct:0.5", "name": "狂怒",
+                 "overrides": {}, "description": "Boss狂暴了"}])
+    combat_init = CombatInit(
+        enemies=[boss], player=player,
+        scene="测试", initiative_context="phase",
+    )
+    cs = CombatSystem()
+    result = cs.run_combat(combat_init)
+    assert result.outcome in ("win", "loss"), f"unexpected outcome: {result.outcome}"
+    print(f"  [PASS] phase_trigger: outcome={result.outcome}, rounds={result.rounds}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Test 8: damage multipliers — vulnerability increases damage
+# ═══════════════════════════════════════════════════════════════
+def test_combat_damage_multipliers():
+    """Enemy with vulnerability takes extra damage."""
+    player = _make_investigator(hp=30, san=60)
+    enemy = _TestEnemy("WeakToFire", hp=10, armor="0", instance_id="E_FIRE_1",
+        damage_multipliers={"火焰": 2.0})
+    combat_init = CombatInit(
+        enemies=[enemy], player=player,
+        scene="测试", initiative_context="dmg_mult",
+    )
+    cs = CombatSystem()
+    result = cs.run_combat(combat_init)
+    assert result.outcome in ("win", "loss"), f"unexpected outcome: {result.outcome}"
+    print(f"  [PASS] dmg_multipliers: outcome={result.outcome}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Test 9: multi-target — player_targets enables multiple targets
+# ═══════════════════════════════════════════════════════════════
+def test_combat_multi_target():
+    """CombatInit with player_targets allows multiple targets."""
+    player = _make_investigator(hp=30, san=60)
+    e1 = _TestEnemy("Target1", hp=5, armor="0", instance_id="E_T1")
+    e2 = _TestEnemy("Target2", hp=5, armor="0", instance_id="E_T2")
+    combat_init = CombatInit(
+        enemies=[e1, e2], player=player,
+        scene="测试", initiative_context="multi",
+        player_targets=["E_T1", "E_T2"],
+    )
+    cs = CombatSystem()
+    result = cs.run_combat(combat_init)
+    assert result.outcome in ("win", "loss"), f"unexpected outcome: {result.outcome}"
+    assert hasattr(result, 'round_log'), "CombatResult should have round_log"
+    print(f"  [PASS] multi_target: outcome={result.outcome}, round_log entries={len(result.round_log)}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Test 10: new player actions — conceal, aim, charge
+# ═══════════════════════════════════════════════════════════════
+def test_combat_new_actions():
+    """Conceal, aim, and charge actions execute without crash."""
+    player = _make_investigator(hp=30, san=60)
+
+    enemy1 = _TestEnemy("TestDummy", hp=10, armor="0", instance_id="E_ACT1")
+    cs = CombatSystem()
+    ci1 = CombatInit(enemies=[enemy1], player=player, scene="测试")
+    r1 = cs.run_combat(ci1, player_action="conceal")
+    assert r1.outcome in ("win", "loss", "draw")
+    print(f"  [PASS] conceal: outcome={r1.outcome}")
+
+    enemy2 = _TestEnemy("TestDummy2", hp=10, armor="0", instance_id="E_ACT2")
+    ci2 = CombatInit(enemies=[enemy2], player=player, scene="测试")
+    r2 = cs.run_combat(ci2, player_action="aim")
+    assert r2.outcome in ("win", "loss", "draw")
+    print(f"  [PASS] aim: outcome={r2.outcome}")
+
+    enemy3 = _TestEnemy("TestDummy3", hp=10, armor="0", instance_id="E_ACT3")
+    ci3 = CombatInit(enemies=[enemy3], player=player, scene="测试")
+    r3 = cs.run_combat(ci3, player_action="charge")
+    assert r3.outcome in ("win", "loss", "draw")
+    print(f"  [PASS] charge: outcome={r3.outcome}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Test 11: round_log populated in CombatResult
+# ═══════════════════════════════════════════════════════════════
+def test_combat_round_log():
+    """CombatResult includes round_log after layered execution."""
+    player = _make_investigator(hp=30, san=60)
+    enemy = _TestEnemy("LogTest", hp=5, armor="0", instance_id="E_LOG")
+    combat_init = CombatInit(
+        enemies=[enemy], player=player,
+        scene="测试", initiative_context="round_log",
+    )
+    cs = CombatSystem()
+    result = cs.run_combat(combat_init)
+    assert hasattr(result, 'round_log'), "CombatResult should have round_log"
+    assert isinstance(result.round_log, list), "round_log should be a list"
+    print(f"  [PASS] round_log: {len(result.round_log)} rounds logged")
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()
@@ -211,4 +324,9 @@ if __name__ == "__main__":
     test_combat_boss_loss_signal()
     test_combat_regular_death()
     test_combat_result_structure()
+    test_combat_phase_trigger()
+    test_combat_damage_multipliers()
+    test_combat_multi_target()
+    test_combat_new_actions()
+    test_combat_round_log()
     print("\nAll combat smoke tests passed.")

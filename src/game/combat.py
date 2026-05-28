@@ -233,7 +233,7 @@ class CombatSystem:
                     continue
                 triggered = self._check_phase(state, enemy)
                 if triggered:
-                    desc = self._apply_phase(enemy, triggered, getattr(enemy, 'phases', []))
+                    desc = self._apply_phase(state, enemy, triggered, getattr(enemy, 'phases', []))
                     if desc:
                         rresult.setdefault("status_changes", []).append({
                             "entity_id": enemy.instance_id,
@@ -708,7 +708,7 @@ class CombatSystem:
                     return name
         return None
 
-    def _apply_phase(self, enemy, phase_name: str, phases: list) -> str:
+    def _apply_phase(self, state, enemy, phase_name: str, phases: list) -> str:
         """Apply phase overrides to enemy. Returns narration string."""
         for ph in phases:
             if isinstance(ph, dict):
@@ -885,7 +885,7 @@ class CombatSystem:
                 continue
             triggered = self._check_phase(state, enemy)
             if triggered:
-                desc = self._apply_phase(enemy, triggered, getattr(enemy, 'phases', []))
+                desc = self._apply_phase(state, enemy, triggered, getattr(enemy, 'phases', []))
 
         state.round += 1
         return state.log
