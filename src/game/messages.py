@@ -113,6 +113,9 @@ class CombatInit:
     scene: str = ""
     initiative_context: str = ""
     environment_actions: list[dict] = field(default_factory=list)  # [{"id":"panel","label":"操作面板","skill":"电气维修"}, ...]
+    player_action: str = ""
+    player_targets: list[str] = field(default_factory=list)
+    player_extra: str = ""
 
 
 @dataclass
@@ -124,6 +127,32 @@ class CombatResult:
     player_hp: int = 0
     player_san: int = 0
     rounds: int = 0
+    round_log: list[Any] = field(default_factory=list)
+
+
+@dataclass
+class RoundResult:
+    """Single round result, shared between deterministic layer and LLM correction."""
+    round: int = 0
+    player_action: str = ""
+    player_target: str = ""
+    player_roll: int = 0
+    player_tier: str = ""
+    player_damage: int = 0
+    player_damage_type: str = "物理"
+    player_effects: list[str] = field(default_factory=list)
+    enemy_actions: list[dict] = field(default_factory=list)
+    status_changes: list[dict] = field(default_factory=list)
+    narrative: str = ""
+
+
+@dataclass
+class Phase:
+    """Boss phase definition."""
+    trigger: str = ""         # "hp_below_pct:0.5" | "round:3"
+    name: str = ""
+    overrides: dict = field(default_factory=dict)
+    description: str = ""
 
 
 @dataclass
