@@ -539,6 +539,7 @@ def build_step2b_combined_prompt(
     enemy_list = "\n".join(f"- {e['enemy_ref']} (max {e.get('max_count',1)})" for e in (enemies or []))
     weapon_list = "\n".join(f"- {w['weapon_ref']} (max {w.get('max_count',1)})" for w in (weapons or []))
     return f"""已知场景:
+{scene_list}
 
 已知角色列表（entity 中涉及 NPC 名称时，必须使用下表中的名称）:
 {char_list if char_list else "（无）"}
