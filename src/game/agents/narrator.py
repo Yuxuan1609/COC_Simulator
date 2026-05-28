@@ -38,16 +38,15 @@ class Narrator:
             prompt, json_mode=True, model=LLM_FLASH_MODEL,
             reasoning_effort=RE_NARRATOR,
             system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。"
-                   "\n\n你的任务是结合实体行动结果和场景感知信息，为玩家输入生成沉浸式叙事。"
-                   "\n\n输出规则："
-                   "\n- brief: 简洁、清晰、客观概括本轮发生了什么，仅陈述事实，不含情绪色彩"
-                   "\n- narrative: 基于结果文学性展开，融入场景氛围，中文不超过100字"
-                   "\n- brief 与 narrative 必须严格呼应: brief 概述事实，narrative 文学展开"
-                   "\n- scene_update: 判断本轮是否导致场景可见变化（物品/门/血迹/光源/NPC），有则输出完整描述，无则为空"
-                   "\n- 即兴行为不导致场景变化，不填写 scene_update"
+                   "\n\n你的任务是结合实体行动结果和场景感知信息，为玩家本轮的行动生成沉浸式叙事。"
+                   "\n\n输出格式：{\"brief\": \"...\", \"narrative\": \"...\", \"scene_update\": \"\"}。直接输出 JSON。"
+                   "\n\n── 字段规则 ──"
+                   "\n- brief: 第三人称视角，简单清晰阐述本轮发生了什么（谁对谁做了什么）。仅陈述事实，不含情绪色彩。不超过50字。"
+                   "\n- narrative: 第一人称视角（用「你」），以沉浸式语言描述玩家主观感受和经历——看到什么、听到什么、闻到什么、心里怎么想。融入场景氛围。不超过100字。"
+                   "\n- brief 与 narrative 严格呼应：brief 陈述事实，narrative 展开感受"
+                   "\n- scene_update: 当本轮行动导致场景发生「持久可见变化」时，输出变化后的完整场景描述。变化包括但不限于：物品被移走/拾取、门被打开/关上、出现血迹/痕迹、光源亮起/熄灭、NPC 出现/离开。即兴行为（仅叙述性描写、无实际影响）不填此字段。无变化时填空字符串。"
                    "\n- 禁止在未提及获得物品时描述获得物品；禁止给出前文没有的实质性信息"
-                   "\n- 叙事强调指明了本轮的叙事核心方向"
-                   "\n\n输出格式：{\"brief\": \"...\", \"narrative\": \"...\", \"scene_update\": \"\"}。直接输出 JSON。",
+                   "\n- 叙事强调指明了本轮的叙事核心方向",
             fallback_schema={"brief": "", "narrative": "", "scene_update": ""},
         )
         return parse_narrative_output(response)
