@@ -549,8 +549,7 @@ class CombatSystem:
                     if not hasattr(enemy, 'hp'):
                         enemy.hp = max(1, en_siz // 5)
                         action.hp_before = enemy.hp
-                    enemy.hp = action.hp_before - final_damage
-                    action.hp_after = enemy.hp
+                    action.hp_after = action.hp_before - final_damage
                     action.target = target_iid
                     action.narrative = f"你的{match['label']}命中！造成{final_damage}点伤害。"
             else:
