@@ -392,35 +392,19 @@ llm_player 模拟测试在以下环节存在有意短接，不影响测试目标
 |--------|------|------|
 | **战斗系统** | `game_loop.py:run_turn()` | 所有战斗自动胜利（pyrrhic victory narrative）。`CombatSystem.run_combat()` 仅被独立 smoke test 调用，从未进入主循环。LLM Player 通过 Narrator 产出间接感知战斗结果 |
 | **结局触发** | `keeper.py:651` + `llm_player.py:253` | 结局事件触发后 `game_over=True`，llm_player 立即退出循环。正常——结局本身就是终止条件 |
-| **战斗叙事** | `combat.narrative` in `full_text` | 战斗文本仅写入 `full_text`，不进入 Narrator 或 LLM Player 的 prompt 上下文。LLM Player 通过 `brief`/`narrative`（Narrator 产出）间接感知 |
+| **战斗叙事** | `game_loop.py:275` | 战斗短接后的 pyrrhic victory 文本写入 `combat.narrative` 和 `full_text`。战斗触发信息（Boss 发现/进入战斗）通过 `keeper.process_turn()` Step 2.6 注入 `enrich_input`，经 Enrich → Narrator 管线产出叙事，LLM Player 可间接感知 |
 
 ### Testing Principle: 模拟测试心跳检测
 
-跑 llm_player 长测试时，建议用以下心跳脚本监控输出目录：
+跑 llm_player 长测试时，用 `tools/watchdog.ps1` 监控输出目录：
 
 ```powershell
-# watchdog.ps1 — 每 5 分钟检查日志目录，无更新则杀进程
-param([string]$LogDir, [int]$TimeoutMin=5)
-
-$lastCount = 0
-$stuckRounds = 0
-while ($true) {
-    Start-Sleep -Seconds ($TimeoutMin * 60)
-    $currentCount = @(Get-ChildItem -LiteralPath $LogDir -Recurse -File).Count
-    if ($currentCount -eq $lastCount) {
-        $stuckRounds++
-        Write-Host "[WARN] 日志目录 $LogDir 无新文件 ($stuckRounds/$TimeoutMin 轮)"
-        if ($stuckRounds -ge 1) {
-            Write-Host "[FATAL] 疑似死锁，杀进程..."
-            Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
-            break
-        }
-    } else {
-        $stuckRounds = 0
-    }
-    $lastCount = $currentCount
-}
+.\tools\watchdog.ps1 -LogDir "logs\llm_player\<timestamp>" -InitDelay 5 -TimeoutMin 5
 ```
+
+- **Initial Delay**：启动后等 `InitDelay` 分钟再开始检测（llm_player 首次写日志需 1-3min）
+- **Idle Kill**：连续 `TimeoutMin` 分钟无新文件产出 → 杀 Python 进程
+- **Anti-Sleep**：通过 `SetThreadExecutionState` 阻止系统待机/息屏
 
 原则：长时间运行的 LLM 测试必须有心跳检测——5 分钟无新输出立即杀进程，避免 API 超时或 combat 死循环堵死整轮跑局。
 
