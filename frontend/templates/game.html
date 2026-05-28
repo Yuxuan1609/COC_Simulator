@@ -184,17 +184,15 @@
 
   function updateSceneCard(snap) {
     if (!snap) return;
-    // Time string
+    // Time — clock.to_dict() returns {"game_time": int, "time_context": str}
     var timeStr = '';
-    if (snap.time) {
-      if (snap.time.day) timeStr += '第' + snap.time.day + '天 ';
-      if (snap.time.game_time_minutes !== undefined) {
-        var h = Math.floor(snap.time.game_time_minutes / 60);
-        var m = snap.time.game_time_minutes % 60;
-        timeStr += (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
-      } else if (snap.time.time_of_day) {
-        timeStr += snap.time.time_of_day;
-      }
+    if (snap.time && snap.time.game_time !== undefined) {
+      var gt = snap.time.game_time;
+      var day = Math.floor(gt / 1440);
+      var hour = Math.floor((gt % 1440) / 60);
+      var min = gt % 60;
+      if (day) timeStr += '第' + day + '天 ';
+      timeStr += (hour < 10 ? '0' : '') + hour + ':' + (min < 10 ? '0' : '') + min;
     }
 
     // Collapsed
