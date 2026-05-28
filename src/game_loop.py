@@ -384,29 +384,38 @@ def run_turn(game: dict, user_input: str,
     import re as _re
     scene_name = world.current_location
     scene_description = ""
-    scene_npcs = []
     if hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
         scene_description = brief.scene_snapshot.description
+    # Prefer L1 immersive description over raw L2 node description
+    narrator = game["narrator"]
+    l1_scene = narrator.l1_data.get(world.current_location) if narrator.l1_data else None
+    if l1_scene and isinstance(l1_scene, dict):
+        l1_desc = l1_scene.get("description", "")
+        if l1_desc and (not scene_description or scene_description == world.current_location
+                or len(l1_desc) > len(scene_description)):
+            scene_description = l1_desc
+    if not scene_description:
+        scene_description = world.get_current_description()
+
+    # Build NPC list from Curator snapshot + enrich with L1 appearance data
+    scene_npcs = []
+    if hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
         scene_npcs = [
             {"name": n.get("name", ""), "brief": n.get("brief", ""), "demeanor": n.get("demeanor", "")}
             for n in brief.scene_snapshot.visible_npcs
         ]
-        # Enrich with L1 NPC appearance data if available (better descriptions)
-        narrator = game["narrator"]
-        l1_scene = narrator.l1_data.get(world.current_location) if narrator.l1_data else None
-        if l1_scene and isinstance(l1_scene, dict):
-            l1_npcs = l1_scene.get("npcs", [])
-            if l1_npcs:
-                l1_map = {n.get("name", ""): n for n in l1_npcs if isinstance(n, dict)}
-                for npc in scene_npcs:
-                    l1_match = l1_map.get(npc["name"])
-                    if l1_match:
-                        if l1_match.get("brief"):
-                            npc["brief"] = l1_match["brief"]
-                        if l1_match.get("demeanor"):
-                            npc["demeanor"] = l1_match["demeanor"]
-    if not scene_description:
-        scene_description = world.get_current_description()
+    # Enrich with L1 NPC appearance (better brief/demeanor)
+    if l1_scene and isinstance(l1_scene, dict):
+        l1_npcs = l1_scene.get("npcs", [])
+        if l1_npcs:
+            l1_map = {n.get("name", ""): n for n in l1_npcs if isinstance(n, dict)}
+            for npc in scene_npcs:
+                l1_match = l1_map.get(npc["name"])
+                if l1_match:
+                    if l1_match.get("brief"):
+                        npc["brief"] = l1_match["brief"]
+                    if l1_match.get("demeanor"):
+                        npc["demeanor"] = l1_match["demeanor"]
     exits_data = [
         {"target": e.target, "method": e.method}
         for e in world.get_possible_exits()
