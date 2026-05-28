@@ -68,6 +68,11 @@
         <div class="text-[10px] text-gray-500 font-bold mb-1">出口</div>
         <div id="scene-card-exits" class="flex flex-wrap gap-1"></div>
       </div>
+      {# NPC -- #}
+      <div id="scene-card-npcs-wrap" class="hidden">
+        <div class="text-[10px] text-gray-500 font-bold mb-1">在场角色</div>
+        <div id="scene-card-npcs" class="space-y-1"></div>
+      </div>
     </div>
   </div>
 
@@ -215,6 +220,25 @@
       }).join('');
     } else {
       exitsWrap.classList.add('hidden');
+    }
+
+    // NPCs
+    var npcsWrap = document.getElementById('scene-card-npcs-wrap');
+    var npcsEl = document.getElementById('scene-card-npcs');
+    var npcs = snap.npcs || [];
+    if (npcs.length > 0) {
+      npcsWrap.classList.remove('hidden');
+      npcsEl.innerHTML = npcs.map(function(n) {
+        var demeanor = n.demeanor || '';
+        return '<div class="flex items-center gap-2 text-xs">' +
+          '<span class="w-1.5 h-1.5 rounded-full bg-aged-gold shrink-0"></span>' +
+          '<span class="text-gray-300">' + (n.name || '?') + '</span>' +
+          (n.brief && n.brief !== n.name ? '<span class="text-gray-500 text-[10px]">' + n.brief + '</span>' : '') +
+          (demeanor ? '<span class="text-gray-500 text-[10px]">' + demeanor + '</span>' : '') +
+          '</div>';
+      }).join('');
+    } else {
+      npcsWrap.classList.add('hidden');
     }
   }
 

@@ -44,10 +44,23 @@ class Curator:
         done = self.world.completed_interactions.get(self.world.current_location, set())
         perceptible = [e.name for e in node.interactions if e.name not in done]
 
+        # Populate visible NPCs from world.npcs
+        visible_npcs = []
+        if self.world.npcs:
+            npc_snapshots = self.world.npcs.get_in_scene_snapshot(self.world.current_location)
+            for n in npc_snapshots:
+                attitude = n.get("attitude", "neutral")
+                demeanor_map = {"hostile": "敌意", "wary": "警惕", "neutral": "中立", "friendly": "友善"}
+                visible_npcs.append({
+                    "name": n.get("name", ""),
+                    "brief": n.get("name", ""),
+                    "demeanor": demeanor_map.get(attitude, attitude),
+                })
+
         return SceneSnapshot(
             location=self.world.current_location,
             description=node.description,
             exits=exits,
             perceptible_interactions=perceptible,
-            visible_npcs=[],
+            visible_npcs=visible_npcs,
         )

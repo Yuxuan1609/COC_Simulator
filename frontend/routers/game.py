@@ -255,7 +255,8 @@ async def process_turn(user_input: str = Form(...)):
         from game_loop import format_turn_dynamic
         turn_dynamic_text = format_turn_dynamic(player_snapshot, brief, narrative)
     except Exception:
-        pass
+        import traceback
+        traceback.print_exc()
 
     narrative_html = ""
     if brief:

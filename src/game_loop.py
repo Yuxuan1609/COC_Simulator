@@ -391,6 +391,20 @@ def run_turn(game: dict, user_input: str,
             {"name": n.get("name", ""), "brief": n.get("brief", ""), "demeanor": n.get("demeanor", "")}
             for n in brief.scene_snapshot.visible_npcs
         ]
+        # Enrich with L1 NPC appearance data if available (better descriptions)
+        narrator = game["narrator"]
+        l1_scene = narrator.l1_data.get(world.current_location) if narrator.l1_data else None
+        if l1_scene and isinstance(l1_scene, dict):
+            l1_npcs = l1_scene.get("npcs", [])
+            if l1_npcs:
+                l1_map = {n.get("name", ""): n for n in l1_npcs if isinstance(n, dict)}
+                for npc in scene_npcs:
+                    l1_match = l1_map.get(npc["name"])
+                    if l1_match:
+                        if l1_match.get("brief"):
+                            npc["brief"] = l1_match["brief"]
+                        if l1_match.get("demeanor"):
+                            npc["demeanor"] = l1_match["demeanor"]
     if not scene_description:
         scene_description = world.get_current_description()
     exits_data = [
