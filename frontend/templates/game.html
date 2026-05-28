@@ -340,6 +340,28 @@
     }
   }
 
+  // == Inline chat toggle ==
+  let inlineChatVisible = false;
+  function toggleInlineChat() {
+    inlineChatVisible = !inlineChatVisible;
+    const panel = document.getElementById('chat-history-inline');
+    const label = document.getElementById('inline-chat-label');
+    if (inlineChatVisible) {
+      panel.classList.remove('hidden');
+      label.textContent = '隐藏记录';
+      refreshInlineChat();
+    } else {
+      panel.classList.add('hidden');
+      label.textContent = '对话记录';
+    }
+  }
+  function refreshInlineChat() {
+    const panel = document.getElementById('chat-history-inline');
+    if (!panel || panel.classList.contains('hidden')) return;
+    panel.innerHTML = chatMessages.slice(-20).join('') || '<div class="text-xs text-gray-600 italic">暂无记录</div>';
+    panel.scrollTop = panel.scrollHeight;
+  }
+
   // == Chat history ==
   let chatMessages = [];
   function addToHistory(userMsg, responseHtml) {
@@ -351,6 +373,7 @@
       ch.innerHTML = chatMessages.slice(-50).join('');
       ch.scrollTop = ch.scrollHeight;
     }
+    refreshInlineChat();
   }
 
   // == Parse turn_dynamic_text into HTML ==

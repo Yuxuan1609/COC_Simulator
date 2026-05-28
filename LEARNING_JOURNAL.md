@@ -216,3 +216,19 @@
 - **解决**：`queue.Queue` → `asyncio.Queue`（`put`/`get` 都是 awaitable）；`time.sleep` → `await asyncio.sleep`；同步 IO → `await loop.run_in_executor(None, blocking_fn)`
 - **排查技巧**："请求发出去但收不到响应 + 后端无任何 log" → 检查 WebSocket handler 或 background task 中是否有同步阻塞调用
 - 适用：任何 asyncio + HTTP + WebSocket 混合应用
+
+## @markup 的处理顺序：先提取再清理
+- `judge.py` 的 `@item_gain` 全部失效是因为先 `_MARKUP_STRIP_RE.sub()` 剥离标记，后才解析 `entity.side_effects`。`result` / `graded_result` 中的 @markup 在解析前已被删
+- 正确顺序：parse 收集 → merge 到 side_effects → 再 strip 供 narrator
+- 泛化：任何"文本中含元数据标记"的管道——解析总是在清理之前。清理后再解析 = 信息已销毁
+- 与"管道中的数据不应被后续步骤覆盖"互补：前者管步骤间的累积，这个管同一步骤内的操作顺序
+
+## 多管道提示词中特殊约定的同步传播
+- `@grant_weapon` 的 `scene=""`（直接授予）是运行时和生成端的共同约定，涉及 4 个 prompt 源：Phase 2 STEP4 + STEP2B、Supplement Pipeline、Author Patch
+- 新增约定时必须 grep 所有相关 system prompt 并同步更新，否则 LLM 生成端和运行时消费端脱节
+- 适用：任何 LLM pipeline 中有自定义语法/标记，且该标记被多个独立 prompt 引用时
+
+## 等价事件共享同一抽象（而非复制代码）
+- 搜索发现武器与 `GrantWeapon(scene="")` 直接授予最终走同一条 `_weapon_offer` 路径——短接确认、正则匹配、不跳回合
+- 两者触发条件不同但结果等价 → 共享同一个 pending-offer 机制而非各自实现
+- 适用：多条路径到达同一终态时，让它们汇入同一处理函数，而非在各分支复制粘贴

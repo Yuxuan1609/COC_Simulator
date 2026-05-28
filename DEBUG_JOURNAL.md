@@ -329,3 +329,18 @@
 - **根因**：`process_turn()` 中 `await _handle_slash_command(stripped)`，但 `_handle_slash_command` 是普通 `def`（非 `async def`），`await` 一个 str 返回值 → `TypeError: 'str' object can't be awaited`
 - **为什么首回合正常**：首回合走 `init_game_api` → `run_turn()` 直调用，不经过 `process_turn`
 - **解决**：去掉 `await`，改为同步调用 `cmd_html = _handle_slash_command(stripped)`
+
+## 55. @item_gain 物品全部未获取 — judge 对 @markup 先 strip 后解析
+
+- **症状**：test harness Case A 中 I18/I19/I21 的 `@item_gain` 全部不生效，`item_manager` 始终只有默认物品。场景武器（手电筒/小刀）正常获取
+- **根因**：`judge.py` 在 line 228 用 `_MARKUP_STRIP_RE.sub("", result_text)` 把 `@item_gain` 从 result/graded_result 文本中 strip 掉，但后续只对 `entity.side_effects` 调用 `parse_markup_all()`，不解析 result 文本。等价于"先删除再存档"
+- **解决**：在 strip 之前先 `parse_markup_all(result_text)` → 收集 `result_markup_effects` → 合并到 `side_effects` 列表 → 再 strip 给 narrator 用清洁文本
+- **关联**：`src/game/judge.py:227-228, 303-307`
+
+## 56. 拾取一把武器后同场景其他武器全丢失
+
+- **症状**：6 号车厢有手电筒+撬棍两把武器，搜索并拾取手电筒后撬棍消失
+- **根因**：搜索拾取路径（`keeper.py:297`）和 `_weapon_offer` 拾取路径（`keeper.py:86`）都用 `del scene_weapons[location]` / `pop(scene)` 一键删光整场景武器。但 "other" 拾取路径（`keeper.py:357-359`）正确用了 `scene_weps.remove(sw)` + 条件 `del`
+- **解决**：三个拾取路径统一改为 `scene_weps.remove(sw)` + 条件 `del`，同时 `_weapon_offer` 拾取时匹配 `weapon_ref` 精确删除
+- **教训**：同一逻辑的多条代码路径，只要有一条正确其余必然出 bug
+- **关联**：`src/game/agents/keeper.py:297, 86, 357-359`
