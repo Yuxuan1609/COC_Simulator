@@ -50,7 +50,7 @@ def _llm_audit(log_dir: Path, summary: dict, turn_logs_dir: Path) -> tuple[str, 
 
         # Time state
         ts = t.get("time_state", {})
-        time_str = f"Day{ts.get('day',0)} {ts.get('time_of_day','?')} {ts.get('hour',0):02d}:00 (G+{ts.get('game_time_minutes',0)}m)" if ts else "-"
+        time_str = f"Day{int(ts.get('day',0))} {ts.get('time_of_day','?')} {int(ts.get('hour',0)):02d}:00 (G+{int(ts.get('game_time_minutes',0))}m)" if ts else "-"
 
         # NPC visible
         nv = t.get("npcs_visible", {})
@@ -182,7 +182,7 @@ def audit(log_dir: str) -> str:
         last_t = time_states[-1]
         time_agents = [t.get("time_agent", {}) for t in turns if t.get("time_agent")]
         total_delta = sum(ta.get("time_delta", 0) for ta in time_agents if ta)
-        lines.append(f"- Time span: D{first_t.get('day',0)} {first_t.get('time_of_day','?')} → D{last_t.get('day',0)} {last_t.get('time_of_day','?')} (+{total_delta}m game)")
+        lines.append(f"- Time span: D{int(first_t.get('day',0))} {first_t.get('time_of_day','?')} → D{int(last_t.get('day',0))} {last_t.get('time_of_day','?')} (+{int(total_delta)}m game)")
     lines.append("")
 
     # Per-Turn Detail
@@ -208,7 +208,7 @@ def audit(log_dir: str) -> str:
             combat_str = "-"
 
         ts = t.get("time_state", {})
-        time_str = f"D{ts.get('day',0)} {ts.get('time_of_day','?')[:2]} G+{ts.get('game_time_minutes',0)}m" if ts else "-"
+        time_str = f"D{int(ts.get('day',0))} {ts.get('time_of_day','?')[:2]} G+{int(ts.get('game_time_minutes',0))}m" if ts else "-"
 
         npc_str = "; ".join(t.get("npc_events", []))[:40] or "-"
         lines.append(
@@ -358,8 +358,8 @@ def _audit_time(lines: list[str], turns: list[dict]):
     last = time_states[-1]
     time_agents = [t.get("time_agent", {}) for t in turns if t.get("time_agent")]
     total_delta = sum(ta.get("time_delta", 0) for ta in time_agents if ta)
-    lines.append(f"- Initial state (after T01): Day {first.get('day',0)}, {first.get('time_of_day','?')}, {first.get('hour',0):02d}:00 (G+{first.get('game_time_minutes',0)}m)")
-    lines.append(f"- Final state (after T{len(turns)}): Day {last.get('day',0)}, {last.get('time_of_day','?')}, {last.get('hour',0):02d}:00 (G+{last.get('game_time_minutes',0)}m)")
+    lines.append(f"- Initial state (after T01): Day {int(first.get('day',0))}, {first.get('time_of_day','?')}, {int(first.get('hour',0)):02d}:00 (G+{int(first.get('game_time_minutes',0))}m)")
+    lines.append(f"- Final state (after T{len(turns)}): Day {int(last.get('day',0))}, {last.get('time_of_day','?')}, {int(last.get('hour',0)):02d}:00 (G+{int(last.get('game_time_minutes',0))}m)")
     lines.append(f"- Total time delta (from TimeAgent): {total_delta} minutes")
 
     # Per-turn time deltas
