@@ -29,6 +29,12 @@ class EnemyInstance:
     san_loss: str = ""
     hp: int = 0
     boss_mechanics: str = ""
+    multi_attack: int = 1
+    damage_multipliers: dict = field(default_factory=dict)
+    dodge_bonus: int = 0
+    special_rules: str = ""
+    phases: list = field(default_factory=list)
+    _current_phase: str = ""
 
 
 class EnemyManager:
@@ -60,6 +66,10 @@ class EnemyManager:
             san_loss=lib_enemy.san_loss,
             hp=base_hp,
         )
+        inst.multi_attack = getattr(lib_enemy, 'multi_attack', 1)
+        inst.damage_multipliers = dict(getattr(lib_enemy, 'damage_multipliers', {}))
+        inst.dodge_bonus = getattr(lib_enemy, 'dodge_bonus', 0)
+        inst.special_rules = getattr(lib_enemy, 'special_rules', '')
         self._instances[instance_id] = inst
         return inst
 
@@ -167,6 +177,10 @@ class EnemyManager:
                 "quantity": inst.quantity,
                 "status": inst.status,
                 "hp": inst.hp,
+                "multi_attack": inst.multi_attack,
+                "damage_multipliers": inst.damage_multipliers,
+                "dodge_bonus": inst.dodge_bonus,
+                "special_rules": inst.special_rules,
             }
             if inst.boss_mechanics:
                 idata["boss_mechanics"] = inst.boss_mechanics
@@ -215,6 +229,10 @@ class EnemyManager:
                 san_loss=san,
                 hp=hp,
                 boss_mechanics=boss_mech,
+                multi_attack=idata.get("multi_attack", 1),
+                damage_multipliers=idata.get("damage_multipliers", {}),
+                dodge_bonus=idata.get("dodge_bonus", 0),
+                special_rules=idata.get("special_rules", ""),
             )
         mgr._combat_active = data.get("combat_active", False)
         mgr._combat_enemies = data.get("combat_enemies", [])
