@@ -90,9 +90,7 @@ def run_game(character_path: str = None):
     ts = initial.get("timestamp", "")
     if ts:
         print(f"[{ts}]")
-    if initial.get("skill_results"):
-        for sr in initial["skill_results"]:
-            _print_skill_result(sr)
+    _print_snapshot(initial.get("player_snapshot"))
     _print_split(initial["brief"], initial["narrative"])
 
     # 主循环
@@ -177,9 +175,7 @@ def run_game(character_path: str = None):
         if ts:
             print(f"[{ts}]")
 
-        if result.get("skill_results"):
-            for sr in result["skill_results"]:
-                _print_skill_result(sr)
+        _print_snapshot(result.get("player_snapshot"))
 
         _print_split(result["brief"], result["narrative"])
 
@@ -202,6 +198,63 @@ def _scene_text(world):
     return "\n".join(lines)
 
 
+def _print_snapshot(snap: dict):
+    """打印 PlayerFacingSnapshot 辅助信息。"""
+    if not snap:
+        return
+    # 场景
+    name = snap.get("scene_name", "")
+    desc = snap.get("scene_description", "")
+    if name or desc:
+        print(f"\n── {name or '当前场景'} ──")
+        if desc:
+            print(desc)
+    # 出口
+    exits = snap.get("exits", [])
+    if exits:
+        labels = [f"{e.get('target','?')} ({e.get('method','?')})" for e in exits]
+        print(f"  出口: {', '.join(labels)}")
+    # 时间
+    t = snap.get("time", {})
+    if t:
+        parts = []
+        if t.get("day"):
+            parts.append(f"第{t['day']}天")
+        if t.get("time_of_day"):
+            parts.append(t["time_of_day"])
+        if t.get("game_time_minutes"):
+            h, m = divmod(t["game_time_minutes"], 60)
+            parts.append(f"{h:02d}:{m:02d}")
+        if parts:
+            print(f"  时间: {' '.join(parts)}")
+    # NPC
+    npcs = snap.get("npcs", [])
+    if npcs:
+        names = [n.get("name", "?") for n in npcs]
+        print(f"  NPC: {', '.join(names)}")
+    # 战斗
+    combat = snap.get("combat")
+    if combat:
+        outcome = combat.get("outcome", "")
+        print(f"\n  ⚔ 战斗结果: {outcome}")
+    # 技能检定
+    skill_checks = snap.get("skill_checks", [])
+    if skill_checks:
+        tier_labels = {"extreme": "极难成功", "hard": "困难成功", "regular": "常规成功",
+                       "failure": "失败", "fumble": "大失败"}
+        for sc in skill_checks:
+            eid = sc.get("entity_id", "?")
+            tier = sc.get("tier", "")
+            tier_label = tier_labels.get(tier, tier or "?")
+            emoji = "✓" if sc.get("success") else "✗"
+            raw_roll = sc.get("raw_roll", 0)
+            target = sc.get("target", 0)
+            dice_str = f"D100={raw_roll}/{target}" if raw_roll else ""
+            enh = sc.get("enhancement")
+            enh_str = f" → {enh.get('tier','')}" if enh and enh.get("tier") else ""
+            print(f"  {emoji} 检定 [{eid}] {tier_label}  {dice_str}{enh_str}")
+
+
 def _print_split(brief, narrative):
     """打印叙事输出：目前结果 → 沉浸式叙述。"""
     if brief:
@@ -210,33 +263,6 @@ def _print_split(brief, narrative):
     if narrative:
         print(f"\n── 沉浸式输出 ──")
         print(narrative)
-
-
-def _print_skill_result(sr):
-    """打印技能检定结果，含增强/判定过程。"""
-    tier_labels = {"extreme": "极难成功", "hard": "困难成功", "regular": "常规成功",
-                   "failure": "失败", "fumble": "大失败"}
-    tier_label = tier_labels.get(sr["tier"], sr["tier"])
-    emoji = "✓" if sr["success"] else "✗"
-    detail = sr.get("detail", "")
-    lines = detail.split("\n") if detail else []
-    # Line 0: header like "[SEARCH] 侦查检定 | 等级=regular | 成功"
-    header = lines[0].strip() if lines else f"[{sr['entity_id']}] 技能检定"
-    dice_info = ""
-    trait_info = ""
-    for line in lines[1:]:
-        stripped = line.strip()
-        if stripped.startswith("[特质修正]"):
-            trait_info = stripped
-        elif "D100=" in stripped:
-            dice_info = stripped
-    print(f"\n{emoji} 检定「{sr['entity_id']}」→ {tier_label}")
-    if dice_info:
-        print(f"   骰值: {dice_info}")
-    if trait_info:
-        print(f"   {trait_info}")
-    if not dice_info and not trait_info:
-        print(f"   {header}")
 
 
 if __name__ == "__main__":

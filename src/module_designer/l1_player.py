@@ -51,7 +51,7 @@ class NPCAppearance:
 class SceneL1:
     """单个场景的 L1 信息."""
     scene_name: str
-    entry_narrative: str = ""
+    description: str = ""
     atmosphere: str = ""
     mood: str = "uneasy"        # confused / uneasy / tense / terrified / hopeful / desperate
     perceptible: List[Perceptible] = field(default_factory=list)
@@ -60,7 +60,7 @@ class SceneL1:
 
     def to_dict(self) -> dict:
         return {
-            "entry_narrative": self.entry_narrative,
+            "description": self.description,
             "atmosphere": self.atmosphere,
             "mood": self.mood,
             "perceptible": [p.to_dict() for p in self.perceptible],
@@ -72,7 +72,7 @@ class SceneL1:
     def from_dict(cls, data: dict, scene_name: str = "") -> "SceneL1":
         return cls(
             scene_name=scene_name,
-            entry_narrative=data.get("entry_narrative", ""),
+            description=data.get("description", ""),
             atmosphere=data.get("atmosphere", ""),
             mood=data.get("mood", "uneasy"),
             perceptible=[Perceptible.from_dict(p) for p in data.get("perceptible", [])],

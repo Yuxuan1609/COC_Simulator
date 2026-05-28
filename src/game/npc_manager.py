@@ -15,6 +15,8 @@ class NPC:
     interaction_triggers: list[str] = field(default_factory=list)
     can_follow: bool = False
     follow_requirements: str = ""
+    can_interact: bool = True
+    interact_requirements: str = ""
 
     bound_interactions: list[dict] = field(default_factory=list)
     bound_auto_triggers: list[dict] = field(default_factory=list)
@@ -37,15 +39,33 @@ class NPCManager:
     }
 
     def _check_follow_conditions(self, npc: NPC, world) -> tuple[bool, str]:
-        """Check if NPC can follow. Returns (can_follow, reason_if_not).
+        """Check if NPC can follow. Evaluates follow_requirements (|| split format).
 
-        Simplified: only checks can_follow + state. follow_requirements is stored
-        as text from Step 1a for future LLM-based soft evaluation (TODO).
+        Hard part (before ||): entity IDs checked via parse_hard_requirement against runtime_state.
+        Soft part (after ||): natural language — passed through (LLM evaluates at parse time).
+        Also checks can_follow bool + state gate.
         """
         if not npc.can_follow:
             return False, f"{npc.name} 不愿意跟随你"
         if npc.state in ("dead", "left"):
             return False, f"{npc.name} 无法跟随（{npc.state}）"
+
+        req = npc.follow_requirements.strip() if npc.follow_requirements else ""
+        if not req:
+            return True, ""
+
+        # Split by ||
+        if "||" in req:
+            hard, soft = req.split("||", 1)
+            hard, soft = hard.strip(), soft.strip()
+        else:
+            hard = req
+            soft = ""
+
+        if hard:
+            from scenario_core import parse_hard_requirement
+            if not parse_hard_requirement(hard, world.runtime_state):
+                return False, f"尚未满足 {npc.name} 的跟随条件"
         return True, ""
 
     # ── 初始化 ──
@@ -62,6 +82,8 @@ class NPCManager:
                 interaction_triggers=list(data.get("interaction_triggers", [])),
                 can_follow=data.get("can_follow", False),
                 follow_requirements=data.get("follow_requirements", ""),
+                can_interact=data.get("can_interact", True),
+                interact_requirements=data.get("interact_requirements", ""),
                 bound_interactions=list(data.get("bound_interactions", [])),
                 bound_auto_triggers=list(data.get("bound_auto_triggers", [])),
                 scene=data.get("scene", ""),
@@ -94,7 +116,7 @@ class NPCManager:
     # ── 交互 ──
 
     def talk_to(self, npc_name: str, player_input: str, llm_call) -> str:
-        """State gate -> inject profile/memory context -> LLM -> append memory."""
+        """State gate -> can_interact gate -> inject profile/memory context -> LLM -> append memory."""
         npc = self._npcs.get(npc_name)
         if not npc:
             return f"（{npc_name} 不在此处。）"
@@ -102,6 +124,9 @@ class NPCManager:
         gate = self.STATE_GATE_MESSAGES.get(npc.state, "")
         if gate:
             return gate.format(name=npc.name)
+
+        if not npc.can_interact:
+            return f"（{npc.name} 似乎不愿与你交谈。）"
 
         triggers_text = ""
         if npc.interaction_triggers:
@@ -170,6 +195,7 @@ class NPCManager:
                 "following": npc.following,
                 "memory": list(npc.memory),
                 "state": npc.state,
+                "can_interact": npc.can_interact,
             }
             if npc.extra is not None:
                 entry["extra"] = npc.extra
@@ -177,7 +203,8 @@ class NPCManager:
         return result
 
     def from_dict(self, data: dict, profiles: dict):
-        """从序列化数据恢复运行时状态。profiles 用于恢复档案字段。"""
+        """从序列化数据恢复运行时状态。profiles 用于恢复档案字段。
+        can_interact 优先使用运行时值（save 中可能已被 unlock），回退到 profile 静态值。"""
         for name, state_data in data.items():
             profile = profiles.get(name, {})
             self._npcs[name] = NPC(
@@ -189,6 +216,8 @@ class NPCManager:
                 interaction_triggers=list(profile.get("interaction_triggers", [])),
                 can_follow=profile.get("can_follow", False),
                 follow_requirements=profile.get("follow_requirements", ""),
+                can_interact=state_data.get("can_interact", profile.get("can_interact", True)),
+                interact_requirements=profile.get("interact_requirements", ""),
                 bound_interactions=list(profile.get("bound_interactions", [])),
                 bound_auto_triggers=list(profile.get("bound_auto_triggers", [])),
                 scene=state_data.get("scene", ""),

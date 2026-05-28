@@ -297,12 +297,10 @@ def _extract_entity_bindings(npc_profiles: dict) -> dict[str, str]:
 
 def _inject_step1a_meta(npc_profiles: dict, step1a_characters: list[dict],
                         verbose: bool = False) -> None:
-    """从 Step 1a characters 注入 scene/can_follow/follow_requirements 到 npc_profiles。"""
+    """从 Step 1a characters 注入 scene 到 npc_profiles。can_follow / follow_requirements 由 Step 2.5 自主产出，不覆盖。"""
     char_meta = {
         c["name"]: {
             "scenes": c.get("scenes", []),
-            "can_follow": c.get("can_follow", False),
-            "follow_condition": c.get("follow_condition", ""),
         }
         for c in step1a_characters if isinstance(c, dict)
     }
@@ -311,39 +309,59 @@ def _inject_step1a_meta(npc_profiles: dict, step1a_characters: list[dict],
         if meta.get("scenes"):
             profile["scene"] = meta["scenes"][0]
             profile["all_scenes"] = list(meta["scenes"])
-        if "can_follow" in meta:
-            profile["can_follow"] = bool(meta["can_follow"])
-        if meta.get("follow_condition"):
-            profile["follow_requirements"] = meta["follow_condition"]
     if verbose and char_meta:
         assigned = sum(1 for p in npc_profiles.values() if p.get("scene"))
         print(f"  [NPC Scene] {assigned}/{len(npc_profiles)} NPCs assigned scene from Step 1a")
 
 
-def _inject_npc_follow_entities(interactions: list[dict], npc_profiles: dict,
-                                 verbose: bool = False) -> None:
-    """为 can_follow=true 的 NPC 确定性注入 NPC_FOLLOW entity。"""
+def _inject_npc_special_entities(interactions: list[dict], npc_profiles: dict,
+                                  verbose: bool = False) -> None:
+    """为每个 NPC 注入 follow_unlock 和 interact_unlock 特殊 entity。
+    这些 entity 的 extra 中带有 npc_special 标记，运行时 Judge 走特殊路径（直接修改 NPC 状态，不走 dependency graph）。
+    requirement 格式与普通 entity 一致（|| 前硬性 entity ID，|| 后软性自然语言），由 _build_entity_lines 做硬性评估 + Parse 做软性评估。"""
     existing_ids = {e.get("id") for e in interactions}
     for npc_name, profile in npc_profiles.items():
-        if not profile.get("can_follow"):
-            continue
-        follow_id = f"NPC_FOLLOW_{npc_name}"
-        if follow_id in existing_ids:
-            continue
-        interactions.append({
-            "id": follow_id,
-            "scene": profile.get("scene", ""),
-            "name": f"请求{npc_name}跟随",
-            "type": "无",
-            "trigger": f"你请求{npc_name}跟随你一起行动",
-            "result": f"@npc_follow(npc_name=\"{npc_name}\", follow=true)",
-            "side_effects": [],
-            "difficulty": "None",
-            "requirement": profile.get("follow_requirements", ""),
-        })
-        existing_ids.add(follow_id)
-        if verbose:
-            print(f"  [NPC Follow] 注入 {follow_id}")
+        # ── Follow unlock entity ──
+        if profile.get("can_follow"):
+            follow_id = f"NPC_FOLLOW_UNLOCK_{npc_name}"
+            if follow_id not in existing_ids:
+                follow_req = profile.get("follow_requirements", "")
+                interactions.append({
+                    "id": follow_id,
+                    "scene": profile.get("scene", ""),
+                    "name": f"请求{npc_name}跟随",
+                    "type": "无",
+                    "trigger": f"你请求{npc_name}跟随你一起行动",
+                    "result": f"{npc_name}开始跟随你",
+                    "side_effects": [],
+                    "difficulty": "None",
+                    "requirement": follow_req if follow_req else "",
+                    "extra": {"npc_special": "follow_unlock", "npc_name": npc_name},
+                })
+                existing_ids.add(follow_id)
+                if verbose:
+                    print(f"  [NPC Special] 注入 {follow_id} (follow_unlock) req={follow_req[:60] if follow_req else '无条件'}")
+
+        # ── Interact unlock entity ──
+        if not profile.get("can_interact", True):
+            interact_id = f"NPC_INTERACT_UNLOCK_{npc_name}"
+            if interact_id not in existing_ids:
+                interact_req = profile.get("interact_requirements", "")
+                interactions.append({
+                    "id": interact_id,
+                    "scene": profile.get("scene", ""),
+                    "name": f"与{npc_name}建立对话",
+                    "type": "无",
+                    "trigger": f"你尝试与{npc_name}交谈",
+                    "result": f"{npc_name}愿意与你交谈了",
+                    "side_effects": [],
+                    "difficulty": "None",
+                    "requirement": interact_req if interact_req else "",
+                    "extra": {"npc_special": "interact_unlock", "npc_name": npc_name},
+                })
+                existing_ids.add(interact_id)
+                if verbose:
+                    print(f"  [NPC Special] 注入 {interact_id} (interact_unlock) req={interact_req[:60] if interact_req else '无条件'}")
 
 
 def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
@@ -372,7 +390,7 @@ def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
         scenes[sname]["to_here"] = movement.get("to_here", [])
     for sname in scenes:
         l1_scene = l1_data.get(sname, {})
-        scenes[sname]["description"] = l1_scene.get("entry_narrative", "") or l1_scene.get("atmosphere", "")
+        scenes[sname]["description"] = l1_scene.get("description", "") or l1_scene.get("atmosphere", "")
     return {
         "scenes": scenes,
         "events": events,
@@ -669,7 +687,7 @@ def run_pipeline(
         print(f"  Step 3a 完成: 去重 + 冲突解决 + 结局验证")
         print(f"  Step 2.5 完成: {len(npc_profiles)} NPC profiles")
 
-    _inject_npc_follow_entities(interactions, npc_profiles, verbose)
+    _inject_npc_special_entities(interactions, npc_profiles, verbose)
 
     # ── 生成 Boss Encounter（如果 Step 1 识别到了 Boss）──
     boss_hints = step1a.get("boss_encounters", [])
@@ -741,7 +759,7 @@ def run_pipeline(
 
     l2_descriptions = {}
     for name, sdata in l1_data.items():
-        desc = sdata.get("description", "") or sdata.get("atmosphere", "") or sdata.get("entry_narrative", "")
+        desc = sdata.get("description", "") or sdata.get("atmosphere", "")
         if desc:
             l2_descriptions[name] = desc
 

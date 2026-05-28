@@ -168,6 +168,16 @@ def _normalize_npc_profile(data: dict) -> dict:
         "appearance": data.get("appearance", ""),
         "what_they_can_do": data.get("what_they_can_do", ""),
         "interaction_triggers": data.get("interaction_triggers", []),
+        "can_follow": data.get("can_follow", False),
+        "follow_requirements": data.get("follow_requirements", ""),
+        "can_interact": data.get("can_interact", True),
+        "interact_requirements": data.get("interact_requirements", ""),
+        "initial_state": data.get("initial_state", "alive"),
+        "initial_attitude": data.get("initial_attitude", "neutral"),
+        "initial_following": data.get("initial_following", False),
+        "bound_interactions": data.get("bound_interactions", []),
+        "bound_auto_triggers": data.get("bound_auto_triggers", []),
+        "scene": data.get("scene", ""),
     }
 
 

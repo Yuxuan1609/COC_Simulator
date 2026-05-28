@@ -580,7 +580,7 @@ STEP2C_L1_SYSTEM = f"""你是一个 TRPG 模组解析助手，专门提取「玩
 
 要求：
 1. 每个场景使用其名称作为顶层 key（如"6号车厢"）
-2. description：描述场景基本信息的叙事文本（KP 可直接朗读，30-200字）
+2. description：沉浸式第三人称场景描写，兼顾表达清晰与文学性。不带玩家主观视角，只客观描述场景的环境、光线、声音、气味等感官细节。类似于小说的环境描写，让读者仿佛身临其境。长度 50-200 字。
 3. atmosphere：场景氛围一句话总结
 4. perceptible：玩家无需检定即可感知的元素列表
 5. ambient_hints：微妙的环境线索列表
@@ -686,14 +686,23 @@ def parse_step2c_l3(chapters: dict[str, str], scenes: list[dict], characters: li
 # ═══════════════════════════════════════════════════════════════
 
 STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
-你的任务有两部分：(1) 为每个 NPC 生成行为描述档案；(2) 判断每个 L2 entity 归属于哪个 NPC。
+你的任务有三部分：(1) 为每个 NPC 生成完整行为描述档案；(2) 判断每个 L2 entity 归属于哪个 NPC；(3) 分析 NPC 的跟随和互动解锁条件。
 
 术语：interaction、auto_trigger 统称为 entity。
 
 ## 第一部分：NPC 行为档案
 - 基于 L3 角色设计意图、L1 外貌描述和 L2 entity 互动信息
-- what_they_can_do 是核心字段：描述 NPC 的能力、所知信息和互动条件
+- appearance：综合 L1 NPC 外貌描述（brief + demeanor），提炼为一段完整的外貌叙述
+- role：一句话角色定位
+- what_they_can_do：描述 NPC 的能力、所知信息和互动条件（核心字段）
 - personality_notes：性格、说话风格、情绪倾向
+- interaction_triggers：什么情况下玩家可与该 NPC 自由对话（自然语言列表，从 entity trigger 中提炼）
+- initial_state：NPC 初始存活状态，默认 "alive"
+- initial_attitude：NPC 初始态度，默认 "neutral"（可选值：hostile / wary / neutral / friendly / allied）
+- initial_following：初始是否已跟随玩家，默认 false
+- can_interact：NPC 是否接受玩家自由对话（默认 true；若模组中 NPC 只参与固定 entity 互动、不接受任意闲聊则 false）
+- can_follow：NPC 是否可能跟随调查员行动
+- Step 1a 初步判断仅作参考，基于 L1/L2/L3 完整信息做出最终判断
 - 只使用提供的信息，不编造新角色或新能力
 
 ## 第二部分：Entity 归属
@@ -702,15 +711,35 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
 - 一个 entity 最多属于一个 NPC
 - 将标记结果填入对应 NPC 的 bound_entities 列表
 
+## 第三部分：跟随和互动解锁条件
+- 基于所有 entity 信息，分析 NPC 的 follow 和 interact 解锁条件
+- follow_requirements：NPC 跟随调查员的前置条件
+  - 硬性条件（entity ID 引用）放在 || 之前，格式与 requirement 字段一致：entity ID + AND/OR/()，如 I3 AND I5、(I1 OR I2) AND I3。裸 entity ID 默认指该实体成功完成
+  - 软性条件（自然语言描述如信任/关系/剧情状态）放在 || 之后
+  - 无条件则留空字符串
+- interact_requirements：NPC 自由对话的解锁条件
+  - 格式同 follow_requirements
+  - can_interact=true 且无条件则留空字符串
+  - can_interact=false 时，描述在什么条件下可解锁自由对话（或留空表示永远不可自由对话）
+  - 注：entity 互动（bound_entities 中的 entity）不受 can_interact 影响，始终可通过正常管线触发
+
 ## 输出格式
 {
   "npc_profiles": {
     "NPC名称": {
       "name": "NPC名称",
       "role": "一句话角色定位",
+      "appearance": "综合外貌描述（50-150字）",
       "what_they_can_do": "NPC能做什么、在什么条件下会做什么",
       "personality_notes": "性格和说话风格",
-      "can_follow": true/false,
+      "interaction_triggers": ["玩家靠近时NPC主动搭话", "玩家持有某物品时触发对话"],
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false,
+      "can_interact": true,
+      "can_follow": true,
+      "follow_requirements": "I3 AND I5 || NPC信任调查员后愿意跟随",
+      "interact_requirements": "",
       "bound_entities": ["I1", "AT2"]
     }
   }
@@ -718,8 +747,9 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
 
 规则：
 - 必须覆盖 L3 characters 中的所有角色
-- can_follow：如果 NPC 的行动能力/性格/处境允许跟随（非固定在某地、无强制离开理由、愿意协助），设为 true
+- can_follow / can_interact 基于完整 L1+L2+L3 信息综合判断，Step 1a 的初步判断仅作参考
 - bound_entities：该 NPC 专属的 entity ID 列表（scene 通用 entity 不列入）
+- follow_requirements / interact_requirements：|| 前为硬性 entity ID 条件，|| 后为软性自然语言条件；纯硬性或纯软性可省略 || 的另一侧
 - 仅输出 JSON，不要任何解释性文字"""
 
 
@@ -758,6 +788,18 @@ def build_step25_combined_prompt(
             "result": e.get("result", "")[:120],
         })
 
+    # Step 1a character hints (preliminary assessment, for reference only)
+    step1a_hints = []
+    for c in (step1a_characters or []):
+        if isinstance(c, dict):
+            step1a_hints.append({
+                "name": c.get("name", ""),
+                "id": c.get("id", ""),
+                "scenes": c.get("scenes", []),
+                "can_follow_hint": c.get("can_follow"),
+                "follow_condition_hint": c.get("follow_condition", ""),
+            })
+
     return f"""## L3 角色设计意图
 {json.dumps(l3_characters, ensure_ascii=False, indent=2)}
 
@@ -765,7 +807,10 @@ def build_step25_combined_prompt(
 {json.dumps(npc_appearances, ensure_ascii=False, indent=2) if npc_appearances else "（无）"}
 
 ## L2 Entity 列表
-{json.dumps(entity_list, ensure_ascii=False, indent=2)}"""
+{json.dumps(entity_list, ensure_ascii=False, indent=2)}
+
+## Step 1a 初步判断（仅供参考，最终以 L1+L2+L3 综合信息为准）
+{json.dumps(step1a_hints, ensure_ascii=False, indent=2) if step1a_hints else "（无）"}"""
 
 
 def parse_step25_combined(

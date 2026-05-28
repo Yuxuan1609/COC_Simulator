@@ -103,6 +103,49 @@ class Judge:
                 success=False, message="（该实体已触发过，无法重复执行）",
                 entity_id=entity.id, entity_type=entity.entity_type,
             )
+
+        # ── NPC Special entities: follow_unlock / interact_unlock ──
+        # Hard requirements already evaluated by _build_entity_lines before parse;
+        # soft requirements evaluated by Parse (LLM). Here we just execute state change.
+        extra = entity.extra or {}
+        npc_special = extra.get("npc_special", "")
+        if npc_special in ("follow_unlock", "interact_unlock"):
+            npc_name = extra.get("npc_name", "")
+            if not npc_name or not self.world.npcs:
+                return ActionOutcome(
+                    intent=intent or ActionIntent(action="other"),
+                    success=False, message="（NPC 配置异常）",
+                    entity_id=entity.id, entity_type=entity.entity_type,
+                )
+            npc = self.world.npcs.get(npc_name)
+            if not npc:
+                return ActionOutcome(
+                    intent=intent or ActionIntent(action="other"),
+                    success=False, message=f"（{npc_name} 不在此处）",
+                    entity_id=entity.id, entity_type=entity.entity_type,
+                )
+
+            if npc_special == "follow_unlock":
+                self.world.npcs.set_following(npc_name, True)
+                self._set_completion_flag(entity, "")
+                return ActionOutcome(
+                    intent=intent or ActionIntent(action="other"),
+                    success=True,
+                    message=entity.result or f"{npc_name}开始跟随你",
+                    entity_id=entity.id, entity_type=entity.entity_type,
+                )
+
+            if npc_special == "interact_unlock":
+                npc.can_interact = True
+                self._set_completion_flag(entity, "")
+                return ActionOutcome(
+                    intent=intent or ActionIntent(action="other"),
+                    success=True,
+                    message=entity.result or f"{npc_name}愿意与你交谈了",
+                    entity_id=entity.id, entity_type=entity.entity_type,
+                )
+        # ── End NPC special ──
+
         # Check structured requirements (world flags + entity IDs) — hard part only
         if entity.requirement and entity.requirement.strip():
             self._current_entity_id = entity.id

@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import json
 import random
+import uuid
 from pathlib import Path
-from fastapi import APIRouter, Request, Form
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi import APIRouter, Request, Form, UploadFile, File
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response, JSONResponse
 
 router = APIRouter(prefix="/character", tags=["character"])
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+UPLOADS_DIR = Path(__file__).resolve().parent.parent / "static" / "uploads"
 
 from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -71,6 +73,19 @@ async def character_page(request: Request):
     })
 
 
+@router.post("/upload-avatar")
+async def upload_avatar(file: UploadFile = File(...)):
+    ext = Path(file.filename).suffix if file.filename else ".png"
+    if ext.lower() not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+        return JSONResponse({"error": "不支持的文件格式"}, status_code=400)
+    filename = f"avatar_{uuid.uuid4().hex}{ext}"
+    dest = UPLOADS_DIR / "avatars" / filename
+    content = await file.read()
+    dest.write_bytes(content)
+    url = f"/static/uploads/avatars/{filename}"
+    return JSONResponse({"url": url})
+
+
 @router.get("/step/{n}", response_class=HTMLResponse)
 async def step_partial(request: Request, n: int):
     if n == 1:
@@ -105,36 +120,90 @@ async def roll_stats():
     cells = "".join(
         f'<div class="stat-card p-3 bg-[#1a150c] border border-[#3a2810] rounded text-center">'
         f'<div class="text-xs text-gray-500">{STAT_LABELS[s]} ({s})</div>'
-        f'<div class="text-2xl font-bold text-aged-gold">{values[s]}</div>'
+        f'<input type="number" name="stat_{s}" value="{values[s]}" min="8" max="99" '
+        f'class="stat-input w-16 text-xl font-bold text-aged-gold bg-transparent border-b border-gray-700 text-center focus:outline-none focus:border-aged-gold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" '
+        f'onchange="charRecalcDerived();charStoreStats()" oninput="charRecalcDerived()">'
         f'</div>'
         for s in STATS
     )
-    derived = f'<div class="grid grid-cols-4 gap-2 text-xs"><div>HP {hp}</div><div>MP {mp}</div><div>SAN {san}</div><div>DODGE {dodge}</div><div>DB {db}</div><div>BUILD {build}</div></div>'
+    derived = (
+        f'<div id="derived-stats" class="grid grid-cols-3 gap-1 text-xs mt-2 text-gray-500">'
+        f'<div>HP <input type="number" id="derived-hp" name="stat_HP" value="{hp}" readonly min="1" max="99" class="derived-input w-12 bg-transparent border-0 text-center text-green-400 font-bold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" tabindex="-1"></div>'
+        f'<div>MP <input type="number" id="derived-mp" name="stat_MP" value="{mp}" readonly min="0" max="99" class="derived-input w-12 bg-transparent border-0 text-center text-gray-200 font-bold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" tabindex="-1"></div>'
+        f'<div>SAN <input type="number" id="derived-san" name="stat_SAN" value="{san}" readonly min="0" max="99" class="derived-input w-12 bg-transparent border-0 text-center text-aged-gold font-bold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" tabindex="-1"></div>'
+        f'<div>DODGE <input type="number" id="derived-dodge" name="stat_DODGE" value="{dodge}" readonly min="1" max="99" class="derived-input w-12 bg-transparent border-0 text-center text-gray-300 font-bold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" tabindex="-1"></div>'
+        f'<div>DB <input type="text" id="derived-db" name="stat_DB" value="{db}" readonly class="derived-input w-12 bg-transparent border-0 text-center text-gray-300 font-bold focus:outline-none" tabindex="-1"></div>'
+        f'<div>BUILD <input type="number" id="derived-build" name="stat_BUILD" value="{build}" readonly min="-2" max="6" class="derived-input w-12 bg-transparent border-0 text-center text-gray-300 font-bold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" tabindex="-1"></div>'
+        f'</div>'
+    )
     return HTMLResponse(f'<div class="grid grid-cols-3 gap-3">{cells}</div><div class="mt-4 p-3 bg-[#1a150c] border border-[#3a2810] rounded">{derived}</div>')
 
 
 @router.get("/skills-list", response_class=HTMLResponse)
 async def skills_list(occupation: str = ""):
     occs = _load_occupations()
-    occs = [o for o in occs if o["name"] == occupation]
-    if not occs:
-        return HTMLResponse('<div class="text-sm text-gray-600">未找到该职业</div>')
-    occ = occs[0]
-    skill_names = occ.get("occupation_skills", [])
-    related = {s["name"]: s["base"] for s in SKILLS if s["name"] in skill_names}
-    pts = occ.get("skill_points_formula", "EDU*4")
-    cr_min, cr_max = occ.get("credit_rating_min", 0), occ.get("credit_rating_max", 99)
-    rows = "".join(
-        f'<div class="flex items-center gap-2"><span class="text-sm text-gray-300 w-28">{name}</span>'
-        f'<span class="text-xs text-gray-600">基础 {base}%</span>'
-        f'<input type="number" min="0" max="99" value="{base}" '
-        f'class="w-16 bg-[#1a150c] border border-[#4a3820] rounded px-2 py-1 text-xs text-gray-300"></div>'
-        for name, base in related.items()
-    )
-    html = (
-        f'<div class="text-sm text-gray-500 mb-3">技能点: {pts} | 信用: {cr_min}-{cr_max}</div>'
-        f'<div class="space-y-1">{rows}</div>'
-    )
+    occ = None
+    occ_skill_names = set()
+    if occupation:
+        occs_match = [o for o in occs if o["name"] == occupation]
+        if occs_match:
+            occ = occs_match[0]
+            occ_skill_names = set(occ.get("occupation_skills", []))
+
+    pts_formula = occ.get("skill_points_formula", "—") if occ else "—"
+    cr_min, cr_max = occ.get("credit_rating_min", 0) if occ else 0, occ.get("credit_rating_max", 99) if occ else 99
+
+    # Group skills by category
+    cats = {}
+    for s in SKILLS:
+        cats.setdefault(s["cat"], []).append(s)
+    cat_order = ["战斗", "操作", "感知", "知识", "社交"]
+
+    rows = []
+    rows.append(f'<div class="text-sm text-gray-500 mb-2">职业技能点公式: {pts_formula} | 兴趣点: INT×2'
+                f' | 信用评级范围: {cr_min}-{cr_max}</div>')
+    if not occupation:
+        rows.append('<div class="text-xs text-gray-600 mb-3">请先选择职业以查看技能优势</div>')
+
+    for cat in cat_order:
+        cat_skills = cats.get(cat, [])
+        if not cat_skills:
+            continue
+        rows.append(f'<div class="text-xs text-gray-500 font-bold mt-3 mb-1 border-b border-gray-800 pb-1">{cat}</div>')
+        for s in cat_skills:
+            name = s["name"]
+            base = s["base"]
+            is_occ = name in occ_skill_names
+            border_cls = "border-aged-gold" if is_occ else "border-[#4a3820]"
+            bg_cls = "bg-aged-brown/20" if is_occ else "bg-[#1a150c]"
+            badge = '<span class="text-[10px] text-aged-gold bg-aged-brown/30 px-1 rounded">职业</span>' if is_occ else ''
+            rows.append(
+                f'<div class="flex items-center gap-2 py-1 px-2 {bg_cls} rounded">'
+                f'<span class="text-sm text-gray-300 w-32">{name} {badge}</span>'
+                f'<span class="text-xs text-gray-600 w-16">基础 {base}%</span>'
+                f'<input type="number" min="0" max="99" value="{base}" '
+                f'class="skill-input w-16 bg-[#1a150c] border {border_cls} rounded px-2 py-1 text-xs text-gray-300 focus:border-aged-gold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none">'
+                f'</div>'
+            )
+
+    html = "".join(rows)
+    if html:
+        html += (
+            '<script>'
+            'setTimeout(function(){'
+            '  var saved = document.getElementById("skills-json")?.value;'
+            '  if (saved) {'
+            '    try { var obj = JSON.parse(saved);'
+            '      document.querySelectorAll("#skills-list .skill-input").forEach(function(inp){'
+            '        var label = inp.closest(".flex")?.querySelector("span")?.textContent?.replace(/职业\\s*$/,"").trim();'
+            '        if (label && obj[label] !== undefined) inp.value = obj[label];'
+            '      });'
+            '    } catch(e) {}'
+            '  }'
+            '  charStoreSkills();'
+            '}, 200);'
+            '</script>'
+        )
     return HTMLResponse(html)
 
 
@@ -171,8 +240,8 @@ async def export_character(
 ):
     import json as _json
     from datetime import datetime as _dt
-    from investigator.models import Stats, DerivedStats
-    from investigator.serialization import investigator_to_dict
+    from investigator.models import Stats, DerivedStats, Occupation
+    from investigator.serialization import to_dict
     from investigator import Investigator
     from investigator.rules import create_skill_list
 
@@ -191,13 +260,24 @@ async def export_character(
         if s.name in custom:
             s.value = int(custom[s.name])
     inv.skills = skills
-    inv.occupation = occupation
+    inv.occupation = None
+    for _occ in _load_occupations():
+        if _occ["name"] == occupation:
+            inv.occupation = Occupation(
+                name=_occ["name"],
+                description=_occ.get("description", ""),
+                occupation_skills=_occ.get("occupation_skills", []),
+                credit_rating_min=_occ.get("credit_rating_min", 0),
+                credit_rating_max=_occ.get("credit_rating_max", 99),
+                skill_points_formula=_occ.get("skill_points_formula", "EDU*4"),
+            )
+            break
     inv.appearance = appearance
-    inv.description = description
+    inv.personal_description = description
     inv.backstory = backstory
     inv.avatar_url = avatar_url.strip()
 
-    data = investigator_to_dict(inv)
+    data = to_dict(inv)
     data.setdefault("meta", {})
     data["meta"].update({
         "version": "1.0",
@@ -205,6 +285,20 @@ async def export_character(
         "rules_edition": "COC7",
     })
     content = _json.dumps(data, ensure_ascii=False, indent=2)
+
+    import zipfile, io
+    from urllib.parse import quote
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('character.json', content)
+        if inv.avatar_url and inv.avatar_url.startswith('/static/uploads/avatars/'):
+            avatar_path = PROJECT_ROOT / 'frontend' / 'static' / 'uploads' / 'avatars' / Path(inv.avatar_url).name
+            if avatar_path.exists():
+                zf.write(avatar_path, f'avatar{avatar_path.suffix}')
+
+    buf.seek(0)
+    safe_name = (name or "character").strip()
+    encoded = quote(f"{safe_name}.zip", safe="")
     from fastapi.responses import Response
-    return Response(content=content, media_type="application/json",
-                    headers={"Content-Disposition": f"attachment; filename={name or 'character'}_character.json"})
+    return Response(content=buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"})

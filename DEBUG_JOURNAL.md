@@ -270,3 +270,20 @@
 - **根因**：keeper 管线顺序为 Step 2.5 combat_entry（并行）∥ Step 3 enrich+TimeAgent → Step 3.5 collect enrich → Step 3.6 collect combat_entry → Step 3.7 resolve combat。combat_entry 在 enrich 之后收集，且 enrich_input 无战斗数据
 - **解决**：重构 keeper 管线为串行——Step 2.5 combat_entry（同步）→ Step 2.6 解析战斗 + Boss "at" 检查 → 战斗描述注入 `enrich_input.entities` → Step 3 enrich ∥ TimeAgent（并行）。Boss 遭遇注入 `"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"`，普通战斗注入 `"⚔ 你与{enemy_names}进入了战斗！"`
 - **教训**：Enrich 是 Narrator 的唯一数据源——任何需要 Narrator 感知的事件（战斗/Boss/NPC）必须在 enrich 之前注入 enrich_input
+
+## 50. 车卡导出连环 Bug — 5 层阻塞逐层暴露
+
+- **症状**：前端"导出 JSON"按钮始终报"导出失败"，但预览界面已能显示正确的角色数据
+- **根因链**（5 层，每层修完后下一层才暴露）：
+  1. **Python 语法级**：`game.py` 函数内多处分离的 `global _game_instance` 声明 → `SyntaxError`，服务器无法启动
+  2. **JS 数据流级**：`exportCharacter()` → `charSyncAllFields()` → `charStoreSkills()` 在步骤 3 被调用时，`#skills-list` DOM 已不存在（HTMX 替换了步骤 2 的内容）。函数找到 0 个输入框，执行 `skills-json.value = ''`→ **清空了步骤 2 保存的技能数据**
+  3. **Python 导入级**：`from investigator.serialization import investigator_to_dict` → 实际函数名为 `to_dict`，`ImportError` 导致 500
+  4. **类型不匹配**：`inv.occupation = occupation` 传的是字符串（如 `"医生"`），但 `to_dict` 里调用 `inv.occupation.name` → `AttributeError`
+  5. **HTTP 编码限制**：Content-Disposition header 的 filename 含中文 → `UnicodeEncodeError: 'latin-1' codec can't encode`
+- **解决方案**：
+  - 层1：`global _game_instance` 提到函数顶部一行
+  - 层2：`charStoreSkills()` / `charStoreStats()` 加早期返回 `if (inputs.length === 0) return`——找不到 DOM 元素时不覆盖已有数据
+  - 层3：`investigator_to_dict` → `to_dict`
+  - 层4：从 `occupations.json` 查找并构造完整 `Occupation(name=..., description=..., ...)` 对象
+  - 层5：`filename*=UTF-8''<url编码文件名>` (RFC 5987)
+- **教训**：前置端修改后，导出这类**串行多步依赖的工作流**最易产生连环 bug。每个步骤依赖前一步的数据正确性和格式兼容性，一层阻塞掩盖下一层。修完后不应只验证"不报错了"——应该用实际数据端到端测试完整流程

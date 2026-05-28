@@ -202,16 +202,51 @@
   // == Handle turn response ==
   function handleTurnResponse(userText, data) {
     var parts = [];
-    if (data.skill_results && data.skill_results.length > 0) {
-      for (var i = 0; i < data.skill_results.length; i++) {
-        var sr = data.skill_results[i];
-        var tierColor = sr.tier === 'extreme' ? 'text-yellow-300' : sr.tier === 'hard' ? 'text-coc-green' : sr.tier === 'regular' ? 'text-gray-300' : 'text-red-400';
-        parts.push('<div class="msg-skill px-3 py-1 text-xs ' + (sr.success ? 'text-coc-green' : 'text-coc-red') + ' border-l-2 ' + (sr.success ? 'border-coc-green/50' : 'border-coc-red/50') + ' mb-1">' + (sr.success ? '[OK]' : '[FAIL]') + ' ' + (sr.entity_id || '?') + ' <span class="' + tierColor + '">[' + (sr.tier || 'regular') + ']</span></div>');
+    var snap = data.player_snapshot;
+
+    // Scene info from snapshot
+    if (snap && snap.scene_name) {
+      var sceneInfo = '<span class="text-aged-gold">' + snap.scene_name + '</span>';
+      if (snap.time && snap.time.time_of_day) {
+        sceneInfo += ' <span class="text-gray-600">·</span> <span class="text-aged-brown">' + snap.time.time_of_day + '</span>';
       }
+      var exits = snap.exits || [];
+      if (exits.length > 0) {
+        sceneInfo += ' <span class="text-gray-600">| 出口:</span> ';
+        sceneInfo += exits.map(function(e) { return e.target; }).join(', ');
+      }
+      var npcs = snap.npcs || [];
+      if (npcs.length > 0) {
+        sceneInfo += ' <span class="text-gray-600">| NPC:</span> ';
+        sceneInfo += npcs.map(function(n) { return n.name; }).join(', ');
+      }
+      document.getElementById('hud-scene').innerHTML = sceneInfo;
     }
-    if (data.combat) {
-      var outcomeLabel = data.combat.outcome === 'win' ? '胜利' : data.combat.outcome === 'loss' ? '败北' : data.combat.outcome;
-      parts.push('<div class="msg-combat px-3 py-2 text-sm border-l-2 border-yellow-600 bg-[#1a1400] mb-2"><span class="text-yellow-400">战斗 ' + outcomeLabel + '</span>' + (data.combat.narrative ? '<div class="text-gray-400 text-xs mt-1">' + data.combat.narrative + '</div>' : '') + '</div>');
+
+    // Combat
+    var combatData = (snap && snap.combat) || data.combat;
+    if (combatData) {
+      var outcomeLabel = combatData.outcome === 'win' ? '胜利' : combatData.outcome === 'loss' ? '败北' : combatData.outcome;
+      parts.push('<div class="msg-combat px-3 py-2 text-sm border-l-2 border-yellow-600 bg-[#1a1400] mb-2"><span class="text-yellow-400">战斗 ' + outcomeLabel + '</span>' + (combatData.narrative ? '<div class="text-gray-400 text-xs mt-1">' + combatData.narrative + '</div>' : '') + '</div>');
+    }
+
+    // Skill checks from snapshot
+    var skillChecks = (snap && snap.skill_checks) || data.skill_results || [];
+    if (skillChecks.length > 0) {
+      for (var i = 0; i < skillChecks.length; i++) {
+        var sc = skillChecks[i];
+        var eid = sc.entity_id || '?';
+        var tier = sc.tier || 'regular';
+        var success = sc.success !== false;
+        var tierColor = tier === 'extreme' ? 'text-yellow-300' : tier === 'hard' ? 'text-coc-green' : tier === 'regular' ? 'text-gray-300' : 'text-red-400';
+        var diceInfo = sc.raw_roll ? ('D100=' + sc.raw_roll + '/' + sc.target) : '';
+        var enh = sc.enhancement;
+        var enhText = '';
+        if (enh) {
+          enhText = ' ' + (enh.detail_override || (enh.tier ? '→' + enh.tier : ''));
+        }
+        parts.push('<div class="msg-skill px-3 py-1 text-xs ' + (success ? 'text-coc-green' : 'text-coc-red') + ' border-l-2 ' + (success ? 'border-coc-green/50' : 'border-coc-red/50') + ' mb-1">' + (success ? '[OK]' : '[FAIL]') + ' ' + eid + ' <span class="' + tierColor + '">[' + tier + ']</span> <span class="text-gray-600">' + diceInfo + '</span><span class="text-yellow-400">' + enhText + '</span></div>');
+      }
     }
     if (data.narrative_html) {
       parts.push(data.narrative_html);
@@ -219,7 +254,17 @@
       if (data.brief) parts.push('<div class="msg-brief px-3 py-2 text-sm text-gray-400 border-l-2 border-gray-600 mb-2">' + data.brief + '</div>');
       if (data.narrative) parts.push('<div class="msg-narrative px-3 py-2 text-parchment border-l-2 border-aged-gold bg-[#1a1410] narrative-flash">' + data.narrative + '</div>');
     }
-    if (data.timestamp) document.getElementById('time-display').textContent = data.timestamp;
+    if (snap && snap.time && snap.time.day) {
+      var timeStr = '第' + snap.time.day + '天 ';
+      if (snap.time.game_time_minutes !== undefined) {
+        var h = Math.floor(snap.time.game_time_minutes / 60);
+        var m = snap.time.game_time_minutes % 60;
+        timeStr += (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+      }
+      document.getElementById('time-display').textContent = timeStr;
+    } else if (data.timestamp) {
+      document.getElementById('time-display').textContent = data.timestamp;
+    }
     var html = parts.join('') || '<div class="msg-brief px-3 py-2 text-sm text-gray-500">（没有返回叙事内容）</div>';
     document.getElementById('compact-narrative').innerHTML = html;
     addToHistory(userText, html);

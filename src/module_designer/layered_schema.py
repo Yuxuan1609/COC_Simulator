@@ -75,6 +75,10 @@ L2_NPC_PROFILE_SCHEMA = {
     "initial_state": {"required": False},
     "initial_attitude": {"required": False},
     "initial_following": {"required": False},
+    "can_interact": {"required": False},
+    "can_follow": {"required": False},
+    "follow_requirements": {"required": False},
+    "interact_requirements": {"required": False},
 }
 
 L2_BOSS_ENCOUNTER_SCHEMA = {

@@ -1,0 +1,623 @@
+{
+  "scenes": {
+    "6号车厢": {
+      "interactions": [
+        {
+          "id": "I1",
+          "scene": "6号车厢",
+          "type": "无",
+          "name": "检查门上的便签",
+          "requirement": "",
+          "trigger": "调查员检查车厢前侧门上的便签时",
+          "result": "便签正面写着“只管前进吧 已经没有退路了”，翻到背面发现另一行小字：“第三个箱子里有藏着钥匙”。你们获得了神秘便签。@item_gain(item_name=\"神秘便签\", quantity=1)",
+          "side_effects": [],
+          "graded_result": null,
+          "difficulty": "None",
+          "time_condition": []
+        },
+        {
+          "id": "I2",
+          "scene": "6号车厢",
+          "type": "侦查",
+          "name": "检查门旁的电车示意地图",
+          "requirement": "",
+          "trigger": "调查员检查车厢门旁的墙壁时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你什么也没有发现。",
+            "on_regular": "你发现了一张电车示意地图，但地图的后半部分被人为涂抹破坏，无法辨认7号车厢之后的信息。",
+            "on_hard": "你发现了一张电车示意地图，并注意到地图被破坏的痕迹很新鲜，似乎是有人故意不想让人看到后面的内容。",
+            "on_extreme": "你发现了一张电车示意地图，并敏锐地察觉到破坏者可能了解后方的危险，故意引导你们向前。"
+          },
+          "difficulty": "regular",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "7号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "target": "5号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "7号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "source": "5号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "死寂而诡异，仿佛时间凝固。"
+    },
+    "7号车厢": {
+      "interactions": [
+        {
+          "id": "I3",
+          "scene": "7号车厢",
+          "type": "无",
+          "name": "目睹后方的大嘴",
+          "requirement": "",
+          "trigger": "调查员进入7号车厢并看向本该是8号车厢的位置时",
+          "result": "你们看到了难以置信的景象：一张比整辆电车还要巨大的嘴正在啃噬着车厢，地板和天花板不断被咬碎吞噬。",
+          "side_effects": [
+            "目睹此景，理智受到猛烈冲击"
+          ],
+          "graded_result": null,
+          "difficulty": "None",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "6号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "6号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "极度的血腥与恐怖，死亡的重量压得人喘不过气。"
+    },
+    "5号车厢": {
+      "interactions": [
+        {
+          "id": "I4",
+          "scene": "5号车厢",
+          "type": "侦查",
+          "name": "搜寻报纸",
+          "requirement": "",
+          "trigger": "调查员在5号车厢四处查看时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你没有发现什么特别的东西。",
+            "on_regular": "你在座椅下发现一份报纸，日期竟是明天，头版报道了今晚末班电车遭遇大规模恐怖袭击，所有幸存乘客精神异常被送医。@item_gain(item_name=\"报纸\", quantity=1)",
+            "on_hard": "你在座椅下发现一份报纸，日期竟是明天，头版报道了今晚末班电车遭遇大规模恐怖袭击，所有幸存乘客精神异常被送医。@item_gain(item_name=\"报纸\", quantity=1)",
+            "on_extreme": "你在座椅下发现一份报纸，日期竟是明天，头版报道了今晚末班电车遭遇大规模恐怖袭击，所有幸存乘客精神异常被送医。@item_gain(item_name=\"报纸\", quantity=1)"
+          },
+          "difficulty": "regular",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "6号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "target": "4号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "6号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "source": "4号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "看似平静，却弥漫着山雨欲来的压迫感。"
+    },
+    "3号车厢": {
+      "interactions": [
+        {
+          "id": "I7",
+          "scene": "3号车厢",
+          "type": "侦查",
+          "name": "寻找黑色挎包（无乘务员帮助）",
+          "requirement": "未携带乘务员京山人吉",
+          "trigger": "调查员在3号车厢的杂乱行李中翻找时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你一时没能找到那个挎包。",
+            "on_regular": "你在靠近2号车厢的门边找到了一个黑色挎包，打开后里面装有驾驶室的房间钥匙和操作面板的控制钥匙。@item_gain(item_name=\"驾驶室钥匙\", quantity=1) @item_gain(item_name=\"控制钥匙\", quantity=1)",
+            "on_hard": "你在靠近2号车厢的门边找到了一个黑色挎包，打开后里面装有驾驶室的房间钥匙和操作面板的控制钥匙。@item_gain(item_name=\"驾驶室钥匙\", quantity=1) @item_gain(item_name=\"控制钥匙\", quantity=1)",
+            "on_extreme": "你在靠近2号车厢的门边找到了一个黑色挎包，打开后里面装有驾驶室的房间钥匙和操作面板的控制钥匙。@item_gain(item_name=\"驾驶室钥匙\", quantity=1) @item_gain(item_name=\"控制钥匙\", quantity=1)"
+          },
+          "difficulty": "hard",
+          "time_condition": []
+        },
+        {
+          "id": "I9",
+          "scene": "3号车厢",
+          "type": "侦查",
+          "name": "寻找调查员的遗失物品",
+          "requirement": "",
+          "trigger": "调查员在自己的座位附近或行李堆中翻找时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你没有找到任何有用的东西。",
+            "on_regular": "你找回了一些自己的随身物品，如手机或手电筒，它们还能正常工作。@grant_weapon(weapon_ref=\"手电筒\", scene=\"3号车厢\", quantity=1) @item_gain(item_name=\"手机\", quantity=1)",
+            "on_hard": "你找回了一些自己的随身物品，如手机或手电筒，它们还能正常工作。@grant_weapon(weapon_ref=\"手电筒\", scene=\"3号车厢\", quantity=1) @item_gain(item_name=\"手机\", quantity=1)",
+            "on_extreme": "你找回了一些自己的随身物品，如手机或手电筒，它们还能正常工作。@grant_weapon(weapon_ref=\"手电筒\", scene=\"3号车厢\", quantity=1) @item_gain(item_name=\"手机\", quantity=1)"
+          },
+          "difficulty": "regular",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "4号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "target": "2号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "4号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "source": "2号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "混乱与恐慌的残余，每件遗弃的物品都诉说着逃生的仓促。"
+    },
+    "2号车厢": {
+      "interactions": [
+        {
+          "id": "I10",
+          "scene": "2号车厢",
+          "type": "潜行",
+          "name": "潜行穿越2号车厢（无光源）",
+          "requirement": "||未持有任何光源",
+          "trigger": "调查员试图无声地穿过黑暗的2号车厢时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你不慎碰到了什么，发出刺耳的声响，紧接着沉重的喘息声迅速逼近——怪物发现了你！##END_疯狂终结:永陷疯狂## 怪物的利爪瞬间将你撕碎，剧痛使你眼前一黑。当你再次醒来，发现自己被拘束在精神病院的隔离室中，理智归零，你已无法分辨现实与疯狂。",
+            "on_regular": "你屏住呼吸，凭着触觉缓慢向前，终于摸到了通往先头车厢的门。",
+            "on_hard": "你如猫一般灵活，几乎未发出任何声音便穿过了车厢。",
+            "on_extreme": "你仿佛与黑暗融为一体，连怪物的呼吸节奏都被你掌握，你轻盈地抵达了对面的门。"
+          },
+          "difficulty": "hard",
+          "time_condition": []
+        },
+        {
+          "id": "I11",
+          "scene": "2号车厢",
+          "type": "潜行",
+          "name": "潜行穿越2号车厢（有光源）",
+          "requirement": "I9||持有光源（如手电筒）",
+          "trigger": "调查员使用光源小心地照亮脚下，试图穿过车厢时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "虽然有了光，但你仍然不慎踢到了脚下的尸体，惊动了怪物！##END_疯狂终结:永陷疯狂## 怪物循声扑来，利爪撕裂你的身体。在剧痛中，你的意识坠入黑暗。再度醒来时，你被拘束在精神病院的软垫病房，心智崩溃，理智归零。",
+            "on_regular": "借助微弱的光，你小心翼翼地绕开了障碍物和怪物所处的位置，成功到达对面。",
+            "on_hard": "你巧妙地利用光源观察了怪物的位置，选择了最佳路线，悄无声息地穿过。",
+            "on_extreme": "你甚至利用光源短暂照射怪物，它们反而畏光退避，让你轻松通过。"
+          },
+          "difficulty": "regular",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "3号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "target": "先头车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "3号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "source": "先头车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "无光的深渊中，恐惧被无限放大，每一次呼吸都可能是致命的。"
+    },
+    "先头车厢": {
+      "interactions": [
+        {
+          "id": "I12",
+          "scene": "先头车厢",
+          "type": "无",
+          "name": "打开驾驶室门",
+          "requirement": "(I7 OR I8)",
+          "trigger": "调查员尝试打开驾驶室的门时",
+          "result": "你用找到的钥匙打开了驾驶室的门，走了进去。",
+          "side_effects": [],
+          "graded_result": null,
+          "difficulty": "None",
+          "time_condition": []
+        },
+        {
+          "id": "I13",
+          "scene": "先头车厢",
+          "type": "无",
+          "name": "拉动加速杆（真实终结）",
+          "requirement": "I12",
+          "trigger": "调查员在驾驶室内拉动加速杆时",
+          "result": "##END_真实终结:电车冲出梦境## 你决然地将拉杆推至加速档，电车发出轰鸣，速度急剧攀升，窗外的黑暗被白光撕裂。当白光吞没一切，你们在现实世界的终点站同时惊醒，仿佛只是一场噩梦。所有生还者感到前所未有的清醒，理智大幅回升。",
+          "side_effects": [],
+          "graded_result": null,
+          "difficulty": "None",
+          "time_condition": []
+        },
+        {
+          "id": "I14",
+          "scene": "先头车厢",
+          "type": "无",
+          "name": "拉动减速杆（坏结局）",
+          "requirement": "I12",
+          "trigger": "调查员在驾驶室内拉动减速杆时",
+          "result": "##END_坏结局:被吞噬的噩梦## 你选择了减速，电车缓缓停下，但绝望的寂静只有一瞬——身后的巨嘴吞没了整个车厢。你们在难以忍受的痛苦中从电车座位上惊醒，冷汗浸湿了后背。梦魇的余音仍在耳边回响，你们的精神受到了永久性的创伤，其中一人发现自己的包背带被整齐地切断。",
+          "side_effects": [],
+          "graded_result": null,
+          "difficulty": "None",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "2号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "2号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "怪异而冰冷的安宁，仿佛暴风眼的中心。"
+    },
+    "4号车厢": {
+      "interactions": [
+        {
+          "id": "NPC_FOLLOW_UNLOCK_京山人吉",
+          "scene": "4号车厢",
+          "name": "请求京山人吉跟随",
+          "type": "无",
+          "trigger": "你请求京山人吉跟随你一起行动",
+          "result": "京山人吉开始跟随你 @npc_follow(npc_name=\"京山人吉\", follow=true)",
+          "side_effects": [],
+          "difficulty": "None",
+          "requirement": "I6",
+          "extra": {
+            "npc_special": "follow_unlock",
+            "npc_name": "京山人吉"
+          },
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "5号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "target": "3号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "5号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        },
+        {
+          "source": "3号车厢",
+          "method": "步行通过车门",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "痛苦与绝望凝固在血腥的空气里。"
+    }
+  },
+  "events": [],
+  "boss_encounters": [
+    {
+      "id": "BOSS_1",
+      "type": "boss_encounter",
+      "engage_type": "event",
+      "boss_ref": "吞噬之口",
+      "scene": "7号车厢",
+      "requirements": "(I3) || 调查员在7号车厢停留超过一轮或尝试攻击后方巨嘴",
+      "description": "当你们在7号车厢转身直面那追逐列车的巨口时，空气中弥漫着腐烂的恶臭。那张长满獠牙的巨嘴几乎填满了整个后方视野，边缘蠕动的触手和无数眼睛贪婪地注视着你们。它无声地逼近，每一次啃噬都让车厢剧烈震动，碎片飞溅。你们意识到，除了前进，已无退路——而它似乎正在等待你们犯下任何一丝犹豫。"
+    }
+  ],
+  "npc_profiles": {
+    "京山人吉": {
+      "name": "京山人吉",
+      "role": "重伤的电车乘务员，掌握驾驶室钥匙的关键信息。",
+      "appearance": "一名中年男性，身穿深蓝色电车乘务员制服。他的腿部有巨大的撕裂伤口，脸色苍白如纸，正昏迷不醒，呼吸微弱，表情因痛苦而扭曲。",
+      "what_they_can_do": "京山人吉最初昏迷在4号车厢，调查员可通过急救（I6）使其苏醒。苏醒后，他会急切地希望停车逃生，并告知调查员驾驶室的钥匙可能在他遗留于3号车厢的黑色挎包中。他可以跟随调查员前往3号车厢，帮助寻找挎包（I8）。当调查员目睹后方大嘴（I3）后，他会信念崩溃，将决定权完全交给调查员。",
+      "personality_notes": "重伤虚弱，情绪从急切转为绝望，是普通人在不可名状恐怖面前的缩影。苏醒后可能焦急地请求帮助，得知后方已无退路时彻底放弃。",
+      "interaction_triggers": [
+        "救醒乘务员后，可与其自由对话。"
+      ],
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false,
+      "can_interact": true,
+      "can_follow": true,
+      "follow_requirements": "I6",
+      "interact_requirements": "I6",
+      "scene": "4号车厢",
+      "all_scenes": [
+        "4号车厢"
+      ],
+      "bound_interactions": [
+        {
+          "id": "I5",
+          "scene": "4号车厢",
+          "type": "无",
+          "name": "发现重伤的乘务员",
+          "requirement": "",
+          "trigger": "调查员进入4号车厢时",
+          "result": "你们发现一名身穿制服、身受重伤的男性乘务员躺在地上，他的腿部有巨大的撕咬伤口，处于昏迷状态。",
+          "side_effects": [],
+          "graded_result": null,
+          "difficulty": "None",
+          "time_condition": [],
+          "based_on": null,
+          "source_scene": "4号车厢"
+        },
+        {
+          "id": "I6",
+          "scene": "4号车厢",
+          "type": "急救",
+          "name": "救治乘务员",
+          "requirement": "I5",
+          "trigger": "调查员尝试对乘务员进行急救时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你的急救未能唤醒他，他的呼吸逐渐微弱下去。",
+            "on_regular": "在你的努力下，乘务员缓缓醒来，他惊恐地抓住你的手，虚弱地说：“怪物……它们袭击了乘客……快停下电车……我的钥匙……掉在3号车厢……黑色挎包……”",
+            "on_hard": "你的及时救治让他很快恢复了意识，他清晰地告诉你们：怪物循声而来，驾驶室的钥匙装在他的黑色挎包里，挎包可能掉在了3号车厢。",
+            "on_extreme": "你的高超医术让他几乎立刻坐了起来，他不仅提供了钥匙的信息，还提醒你们前方车厢有更多怪物，要千万小心。"
+          },
+          "difficulty": "regular",
+          "time_condition": [],
+          "based_on": null,
+          "source_scene": "4号车厢"
+        },
+        {
+          "id": "I8",
+          "scene": "3号车厢",
+          "type": "侦查",
+          "name": "寻找黑色挎包（有乘务员帮助）",
+          "requirement": "I6||乘务员跟随调查员",
+          "trigger": "调查员带着乘务员在3号车厢寻找时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "即使有乘务员指引，你们还是没能找到，但乘务员肯定地说就在这附近。",
+            "on_regular": "在乘务员的指引下，你们很快在通往2号车厢的门边找到了那个黑色挎包，里面装有驾驶室的房间钥匙和操作面板的控制钥匙。",
+            "on_hard": "同on_regular",
+            "on_extreme": "同on_regular"
+          },
+          "difficulty": "regular",
+          "time_condition": [],
+          "based_on": null,
+          "source_scene": "3号车厢"
+        }
+      ]
+    }
+  },
+  "_pipeline_version": "git:a6a67902",
+  "dependency_graph": {
+    "nodes": {
+      "I1": {
+        "entity_id": "I1",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I2": {
+        "entity_id": "I2",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I3": {
+        "entity_id": "I3",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I4": {
+        "entity_id": "I4",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I7": {
+        "entity_id": "I7",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I9": {
+        "entity_id": "I9",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I10": {
+        "entity_id": "I10",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I11": {
+        "entity_id": "I11",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I12": {
+        "entity_id": "I12",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I8": {
+        "entity_id": "I8",
+        "entity_type": "",
+        "name": ""
+      },
+      "I13": {
+        "entity_id": "I13",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "I14": {
+        "entity_id": "I14",
+        "entity_type": "interaction",
+        "name": ""
+      },
+      "NPC_FOLLOW_UNLOCK_京山人吉": {
+        "entity_id": "NPC_FOLLOW_UNLOCK_京山人吉",
+        "entity_type": "",
+        "name": ""
+      },
+      "I6": {
+        "entity_id": "I6",
+        "entity_type": "",
+        "name": ""
+      }
+    },
+    "edges": [
+      {
+        "source": "I11",
+        "target": "I9",
+        "dep_type": "interaction"
+      },
+      {
+        "source": "I12",
+        "target": "I7",
+        "dep_type": "interaction"
+      },
+      {
+        "source": "I12",
+        "target": "I8",
+        "dep_type": "interaction"
+      },
+      {
+        "source": "I13",
+        "target": "I12",
+        "dep_type": "interaction"
+      },
+      {
+        "source": "I14",
+        "target": "I12",
+        "dep_type": "interaction"
+      },
+      {
+        "source": "NPC_FOLLOW_UNLOCK_京山人吉",
+        "target": "I6",
+        "dep_type": "interaction"
+      }
+    ],
+    "_circular_cut": false,
+    "_cut_info": null
+  },
+  "_phase1": {
+    "enemies": [
+      {
+        "enemy_ref": "Clicker",
+        "min_count": 1,
+        "max_count": 3
+      }
+    ],
+    "weapons": [
+      {
+        "weapon_ref": "手电筒",
+        "min_count": 0,
+        "max_count": 3
+      }
+    ]
+  }
+}

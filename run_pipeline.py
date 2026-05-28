@@ -143,7 +143,7 @@ from module_designer.layered_parser import (
 )
 from module_designer.layered_pipeline import (run_pipeline, cross_validate_layers, _assemble_l2,
     _bind_npc_entities, _extract_entity_bindings, _inject_step1a_meta,
-    _inject_npc_follow_entities)
+    _inject_npc_special_entities)
 from module_designer.dependency_graph import DependencyGraph
 from library import WeaponLibrary, EnemyLibrary
 from library.bosses import BossLibrary
@@ -858,7 +858,7 @@ def _do_step3a_25(runner: InteractiveRunner, verbose: bool = True):
         entity_bindings=entity_bindings if entity_bindings else None,
     )
 
-    _inject_npc_follow_entities(runner.interactions, runner.npc_profiles, verbose)
+    _inject_npc_special_entities(runner.interactions, runner.npc_profiles, verbose)
 
     # 保存
     step_dir_3 = runner._step_dir("step_3a")
@@ -1263,7 +1263,16 @@ def run_auto(config: PipelineConfig):
     ]
 
     t0 = time.time()
+    skip_mode = config.start_from != "step_1"
     for step_name, step_fn in steps:
+        if skip_mode:
+            if step_name == config.start_from:
+                skip_mode = False
+                print(f"  [续跑] 从 {step_name} 开始执行")
+            else:
+                print(f"  [跳过] {step_name}")
+                runner._completed_steps.add(step_name)
+                continue
         try:
             summary = step_fn(runner)
             runner._completed_steps.add(step_name)

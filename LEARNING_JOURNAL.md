@@ -175,3 +175,17 @@
 - 多维度系统性扫描：git 跟踪的临时备份（tmp_*）、stale worktree（`git worktree list`）、无引用源文件（grep import 全项目）、根目录过期文档（TODO/CHANGELOG）、IDE 生成文件（.iml）
 - 与"修改前后双向审计"互补：后者是改前改后检查，这个是全局垃圾回收
 - 最佳时机：完成一组非平凡改动后、或合并前——避免积累到不可管理的规模
+
+## HTMX 多步骤向导的跨步骤数据持久化
+
+- **问题**：HTMX `hx-get` + `hx-swap="innerHTML"` 在步骤切换时会销毁前一步的全部 DOM 元素（包括用户已填写的 input/textarea/select）。当步骤 3 的导出函数尝试读取步骤 1 的姓名/年龄/性别时，这些元素早已不存在
+- **模式**：在向导容器**外部**放置一个全局 `<form id="char-form" style="display:none">` 包含所有步骤的 hidden input，每次步骤切换前调用 `syncAll()` 从当前步骤 DOM 同步到隐藏表单。导出和预览从隐藏表单读取，不依赖 DOM 存在性
+- **关键细节**：(a) 隐藏表单用 `name` 属性匹配后端 Form 参数名，导出时直接 `fd.append(el.name, el.value)` 无需映射；(b) 返回上一步时从隐藏表单恢复字段值（`char-name` → `input[name="name"]`）；(c) 统计量的同步函数（`charStoreStats`/`charStoreSkills`）在新步骤找不到对应 DOM 时**不覆盖**隐藏表单已有值（见下一条）
+- 适用：任何 HTMX/Unpoly/Turbo 驱动的多步骤表单向导
+
+## Store 函数的安全回退：找不到源数据时不覆盖
+
+- **反模式**：`charStoreSkills()` 从 `#skills-list .skill-input` 读数据 → 写入 `skills-json`。在步骤 3 被调用时 `#skills-list` 不存在 → 找到 0 个输入 → 执行 `skills-json.value = ''` → **清空了步骤 2 已保存的数据**
+- **安全模式**：在数据收集函数顶部加早期返回 `if (inputs.length === 0) return;`——找不到源 DOM 元素时不做任何操作，保留已有值
+- **泛化**：任何从动态 DOM 收集数据并写入持久存储的函数都应遵循此模式——"我能读就写，读不到就当我不存在"。这比"读不到就清空"安全得多，也避免了调用方需要判断上下文（"现在是在步骤 2 还是步骤 3"）
+- 与"管道中的数据不应被后续步骤覆盖"互补——后者管管道步骤间，这个管前端状态管理

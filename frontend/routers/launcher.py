@@ -54,6 +54,8 @@ async def launcher_tab(request: Request, tab: str):
     config = _load_config()
     if tab == "module-gen":
         return templates.TemplateResponse(request, "partials/launcher-module-gen.html", {})
+    elif tab == "step0":
+        return templates.TemplateResponse(request, "partials/launcher-step0.html", {})
     elif tab == "game-start":
         return templates.TemplateResponse(request, "partials/launcher-game-start.html", {})
     elif tab == "config":
@@ -93,12 +95,55 @@ async def load_config():
     return _load_config()
 
 
+@router.post("/api/step0/start")
+async def start_step0(
+    source: str = Form(...),
+    module_name: str = Form(...),
+):
+    """Run Step 0: novel → module document. Step 0 is always executed separately from the pipeline."""
+    import subprocess
+    import sys
+    import threading
+
+    source_path = PROJECT_ROOT / source
+    if not source_path.exists():
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(f"源文件不存在: {source}", status_code=400)
+
+    output_path = PROJECT_ROOT / "data" / "modules" / module_name / "module_step0.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable, str(PROJECT_ROOT / "run_step0.py"),
+        str(source_path),
+        str(output_path),
+    ]
+
+    def run_step0():
+        subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+
+    thread = threading.Thread(target=run_step0, daemon=True)
+    thread.start()
+
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(
+        '<div class="text-sm text-aged-gold mt-4">'
+        f'  <p>✓ Step 0 已启动 — 模组: {module_name}</p>'
+        f'  <p class="text-xs text-gray-500 mt-1">输出: data/modules/{module_name}/module_step0.txt</p>'
+        f'  <p class="text-xs text-gray-500">可在控制台查看进度输出</p>'
+        '</div>'
+    )
+
+
 @router.post("/api/pipeline/start")
 async def start_pipeline(
     source: str = Form(...),
     module_name: str = Form(...),
     output_dir: str = Form("data/modules/"),
-    start_from: str = Form("step_1a"),
+    start_from: str = Form("step_1"),
+    weapon_path: str = Form(""),
+    enemy_path: str = Form(""),
+    boss_path: str = Form(""),
 ):
     import subprocess
     import sys
@@ -116,6 +161,12 @@ async def start_pipeline(
         "--module", module_name,
         "--start-from", start_from,
     ]
+    if weapon_path:
+        cmd += ["--weapon-lib", weapon_path]
+    if enemy_path:
+        cmd += ["--enemy-lib", enemy_path]
+    if boss_path:
+        cmd += ["--boss-lib", boss_path]
     def run_pipeline():
         subprocess.run(cmd, cwd=str(PROJECT_ROOT))
 

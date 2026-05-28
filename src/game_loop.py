@@ -9,7 +9,7 @@ import json
 
 from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
-from game.messages import TurnInput, CombatInit, CombatResult
+from game.messages import TurnInput, CombatInit, CombatResult, PlayerFacingSnapshot, SkillCheckResult
 from game.turn_logger import TurnLogger
 from config import WR0_ENABLED
 
@@ -380,10 +380,63 @@ def run_turn(game: dict, user_input: str,
         npcs_visible["in_scene"] = [n.name for n in in_scene if n.state not in ("dead", "left")]
         npcs_visible["following"] = [n.name for n in world.npcs.get_following()]
 
+    # ── Build PlayerFacingSnapshot ──
+    import re as _re
+    scene_name = world.current_location
+    scene_description = ""
+    scene_npcs = []
+    if hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
+        scene_description = brief.scene_snapshot.description
+        scene_npcs = [
+            {"name": n.get("name", ""), "brief": n.get("brief", ""), "demeanor": n.get("demeanor", "")}
+            for n in brief.scene_snapshot.visible_npcs
+        ]
+    exits_data = [
+        {"target": e.target, "method": e.method}
+        for e in world.get_possible_exits()
+    ]
+    time_data = world.clock.to_dict()
+
+    combat_data = None
+    if combat_result_outcome:
+        combat_data = {
+            "outcome": combat_result_outcome,
+            "narrative": combat_narrative,
+            "is_boss": combat_is_boss,
+        }
+
+    skill_checks_out = []
+    for s in skill_results:
+        raw = s.get("raw_check", "")
+        raw_roll, target = 0, 0
+        m = _re.search(r"D100\s*=\s*(\d+)\s*/\s*(\d+)", raw)
+        if m:
+            raw_roll, target = int(m.group(1)), int(m.group(2))
+        skill_checks_out.append(SkillCheckResult(
+            entity_id=s.get("entity_id", ""),
+            entity_type=s.get("entity_type", ""),
+            tier=s.get("tier", ""),
+            success=s.get("success", False),
+            raw_roll=raw_roll,
+            target=target,
+            enhancement=s.get("enhancement"),
+        ))
+
+    player_snapshot = PlayerFacingSnapshot(
+        scene_name=scene_name,
+        scene_description=scene_description,
+        exits=exits_data,
+        time=time_data,
+        npcs=scene_npcs,
+        combat=combat_data,
+        skill_checks=skill_checks_out,
+    )
+
     return {
         "brief": narrative_brief,
         "narrative": narrative,
         "full": full_text,
+        "player_snapshot": player_snapshot,
         "skill_results": skill_results,
         "combat": {
             "outcome": combat_result_outcome,

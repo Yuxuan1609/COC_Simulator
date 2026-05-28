@@ -91,13 +91,17 @@
     "NPC名称": {
       "name": "NPC名称",
       "role": "在故事中的角色",
+      "appearance": "外貌描述",
       "what_they_can_do": "NPC能做什么、在什么条件下会做什么（核心行为字段）",
       "interaction_triggers": ["什么情况下玩家可以与NPC互动"],
       "personality_notes": "性格和说话风格",
-      "appearance": "外貌描述",
       "initial_state": "alive",
       "initial_attitude": "neutral",
-      "initial_following": false
+      "initial_following": false,
+      "can_interact": true,
+      "can_follow": true,
+      "follow_requirements": "I3 AND I5 || NPC信任调查员后愿意跟随",
+      "interact_requirements": ""
     }
   }
 }

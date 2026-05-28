@@ -10,3 +10,6 @@ data/debug/
 CLAUDE.md
 素材/
 *.iml
+
+# Uploaded avatars
+frontend/static/uploads/avatars/*

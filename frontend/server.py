@@ -38,6 +38,9 @@ app.add_middleware(
 
 FRONTEND_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
+UPLOADS_DIR = FRONTEND_DIR / "static" / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+(UPLOADS_DIR / "avatars").mkdir(parents=True, exist_ok=True)
 
 # Jinja2 template engine — used by all routers
 from fastapi.templating import Jinja2Templates

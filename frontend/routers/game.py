@@ -184,6 +184,7 @@ async def process_turn(user_input: str = Form(...)):
             "game_over": False,
             "ending": None,
             "timestamp": "",
+            "player_snapshot": None,
         }
 
     try:
@@ -224,6 +225,12 @@ async def process_turn(user_input: str = Form(...)):
     game_over = turn.get("game_over", False) if turn else False
     ending = turn.get("ending") if turn else None
     timestamp = turn.get("timestamp", "") if turn else ""
+    player_snapshot = turn.get("player_snapshot") if turn else None
+
+    # Serialize PlayerFacingSnapshot to dict
+    if player_snapshot and hasattr(player_snapshot, '__dataclass_fields__'):
+        from dataclasses import asdict
+        player_snapshot = asdict(player_snapshot)
 
     narrative_html = ""
     if brief:
@@ -251,6 +258,7 @@ async def process_turn(user_input: str = Form(...)):
         "game_over": game_over,
         "ending": ending,
         "timestamp": timestamp,
+        "player_snapshot": player_snapshot,
     }
 
 
@@ -327,6 +335,7 @@ async def player_status(format: str = ""):
 
 @router.post("/api/game/command", response_class=HTMLResponse)
 async def game_command(cmd: str = Form(...)):
+    global _game_instance
     game = get_game()
     world = game["keeper"].world
     p = world.player
@@ -385,11 +394,9 @@ async def game_command(cmd: str = Form(...)):
         else:
             lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
     elif cmd in ("/quit", "/exit"):
-        global _game_instance
         _game_instance = None
         lines.append('<div class="text-xs text-green-400">游戏已退出。返回启动页以重新开始。</div>')
     elif cmd == "/reset":
-        global _game_instance
         _game_instance = None
         lines.append('<div class="text-xs text-green-400">游戏已重置，刷新页面以重新开始</div>')
     else:

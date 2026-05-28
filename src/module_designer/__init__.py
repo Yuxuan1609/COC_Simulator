@@ -29,5 +29,5 @@ from module_designer.dependency_graph import (
 from module_designer.layered_pipeline import (
     run_pipeline, cross_validate_layers, PipelineResult,
     CrossRefReport, CrossRefIssue, save_pipeline_result,
-    _bind_npc_entities, _assemble_l2,
+    _bind_npc_entities, _assemble_l2, _inject_npc_special_entities,
 )

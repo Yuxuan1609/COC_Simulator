@@ -131,6 +131,35 @@ class CombatResult:
 
 
 @dataclass
+class SkillCheckResult:
+    """A single skill check — original D100 roll + optional LLM enhancement."""
+    entity_id: str = ""
+    entity_type: str = ""       # "interaction" | "auto_trigger" | "event"
+    skill_name: str = ""        # e.g. "侦查"
+    raw_roll: int = 0           # original D100 result
+    target: int = 0             # skill value / threshold
+    tier: str = ""              # "" | "failure" | "regular" | "hard" | "extreme"
+    success: bool = False
+    enhancement: dict | None = None  # trait enhancement {"tier", "reason", "detail_override"}
+
+
+@dataclass
+class PlayerFacingSnapshot:
+    """Unified player-facing supplementary info — returned alongside Narrator narrative.
+
+    Distinct from SceneSnapshot (feeds Narrator curation) and world.build_snapshot()
+    (feeds prompt builders). PlayerFacingSnapshot is the final output for the player/UI.
+    """
+    scene_name: str = ""
+    scene_description: str = ""        # L1 immersive third-person description
+    exits: list[dict] = field(default_factory=list)  # [{"target":"...","method":"..."}]
+    time: dict = field(default_factory=dict)          # {"day":1,"time_of_day":"夜间","game_time_minutes":120}
+    npcs: list[dict] = field(default_factory=list)    # [{"name":"...","brief":"...","demeanor":"..."}]
+    combat: dict | None = None         # {"outcome","narrative","is_boss"} or None
+    skill_checks: list[SkillCheckResult] = field(default_factory=list)
+
+
+@dataclass
 class RoundResult:
     """Single round result, shared between deterministic layer and LLM correction."""
     round: int = 0
