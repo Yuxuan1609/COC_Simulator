@@ -224,6 +224,9 @@ class Judge:
         if skill_tier:
             result_text = resolve_graded_result(entity, skill_tier)
 
+        # Extract @markup from result text before stripping
+        result_markup_effects = parse_markup_all(result_text)
+
         # Strip @markup from result text — deterministic side effects, LLM doesn't need them
         result_text = _MARKUP_STRIP_RE.sub("", result_text).strip()
 
@@ -282,7 +285,7 @@ class Judge:
                 entity_id=entity.id, entity_type=entity.entity_type,
                 skill_tier=skill_tier,
                 skill_detail=skill_detail,
-                side_effects=penalty_side_effects,
+                side_effects=penalty_side_effects + list(result_markup_effects),
             )
 
         # Execute — mark completion
@@ -297,8 +300,8 @@ class Judge:
         # Set completion flag
         self._set_completion_flag(entity, skill_tier)
 
-        # Resolve side effects
-        side_effects = []
+        # Resolve side effects — from entity.side_effects field + @markup in result_text
+        side_effects = list(result_markup_effects)
         for se_text in entity.side_effects:
             parsed = parse_markup_all(se_text)
             side_effects.extend(parsed)

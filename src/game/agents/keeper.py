@@ -83,7 +83,16 @@ class Keeper:
                         damage=damage or "1D6+DB",
                     )
                     self.world.player.add_weapon(inv_wep)
-                    self.world.scene_weapons.pop(wo["scene"], None)
+                    # Only remove from scene_weapons if it was a scene-placed weapon
+                    scene = wo.get("scene", "")
+                    if scene:
+                        scene_weps = self.world.scene_weapons.get(scene, [])
+                        for sw in list(scene_weps):
+                            if sw.weapon_ref == wo["weapon_ref"]:
+                                scene_weps.remove(sw)
+                                break
+                        if not scene_weps:
+                            self.world.scene_weapons.pop(scene, None)
                     return {"brief": f"你拾起了{wo['weapon_ref']}。", "weapon_pickup": True}
             return {"brief": f"你忽略了{wo['weapon_ref']}。", "weapon_pickup": False}
 
@@ -294,7 +303,9 @@ class Keeper:
                                         )
                                         self.world.player.add_weapon(inv_wep)
                                         picked_up = True
-                                del self.world.scene_weapons[self.world.current_location]
+                                scene_weps.remove(sw)
+                                if not scene_weps:
+                                    del self.world.scene_weapons[self.world.current_location]
                                 msg = f"你拾起了{sw.weapon_ref}。"
                                 # Add pickup as separate outcome for enrich/narrator
                                 all_outcomes.append(ActionOutcome(
@@ -1299,13 +1310,19 @@ class Keeper:
                     msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
 
             elif isinstance(effect, GrantWeapon):
-                target_scene = effect.scene or self.world.current_location
-                sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity)
-                if target_scene not in self.world.scene_weapons:
-                    self.world.scene_weapons[target_scene] = []
-                self.world.scene_weapons[target_scene].append(sw)
-                self.world.memory.note_item(effect.weapon_ref)
-                msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
+                if effect.scene:
+                    # 有场景名：武器放置到场景中，玩家通过搜索发现
+                    target_scene = effect.scene
+                    sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity)
+                    if target_scene not in self.world.scene_weapons:
+                        self.world.scene_weapons[target_scene] = []
+                    self.world.scene_weapons[target_scene].append(sw)
+                    self.world.memory.note_item(effect.weapon_ref)
+                    msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
+                else:
+                    # scene 为空：直接授予调查员，通过 _weapon_offer 走确认流程
+                    self._weapon_offer = {"weapon_ref": effect.weapon_ref, "scene": ""}
+                    msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员（待确认）")
 
             elif isinstance(effect, NPCStateChange):
                 self.world.npcs.set_state(effect.npc_name, effect.new_state)
