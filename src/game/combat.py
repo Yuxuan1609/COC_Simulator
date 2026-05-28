@@ -618,6 +618,123 @@ class CombatSystem:
                 return description
         return ""
 
+    # ── LLM correction gate helpers ──
+
+    def _any_special_rules(self, combat_init, enemies) -> bool:
+        """Check if any entity in combat has non-empty special_rules."""
+        for e in enemies:
+            if getattr(e, 'special_rules', ''):
+                return True
+        for w in getattr(combat_init.player, 'weapons', []):
+            if getattr(w, 'special_rules', ''):
+                return True
+        return False
+
+    def _build_battle_snapshot(self, state, player, boss_phase: str = "") -> str:
+        """Return <=500 char battle snapshot for LLM context."""
+        lines = [
+            f"第{state.round}轮",
+            f"调查员 HP:{state.player_hp}/{state.player_hp_max} SAN:{state.player_san}",
+        ]
+        if boss_phase:
+            lines.append(f"Boss当前阶段:{boss_phase}")
+        for e in state.enemies:
+            hp_max = getattr(e, 'hp_max', getattr(e, 'hp', 0))
+            hp_pct = f"{getattr(e, 'hp', 0)}/{hp_max}" if hp_max else "?"
+            phase = getattr(e, '_current_phase', '')
+            phase_str = f" 阶段:{phase}" if phase else ""
+            lines.append(
+                f"[{e.instance_id}] {e.enemy_ref} HP:{hp_pct}"
+                f" status:{getattr(e, 'status', '?')}{phase_str}"
+            )
+        return "\n".join(lines)
+
+    def _build_round_result(self, state, player_actions: list, enemy_actions: list, round_num: int) -> dict:
+        """Build RoundResult dict from this round's actions."""
+        pa = player_actions[0] if player_actions else {}
+        return {
+            "round": round_num,
+            "player_action": pa.get("action_type", ""),
+            "player_target": pa.get("target", ""),
+            "player_roll": pa.get("roll", 0),
+            "player_tier": pa.get("tier", ""),
+            "player_damage": pa.get("damage", 0),
+            "player_damage_type": pa.get("damage_type", "物理"),
+            "player_effects": pa.get("effects", []),
+            "enemy_actions": [
+                {
+                    "enemy_id": ea.get("actor", ""),
+                    "action": ea.get("action_type", ""),
+                    "roll": ea.get("roll", 0),
+                    "tier": ea.get("tier", ""),
+                    "damage": ea.get("damage", 0),
+                    "damage_type": ea.get("damage_type", "物理"),
+                    "effects": ea.get("effects", []),
+                }
+                for ea in enemy_actions
+            ],
+            "status_changes": [],
+            "narrative": "",
+        }
+
+    def _llm_correct_round(self, round_result: dict, combat_init, enemies,
+                           player_extra: str, battle_snapshot: str, boss_phase: str) -> dict:
+        """Call LLM to correct RoundResult based on special_rules. Fallback to original."""
+        try:
+            from llm import call_deepseek
+            from config_llm import LLM_FLASH_MODEL
+            import json as _json
+
+            weapon_rules = " ".join(
+                getattr(w, 'special_rules', '')
+                for w in getattr(combat_init.player, 'weapons', [])
+                if getattr(w, 'special_rules', '')
+            )
+            boss_rules = " ".join(
+                getattr(e, 'special_rules', '')
+                for e in enemies if getattr(e, 'boss_mechanics', '')
+            )
+            enemy_rules = " ".join(
+                getattr(e, 'special_rules', '')
+                for e in enemies if not getattr(e, 'boss_mechanics', '')
+            )
+
+            prompt = f"""根据以下 special_rules 修正 RoundResult 的字段值。
+只能修改参数值（抗性、伤害倍率、目标映射、状态变更、叙事文本），不能改变判决逻辑。
+
+【RoundResult】
+{_json.dumps(round_result, ensure_ascii=False, indent=2)}
+
+【战场快照】
+{battle_snapshot}
+{f"【Boss阶段】{boss_phase}" if boss_phase else ""}
+
+【武器 special_rules】
+{weapon_rules or "（无）"}
+
+【Boss special_rules】
+{boss_rules or "（无）"}
+
+【敌人 special_rules】
+{enemy_rules or "（无）"}
+
+【玩家额外描述】
+{player_extra or "（无）"}
+
+返回 JSON：
+{{"corrected": 与 RoundResult 完全同结构的 JSON}}
+直接输出 JSON。"""
+
+            response = call_deepseek(
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是 COC 7th 战斗裁判助理。根据 special_rules 修正 RoundResult 的字段值。",
+                fallback_schema={"corrected": round_result},
+            )
+            data = _json.loads(response) if isinstance(response, str) else response
+            return data.get("corrected", round_result)
+        except Exception:
+            return round_result
+
     # ── Round processing ──
 
     def _process_round(self, state, player, player_action_id: str,
