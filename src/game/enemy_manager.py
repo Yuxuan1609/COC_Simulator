@@ -181,6 +181,7 @@ class EnemyManager:
                 "damage_multipliers": inst.damage_multipliers,
                 "dodge_bonus": inst.dodge_bonus,
                 "special_rules": inst.special_rules,
+                "phases": inst.phases,
             }
             if inst.boss_mechanics:
                 idata["boss_mechanics"] = inst.boss_mechanics
@@ -233,6 +234,7 @@ class EnemyManager:
                 damage_multipliers=idata.get("damage_multipliers", {}),
                 dodge_bonus=idata.get("dodge_bonus", 0),
                 special_rules=idata.get("special_rules", ""),
+                phases=idata.get("phases", []),
             )
         mgr._combat_active = data.get("combat_active", False)
         mgr._combat_enemies = data.get("combat_enemies", [])
