@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 import asyncio
-import queue
-import threading
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -541,17 +539,17 @@ async def scene_info():
 @router.websocket("/api/game/progress")
 async def game_progress(ws: WebSocket):
     await ws.accept()
-    q: queue.Queue = queue.Queue()
+    q: asyncio.Queue = asyncio.Queue()
     qid = str(id(ws))
     _progress_queues[qid] = q
     try:
         while True:
             try:
-                msg = q.get(timeout=30)
+                msg = await asyncio.wait_for(q.get(), timeout=30)
                 await ws.send_json(msg)
                 if msg.get("step") == "complete":
                     break
-            except queue.Empty:
+            except asyncio.TimeoutError:
                 await ws.send_json({"step": "heartbeat"})
     except WebSocketDisconnect:
         pass
@@ -561,11 +559,12 @@ async def game_progress(ws: WebSocket):
 
 def _push_progress(step: str, status: str):
     """Send progress update to all connected WS clients."""
+    import asyncio as _asyncio
     msg = {"step": step, "status": status}
     for q in list(_progress_queues.values()):
         try:
             q.put_nowait(msg)
-        except queue.Full:
+        except asyncio.QueueFull:
             pass
 
 
