@@ -155,6 +155,14 @@ python run_step0.py "小说.txt" "data/modules/模组名/out.txt"  # 指定输�
 
 LLM 做两阶段处理：先以原作者视角理解剧情脉络/世界观/驱动力 → 再以模组设计师身份改写为场景+线索+NPC+敌人+多结局。输出含 9 个标准章节（module_overview / scenes / npcs / enemies / clues_and_items / events_summary / endings / locations_and_map）。
 
+#### 测试小说
+
+| 小说 | 文件 | 字数 | 状态 |
+|------|------|------|------|
+| 《深渊第七城》 | `深渊第七城.md` | ~5.1万字 | 待测试 — 1927年南太平洋远征·铸星者遗迹·考古惊悚 |
+
+**用法**：将测试小说喂入 Step 0 → 管线全自动解析 13 次 LLM 调用 → 输出三层 JSON → 启动跑局测试。
+
 ### Step 1-4 — 模组→三层 JSON
 
 将结构化模组文档（docx 或 Step 0 输出）解析为三层 JSON：

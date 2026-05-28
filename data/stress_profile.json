@@ -13,7 +13,7 @@
     "memory_compress_interval": 5,
     "model": "deepseek-v4-flash",
     "reasoning_effort": "low",
-    "module_name": "更新模组0526v2"
+    "module_name": "测试模组0528v2"
   },
   "combat_testing": {
     "mode": "normal"
