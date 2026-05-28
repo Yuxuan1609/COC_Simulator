@@ -18,6 +18,11 @@ class LibraryBoss:
     description: str = ""
     boss_mechanics: str = ""
     flags: list[str] = field(default_factory=list)
+    multi_attack: int = 1
+    damage_multipliers: dict = field(default_factory=dict)
+    dodge_bonus: int = 0
+    phases: list = field(default_factory=list)
+    special_rules: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "LibraryBoss":
@@ -32,6 +37,11 @@ class LibraryBoss:
             description=data.get("description", ""),
             boss_mechanics=data.get("boss_mechanics", ""),
             flags=data.get("flags", []),
+            multi_attack=data.get("multi_attack", 1),
+            damage_multipliers=data.get("damage_multipliers", {}),
+            dodge_bonus=data.get("dodge_bonus", 0),
+            phases=data.get("phases", []),
+            special_rules=data.get("special_rules", ""),
         )
 
 

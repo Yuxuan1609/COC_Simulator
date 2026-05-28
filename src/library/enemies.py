@@ -50,6 +50,10 @@ class LibraryEnemy:
     combat_behavior: str
     description: str = ""
     flags: list = field(default_factory=list)
+    multi_attack: int = 1
+    damage_multipliers: dict = field(default_factory=dict)
+    dodge_bonus: int = 0
+    special_rules: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +69,10 @@ class LibraryEnemy:
             "combat_behavior": self.combat_behavior,
             "description": self.description,
             "flags": self.flags,
+            "multi_attack": self.multi_attack,
+            "damage_multipliers": self.damage_multipliers,
+            "dodge_bonus": self.dodge_bonus,
+            "special_rules": self.special_rules,
         }
 
     @classmethod
@@ -96,6 +104,10 @@ class LibraryEnemy:
             combat_behavior=cleaned_behavior,
             description=data.get("description", ""),
             flags=flags,
+            multi_attack=data.get("multi_attack", 1),
+            damage_multipliers=data.get("damage_multipliers", {}),
+            dodge_bonus=data.get("dodge_bonus", 0),
+            special_rules=data.get("special_rules", ""),
         )
 
 

@@ -16,6 +16,10 @@ class LibraryWeapon:
     malfunction: int = 100
     era: str = "all"
     rarity: str = "common"
+    damage_type: str = "物理"
+    armor_piercing: int = 0
+    attack_bonus: int = 0
+    multi_attack: int = 1
     special_rules: str = ""
     description: str = ""
 
@@ -26,6 +30,10 @@ class LibraryWeapon:
             "damage": self.damage,
             "range": self.range,
             "shots": self.shots,
+            "damage_type": self.damage_type,
+            "armor_piercing": self.armor_piercing,
+            "attack_bonus": self.attack_bonus,
+            "multi_attack": self.multi_attack,
             "malfunction": self.malfunction,
             "era": self.era,
             "rarity": self.rarity,
@@ -44,6 +52,10 @@ class LibraryWeapon:
             malfunction=data.get("malfunction", 100),
             era=data.get("era", "all"),
             rarity=data.get("rarity", "common"),
+            damage_type=data.get("damage_type", "物理"),
+            armor_piercing=data.get("armor_piercing", 0),
+            attack_bonus=data.get("attack_bonus", 0),
+            multi_attack=data.get("multi_attack", 1),
             special_rules=data.get("special_rules", ""),
             description=data.get("description", ""),
         )
