@@ -131,7 +131,7 @@ def call_deepseek(
     max_tokens: int | None = None,
     max_retries: int = 3,
     fallback_schema: dict | None = None,
-    timeout: float = 180.0,
+    timeout: float = 300.0,
     _label: str | None = None,
 ) -> dict | str:
     """
@@ -381,7 +381,7 @@ COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技�
         ],
         temperature=0.2,
         max_tokens=500,
-        timeout=60,
+        timeout=300,
         extra_body={"thinking": {"type": "disabled"}},
     )
     raw = response.choices[0].message.content.strip()
@@ -481,7 +481,7 @@ def evaluate_failure_penalty(
         ],
         temperature=0.4,
         max_tokens=800,
-        timeout=60,
+        timeout=300,
         extra_body={"thinking": {"type": "disabled"}},
     )
     raw = response.choices[0].message.content.strip()
