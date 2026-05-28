@@ -69,6 +69,7 @@ Entity 字段规则:
   @consume_item(item_name="物品", quantity=1, narrative="")
   @npc_state_change(npc_name="名称", new_state="状态")
   @npc_follow(npc_name="名称", follow=true)
+- @grant_weapon 若 scene 为空字符串（scene=""），表示直接授予调查员，无需放置到场景中等待搜索
 - difficulty: None / regular / hard / extreme
 - graded_result: type不为"无"时填写。四等级: on_failure=检定失败 / on_regular=常规成功 / on_hard=困难成功(≤技能值/2) / on_extreme=极难成功(≤技能值/5)。若原文未区分等级，各等级可描述相同
 

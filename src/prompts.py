@@ -820,7 +820,7 @@ Entity 字段规则：
 - difficulty: None / regular / hard / extreme；不涉及检定则为 None
 - graded_result: type 不为"无"时填写。四等级：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功（≤技能值/2）、on_extreme=极难成功（≤技能值/5）。若原文未区分等级，各等级可描述相同内容
 - entities 的 result/side_effects 不涉及进入与怪物的战斗/对抗/追捕（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
-- @标记可嵌入 result / side_effects / graded_result 任意字段中，与普通文本混合。间接/附带影响使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true)
+- @标记可嵌入 result / side_effects / graded_result 任意字段中，与普通文本混合。间接/附带影响使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true). @grant_weapon 若 scene 为空，表示直接授予调查员（等价于搜索拾取武器的流程，只是触发条件不同）
 
 创作规则：
 - 只添加必要的entity，不要过度扩充

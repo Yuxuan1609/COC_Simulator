@@ -58,6 +58,7 @@ class Keeper:
         self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
         self._standoff_pending: dict | None = None
         self._weapon_offer: dict | None = None  # pending weapon pickup offer {weapon_ref, scene}
+        self._weapon_offer_msg: str = ""  # offer prompt message for current turn's output
         self._npc_events: list[str] = []  # NPC follow/state events collected this turn
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
@@ -723,6 +724,15 @@ class Keeper:
             ), daemon=True)
             t.start()
 
+        # Inject weapon offer prompt if direct grant is pending
+        if self._weapon_offer_msg:
+            brief.action_outcomes.append(ActionOutcome(
+                intent=ActionIntent(action="other"), success=True,
+                message=self._weapon_offer_msg,
+                entity_id="WEAPON_OFFER", entity_type="information",
+            ))
+            self._weapon_offer_msg = ""
+
         return {"brief": brief,
                 "ending": ending_result,
                 "combat_entry": combat_entry,
@@ -1310,18 +1320,19 @@ class Keeper:
                     msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
 
             elif isinstance(effect, GrantWeapon):
-                if effect.scene:
+                scene = effect.scene.strip() if effect.scene else ""
+                if scene:
                     # 有场景名：武器放置到场景中，玩家通过搜索发现
-                    target_scene = effect.scene
-                    sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity)
-                    if target_scene not in self.world.scene_weapons:
-                        self.world.scene_weapons[target_scene] = []
-                    self.world.scene_weapons[target_scene].append(sw)
+                    sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=scene, quantity=effect.quantity)
+                    if scene not in self.world.scene_weapons:
+                        self.world.scene_weapons[scene] = []
+                    self.world.scene_weapons[scene].append(sw)
                     self.world.memory.note_item(effect.weapon_ref)
-                    msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
+                    msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {scene}")
                 else:
                     # scene 为空：直接授予调查员，通过 _weapon_offer 走确认流程
                     self._weapon_offer = {"weapon_ref": effect.weapon_ref, "scene": ""}
+                    self._weapon_offer_msg = f"（获得了{effect.weapon_ref}，是否接受？（是/否））"
                     msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员（待确认）")
 
             elif isinstance(effect, NPCStateChange):
