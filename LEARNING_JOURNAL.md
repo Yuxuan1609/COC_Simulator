@@ -207,3 +207,12 @@
   2. 在**消费者侧**新增字段消费时，从实际响应中抓一条 JSON 检查每个键是否存在
   3. 如果架构允许，用 dataclass/typed dict 替代裸 dict 做数据合约——字段缺失在构造时即报错，而非静默跳过
 - 适用：任何跨语言/Python→JS/后端→前端的 dict 序列化边界
+
+## async 函数中同步阻塞调用 = 冻结整个事件循环
+
+- **问题**：`queue.Queue.get(timeout=30)` 在 async WebSocket handler 中阻塞了整个 asyncio 事件循环线程，所有 HTTP 请求排队最长 30 秒
+- **症状**：前端显示"加载中..."无限等待；后端不生成任何 log（请求排不进事件循环）；已有 WebSocket 连接仍然活跃；网络层面看起来一切正常——这是最难排查的一类 bug
+- **根因**：async 函数内的同步阻塞调用（`queue.Queue.get`、`time.sleep`、`threading.Lock.acquire` 等）会冻住事件循环，其他所有 async task（包括 HTTP 请求处理）全部待机
+- **解决**：`queue.Queue` → `asyncio.Queue`（`put`/`get` 都是 awaitable）；`time.sleep` → `await asyncio.sleep`；同步 IO → `await loop.run_in_executor(None, blocking_fn)`
+- **排查技巧**："请求发出去但收不到响应 + 后端无任何 log" → 检查 WebSocket handler 或 background task 中是否有同步阻塞调用
+- 适用：任何 asyncio + HTTP + WebSocket 混合应用

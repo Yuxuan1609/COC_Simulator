@@ -309,3 +309,23 @@
   - `_format_snapshot_chapters`: Python 端同样公式
 - **影响面**：3 个消费者（后端 Python、前端 JS、CLI Python），均修复。`messages.py` docstring 同步更新为 `{"game_time": 0, "time_context": ""}`
 - **教训**：序列化边界两侧的键名不一致是**无声失败**的典型来源——dict.get 返回 None 不报错，`if t.get("day")` 自然跳过。这种 bug 不会被语法检查/单元测试/运行时异常捕获，只有人工审查实际输出才能发现。防御措施：(a) dataclass 注释应与数据源函数返回值交叉验证；(b) 新增消费者时应从实际响应中抓一条数据快速验证每个字段是否非空
+
+## 53. 安装 websockets 后前端完全瘫痪（事件循环被 WebSocket 阻塞）
+
+- **症状**：安装 `websockets` 包后，前端所有操作显示"思考中..."再无反应，后端不生成任何 log，仿佛请求从未到达
+- **根因链**：
+  1. WebSocket handler `game_progress()` 中使用了 `queue.Queue.get(timeout=30)` —— 这是**同步阻塞调用**
+  2. 在 async 函数中调用同步阻塞方法 → 阻塞整个 asyncio 事件循环线程
+  3. 之前 `websockets` 包未安装时，WebSocket 连接返回 404（uvicorn 无法协商协议），handler 从未真正运行 → 事件循环自由
+  4. 安装 `websockets` 后 WebSocket 连接成功 → handler 首次运行 → `q.get(timeout=30)` 堵塞事件循环长达 30 秒
+  5. 阻塞期间所有 HTTP 请求（`POST /api/game/turn`）排队等待，前端 fetch 无限 pending
+- **为什么"思考中..."能显示但请求没到**：`sendTurn()` 中的 `innerHTML = "思考中..."` 是浏览器端 JS 同步执行；但随后的 `fetch()` 因服务器事件循环被阻塞而永远不返回
+- **解决**：`queue.Queue` → `asyncio.Queue`；`q.get(timeout=30)` → `await asyncio.wait_for(q.get(), timeout=30)`；`queue.Empty` → `asyncio.TimeoutError`；`queue.Full` → `asyncio.QueueFull`
+- **教训**：async 函数中绝不使用同步阻塞调用。`asyncio.Queue` 是 `queue.Queue` 的 async 等价物，`put`/`get` 都是 awaitable，不会阻塞事件循环。排查"请求收不到但当别的连接正常"时，优先检查是否有同步阻塞物占住了事件循环
+
+## 54. `await _handle_slash_command` 对同步函数用 await → 所有 slash 命令 500
+
+- **症状**：`/help`、`/scene`、`/char` 等全部 slash 命令无响应
+- **根因**：`process_turn()` 中 `await _handle_slash_command(stripped)`，但 `_handle_slash_command` 是普通 `def`（非 `async def`），`await` 一个 str 返回值 → `TypeError: 'str' object can't be awaited`
+- **为什么首回合正常**：首回合走 `init_game_api` → `run_turn()` 直调用，不经过 `process_turn`
+- **解决**：去掉 `await`，改为同步调用 `cmd_html = _handle_slash_command(stripped)`
