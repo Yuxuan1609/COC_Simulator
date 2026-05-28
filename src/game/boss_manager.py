@@ -48,6 +48,11 @@ class BossManager:
             san_loss=lib_boss.san_loss,
             hp=base_hp,
             boss_mechanics=lib_boss.boss_mechanics,
+            multi_attack=getattr(lib_boss, 'multi_attack', 1),
+            damage_multipliers=dict(getattr(lib_boss, 'damage_multipliers', {})),
+            dodge_bonus=getattr(lib_boss, 'dodge_bonus', 0),
+            special_rules=getattr(lib_boss, 'special_rules', ''),
+            phases=list(getattr(lib_boss, 'phases', [])),
         )
 
         return CombatInit(
