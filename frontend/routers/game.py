@@ -180,7 +180,7 @@ async def process_turn(user_input: str = Form(...)):
     # Route slash commands directly — skip LLM pipeline
     stripped = user_input.strip()
     if stripped.startswith("/"):
-        cmd_html = await _handle_slash_command(stripped)
+        cmd_html = _handle_slash_command(stripped)
         return {
             "brief": stripped,
             "narrative": "",
