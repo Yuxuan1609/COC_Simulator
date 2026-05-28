@@ -432,6 +432,9 @@ def continue_standoff(keeper, player_input: str) -> dict:
                     enemies=enemies, player=keeper.world.player,
                     scene=keeper.world.current_location,
                     initiative_context=s.get("reasoning", ""),
+                    player_action="",
+                    player_targets=[],
+                    player_extra="",
                 )
     else:
         all_iids = s.get("all_enemy_iids", [])
@@ -445,6 +448,9 @@ def continue_standoff(keeper, player_input: str) -> dict:
                 enemies=enemies, player=keeper.world.player,
                 scene=keeper.world.current_location,
                 initiative_context=s.get("reasoning", ""),
+                player_action="",
+                player_targets=[],
+                player_extra="",
             )
 
     result["combat_init"] = combat_init

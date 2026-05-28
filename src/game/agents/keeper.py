@@ -503,6 +503,9 @@ class Keeper:
                     player=self.world.player,
                     scene=self.world.current_location,
                     initiative_context=combat_entry.reasoning,
+                    player_action="",
+                    player_targets=[],
+                    player_extra="",
                 )
 
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input

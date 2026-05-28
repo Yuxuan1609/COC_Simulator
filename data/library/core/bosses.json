@@ -13,7 +13,12 @@
     "san_loss": "1D10/1D100",
     "description": "来自异界的巨大吞噬之口，不断吞噬列车后方的车厢。任何被吞噬之物永远消失。",
     "boss_mechanics": "弱点为驾驶室控制面板——需同时持有操作面板钥匙并通过电气维修或操作重型机械检定切断其与列车连接。常规武器攻击无效。击败触发END2（列车幸存），被吞噬触发END3，逃离触发END1。",
-    "flags": ["boss"]
+    "flags": ["boss"],
+    "multi_attack": 1,
+    "damage_multipliers": {},
+    "dodge_bonus": 0,
+    "phases": [],
+    "special_rules": ""
   },
   "食尸鬼（艾米丽的丈夫）": {
     "name": "食尸鬼（艾米丽的丈夫）",

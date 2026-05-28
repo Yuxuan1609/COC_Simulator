@@ -35,6 +35,10 @@
       ],
       "san_loss": "0/1D4 (目睹), 1/1D6 (被攻击)",
       "combat_behavior": "[adjacent_aware] | 优先攻击发出最大声音的目标。若无人出声则随机攻击。被击伤后会狂暴，每轮攻击两次。",
+      "multi_attack": 1,
+      "damage_multipliers": {},
+      "dodge_bonus": 0,
+      "special_rules": "",
       "description": "无眼的人形怪物，通过声音定位猎物，对声音极度敏感。概念源自电子游戏《最后生还者》"
     },
     {
