@@ -44,6 +44,7 @@ HP={hp}/{max_hp} SAN={san} MP={mp}
 【当前场景】
 {location}: {description}
 NPC: {npcs}
+NPC状态: {npc_states}
 
 【本轮叙事】
 {brief}

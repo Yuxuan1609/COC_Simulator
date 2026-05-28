@@ -36,7 +36,12 @@ def build_player_prompt(
     inv = p.get("inventory", "") or "无"
     loc = snap.get("location", "?")
     desc = snap.get("description", "")[:200]
-    npcs = ", ".join(n["name"] for n in snap.get("npcs_in_scene", [])) or "无"
+    npcs_raw = snap.get("npcs_in_scene", [])
+    npcs = ", ".join(n["name"] for n in npcs_raw) or "无"
+    npc_states = "、".join(
+        f"{n['name']}({n.get('state','?')}{', 跟随中' if n.get('following') else ''})"
+        for n in npcs_raw
+    ) or "无"
 
     test_mode = profile.get("test_mode", "exploration")
     strategy = ", ".join(profile.get("player_strategy", []))
@@ -53,7 +58,7 @@ def build_player_prompt(
         hp=p.get("hp", "?"), max_hp=p.get("max_hp", "?"),
         san=p.get("san", "?"), mp=p.get("mp", "?"),
         weapons=weapons, inventory=inv,
-        location=loc, description=desc, npcs=npcs,
+        location=loc, description=desc, npcs=npcs, npc_states=npc_states,
         brief=narrative_result.get("brief", ""),
         narrative=narrative_result.get("narrative", ""),
         short_history="\n".join(short_history[-5:]) or "（游戏开始）",

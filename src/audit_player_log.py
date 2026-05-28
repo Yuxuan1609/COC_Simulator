@@ -50,12 +50,13 @@ def _llm_audit(log_dir: Path, summary: dict, turn_logs_dir: Path) -> tuple[str, 
 
         # Time state
         ts = t.get("time_state", {})
-        time_str = f"Day{int(ts.get('day',0))} {ts.get('time_of_day','?')} {int(ts.get('hour',0)):02d}:00 (G+{int(ts.get('game_time_minutes',0))}m)" if ts else "-"
+        gm = int(ts.get('game_time_minutes',0))
+        time_str = f"Day{int(ts.get('day',0))} {ts.get('time_of_day','?')} {gm//60:02d}:{gm%60:02d}" if ts else "-"
 
-        # NPC visible
+        # NPC visible with states
         nv = t.get("npcs_visible", {})
-        npc_in = ", ".join(nv.get("in_scene", [])) or "无"
-        npc_follow = ", ".join(nv.get("following", [])) or "无"
+        npc_in_names = nv.get("in_scene", [])
+        npc_follow = nv.get("following", [])
         npc_events = "; ".join(t.get("npc_events", [])) or "-"
 
         turn_details.append(
@@ -66,7 +67,7 @@ def _llm_audit(log_dir: Path, summary: dict, turn_logs_dir: Path) -> tuple[str, 
             f"  技能检定: {skills}\n"
             f"  战斗结果: {combat_str}\n"
             f"  游戏时间: {time_str}\n"
-            f"  场景NPC: {npc_in} | 跟随NPC: {npc_follow}\n"
+            f"  场景NPC: {', '.join(npc_in_names) or '无'} | 跟随: {', '.join(npc_follow) or '无'}\n"
             f"  NPC事件: {npc_events}\n"
             f"  耗时: {t['elapsed_s']:.0f}s"
         )
@@ -76,10 +77,12 @@ def _llm_audit(log_dir: Path, summary: dict, turn_logs_dir: Path) -> tuple[str, 
 关注以下维度：
 1. 叙事质量：brief/narrative是否为空、是否重复、是否与玩家输入脱节
 2. 技能检定：检查是否有连续失败、检定结果与叙事是否一致、骰子值是否合理
-3. 战斗：战斗结果是否在叙事中有体现，Boss战是否正确标记
-4. NPC交互：场景内NPC是否被叙事提及，对话/事件是否得到系统回复
-5. 时间系统：时间推进是否合理（Day/时段/分钟），是否有明显跳跃或停滞
-6. 整体连贯性：多回合间叙事是否断裂、时间-NPC-场景是否一致
+3. NPC交互：场景内NPC是否被叙事提及，对话/事件是否得到系统回复
+4. 时间系统：时间推进是否合理（Day/时段/分钟），是否有明显跳跃或停滞
+5. 整体连贯性：多回合间叙事是否断裂、时间-NPC-场景是否一致
+注意：
+- 战斗系统当前为自动胜利短接模式，战斗触发/过程/结果的异常无须报告
+- 大失败（D100≥96）在默认成功 entity（SEARCH等）上不做强制后果，无须报告
 
 返回 JSON：
 {
@@ -208,7 +211,11 @@ def audit(log_dir: str) -> str:
             combat_str = "-"
 
         ts = t.get("time_state", {})
-        time_str = f"D{int(ts.get('day',0))} {ts.get('time_of_day','?')[:2]} G+{int(ts.get('game_time_minutes',0))}m" if ts else "-"
+        if ts:
+            gm = int(ts.get('game_time_minutes', 0))
+            time_str = f"D{int(ts.get('day',0))} {ts.get('time_of_day','?')[:2]} {gm//60:02d}:{gm%60:02d}"
+        else:
+            time_str = "-"
 
         npc_str = "; ".join(t.get("npc_events", []))[:40] or "-"
         lines.append(
@@ -358,15 +365,17 @@ def _audit_time(lines: list[str], turns: list[dict]):
     last = time_states[-1]
     time_agents = [t.get("time_agent", {}) for t in turns if t.get("time_agent")]
     total_delta = sum(ta.get("time_delta", 0) for ta in time_agents if ta)
-    lines.append(f"- Initial state (after T01): Day {int(first.get('day',0))}, {first.get('time_of_day','?')}, {int(first.get('hour',0)):02d}:00 (G+{int(first.get('game_time_minutes',0))}m)")
-    lines.append(f"- Final state (after T{len(turns)}): Day {int(last.get('day',0))}, {last.get('time_of_day','?')}, {int(last.get('hour',0)):02d}:00 (G+{int(last.get('game_time_minutes',0))}m)")
-    lines.append(f"- Total time delta (from TimeAgent): {total_delta} minutes")
+    fgm = int(first.get('game_time_minutes', 0))
+    lgm = int(last.get('game_time_minutes', 0))
+    lines.append(f"- Initial (after T01): Day {int(first.get('day',0))}, {first.get('time_of_day','?')}, {fgm//60:02d}:{fgm%60:02d}")
+    lines.append(f"- Final (after T{len(turns)}): Day {int(last.get('day',0))}, {last.get('time_of_day','?')}, {lgm//60:02d}:{lgm%60:02d}")
+    lines.append(f"- Total time delta (from TimeAgent): {int(total_delta)} minutes")
 
     # Per-turn time deltas
     if time_agents:
         deltas = [ta.get("time_delta", 0) for ta in time_agents if ta]
         hints = [ta.get("narrative_hint", "") for ta in time_agents if ta and ta.get("narrative_hint")]
-        lines.append(f"- TimeAgent LLM evaluated {len(deltas)} turns, total delta: {sum(deltas)} minutes")
+        lines.append(f"- TimeAgent LLM evaluated {len(deltas)} turns, total delta: {int(sum(deltas))} minutes")
         if hints:
             lines.append(f"- TimeAgent hints: {'; '.join(h for h in hints if h)[:120]}")
     lines.append("")
