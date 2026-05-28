@@ -287,3 +287,10 @@
   - 层4：从 `occupations.json` 查找并构造完整 `Occupation(name=..., description=..., ...)` 对象
   - 层5：`filename*=UTF-8''<url编码文件名>` (RFC 5987)
 - **教训**：前置端修改后，导出这类**串行多步依赖的工作流**最易产生连环 bug。每个步骤依赖前一步的数据正确性和格式兼容性，一层阻塞掩盖下一层。修完后不应只验证"不报错了"——应该用实际数据端到端测试完整流程
+
+## 51. 并行 session merge 导致 f-string 变量丢失
+
+- **症状**：并行 session 的 commit 合并后，`build_step2b_combined_prompt` 的 prompt 中"已知场景"区域为空——LLM 收到的 prompt 缺少场景列表
+- **根因**：本 session 和并行 session 同时编辑了 `layered_parser.py` 的同一函数。本 session 修改了 `char_list` 格式化代码（替换为 `_format_char_list()`），过程中重写了 `return f"""` 及其后的多行字符串。并行 session 在此基础上又做了增量修改。Git 的三路合并保留了大部分内容，但 f-string 中的 `{scene_list}` 行在合并时被误删——该行在 diff 中以 `-{scene_list}` 形式出现在"删除块"中，看起来像是格式调整的一部分，实际是丢失了关键逻辑
+- **解决**：手动对比 `c10bb48..HEAD` 的完整 diff，逐行检查 my commit 引入的每一处改动是否在 HEAD 中仍然存在。发现缺失后补回 `{scene_list}` 行
+- **教训**：并行 session 后不应假设 merge 正确——应该 (a) 对 my commit 的每个修改文件做完整 diff 对比；(b) 特别注意多行字符串/heredoc 中变量的增删——git 的上下文 diff 有时会误判这类变化为"格式调整"而合并到错误方向；(c) `git diff <my-commit> HEAD -- <file>` 是最直接的验证工具
