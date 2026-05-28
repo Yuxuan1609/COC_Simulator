@@ -90,8 +90,7 @@ def run_game(character_path: str = None):
     ts = initial.get("timestamp", "")
     if ts:
         print(f"[{ts}]")
-    _print_snapshot(initial.get("player_snapshot"))
-    _print_split(initial["brief"], initial["narrative"])
+    _print_turn_output(initial.get("player_snapshot"), initial["brief"], initial["narrative"])
 
     # 主循环
     while True:
@@ -175,46 +174,77 @@ def run_game(character_path: str = None):
         if ts:
             print(f"[{ts}]")
 
-        _print_snapshot(result.get("player_snapshot"))
-
-        _print_split(result["brief"], result["narrative"])
+        _print_turn_output(result.get("player_snapshot"), result["brief"], result["narrative"])
 
         if ending:
             print("[info] 游戏结束。")
             break
 
 
-def _scene_text(world):
-    """构建纯文本场景描述。"""
+def _build_scene_snapshot(world) -> dict | None:
+    """从 world 构建 PlayerFacingSnapshot 格式的 dict。"""
     node = world.graph.nodes.get(world.current_location)
     if not node:
-        return "（未知场景）"
-    lines = [f"Location: {node.node_id}"]
-    if node.description:
-        lines.append(node.description)
-    if node.edges:
-        edges_str = ", ".join(f"{e.target} ({e.method})" for e in node.edges)
-        lines.append(f"出口：{edges_str}")
-    return "\n".join(lines)
+        return None
+    return {
+        "scene_name": world.current_location,
+        "scene_description": node.description or "",
+        "exits": [{"target": e.target, "method": e.method} for e in node.edges],
+        "time": world.clock.to_dict(),
+        "npcs": world.npcs.get_in_scene_snapshot(world.current_location) if world.npcs else [],
+        "combat": None,
+        "skill_checks": [],
+    }
 
 
-def _print_snapshot(snap: dict):
-    """打印 PlayerFacingSnapshot 辅助信息。"""
+def _scene_text(world):
+    """构建 Markdown 场景状态（/scene 命令用）。"""
+    snap = _build_scene_snapshot(world)
     if not snap:
-        return
-    # 场景
+        return "（未知场景）"
+    return _format_snapshot_chapters(snap)
+
+def _format_snapshot_chapters(snap: dict) -> str:
+    """将 PlayerFacingSnapshot 格式化为半结构化 Markdown。
+    
+    输出示例:
+    ## 场景
+    6号车厢。车厢内弥漫着陈旧的气味...可以通往 7号车厢（向东走）。
+    
+    ## 角色
+    京山人吉——瘦高男子，神色警惕。
+    
+    ## 时间
+    第1天，夜间 04:30。
+    
+    ## 技能
+    I1: 侦查检定 → 常规成功 (D100=45/50)
+    """
+    chapters = []
+    
+    # Scene
     name = snap.get("scene_name", "")
     desc = snap.get("scene_description", "")
-    if name or desc:
-        print(f"\n── {name or '当前场景'} ──")
-        if desc:
-            print(desc)
-    # 出口
     exits = snap.get("exits", [])
+    scene_prose = name or "未知"
+    if desc:
+        scene_prose += f"。{desc.strip().rstrip('。')}"
     if exits:
-        labels = [f"{e.get('target','?')} ({e.get('method','?')})" for e in exits]
-        print(f"  出口: {', '.join(labels)}")
-    # 时间
+        exit_labels = [f"{e.get('target','?')}（{e.get('method','?')}）" for e in exits]
+        scene_prose += f"。可以通往{'、'.join(exit_labels)}"
+    scene_prose += "。"
+    chapters.append(f"## 场景\n{scene_prose}")
+    
+    # NPCs
+    npcs = snap.get("npcs", [])
+    if npcs:
+        npc_prose = "、".join(
+            f"{n.get('name','?')}——{n.get('brief','')}{'，'+n.get('demeanor','') if n.get('demeanor') else ''}"
+            for n in npcs
+        )
+        chapters.append(f"## 角色\n{npc_prose}。")
+    
+    # Time
     t = snap.get("time", {})
     if t:
         parts = []
@@ -226,43 +256,49 @@ def _print_snapshot(snap: dict):
             h, m = divmod(t["game_time_minutes"], 60)
             parts.append(f"{h:02d}:{m:02d}")
         if parts:
-            print(f"  时间: {' '.join(parts)}")
-    # NPC
-    npcs = snap.get("npcs", [])
-    if npcs:
-        names = [n.get("name", "?") for n in npcs]
-        print(f"  NPC: {', '.join(names)}")
-    # 战斗
+            chapters.append(f"## 时间\n{'，'.join(parts)}\u3002")
+    
+    # Combat
     combat = snap.get("combat")
     if combat:
-        outcome = combat.get("outcome", "")
-        print(f"\n  ⚔ 战斗结果: {outcome}")
-    # 技能检定
+        outcome = combat.get("outcome", "?")
+        narrative = combat.get("narrative", "")
+        chapters.append(f"## 战斗\n结果: {outcome}\u3002{narrative}")
+    
+    # Skills
     skill_checks = snap.get("skill_checks", [])
     if skill_checks:
         tier_labels = {"extreme": "极难成功", "hard": "困难成功", "regular": "常规成功",
                        "failure": "失败", "fumble": "大失败"}
+        lines = []
         for sc in skill_checks:
             eid = sc.get("entity_id", "?")
             tier = sc.get("tier", "")
             tier_label = tier_labels.get(tier, tier or "?")
-            emoji = "✓" if sc.get("success") else "✗"
-            raw_roll = sc.get("raw_roll", 0)
+            raw = sc.get("raw_roll", 0)
             target = sc.get("target", 0)
-            dice_str = f"D100={raw_roll}/{target}" if raw_roll else ""
+            dice_str = f"（D100={raw}/{target}）" if raw else ""
+            succ = "成功" if sc.get("success") else "失败"
             enh = sc.get("enhancement")
-            enh_str = f" → {enh.get('tier','')}" if enh and enh.get("tier") else ""
-            print(f"  {emoji} 检定 [{eid}] {tier_label}  {dice_str}{enh_str}")
+            enh_str = f"→特质增强为{enh.get('tier','')}" if enh and enh.get("tier") else ""
+            lines.append(f"{eid}: {succ}，{tier_label}{dice_str}{'，'+enh_str if enh_str else ''}")
+        chapters.append(f"## 技能\n" + "\n".join(lines))
+    
+    return "\n\n".join(chapters)
 
-
-def _print_split(brief, narrative):
-    """打印叙事输出：目前结果 → 沉浸式叙述。"""
-    if brief:
-        print(f"\n── 目前结果 ──")
-        print(brief)
+def _print_turn_output(snap, brief, narrative):
+    """统一的回合输出：Narrator 叙事 + World Snapshot。"""
+    output_parts = []
+    
     if narrative:
-        print(f"\n── 沉浸式输出 ──")
-        print(narrative)
+        output_parts.append(f"## 叙事\n{narrative}")
+    
+    if snap:
+        output_parts.append(_format_snapshot_chapters(snap))
+    elif brief:
+        output_parts.append(brief)
+    
+    print("\n\n" + "\n\n".join(output_parts))
 
 
 if __name__ == "__main__":
