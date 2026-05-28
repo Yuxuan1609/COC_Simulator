@@ -815,12 +815,12 @@ Entity 字段规则：
 - type: 关联技能名（如"侦查""急救"），不涉及检定填"无"
 - requirement: 硬性前置条件用 entity ID + AND/OR/() 表达复合关系（如 SI1 AND SI2、(SI1 OR SI2) AND SI3），裸 entity ID 默认指该实体成功完成。无条件填空字符串。需要特殊条件（如实体检定失败、调查员理智极度崩溃等）在 "||" 后用自然语言描述。requirement 可描述是否需要消耗常见物品及数量（如"需要消耗1个急救包"）
 - trigger: 触发场景——描述什么情况下玩家可以执行此互动。不要和 requirement 混淆
-- result: 直接结果——互动直接产生的可感知结果。如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头。result 可描述结果是否会失去常见消耗品。涉及技能检定时 result 填 "##GRADED##"（占位标记），side_effects 留空，所有结果文字写入 graded_result
+- result: 直接结果——互动直接产生的可感知结果。如果会触发游戏结局，必须以 ##END_结局名称:结局简述## 开头。涉及技能检定时 result 填 "##GRADED##"（占位标记），side_effects 留空，所有结果文字写入 graded_result
 - side_effects: 间接后果——与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
 - difficulty: None / regular / hard / extreme；不涉及检定则为 None
 - graded_result: type 不为"无"时填写。四等级：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功（≤技能值/2）、on_extreme=极难成功（≤技能值/5）。若原文未区分等级，各等级可描述相同内容
 - entities 的 result/side_effects 不涉及进入与怪物的战斗/对抗/追捕（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
-- side_effects 标准化使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true)
+- @标记可嵌入 result / side_effects / graded_result 任意字段中，与普通文本混合。间接/附带影响使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true)
 
 创作规则：
 - 只添加必要的entity，不要过度扩充

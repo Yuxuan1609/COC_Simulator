@@ -60,7 +60,7 @@ Entity 字段规则:
 - type: 关联技能名 (从标准技能列表选)，不涉及检定填"无"
 - requirement: 硬性前置条件用 entity ID + AND/OR/() (如 SI1 AND SI2)，裸 ID 默认指成功完成。无条件填空字符串。特殊条件在 "||" 后用自然语言。可描述是否需要消耗常见物品及数量
 - trigger: 触发场景描述，不要和 requirement 混淆
-- result: 直接结果。涉及技能检定时填 "##GRADED##"，side_effects 留空，所有结果文字写入 graded_result。可描述失去常见消耗品。不涉及进入与怪物的战斗/对抗/追捕
+- result: 直接结果。涉及技能检定时填 "##GRADED##"，side_effects 留空，所有结果文字写入 graded_result。@标记可嵌入 result / side_effects / graded_result 任意字段中。不涉及进入与怪物的战斗/对抗/追捕
 - side_effects: 间接后果（与result不重合），使用 @标记 语法:
   @spawn_enemy(enemy_ref="名称", scene="场景", quantity=1)
   @grant_weapon(weapon_ref="名称", scene="场景", quantity=1)
@@ -99,7 +99,7 @@ Entity 字段规则:
 
 要求:
 - 所有 entity 必须有 type/side_effects/result 字段，若涉及检定 type 不为"无"则必须有 graded_result
-- 所有 @标记 直接写在 side_effects 中，不允许自然语言描述副作用
+- @标记可嵌入 result / side_effects / graded_result 任意字段中，与普通文本混合
 - 所有描述性内容使用中文。JSON字段名和ID保持英文
 - 去重: 同一场景内 entity name 不应重复
 - dependency_graph 标注所有 entity 间的依赖关系 (source=依赖者, target=被依赖者, condition=completed)
