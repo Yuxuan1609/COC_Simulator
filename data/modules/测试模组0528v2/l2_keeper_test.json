@@ -491,6 +491,26 @@
       ],
       "extra": {},
       "description": "惨烈而紧张，空气中弥漫着痛苦和铁锈的味道。"
+    },
+    "world": {
+      "interactions": [],
+      "auto_triggers": [
+        {
+          "id": "AT_WORLD",
+          "scene": "world",
+          "type": "无",
+          "name": "世界初始化",
+          "requirement": "",
+          "trigger": "模组开始时自动触发",
+          "result": "世界环境初始化",
+          "side_effects": [
+            "@spawn_enemy(enemy_ref=\"Clicker\", scene=\"5号车厢\", quantity=2)",
+            "@grant_weapon(weapon_ref=\"试作型湮灭者\", scene=\"6号车厢\", quantity=1)"
+          ],
+          "graded_result": {},
+          "difficulty": "None"
+        }
+      ]
     }
   },
   "events": [
@@ -519,7 +539,7 @@
     {
       "id": "BOSS_1",
       "type": "boss_encounter",
-      "engage_type": "interaction",
+      "engage_type": "at",
       "boss_ref": "吞噬之口",
       "scene": "7号车厢",
       "requirements": "(I5) || 调查员进入7号车厢并注意到后方的异状",

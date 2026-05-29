@@ -199,6 +199,22 @@
       "multi_attack": 2,
       "special_rules": "TEST_WEAPON:2/3HP。伤害固定为敌人当前HP的2/3（向下取整，最低1点）。此规则在修正中拥有最高优先级。",
       "description": "开发团队测试用特制武器。激活后自动计算目标当前HP的2/3作为伤害值。仅供调试和战斗系统验证使用。"
+    },
+    {
+      "name": "试作型湮灭者",
+      "skill_name": "格斗",
+      "damage": {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": false},
+      "range": "近战",
+      "shots": 0,
+      "malfunction": 100,
+      "era": "any",
+      "rarity": "unique",
+      "damage_type": "物理",
+      "armor_piercing": 99,
+      "attack_bonus": 99,
+      "multi_attack": 1,
+      "special_rules": "直接造成 100 点伤害，无视护甲和伤害倍率。此规则在修正中拥有最高优先级。",
+      "description": "开发团队测试用湮灭武器。每次命中直接造成100点绝对伤害。仅供调试和战斗系统验证使用。"
     }
   ]
 }

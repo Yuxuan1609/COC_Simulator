@@ -213,7 +213,7 @@ python run_pipeline.py --config config.json --start-from step_3a # 断点续跑
 | `@stat_change(stat_name="", delta=-1, narrative="")` | 修改属性 + 更新描述 | Investigator.modify_stat() |
 | `@item_gain(item_name="", quantity=1)` | 获得物品 | ItemManager.add() |
 | `@consume_item(item_name="", quantity=1)` | 消耗物品 | ItemManager.remove() + LLM 模糊匹配 |
-| `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | NPCManager.set_state() |
+| `@npc_state_change(npc_name="", new_state="")` | NPC 重大状态变化（死亡/苏醒/昏迷等），不涉及与调查员的互动能力 | NPCManager.set_state() |
 | `@npc_follow(npc_name="", follow=true/false)` | NPC 跟随/离开 | NPCManager.set_following() |
 | `@grant_spell(spell_ref="")` | 获得法术（U9 预留） | Investigator.known_spells |
 

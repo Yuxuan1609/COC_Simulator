@@ -72,9 +72,9 @@ def get_game() -> dict | None:
         _init_libraries()
 
         g = init_game(
-            l2_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l2_test.json"),
-            l1_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l1_test.json"),
-            l3_path=str(PROJECT_ROOT / "data/modules/常暗之厢/l3_test.json"),
+            l2_path=str(PROJECT_ROOT / "data/modules/测试模组0528v2/l2_keeper_test.json"),
+            l1_path=str(PROJECT_ROOT / "data/modules/测试模组0528v2/l1_player.json"),
+            l3_path=str(PROJECT_ROOT / "data/modules/测试模组0528v2/l3_designer.json"),
             start_node="测试房间",
         )
         char_path = str(PROJECT_ROOT / "investigator/test_character.json")
@@ -237,7 +237,36 @@ async def process_turn(user_input: str = Form(...)):
 
     narrative = turn.get("narrative", "") if turn else ""
     brief = turn.get("brief", "") if turn else ""
+
+    # 前端自动处理战斗（暂无交互 UI）
+    combat_init = turn.get("combat_init") if turn else None
     combat = turn.get("combat") if turn else None
+    if combat_init and combat_init.enemies and not combat:
+        from game.combat import CombatSystem
+        world = game["keeper"].world
+        cs = CombatSystem()
+        player_weps = getattr(combat_init.player, 'weapons', [])
+        pa = "punch"
+        if player_weps:
+            available = cs._get_player_actions(combat_init.player)
+            wa = [a for a in available if a["id"].startswith("weapon:")]
+            pa = wa[0]["id"] if wa else "punch"
+        cr = cs.run_combat(combat_init, player_action=pa)
+        combat = {"outcome": cr.outcome, "narrative": cr.narrative or "", "is_boss": False}
+        # 回写 + 善后
+        p = world.player
+        p.derived.HP = max(0, cr.player_hp)
+        p.derived.SAN = max(0, cr.player_san)
+        world.enemy_manager.exit_combat({
+            "outcome": cr.outcome,
+            "defeated_instance_ids": cr.defeated_instance_ids,
+        })
+        if world.bosses and world.bosses.active_boss_id:
+            world.bosses.resolve_outcome(cr)
+            if cr.outcome == "win":
+                world.mark_completed(world.bosses.active_boss_id, "")
+            world.bosses.set_active(None)
+
     skill_results = turn.get("skill_results", []) if turn else []
     game_over = turn.get("game_over", False) if turn else False
     ending = turn.get("ending") if turn else None
@@ -607,11 +636,11 @@ async def init_game_api(
 
     # Default paths if empty
     if not l2_path:
-        l2_path = "data/modules/常暗之厢/l2_test.json"
+        l2_path = "data/modules/测试模组0528v2/l2_keeper_test.json"
     if not l1_path:
-        l1_path = "data/modules/常暗之厢/l1_test.json"
+        l1_path = "data/modules/测试模组0528v2/l1_player.json"
     if not l3_path:
-        l3_path = "data/modules/常暗之厢/l3_test.json"
+        l3_path = "data/modules/测试模组0528v2/l3_designer.json"
 
     # Initialize libraries with user-specified paths
     _init_libraries(weapon_path, enemy_path, boss_path)

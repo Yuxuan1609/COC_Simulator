@@ -57,7 +57,7 @@ class Keeper:
         self.monitor = AgentMonitor("Keeper", self._sensor, KeeperPolicy())
         self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
         self._standoff_pending: dict | None = None
-        self._weapon_offer: dict | None = None  # pending weapon pickup offer {weapon_ref, scene}
+        self._weapon_offer: list | None = None  # pending weapon pickup offers [{weapon_ref, scene}, ...]
         self._weapon_offer_msg: str = ""  # offer prompt message for current turn's output
         self._npc_events: list[str] = []  # NPC follow/state events collected this turn
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
@@ -71,31 +71,34 @@ class Keeper:
         if self._weapon_offer:
             answer = raw.strip().lower()
             pickup = any(kw in answer for kw in ("是", "yes", "y", "拾取", "捡", "拿"))
-            wo = self._weapon_offer
+            offer_list = self._weapon_offer
             self._weapon_offer = None
             if pickup and self.world.weapon_library:
-                lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
-                if lib_wep:
-                    from investigator.models import Weapon
-                    skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
-                    damage = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
-                    inv_wep = Weapon(
-                        name=wo["weapon_ref"], skill_name=skill or "格斗",
-                        damage=damage or "1D6+DB",
-                    )
-                    self.world.player.add_weapon(inv_wep)
-                    # Only remove from scene_weapons if it was a scene-placed weapon
-                    scene = wo.get("scene", "")
-                    if scene:
-                        scene_weps = self.world.scene_weapons.get(scene, [])
-                        for sw in list(scene_weps):
-                            if sw.weapon_ref == wo["weapon_ref"]:
-                                scene_weps.remove(sw)
-                                break
-                        if not scene_weps:
-                            self.world.scene_weapons.pop(scene, None)
-                    return {"brief": f"你拾起了{wo['weapon_ref']}。", "weapon_pickup": True}
-            return {"brief": f"你忽略了{wo['weapon_ref']}。", "weapon_pickup": False}
+                for wo in offer_list:
+                    lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
+                    if lib_wep:
+                        from investigator.models import Weapon
+                        skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
+                        dmg_raw = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
+                        dmg_str = dmg_raw if isinstance(dmg_raw, str) else (str(dmg_raw) if dmg_raw else "1D6+DB")
+                        inv_wep = Weapon(
+                            name=wo["weapon_ref"], skill_name=skill or "格斗",
+                            damage=dmg_str,
+                        )
+                        self.world.player.add_weapon(inv_wep)
+                        scene = wo.get("scene", "")
+                        if scene:
+                            scene_weps = self.world.scene_weapons.get(scene, [])
+                            for sw in list(scene_weps):
+                                if sw.weapon_ref == wo["weapon_ref"]:
+                                    scene_weps.remove(sw)
+                                    break
+                            if not scene_weps:
+                                del self.world.scene_weapons[scene]
+                names = "、".join(w["weapon_ref"] for w in offer_list)
+                return {"brief": f"你拾起了{names}。", "weapon_pickup": True}
+            names = "、".join(w["weapon_ref"] for w in offer_list)
+            return {"brief": f"你忽略了{names}。", "weapon_pickup": False}
 
         if _depth >= MAX_ESCALATION_DEPTH:
             # Guard against infinite recursion — re-execute deterministically
@@ -297,10 +300,11 @@ class Keeper:
                                     if lib_wep:
                                         from investigator.models import Weapon
                                         skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
-                                        damage = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
+                                        dmg_raw = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
+                                        dmg_str = dmg_raw if isinstance(dmg_raw, str) else (str(dmg_raw) if dmg_raw else "1D6+DB")
                                         inv_wep = Weapon(
                                             name=sw.weapon_ref, skill_name=skill or "格斗",
-                                            damage=damage or "1D6+DB",
+                                            damage=dmg_str,
                                         )
                                         self.world.player.add_weapon(inv_wep)
                                         picked_up = True
@@ -319,7 +323,7 @@ class Keeper:
                                 break
                         if not picked_up:
                             msg += f'\n\n（你发现了 {wep_names}。是否拾取？（是/否））'
-                            self._weapon_offer = {"weapon_ref": scene_weps[0].weapon_ref, "scene": self.world.current_location}
+                            self._weapon_offer = [{"weapon_ref": sw.weapon_ref, "scene": self.world.current_location} for sw in scene_weps]
                 else:
                     msg = "（仔细查看四周，没有特别的发现）"
                 all_outcomes.append(ActionOutcome(
@@ -561,27 +565,30 @@ class Keeper:
         if enrich_executor:
             enrich_executor.shutdown(wait=False)
 
-        # Boss "at" check: before enrich so combat info flows into enrichment
+        # Boss "at" / "interaction" check: scene-bound bosses
         boss_combat_init = None
         if self.world.bosses:
-            at_bosses = self.world.bosses.check_by_engage_type("at", scene=self.world.current_location)
-            for boss_entity in at_bosses:
-                boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
-                if self.world.is_entity_completed(boss_id):
-                    continue
-                if self._check_boss_requirements(boss_entity):
-                    boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                    self.world.bosses.set_active(boss_id)
-                    boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
-                    boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
-                    enrich_input.entities.append({
-                        "entity_type": "boss_encounter",
-                        "id": f"BOSS_{boss_id}",
-                        "name": f"Boss遭遇：{boss_name}",
-                        "result": boss_msg,
-                        "success": True,
-                        "skill_tier": "",
-                    })
+            for engage in ("at", "interaction"):
+                candidates = self.world.bosses.check_by_engage_type(engage, scene=self.world.current_location)
+                for boss_entity in candidates:
+                    boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
+                    if self.world.is_entity_completed(boss_id):
+                        continue
+                    if self._check_boss_requirements(boss_entity, turn_input.raw_text):
+                        boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                        self.world.bosses.set_active(boss_id)
+                        boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
+                        boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
+                        enrich_input.entities.append({
+                            "entity_type": "boss_encounter",
+                            "id": f"BOSS_{boss_id}",
+                            "name": f"Boss遭遇：{boss_name}",
+                            "result": boss_msg,
+                            "success": True,
+                            "skill_tier": "",
+                        })
+                        break
+                if boss_combat_init:
                     break
         if boss_combat_init:
             combat_init_result = boss_combat_init
@@ -705,7 +712,7 @@ class Keeper:
                 boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
                 if self.world.is_entity_completed(boss_id):
                     continue
-                if self._check_boss_requirements(boss_entity):
+                if self._check_boss_requirements(boss_entity, turn_input.raw_text):
                     combat_init_result = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
                     self.world.bosses.set_active(boss_id)
                     break  # only handle one boss per turn; curate + return below
@@ -831,17 +838,56 @@ class Keeper:
                     "instance_ids": instance_ids,
                     "skill_detail": skill_detail}
 
-    def _check_boss_requirements(self, boss_entity: dict) -> bool:
-        """Check boss requirements using the (hard) || soft pattern."""
+    def _check_boss_requirements(self, boss_entity: dict, player_action: str = "") -> bool:
+        """Check boss requirements using the (hard) || soft pattern.
+        || is an AND separator — both hard and soft conditions must be met.
+        Soft condition is evaluated by LLM when player_action is provided.
+        """
         req_str = boss_entity.get("requirements", "")
         if not req_str:
             return True
         if "||" in req_str:
             hard_part = req_str.split("||", 1)[0].strip()
+            soft_part = req_str.split("||", 1)[1].strip() if len(req_str.split("||", 1)) > 1 else ""
+            # Check hard condition first
             if hard_part:
                 from scenario_core import parse_hard_requirement
-                return parse_hard_requirement(hard_part, self.world.runtime_state)
+                if not parse_hard_requirement(hard_part, self.world.runtime_state):
+                    return False  # hard condition failed → AND fails
+            # Hard passed (or empty). Now check soft condition via LLM.
+            if soft_part and player_action:
+                return self._evaluate_boss_soft_condition(
+                    soft_part, player_action, boss_entity.get("name", boss_entity.get("boss_ref", "unknown")))
+            # No soft condition, or no player action to evaluate against → pass
+            return True
         return True
+
+    def _evaluate_boss_soft_condition(self, soft_condition: str, player_action: str, boss_name: str) -> bool:
+        """Use LLM to evaluate whether the soft trigger condition is currently met."""
+        try:
+            from llm import call_deepseek
+            from config_llm import LLM_FLASH_MODEL
+            import json as _json
+
+            scene = self.world.current_location
+            prompt = (
+                f"当前场景：{scene}\n"
+                f"Boss名称：{boss_name}\n"
+                f"玩家最近的行动：{player_action}\n"
+                f"\nBoss触发条件（软条件）：{soft_condition}\n"
+                f"\n请判断：玩家最近的行动是否满足上述触发条件？\n"
+                f"返回 JSON：{{\"triggered\": true/false, \"reason\": \"<简要理由 20字以内>\"}}\n"
+                f"直接输出 JSON。"
+            )
+            response = call_deepseek(
+                prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是 TRPG Boss 触发裁判。根据玩家行动判断是否满足 Boss 的触发条件。",
+                fallback_schema={"triggered": True, "reason": ""},
+            )
+            data = _json.loads(response) if isinstance(response, str) else response
+            return data.get("triggered", True)
+        except Exception:
+            return True  # LLM unavailable → optimistic pass
 
     def _inject_npc_at(self):
         """Inject condition-satisfied NPC bound entities (interactions + ATs) into current node."""
@@ -1331,7 +1377,7 @@ class Keeper:
                     msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {scene}")
                 else:
                     # scene 为空：直接授予调查员，通过 _weapon_offer 走确认流程
-                    self._weapon_offer = {"weapon_ref": effect.weapon_ref, "scene": ""}
+                    self._weapon_offer = [{"weapon_ref": effect.weapon_ref, "scene": ""}]
                     self._weapon_offer_msg = f"（获得了{effect.weapon_ref}，是否接受？（是/否））"
                     msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员（待确认）")
 

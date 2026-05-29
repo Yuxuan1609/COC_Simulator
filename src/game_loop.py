@@ -196,6 +196,27 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     dep_graph = l2.get("dependency_graph", {})
     world.load_dependency_graph(dep_graph)
 
+    # 显式执行 world 场景的 auto_triggers（world 不是玩家可达场景）
+    world_node = graph.nodes.get("world")
+    if world_node:
+        from game.side_effects import parse_markup_all, SpawnEnemy, GrantWeapon, SceneWeapon as SW
+        for at in world_node.auto_triggers:
+            effects = parse_markup_all(getattr(at, 'result', '') or '')
+            for se_text in (getattr(at, 'side_effects', []) or []):
+                if isinstance(se_text, str) and "@" in se_text:
+                    effects += parse_markup_all(se_text)
+            for eff in effects:
+                if isinstance(eff, SpawnEnemy):
+                    if world.enemies:
+                        target = eff.scene or start_node
+                        world.enemies.spawn(eff.enemy_ref, target, eff.quantity)
+                elif isinstance(eff, GrantWeapon):
+                    scene = eff.scene or start_node
+                    if scene not in world.scene_weapons:
+                        world.scene_weapons[scene] = []
+                    world.scene_weapons[scene].append(SW(
+                        weapon_ref=eff.weapon_ref, scene=scene, quantity=eff.quantity))
+
     # Load time costs reference
     try:
         import json as _json, os as _os
@@ -251,51 +272,13 @@ def run_turn(game: dict, user_input: str,
     else:
         display_brief = str(brief) if brief else ""
 
-    # Combat entry: short-circuited — one-turn auto-win, combat engine bypassed
-    combat_narrative = ""
+    # Combat entry: caller handles combat (interactive CLI or auto frontend)
+    combat_init = result.get("combat_init")
+    combat_is_boss = bool(world.bosses and world.bosses.active_boss_id) if combat_init else False
+    combat_narrative = ""   # filled by caller after combat
     combat_result_outcome = None
-    combat_is_boss = False
     combat_death = False
     combat_boss_loss = False
-    combat_init = result.get("combat_init")
-    if combat_init and combat_init.enemies:
-        # 每场战斗最多 5 个敌人
-        enemies = combat_init.enemies[:5]
-        enemy_names = ", ".join(
-            getattr(e, 'enemy_ref', getattr(e, 'name', '未知敌人'))
-            for e in enemies
-        )
-        defeated_ids = []
-        for ei in enemies:
-            eid = getattr(ei, 'instance_id', '')
-            if eid:
-                defeated_ids.append(eid)
-            if hasattr(ei, 'hp'):
-                ei.hp = 0
-
-        combat_result_outcome = "win"
-        combat_narrative = (
-            f"你侥幸战胜了{enemy_names}，但战斗极其惨烈。"
-            f"你深深意识到正面冲突的危险——应尽可能通过潜行、回避或交涉来规避战斗。"
-        )
-        combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
-
-        # 统一战斗善后：EnemyManager 清理 + Boss 标记
-        world.enemy_manager.exit_combat({
-            "outcome": combat_result_outcome,
-            "defeated_instance_ids": defeated_ids,
-        })
-        if combat_is_boss:
-            world.bosses.resolve_outcome(CombatResult(
-                outcome=combat_result_outcome,
-                defeated_instance_ids=defeated_ids,
-                player_hp=combat_init.player.derived.HP if combat_init.player else 10,
-                player_san=combat_init.player.derived.SAN if combat_init.player else 60,
-                rounds=1,
-                narrative=combat_narrative,
-            ))
-            world.mark_completed(world.bosses.active_boss_id, "")
-            world.bosses.set_active(None)
 
     # Extract skill check results from outcomes for player display
     skill_results = []
@@ -355,7 +338,8 @@ def run_turn(game: dict, user_input: str,
     # Surface pending weapon offer to player (narrator may omit the pickup prompt)
     if keeper._weapon_offer:
         wo = keeper._weapon_offer
-        wp_text = f"（你发现了{wo['weapon_ref']}。是否拾取？（是/否））"
+        names = "、".join(w["weapon_ref"] for w in wo)
+        wp_text = f"（你发现了{names}。是否拾取？（是/否））"
         narrative = (narrative or "") + ("\n\n" if narrative else "") + wp_text
         if not narrative_brief:
             narrative_brief = wp_text
@@ -470,6 +454,7 @@ def run_turn(game: dict, user_input: str,
         } if combat_result_outcome else None,
         "combat_death": combat_death,
         "combat_boss_loss": combat_boss_loss,
+        "combat_init": combat_init,   # caller handles combat execution
         "standoff_prompt": standoff,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "ending": ending,
@@ -535,23 +520,18 @@ def continue_standoff(keeper, player_input: str) -> dict:
 
     # Run combat if resolved into combat (short-circuited — one-turn auto-win)
     if combat_init and combat_init.enemies:
-        enemy_names = ", ".join(
-            getattr(e, 'enemy_ref', getattr(e, 'name', '未知敌人'))
-            for e in combat_init.enemies
-        )
-        defeated_ids = []
-        for ei in combat_init.enemies:
-            eid = getattr(ei, 'instance_id', '')
-            if eid:
-                defeated_ids.append(eid)
-            if hasattr(ei, 'hp'):
-                ei.hp = 0
-
-        result["combat_narrative"] = f"经过对峙，你凭借机智与勇气战胜了{enemy_names}。"
-        result["combat_outcome"] = "win"
+        from game.combat import CombatSystem
+        cs = CombatSystem()
+        cr = cs.run_combat(combat_init)
+        result["combat_narrative"] = cr.narrative or f"经过对峙，战斗结束。"
+        result["combat_outcome"] = cr.outcome
+        # HP/SAN 回写
+        if combat_init.player:
+            combat_init.player.derived.HP = max(0, cr.player_hp)
+            combat_init.player.derived.SAN = max(0, cr.player_san)
         keeper.world.enemy_manager.exit_combat({
-            "outcome": "win",
-            "defeated_instance_ids": defeated_ids,
+            "outcome": cr.outcome,
+            "defeated_instance_ids": cr.defeated_instance_ids,
         })
 
     return result
@@ -582,7 +562,7 @@ def format_turn_dynamic(
     # Compute day/time_of_day from game_time (minutes since start)
     t = snap.get("time", {}) if isinstance(snap, dict) else {}
     if t:
-        game_time = t.get("game_time", 0)
+        game_time = int(t.get("game_time", 0))
         day = game_time // 1440 if game_time else 0
         hour_val = (game_time % 1440) // 60 if game_time else 0
         if hour_val < 5: tod = "夜间"
@@ -593,8 +573,8 @@ def format_turn_dynamic(
         time_str = ""
         if day:
             time_str += f"第{day}天 "
-        h, m = divmod(game_time, 60)
-        time_str += f"{h:02d}:{m:02d}"
+        h, m = divmod(int(game_time), 60)
+        time_str += f"{h:02d}:{int(m):02d}"
         if time_str:
             parts.append(f"[时间] {time_str}")
 

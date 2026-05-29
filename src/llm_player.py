@@ -98,7 +98,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
 
     module_dir = PROJECT_ROOT / "data" / "modules" / module_name
     game = init_game(
-        l2_path=str(module_dir / "l2_keeper.json"),
+        l2_path=str(module_dir / "l2_keeper_test.json"),
         l1_path=str(module_dir / "l1_player.json"),
         l3_path=str(module_dir / "l3_designer.json"),
         start_node="6号车厢",

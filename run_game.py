@@ -50,9 +50,9 @@ print(f"[info] 武器库：{len(weapon_lib)} 件 | 敌人库：{len(enemy_lib)} 
 
 def run_game(character_path: str = None):
     game = init_game(
-        l2_path="data/modules/常暗更新/l2_keeper.json",
-        l1_path="data/modules/常暗更新/l1_player.json",
-        l3_path="data/modules/常暗更新/l3_designer.json",
+        l2_path="data/modules/测试模组0528v2/l2_keeper_test.json",
+        l1_path="data/modules/测试模组0528v2/l1_player.json",
+        l3_path="data/modules/测试模组0528v2/l3_designer.json",
         start_node="5号车厢",
     )
 
@@ -166,6 +166,20 @@ def run_game(character_path: str = None):
         # 正常回合
         result = run_turn(game, cmd)
 
+        # 战斗：进入交互式子循环
+        combat_init = result.get("combat_init")
+        if combat_init and combat_init.enemies:
+            combat_result = _run_interactive_combat(game, combat_init)
+            result["combat"] = combat_result
+            # 更新 session 中的 combat 信息用于输出
+            result["combat_death"] = False
+            result["combat_boss_loss"] = False
+            if combat_result:
+                # 回写 HP/SAN 到 result 的 snapshot
+                snap = result.get("player_snapshot")
+                if snap and hasattr(snap, 'combat'):
+                    snap.combat = combat_result
+
         ending = result.get("ending")
         if ending:
             print(f"\n【结局触发】{ending['name']}：{ending['narrative']}")
@@ -255,7 +269,7 @@ def _format_snapshot_chapters(snap) -> str:
     t = _g(snap, "time", {})
     if t:
         parts = []
-        gt = _g(t, "game_time", 0)
+        gt = int(_g(t, "game_time", 0))
         day = gt // 1440 if gt else 0
         hour_val = (gt % 1440) // 60 if gt else 0
         min_val = gt % 60
@@ -267,7 +281,7 @@ def _format_snapshot_chapters(snap) -> str:
         elif hour_val < 20: tod = "黄昏"
         else: tod = "夜间"
         parts.append(tod)
-        parts.append(f"{hour_val:02d}:{min_val:02d}")
+        parts.append(f"{int(hour_val):02d}:{int(min_val):02d}")
         if parts:
             chapters.append(f"## 时间\n{'，'.join(parts)}\u3002")
     
@@ -312,6 +326,175 @@ def _print_turn_output(snap, brief, narrative):
         output_parts.append(brief)
     
     print("\n\n" + "\n\n".join(output_parts))
+
+
+def _run_interactive_combat(game, combat_init) -> dict | None:
+    """交互式战斗子循环。返回 combat_data dict 或 None。"""
+    from game.combat import CombatSystem
+    from game_loop import run_turn
+
+    world = game["keeper"].world
+    cs = CombatSystem()
+    state = cs._init_combat(combat_init)
+    max_rounds = 20
+
+    enemy_desc = ", ".join(
+        f"{getattr(e, 'enemy_ref', '?')}(HP{getattr(e, 'hp', 0)})"
+        for e in combat_init.enemies
+    )
+    print(f"\n⚔ 进入战斗！遭遇：{enemy_desc}")
+
+    player = combat_init.player
+    available = cs._get_player_actions(player)
+    weapon_actions = [a for a in available if a["id"].startswith("weapon:")]
+
+    while not state.finished and state.round <= max_rounds:
+        alive = [e for e in state.enemies if getattr(e, 'hp', 1) > 0]
+        if not alive:
+            state.finished = True
+            break
+
+        print(f"\n── 第{state.round}轮 ──")
+        print(f"HP:{state.player_hp}/{state.player_hp_max}  SAN:{state.player_san}")
+        for e in state.enemies:
+            hp, hpmax = getattr(e, 'hp', 0), getattr(e, 'hp_max', getattr(e, 'hp', 10))
+            print(f"  {getattr(e, 'enemy_ref', '?')} HP:{hp}/{hpmax}")
+
+        # 玩家选择
+        action_id = "punch"
+        target = alive[0].instance_id
+        while True:
+            print("\n动作: a)攻击 d)回避 f)逃跑 c)隐蔽 m)瞄准 g)蓄力")
+            choice = input("> ").strip().lower()
+            if choice == 'd':
+                action_id = "dodge"; break
+            elif choice == 'f':
+                action_id = "flee"; break
+            elif choice == 'c':
+                action_id = "conceal"; break
+            elif choice == 'm':
+                action_id = "aim"; break
+            elif choice == 'g':
+                action_id = "charge"; break
+            elif choice == 'a':
+                # 武器选择
+                if weapon_actions:
+                    print("武器: " + ", ".join(
+                        f"{i+1}){a['label']}" for i, a in enumerate(weapon_actions)))
+                    wc = input("> ").strip()
+                    if wc.isdigit() and 1 <= int(wc) <= len(weapon_actions):
+                        action_id = weapon_actions[int(wc) - 1]["id"]
+                # 多目标选择
+                if len(alive) > 1:
+                    print("目标: " + ", ".join(
+                        f"{i+1}){getattr(e, 'enemy_ref', '?')}" for i, e in enumerate(alive)))
+                    tc = input("> ").strip()
+                    if tc.isdigit() and 1 <= int(tc) <= len(alive):
+                        target = alive[int(tc) - 1].instance_id
+                break
+        # 执行一轮
+        state.log = []
+        state._player_dodging = False
+        pa = cs._resolve_player_action(state, player, action_id, target)
+        pa.round_num = state.round
+        state.log.append(pa)
+        state.full_log.append(pa)
+
+        # 敌人行动
+        for iid in state.initiative_order:
+            if iid == "player":
+                continue
+            enemy = next((e for e in state.enemies if e.instance_id == iid), None)
+            if not enemy or getattr(enemy, 'hp', 1) <= 0:
+                continue
+            ea = cs._resolve_enemy_action(state, enemy, player)
+            ea.round_num = state.round
+            state.log.append(ea)
+            state.full_log.append(ea)
+
+        # LLM 修正（特殊规则武器/敌人）
+        needs_llm = cs._any_special_rules(combat_init, state.enemies)
+        if needs_llm:
+            player_pas = [{"action_type": a.action_type, "target": a.target,
+                           "weapon": a.weapon, "roll": a.roll, "tier": a.tier,
+                           "damage": a.damage, "damage_type": getattr(a, 'damage_type', '物理')}
+                          for a in state.log if a.actor == "player"]
+            rresult = cs._build_round_result(state, player_pas, [], state.round - 1)
+            rresult = cs._llm_correct_round(rresult, combat_init, state.enemies,
+                                             "", "", "", player_pas)
+            for a in state.log:
+                if a.actor == "player" and a.action_type == "attack":
+                    corrected = rresult.get("player_damage", a.damage)
+                    if corrected != a.damage:
+                        a.damage = corrected
+
+        # 显示结果
+        if pa.action_type == "dodge":
+            print("  你进入了回避姿态。")
+        elif pa.action_type == "flee":
+            print(f"  {'✅' if pa.success else '❌'} {pa.narrative}")
+        elif pa.action_type == "attack":
+            s = "✓" if pa.success else "✗"
+            dmg = f" 造成{pa.damage}点伤害" if pa.success and pa.damage > 0 else ""
+            print(f"  {s} {pa.weapon} D100={pa.roll} {pa.tier or ''}{dmg}")
+
+        for iid in state.initiative_order:
+            if iid == "player":
+                continue
+            enemy = next((e for e in state.enemies if e.instance_id == iid), None)
+            if not enemy or getattr(enemy, 'hp', 1) <= 0:
+                continue
+            for ea in state.log:
+                if ea.actor == iid and ea.round_num == state.round:
+                    name = getattr(enemy, 'enemy_ref', '敌人')
+                    if ea.damage > 0:
+                        print(f"  {name}用{ea.weapon}击中！D100={ea.roll} 造成{ea.damage}点伤害")
+                    break
+            if state.player_hp <= 0:
+                state.finished = True
+                break
+
+        # 结算玩家伤害到敌人
+        for act in state.log:
+            if act.actor == "player" and act.damage > 0:
+                enemy = next((e for e in state.enemies if e.instance_id == act.target), None)
+                if enemy:
+                    enemy.hp = max(0, getattr(enemy, 'hp', 10) - act.damage)
+
+        state.round += 1
+
+    outcome = "win"
+    if state.player_hp <= 0:
+        outcome = "loss"
+    elif state.round > max_rounds:
+        outcome = "draw"
+
+    print(f"\n── 战斗结束 ──")
+    labels = {"win": "✅ 胜利", "loss": "💀 败北", "draw": "⏱ 平局"}
+    print(f"结果: {labels.get(outcome, outcome)} | HP:{state.player_hp} 轮次:{state.round - 1}")
+
+    # 回写
+    player.derived.HP = max(0, state.player_hp)
+    player.derived.SAN = max(0, state.player_san)
+
+    # 善后
+    defeated = [e.instance_id for e in combat_init.enemies if getattr(e, 'hp', 1) <= 0]
+    world.enemy_manager.exit_combat({
+        "outcome": outcome, "defeated_instance_ids": defeated,
+    })
+    combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
+    if combat_is_boss:
+        from game.messages import CombatResult as CR
+        world.bosses.resolve_outcome(CR(
+            outcome=outcome, defeated_instance_ids=defeated,
+            player_hp=state.player_hp, player_san=state.player_san,
+            rounds=state.round - 1, narrative="",
+        ))
+        if outcome == "win":
+            world.mark_completed(world.bosses.active_boss_id, "")
+        world.bosses.set_active(None)
+
+    return {"outcome": outcome, "narrative": "", "is_boss": combat_is_boss}
 
 
 if __name__ == "__main__":
