@@ -182,22 +182,7 @@ class Keeper:
             if not non_npc_entries:
                 dialogue_text = self._npc_events[-1] if self._npc_events else ""
                 return {"brief": dialogue_text, "narrative": dialogue_text,
-                "npc_events": list(self._npc_events)}
-
-    def _build_frozen_response(self, exc: TurnFrozenError) -> dict:
-        return {
-            "brief": "",
-            "narrative": "",
-            "ending": None,
-            "combat_entry": None,
-            "standoff_prompt": None,
-            "combat_init": None,
-            "time_agent": None,
-            "enrich": None,
-            "npc_events": list(self._npc_events),
-            "game_frozen": True,
-            "frozen_message": str(exc),
-        }
+                        "npc_events": list(self._npc_events)}
             parse_result = non_npc_entries
 
         # Launch IntentDetector early if there are "other" entries
@@ -832,6 +817,21 @@ class Keeper:
                 "time_agent": ta_result,
                 "enrich": enrichment,
                 "npc_events": list(self._npc_events)}
+
+    def _build_frozen_response(self, exc: TurnFrozenError) -> dict:
+        return {
+            "brief": "",
+            "narrative": "",
+            "ending": None,
+            "combat_entry": None,
+            "standoff_prompt": None,
+            "combat_init": None,
+            "time_agent": None,
+            "enrich": None,
+            "npc_events": list(self._npc_events),
+            "game_frozen": True,
+            "frozen_message": str(exc),
+        }
 
     def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
