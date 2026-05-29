@@ -354,6 +354,216 @@ class CombatSystem:
             round_log=round_log,
         )
 
+    def run_single_round(self, combat_init: CombatInit, state: CombatState,
+                         action_id: str, target_ids: list[str],
+                         player_extra: str = "") -> dict:
+        """Execute one combat round interactively. Returns result dict.
+
+        Caller provides the current CombatState (with live HP/initiative/etc.).
+        We execute one round and return the updated state metadata.
+        """
+        player = combat_init.player
+        environment_actions = getattr(combat_init, 'environment_actions', [])
+        available = self._get_player_actions(player, environment_actions)
+
+        # Resolve action
+        if not action_id or not any(a["id"] == action_id for a in available):
+            action_id = "punch"
+
+        alive_enemies = [e for e in state.enemies
+                        if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') not in ('dead', 'defeated')]
+        if not alive_enemies:
+            state.finished = True
+            return self._build_single_round_result(state, combat_init)
+
+        # Multi-attack target expansion
+        match = next((a for a in available if a["id"] == action_id), None)
+        multi = match.get("multi_attack", 1) if match else 1
+        round_targets = list(target_ids) if target_ids else [alive_enemies[0].instance_id]
+        if multi > len(round_targets):
+            last = round_targets[-1] if round_targets else alive_enemies[0].instance_id
+            round_targets = round_targets + [last] * (multi - len(round_targets))
+
+        state.log = []
+        state._player_dodging = False
+        player_actions_this_round = []
+        enemy_actions_this_round = []
+
+        for iid in state.initiative_order:
+            if iid == "player":
+                for tgt in round_targets:
+                    if not tgt:
+                        tgt = alive_enemies[0].instance_id if alive_enemies else "unknown"
+                    pa = self._resolve_player_action(state, player, action_id, tgt, environment_actions)
+                    pa.round_num = state.round
+                    state.log.append(pa)
+                    state.full_log.append(pa)
+                    player_actions_this_round.append({
+                        "action_type": pa.action_type,
+                        "target": pa.target,
+                        "weapon": pa.weapon,
+                        "roll": pa.roll,
+                        "tier": pa.tier,
+                        "damage": pa.damage,
+                        "damage_type": getattr(pa, 'damage_type', '物理'),
+                        "effects": [],
+                    })
+                    if state.finished:
+                        break
+                if state.finished:
+                    break
+                continue
+
+            enemy = next((e for e in state.enemies if e.instance_id == iid), None)
+            if not enemy or getattr(enemy, 'status', '') in ('dead', 'defeated') or getattr(enemy, 'hp', 1) <= 0:
+                continue
+
+            multi_e = getattr(enemy, 'multi_attack', 1)
+            for _ in range(multi_e):
+                ea = self._resolve_enemy_action(state, enemy, player)
+                ea.round_num = state.round
+                state.log.append(ea)
+                state.full_log.append(ea)
+                enemy_actions_this_round.append({
+                    "actor": ea.actor,
+                    "action_type": ea.action_type,
+                    "roll": ea.roll,
+                    "tier": ea.tier,
+                    "damage": ea.damage,
+                    "damage_type": getattr(ea, 'damage_type', '物理'),
+                    "effects": [],
+                })
+                if state.player_hp <= 0:
+                    state.finished = True
+                    break
+            if state.finished:
+                break
+
+        rresult = self._build_round_result(
+            state, player_actions_this_round, enemy_actions_this_round, state.round
+        )
+
+        needs_llm = self._any_special_rules(combat_init, state.enemies)
+        if needs_llm:
+            boss_phase = state._boss_current_phase or ""
+            snapshot = self._build_battle_snapshot(state, player, boss_phase)
+            rresult = self._llm_correct_round(
+                rresult, combat_init, state.enemies,
+                player_extra, snapshot, boss_phase, player_actions_this_round
+            )
+
+            inv_context = getattr(player, 'personal_description', '') or ''
+            if getattr(player, 'extra', ''):
+                inv_context = (inv_context + '\n' + player.extra).strip()
+            for ea_data in enemy_actions_this_round:
+                old_dmg = ea_data.get("damage", 0)
+                if old_dmg <= 0:
+                    continue
+                enemy_id = ea_data.get("actor", "")
+                enemy = next((e for e in state.enemies
+                             if getattr(e, 'instance_id', '') == enemy_id), None)
+                if enemy and getattr(enemy, 'special_rules', ''):
+                    corrected = self._llm_correct_enemy_round(
+                        enemy, ea_data, player, player_extra, inv_context)
+                    new_dmg = max(0, corrected.get("damage", old_dmg))
+                    state.player_hp = max(0, state.player_hp + old_dmg - new_dmg)
+                    ea_data["damage"] = new_dmg
+                    if corrected.get("narrative"):
+                        ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
+
+        # Apply player damage to enemies
+        for pa in player_actions_this_round:
+            if pa.get("action_type") != "attack":
+                continue
+            dmg = pa.get("damage", 0)
+            tgt_iid = pa.get("target", "")
+            enemy = next((e for e in state.enemies if getattr(e, 'instance_id', '') == tgt_iid), None)
+            if not enemy:
+                continue
+            corrected_dmg = rresult.get("player_damage", 0)
+            try:
+                effective = max(0, int(corrected_dmg if corrected_dmg is not None else dmg))
+            except (ValueError, TypeError):
+                effective = max(0, int(dmg) if dmg else 0)
+            enemy.hp = max(0, getattr(enemy, 'hp', 10) - effective)
+
+        # Phase check
+        for enemy in state.enemies:
+            if getattr(enemy, 'hp', 1) <= 0 or getattr(enemy, 'status', '') == 'dead':
+                continue
+            triggered = self._check_phase(state, enemy)
+            if triggered:
+                desc = self._apply_phase(state, enemy, triggered, getattr(enemy, 'phases', []))
+                if desc:
+                    rresult.setdefault("status_changes", []).append({
+                        "entity_id": enemy.instance_id,
+                        "field": "phase",
+                        "old": "",
+                        "new": triggered,
+                    })
+
+        # Check end conditions
+        alive_after = [e for e in state.enemies
+                      if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') != 'dead']
+        if not alive_after:
+            state.finished = True
+        if state.player_hp <= 0:
+            state.finished = True
+
+        state.round += 1
+        return self._build_single_round_result(state, combat_init)
+
+    def _build_single_round_result(self, state: CombatState, combat_init) -> dict:
+        """Build result dict after a single round."""
+        is_boss = any(getattr(e, 'boss_mechanics', '') for e in state.enemies)
+        outcome = None
+        game_over = False
+
+        if state.finished:
+            player_fled = any(
+                a.actor == "player" and a.action_type == "flee" and a.success
+                for a in state.full_log
+            )
+            if player_fled:
+                outcome = "flee"
+            elif state.player_hp <= 0:
+                outcome = "loss"
+                game_over = not is_boss
+            elif state.round > 20:
+                outcome = "draw"
+            else:
+                outcome = "win"
+
+        # Build concise round narrative
+        lines = []
+        for a in state.log:
+            actor = "调查员" if a.actor == "player" else a.actor
+            if a.action_type == "attack":
+                s = "命中" if a.success else "未命中"
+                dmg = f" 造成{a.damage}点伤害" if a.success and a.damage > 0 else ""
+                lines.append(f"{actor} | {a.weapon} D100={a.roll} {s}{dmg}")
+            elif a.action_type == "flee":
+                lines.append(f"{actor} | 逃跑 {'成功' if a.success else '失败'}")
+            elif a.action_type == "dodge":
+                lines.append(f"{actor} | 回避")
+            elif a.action_type in ("conceal", "aim", "charge"):
+                lines.append(f"{actor} | {a.action_type}")
+        round_narrative = "\n".join(lines)
+
+        return {
+            "finished": state.finished,
+            "outcome": outcome,
+            "player_hp": state.player_hp,
+            "player_hp_max": state.player_hp_max,
+            "player_san": state.player_san,
+            "enemies": state.enemies,
+            "round_log": state.log,
+            "round_narrative": round_narrative,
+            "is_boss": is_boss,
+            "game_over": game_over,
+            "round": state.round,
+        }
+
     def _generate_combat_narrative(self, state, player, scene: str, log_dir: str = "") -> str:
         """Generate LLM combat summary from full round log."""
         if not state.full_log:

@@ -239,18 +239,93 @@ COC 7th 回合制。Boss 战斗与普通战斗分流：
 
 多次检定同一实体失败时三层递增：难度提升 → 计数累加 → LLM 创意惩罚（扣 HP/SAN、刷怪、NPC 变敌对等）。
 
-## 公开发行打包
+## 桌面打包
+
+> **目标**：免 Python 环境，双击即用。本项目使用 `pywebview` 替代 `webbrowser.open()` 嵌入原生窗口，消除浏览器刷新/后退导致的状态丢失问题。
+
+### 打包策略
+
+| 场景 | 工具 | 说明 |
+|------|------|------|
+| 开发迭代 | **PyInstaller** | 快速验证，5 分钟出包，`--onedir` 便于调试 |
+| 正式发布 | **Nuitka** | 编译为原生二进制，启动快、杀软误报极低、代码不可逆 |
+| 发布 fallback | PyInstaller `--onedir` | Nuitka 环境不可用时的备选 |
+
+API Key 不打包，启动后 Web 界面配置。需在对应系统分别打包，不支持交叉编译。
+
+### Nuitka（正式发布）
 
 ```bash
-pyinstaller -F --noconsole --name "TRPG助手" \
-  --add-data "frontend/templates;frontend/templates" \
-  --add-data "frontend/static;frontend/static" \
-  --add-data "data;data" --add-data "src;src" \
-  --hidden-import fastapi --hidden-import uvicorn --hidden-import jinja2 --hidden-import openai \
+pip install nuitka ordered-set zstandard
+nuitka --standalone --noconsole --output-dir=dist \
+  --output-filename="TRPG助手.exe" \
+  --include-data-dir=frontend/templates=frontend/templates \
+  --include-data-dir=frontend/static=frontend/static \
+  --include-data-dir=data=data \
+  --include-data-dir=src=src \
+  --enable-plugin=pylint-warnings \
+  --windows-icon-from-ico=assets/icon.ico \
   run_game.py
 ```
 
-API Key 不打包，启动后 Web 界面配置。`--onedir` 误报率低于 `--onefile`。需在对应系统分别打包。
+需要 MSVC（Visual Studio Build Tools）或 MinGW64 作为 C 编译器。`--onefile` 可选，但 `--standalone`（onedir 模式）启动更快。
+
+### PyInstaller（开发 / fallback）
+
+```bash
+pip install pyinstaller
+pyinstaller --onedir --noconsole --name "TRPG助手" \
+  --add-data "frontend/templates;frontend/templates" \
+  --add-data "frontend/static;frontend/static" \
+  --add-data "data;data" --add-data "src;src" \
+  --hidden-import fastapi --hidden-import uvicorn --hidden-import jinja2 \
+  --hidden-import openai --hidden-import webview \
+  run_game.py
+```
+
+`--onedir` 误报率低于 `--onefile`。若 Windows Defender 拦截，需用户手动加白名单。
+
+### pywebview 集成
+
+`pywebview` 将浏览器嵌入原生窗口，替代 `webbrowser.open()`：
+
+- 无地址栏/刷新按钮/前进后退，杜绝误操作导致状态丢失
+- 支持 `on_closing` 回调，关闭窗口时可提示存档
+- Windows 上使用系统自带的 Edge WebView2，无需额外浏览器
+- 可通过 JS 注入禁用 F5 / 右键菜单
+
+启动入口改造（`run_game.py`）：
+
+```python
+import webview, threading
+import uvicorn
+from frontend.server import app
+
+def start_server():
+    uvicorn.run(app, host="127.0.0.1", port=8080)
+
+if __name__ == "__main__":
+    t = threading.Thread(target=start_server, daemon=True)
+    t.start()
+    window = webview.create_window(
+        "TRPG 调查员助手", "http://localhost:8080",
+        width=1280, height=800, min_size=(960, 600),
+        text_select=True
+    )
+    webview.start()
+```
+
+### 两种工具对比
+
+| 维度 | PyInstaller | Nuitka |
+|------|-------------|--------|
+| 原理 | 打包字节码 + 解释器，运行时解释执行 | 编译为 C → 原生机器码 |
+| 冷启动 | `--onefile` 需解压到 temp（3-15s）；`--onedir` 较快 | 秒开，原生入口 |
+| 杀软误报 | 高（bootloader 被重点盯防），`--onefile` 尤甚 | 极低，行为模式接近正常程序 |
+| 代码保护 | 弱，`pyinstxtractor` + `uncompyle6` 可还原 | 强，编译为机器码后极难逆向 |
+| 构建环境 | `pip install pyinstaller` 即可 | 需 C 编译器（MSVC ~6GB / MinGW64） |
+| 构建速度 | 5 分钟出包 | 首次环境搭建 30min-1h，后续打包 10-20min |
+| 分发体积 | ~80-120MB（onedir） | ~60-100MB（standalone） |
 
 ---
 

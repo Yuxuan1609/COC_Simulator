@@ -24,6 +24,76 @@ _injector = None
 
 _progress_queues: dict[str, queue.Queue] = {}
 
+# ── Combat session storage (in-memory, per-process) ──
+# Each entry: {"state": CombatState, "combat_init": CombatInit}
+_combat_sessions: dict[str, dict] = {}
+
+
+def _serialize_enemies_for_frontend(enemies: list) -> list[dict]:
+    """Serialize enemy list for frontend display."""
+    return [
+        {
+            "instance_id": getattr(e, 'instance_id', ''),
+            "enemy_ref": getattr(e, 'enemy_ref', ''),
+            "hp": getattr(e, 'hp', 0),
+            "hp_max": getattr(e, 'hp_max', getattr(e, 'hp', 0)),
+            "status": getattr(e, 'status', ''),
+            "attributes": getattr(e, 'attributes', {}),
+            "boss_mechanics": getattr(e, 'boss_mechanics', ''),
+            "special_rules": getattr(e, 'special_rules', ''),
+            "armor": getattr(e, 'armor', ''),
+            "multi_attack": getattr(e, 'multi_attack', 1),
+        }
+        for e in enemies
+    ]
+
+
+def _serialize_combat_state_for_frontend(state) -> dict:
+    """Serialize CombatState fields needed by frontend."""
+    return {
+        "round": state.round,
+        "player_hp": state.player_hp,
+        "player_hp_max": state.player_hp_max,
+        "player_san": state.player_san,
+        "enemies": _serialize_enemies_for_frontend(state.enemies),
+        "initiative_order": state.initiative_order,
+        "finished": state.finished,
+    }
+
+
+def _deserialize_enemies_for_combat(enemy_data_list: list) -> list:
+    """Deserialize enemy dicts to objects usable by CombatSystem."""
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class _Enemy:
+        instance_id: str = ""
+        enemy_ref: str = ""
+        hp: int = 0
+        hp_max: int = 0
+        status: str = ""
+        quantity: int = 1
+        attributes: dict = field(default_factory=dict)
+        boss_mechanics: str = ""
+        special_rules: str = ""
+        phases: list = field(default_factory=list)
+        damage_multipliers: dict = field(default_factory=dict)
+        armor: str = ""
+        multi_attack: int = 1
+        attacks: list = field(default_factory=list)
+        dex: int = 50
+        dodge_bonus: int = 0
+        flags: list = field(default_factory=list)
+
+    enemies = []
+    for data in enemy_data_list:
+        e = _Enemy()
+        for k, v in data.items():
+            if hasattr(e, k):
+                setattr(e, k, v)
+        enemies.append(e)
+    return enemies
+
 
 def _init_libraries(weapon_path="", enemy_path="", boss_path=""):
     global _weapon_lib, _enemy_lib, _injector
@@ -238,36 +308,20 @@ async def process_turn(user_input: str = Form(...)):
     narrative = turn.get("narrative", "") if turn else ""
     brief = turn.get("brief", "") if turn else ""
 
-    # 前端自动处理战斗（暂无交互 UI）
+    # Combat: if combat_init present, return it to frontend for interactive handling
     combat_init = turn.get("combat_init") if turn else None
     combat = turn.get("combat") if turn else None
+    combat_init_data = None
     if combat_init and combat_init.enemies and not combat:
-        from game.combat import CombatSystem
-        world = game["keeper"].world
-        cs = CombatSystem()
-        player_weps = getattr(combat_init.player, 'weapons', [])
-        pa = "punch"
-        if player_weps:
-            available = cs._get_player_actions(combat_init.player)
-            wa = [a for a in available if a["id"].startswith("weapon:")]
-            pa = wa[0]["id"] if wa else "punch"
-        cr = cs.run_combat(combat_init, player_action=pa)
-        combat = {"outcome": cr.outcome, "narrative": cr.narrative or "", "is_boss": False}
-        # 回写 + 善后
-        p = world.player
-        p.derived.HP = max(0, cr.player_hp)
-        p.derived.SAN = max(0, cr.player_san)
-        if cr.outcome == "flee":
-            world.enemy_manager.exit_combat({"outcome": "flee"})
-            if world.bosses and world.bosses.active_boss_id:
-                world.bosses.set_active(None)
-        else:
-            world.enemy_manager.exit_combat({"outcome": cr.outcome})
-            if world.bosses and world.bosses.active_boss_id:
-                world.bosses.resolve_outcome(cr)
-                if cr.outcome == "win":
-                    world.mark_completed(world.bosses.active_boss_id, "")
-                world.bosses.set_active(None)
+        combat_init_data = {
+            "enemies": _serialize_enemies_for_frontend(combat_init.enemies),
+            "scene": combat_init.scene,
+            "initiative_context": combat_init.initiative_context,
+            "environment_actions": getattr(combat_init, 'environment_actions', []),
+            "player_action": combat_init.player_action,
+            "player_targets": getattr(combat_init, 'player_targets', []),
+            "player_extra": getattr(combat_init, 'player_extra', ''),
+        }
 
     skill_results = turn.get("skill_results", []) if turn else []
     game_over = turn.get("game_over", False) if turn else False
@@ -311,6 +365,7 @@ async def process_turn(user_input: str = Form(...)):
         "narrative": narrative,
         "narrative_html": narrative_html,
         "combat": combat,
+        "combat_init": combat_init_data,
         "skill_results": skill_results,
         "game_over": game_over,
         "ending": ending,
@@ -714,6 +769,128 @@ async def game_state():
         "hp": p.derived.HP if p else 0,
         "san": p.derived.SAN if p else 0,
         "name": p.name if p else "",
+    }
+
+
+@router.post("/api/combat/start")
+async def combat_start(request: Request):
+    """Initialize a combat session from a CombatInit object.
+
+    Request body JSON:
+        {"combat_init": {... serialized CombatInit ...}}
+    """
+    import json, uuid
+    from game.combat import CombatSystem
+    from game.messages import CombatInit
+
+    body = await request.body()
+    data = json.loads(body.decode("utf-8")) if body else {}
+    combat_init_data = data.get("combat_init", {})
+
+    game = get_game()
+    if game is None:
+        return JSONResponse({"error": "游戏未初始化"}, status_code=400)
+
+    player = game["keeper"].world.player
+    if not player:
+        return JSONResponse({"error": "未设置调查员"}, status_code=400)
+
+    # Reconstruct CombatInit with live player
+    enemies = _deserialize_enemies_for_combat(combat_init_data.get("enemies", []))
+    combat_init = CombatInit(
+        enemies=enemies,
+        player=player,
+        scene=combat_init_data.get("scene", ""),
+        initiative_context=combat_init_data.get("initiative_context", ""),
+        environment_actions=combat_init_data.get("environment_actions", []),
+        player_action=combat_init_data.get("player_action", ""),
+        player_targets=combat_init_data.get("player_targets", []),
+        player_extra=combat_init_data.get("player_extra", ""),
+    )
+
+    cs = CombatSystem()
+    state = cs._init_combat(combat_init)
+
+    session_id = str(uuid.uuid4())[:8]
+    _combat_sessions[session_id] = {
+        "state": state,
+        "combat_init": combat_init,
+    }
+
+    available = cs._get_player_actions(player, getattr(combat_init, 'environment_actions', []))
+    actions = [{"id": a["id"], "label": a["label"],
+                "multi_attack": a.get("multi_attack", 1),
+                "damage_type": a.get("damage_type", "物理")}
+               for a in available]
+
+    return {
+        "session_id": session_id,
+        "state": _serialize_combat_state_for_frontend(state),
+        "actions": actions,
+    }
+
+
+@router.post("/api/combat/round")
+async def combat_round(request: Request):
+    """Execute one combat round.
+
+    Request body JSON:
+        {"session_id": "...", "action_id": "...", "target_ids": [...], "player_extra": "..."}
+    """
+    import json
+    from game.combat import CombatSystem
+
+    body = await request.body()
+    data = json.loads(body.decode("utf-8")) if body else {}
+    session_id = data.get("session_id", "")
+
+    session = _combat_sessions.get(session_id)
+    if not session:
+        return JSONResponse({"error": "战斗会话不存在或已过期"}, status_code=400)
+
+    state = session["state"]
+    combat_init = session["combat_init"]
+    action_id = data.get("action_id", "punch")
+    target_ids = data.get("target_ids", [])
+    player_extra = data.get("player_extra", "")
+
+    cs = CombatSystem()
+    result = cs.run_single_round(combat_init, state, action_id, target_ids, player_extra)
+
+    # Update session with mutated state
+    session["state"] = state
+
+    # Serialize round_log for JSON response
+    round_log = []
+    for a in result.get("round_log", []):
+        round_log.append({
+            "actor": getattr(a, 'actor', ''),
+            "action_type": getattr(a, 'action_type', ''),
+            "weapon": getattr(a, 'weapon', ''),
+            "skill_name": getattr(a, 'skill_name', ''),
+            "skill_value": getattr(a, 'skill_value', 0),
+            "roll": getattr(a, 'roll', 0),
+            "tier": getattr(a, 'tier', ''),
+            "target": getattr(a, 'target', ''),
+            "damage": getattr(a, 'damage', 0),
+            "damage_type": getattr(a, 'damage_type', '物理'),
+            "hp_before": getattr(a, 'hp_before', 0),
+            "hp_after": getattr(a, 'hp_after', 0),
+            "narrative": getattr(a, 'narrative', ''),
+            "success": getattr(a, 'success', False),
+            "round_num": getattr(a, 'round_num', 0),
+        })
+
+    return {
+        "session_id": session_id,
+        "state": _serialize_combat_state_for_frontend(state),
+        "finished": result.get("finished", False),
+        "outcome": result.get("outcome"),
+        "round_log": round_log,
+        "round_narrative": result.get("round_narrative", ""),
+        "is_boss": result.get("is_boss", False),
+        "game_over": result.get("game_over", False),
+        "round": result.get("round", 1),
     }
 
 

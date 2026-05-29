@@ -77,6 +77,74 @@
           <div class="text-[10px] text-gray-500 font-bold mb-1">在场角色</div>
           <div id="scene-card-npcs" class="space-y-2"></div>
         </div>
+        {# 场景敌人 -- #}
+        <div id="scene-card-enemies-wrap" class="hidden">
+          <div class="text-[10px] text-gray-500 font-bold mb-1">敌对生物</div>
+          <div id="scene-card-enemies" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# -- Left Panel: Combat Overlay (replaces scene-panel during combat) -- #}
+  <div id="combat-panel" class="w-64 border-r border-gray-800/60 scene-glass flex flex-col overflow-y-auto shrink-0 hidden">
+    {# Header -- #}
+    <div class="flex items-center justify-between p-3 border-b border-gray-800/60">
+      <span class="text-sm text-aged-gold font-bold flex items-center gap-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>
+        战斗
+      </span>
+      <button onclick="toggleCombatPanel()" class="text-gray-500 hover:text-aged-gold" title="折叠">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+      </button>
+    </div>
+    <div id="combat-panel-inner" class="p-3 space-y-3 overflow-y-auto flex-1">
+      {# Player status -- #}
+      <div>
+        <div class="text-[10px] text-gray-500 font-bold mb-1">调查员</div>
+        <div id="combat-player-name" class="text-xs text-gray-300 mb-1">--</div>
+        <div class="space-y-1.5">
+          <div><div class="flex justify-between text-[10px] text-gray-500"><span>HP</span><span id="combat-hp-text">?/?</span></div>
+            <div class="h-1.5 bg-gray-800 rounded overflow-hidden"><div id="combat-hp-bar" class="h-full bg-coc-green rounded transition-all duration-500" style="width:100%"></div></div>
+          </div>
+          <div><div class="flex justify-between text-[10px] text-gray-500"><span>SAN</span><span id="combat-san-text">?</span></div>
+            <div class="h-1.5 bg-gray-800 rounded overflow-hidden"><div id="combat-san-bar" class="h-full bg-aged-gold rounded transition-all duration-500" style="width:100%"></div></div>
+          </div>
+        </div>
+      </div>
+      {# Enemies -- #}
+      <div>
+        <div class="text-[10px] text-gray-500 font-bold mb-1">敌人</div>
+        <div id="combat-enemies" class="space-y-1.5"></div>
+      </div>
+      {# Action buttons -- #}
+      <div>
+        <div class="text-[10px] text-gray-500 font-bold mb-1">动作</div>
+        <div id="combat-actions" class="grid grid-cols-3 gap-1.5"></div>
+      </div>
+      {# Weapon / Target selection (shown when attack selected) -- #}
+      <div id="combat-weapon-section" class="hidden">
+        <div class="text-[10px] text-gray-500 font-bold mb-1">武器</div>
+        <select id="combat-weapon-select" class="w-full bg-[#1a150c] border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 focus:border-aged-gold focus:outline-none"></select>
+      </div>
+      <div id="combat-target-section" class="hidden">
+        <div class="text-[10px] text-gray-500 font-bold mb-1">目标 (点击同一目标多次分配攻击次数)</div>
+        <div id="combat-targets" class="flex flex-wrap gap-1"></div>
+        <div id="combat-target-hint" class="text-[10px] text-gray-600 mt-1"></div>
+      </div>
+      {# Extra intent -- #}
+      <div>
+        <div class="text-[10px] text-gray-500 font-bold mb-1">额外意图（可选）</div>
+        <input type="text" id="combat-extra" placeholder="如：攻击核心..." class="w-full bg-[#1a150c] border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 focus:border-aged-gold focus:outline-none">
+      </div>
+      {# Execute button -- #}
+      <button id="combat-execute-btn" onclick="executeCombatRound()" class="w-full px-4 py-2 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30 font-bold flex items-center justify-center gap-2">
+        <span>执行回合</span>
+      </button>
+      {# Combat log -- #}
+      <div>
+        <div class="text-[10px] text-gray-500 font-bold mb-1">战斗日志</div>
+        <div id="combat-log" class="space-y-1 text-[10px]"></div>
       </div>
     </div>
   </div>
@@ -236,6 +304,23 @@
       npcsWrap.classList.add('hidden');
     }
 
+    // Enemies (scene-level, non-combat)
+    var enemiesWrap = document.getElementById('scene-card-enemies-wrap');
+    var enemiesEl = document.getElementById('scene-card-enemies');
+    var enemies = snap.enemies || [];
+    if (enemies.length > 0) {
+      enemiesWrap.classList.remove('hidden');
+      enemiesEl.innerHTML = enemies.map(function(e) {
+        var qty = (e.quantity || 1) > 1 ? ' ×' + e.quantity : '';
+        return '<div class="text-[10px] text-gray-400">' +
+          '<span class="text-red-400 font-bold">' + (e.enemy_ref || '?') + qty + '</span>' +
+          (e.status ? ' <span class="text-gray-500">[' + e.status + ']</span>' : '') +
+          '</div>';
+      }).join('');
+    } else {
+      enemiesWrap.classList.add('hidden');
+    }
+
   }
 
   // == Character panel toggle ==
@@ -271,6 +356,7 @@
 
   // == Game init ==
   async function initGame(e) {
+    console.log('[initGame] begin');
     e.preventDefault();
     const form = document.getElementById('init-form');
     const fd = new FormData(form);
@@ -282,14 +368,18 @@
     for (const id of ['l2-path', 'l1-path', 'l3-path']) {
       if (!document.getElementById(id).value.trim()) {
         errEl.textContent = '请填写所有模组文件路径';
+        console.log('[initGame] validation failed: empty', id);
         return;
       }
     }
     try {
+      console.log('[initGame] sending POST /api/game/init');
       const resp = await fetch('/api/game/init', { method: 'POST', body: fd });
+      console.log('[initGame] response status:', resp.status);
       const text = await resp.text();
-      if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; return; }
+      if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; console.log('[initGame] init failed:', text); return; }
       const data = JSON.parse(text);
+      console.log('[initGame] init success, location:', data.location);
       updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp, san: data.san, avatar_url: '', occupation: '' });
       document.getElementById('game-setup').style.display = 'none';
       document.getElementById('game-screen').style.display = '';
@@ -304,7 +394,8 @@
       }
       document.getElementById('turn-output').innerHTML = turnHtml || '<div class="turn-empty text-sm text-gray-500 italic">游戏已就绪</div>';
       connectWS();
-    } catch(e) { errEl.textContent = '网络错误: ' + e.message; }
+      console.log('[initGame] game screen shown');
+    } catch(e) { console.error('[initGame] error:', e); errEl.textContent = '网络错误: ' + e.message; }
   }
 
   // == Inline chat toggle ==
@@ -408,6 +499,18 @@
 
     // Update scene card
     if (snap) updateSceneCard(snap);
+
+    // If combat_init is present and no combat result yet, enter interactive combat mode
+    if (data.combat_init && !data.combat) {
+      enterCombatMode(data.combat_init);
+      // Still show the narrative from this turn above the combat panel
+      if (data.narrative) {
+        var outputArea = document.getElementById('turn-output');
+        outputArea.innerHTML = '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' + escapeHtml(data.narrative).replace(/\n/g, '<br>') + '</div>';
+      }
+      addToHistory(userText, data.narrative || '');
+      return;
+    }
 
     // Build turn output HTML
     var turnParts = [];
@@ -589,5 +692,394 @@
       }
     } catch(e) {}
   })();
+
+  // ═══════════════════════════════════════════════════════
+  //  COMBAT SYSTEM — Interactive frontend combat panel
+  // ═══════════════════════════════════════════════════════
+
+  let combatSession = null;   // {session_id, state, actions, combatInit}
+  let combatSelections = { actionId: null, weaponId: null, targetCounts: {}, playerExtra: '' };
+  let combatPanelCollapsed = false;
+
+  function enterCombatMode(combatInit) {
+    combatSession = { combatInit: combatInit, sessionId: null, state: null, actions: [] };
+    combatSelections = { actionId: null, weaponId: null, targetCounts: {}, playerExtra: '' };
+    combatPanelCollapsed = false;
+
+    // Switch panels
+    document.getElementById('scene-panel').classList.add('hidden');
+    document.getElementById('combat-panel').classList.remove('hidden');
+    document.getElementById('combat-panel').classList.remove('hidden');
+
+    // Lock main input
+    document.getElementById('user-input').disabled = true;
+    document.getElementById('user-input').placeholder = '战斗中...';
+
+    // Start combat session on backend
+    fetch('/api/combat/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ combat_init: combatInit })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.error) {
+        alert('战斗初始化失败: ' + data.error);
+        exitCombatMode();
+        return;
+      }
+      combatSession.sessionId = data.session_id;
+      combatSession.state = data.state;
+      combatSession.actions = data.actions;
+      renderCombatPanel();
+    }).catch(function(e) {
+      console.error('combat start error', e);
+      alert('战斗初始化失败');
+      exitCombatMode();
+    });
+  }
+
+  function toggleCombatPanel() {
+    combatPanelCollapsed = !combatPanelCollapsed;
+    var inner = document.getElementById('combat-panel-inner');
+    if (combatPanelCollapsed) {
+      inner.classList.add('hidden');
+    } else {
+      inner.classList.remove('hidden');
+    }
+  }
+
+  function renderCombatPanel() {
+    if (!combatSession || !combatSession.state) return;
+    var st = combatSession.state;
+
+    // Player name
+    var pName = document.getElementById('char-name').textContent || '调查员';
+    document.getElementById('combat-player-name').textContent = pName;
+
+    // Player HP/SAN bars
+    var hpPct = st.player_hp_max > 0 ? (st.player_hp / st.player_hp_max * 100) : 0;
+    var sanPct = st.player_san > 0 ? (st.player_san / 99 * 100) : 0;
+    document.getElementById('combat-hp-text').textContent = st.player_hp + '/' + st.player_hp_max;
+    document.getElementById('combat-san-text').textContent = st.player_san;
+    document.getElementById('combat-hp-bar').style.width = hpPct + '%';
+    document.getElementById('combat-san-bar').style.width = sanPct + '%';
+
+    // Enemies
+    var enemiesEl = document.getElementById('combat-enemies');
+    var enemiesHtml = '';
+    var aliveEnemies = [];
+    (st.enemies || []).forEach(function(e) {
+      if (e.hp <= 0 || e.status === 'dead' || e.status === 'defeated') return;
+      aliveEnemies.push(e);
+      var eHpPct = e.hp_max > 0 ? (e.hp / e.hp_max * 100) : 0;
+      var eHpColor = eHpPct > 50 ? 'bg-red-500' : eHpPct > 20 ? 'bg-red-600' : 'bg-red-800';
+      enemiesHtml += '<div class="text-xs">' +
+        '<div class="flex justify-between text-gray-400"><span>' + (e.enemy_ref || '?') + '</span><span>' + e.hp + '/' + e.hp_max + '</span></div>' +
+        '<div class="h-1 bg-gray-800 rounded overflow-hidden"><div class="h-full ' + eHpColor + ' rounded transition-all duration-500" style="width:' + eHpPct + '%"></div></div>' +
+        '</div>';
+    });
+    if (!enemiesHtml) enemiesHtml = '<div class="text-xs text-gray-500">无存活敌人</div>';
+    enemiesEl.innerHTML = enemiesHtml;
+
+    // Action buttons
+    var actionsEl = document.getElementById('combat-actions');
+    var actionButtons = [
+      {id: 'attack', label: '攻击', icon: '⚔'},
+      {id: 'dodge', label: '回避', icon: '🛡'},
+      {id: 'flee', label: '逃跑', icon: '🏃'},
+      {id: 'conceal', label: '隐蔽', icon: '👤'},
+      {id: 'aim', label: '瞄准', icon: '🎯'},
+      {id: 'charge', label: '蓄力', icon: '⚡'},
+    ];
+    actionsEl.innerHTML = actionButtons.map(function(a) {
+      var selected = combatSelections.actionId === a.id ? 'border-aged-gold bg-aged-gold/20' : 'border-gray-700 bg-[#1a150c]';
+      return '<button onclick="selectCombatAction(\'' + a.id + '\')" class="px-2 py-1.5 rounded border text-xs text-gray-300 hover:text-aged-gold hover:border-aged-gold/50 ' + selected + '">' + a.icon + ' ' + a.label + '</button>';
+    }).join('');
+
+    // Weapon section (shown only for attack)
+    var weaponSection = document.getElementById('combat-weapon-section');
+    var targetSection = document.getElementById('combat-target-section');
+    if (combatSelections.actionId === 'attack') {
+      weaponSection.classList.remove('hidden');
+      targetSection.classList.remove('hidden');
+
+      // Weapon select
+      var weaponSelect = document.getElementById('combat-weapon-select');
+      var weaponActions = (combatSession.actions || []).filter(function(a) { return a.id && a.id.startsWith('weapon:'); });
+      var baseActions = [{id: 'punch', label: '拳击'}, {id: 'kick', label: '踢击'}];
+      var allWeapons = baseActions.concat(weaponActions.map(function(w) { return {id: w.id, label: w.label}; }));
+      var weaponHtml = allWeapons.map(function(w) {
+        return '<option value="' + w.id + '"' + (combatSelections.weaponId === w.id ? ' selected' : '') + '>' + w.label + '</option>';
+      }).join('');
+      weaponSelect.innerHTML = weaponHtml;
+      if (!combatSelections.weaponId && allWeapons.length > 0) {
+        combatSelections.weaponId = allWeapons[0].id;
+      }
+      weaponSelect.onchange = function() { combatSelections.weaponId = this.value; renderCombatTargetButtons(); };
+
+      // Target buttons
+      renderCombatTargetButtons(aliveEnemies);
+    } else {
+      weaponSection.classList.add('hidden');
+      targetSection.classList.add('hidden');
+    }
+
+    // Update execute button state
+    var executeBtn = document.getElementById('combat-execute-btn');
+    if (!combatSelections.actionId) {
+      executeBtn.disabled = true;
+      executeBtn.classList.add('opacity-50');
+    } else {
+      executeBtn.disabled = false;
+      executeBtn.classList.remove('opacity-50');
+    }
+  }
+
+  function renderCombatTargetButtons(aliveEnemies) {
+    var targetsEl = document.getElementById('combat-targets');
+    var hintEl = document.getElementById('combat-target-hint');
+    if (!aliveEnemies) {
+      // Reconstruct from current state
+      var st = combatSession.state;
+      aliveEnemies = [];
+      (st.enemies || []).forEach(function(e) {
+        if (e.hp > 0 && e.status !== 'dead' && e.status !== 'defeated') aliveEnemies.push(e);
+      });
+    }
+
+    // Get multi_attack count for selected weapon
+    var multiAttack = 1;
+    if (combatSelections.weaponId) {
+      var weaponAction = (combatSession.actions || []).find(function(a) { return a.id === combatSelections.weaponId; });
+      if (weaponAction) multiAttack = weaponAction.multi_attack || 1;
+    }
+
+    // Build target buttons with counts
+    var totalAssigned = 0;
+    var buttonsHtml = aliveEnemies.map(function(e) {
+      var count = combatSelections.targetCounts[e.instance_id] || 0;
+      totalAssigned += count;
+      var cls = count > 0 ? 'bg-aged-gold/30 border-aged-gold text-aged-gold' : 'border-gray-700 text-gray-400';
+      return '<button onclick="selectCombatTarget(\'' + e.instance_id + '\', ' + multiAttack + ')" class="px-2 py-1 rounded border text-xs ' + cls + '">' +
+        (e.enemy_ref || '?') + (count > 0 ? ' ×' + count : '') + '</button>';
+    }).join('');
+    targetsEl.innerHTML = buttonsHtml;
+
+    // Hint
+    var remaining = multiAttack - totalAssigned;
+    if (remaining > 0) {
+      hintEl.textContent = '还可分配 ' + remaining + ' 次攻击';
+      hintEl.className = 'text-[10px] text-yellow-400 mt-1';
+    } else if (totalAssigned > multiAttack) {
+      hintEl.textContent = '攻击次数超出，将只使用前 ' + multiAttack + ' 个';
+      hintEl.className = 'text-[10px] text-red-400 mt-1';
+    } else {
+      hintEl.textContent = '攻击次数已分配完毕';
+      hintEl.className = 'text-[10px] text-coc-green mt-1';
+    }
+  }
+
+  function selectCombatAction(actionId) {
+    combatSelections.actionId = actionId;
+    combatSelections.targetCounts = {};
+    if (actionId === 'attack') {
+      // Default select first weapon
+      var weaponActions = (combatSession.actions || []).filter(function(a) { return a.id && a.id.startsWith('weapon:'); });
+      if (weaponActions.length > 0) {
+        combatSelections.weaponId = weaponActions[0].id;
+      } else {
+        combatSelections.weaponId = 'punch';
+      }
+    } else {
+      combatSelections.weaponId = null;
+    }
+    renderCombatPanel();
+  }
+
+  function selectCombatTarget(instanceId, multiAttack) {
+    var current = combatSelections.targetCounts[instanceId] || 0;
+    var total = Object.values(combatSelections.targetCounts).reduce(function(a, b) { return a + b; }, 0);
+    if (current > 0) {
+      // Increment if under limit, else reset to 0
+      if (total < multiAttack) {
+        combatSelections.targetCounts[instanceId] = current + 1;
+      } else {
+        // Deselect if at limit and clicking the same
+        combatSelections.targetCounts[instanceId] = 0;
+      }
+    } else {
+      // Select for first time
+      if (total < multiAttack) {
+        combatSelections.targetCounts[instanceId] = 1;
+      }
+    }
+    // Clean zeros
+    if (combatSelections.targetCounts[instanceId] === 0) {
+      delete combatSelections.targetCounts[instanceId];
+    }
+    renderCombatPanel();
+  }
+
+  async function executeCombatRound() {
+    if (!combatSession || !combatSession.sessionId) return;
+    if (!combatSelections.actionId) return;
+
+    var btn = document.getElementById('combat-execute-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span>执行中...</span>';
+
+    // Determine action_id and target_ids
+    var actionId = combatSelections.actionId;
+    if (actionId === 'attack') {
+      actionId = combatSelections.weaponId || 'punch';
+    }
+
+    // Build target list from counts (repeat according to count)
+    var targetIds = [];
+    var st = combatSession.state;
+    var alive = [];
+    (st.enemies || []).forEach(function(e) {
+      if (e.hp > 0 && e.status !== 'dead' && e.status !== 'defeated') alive.push(e);
+    });
+    // Sort by instance_id to keep order consistent
+    alive.sort(function(a, b) { return a.instance_id.localeCompare(b.instance_id); });
+    alive.forEach(function(e) {
+      var count = combatSelections.targetCounts[e.instance_id] || 0;
+      for (var i = 0; i < count; i++) targetIds.push(e.instance_id);
+    });
+    // If no targets selected for attack, default to first alive enemy
+    if (actionId.startsWith('weapon:') || actionId === 'punch' || actionId === 'kick') {
+      if (targetIds.length === 0 && alive.length > 0) {
+        targetIds.push(alive[0].instance_id);
+      }
+    }
+
+    var playerExtra = document.getElementById('combat-extra').value.trim();
+
+    try {
+      var resp = await fetch('/api/combat/round', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: combatSession.sessionId,
+          action_id: actionId,
+          target_ids: targetIds,
+          player_extra: playerExtra
+        })
+      });
+      var data = await resp.json();
+      if (data.error) {
+        alert('战斗回合失败: ' + data.error);
+        btn.disabled = false;
+        btn.innerHTML = '<span>执行回合</span>';
+        return;
+      }
+      handleCombatRoundResponse(data);
+    } catch(e) {
+      console.error('combat round error', e);
+      alert('战斗回合请求失败');
+      btn.disabled = false;
+      btn.innerHTML = '<span>执行回合</span>';
+    }
+  }
+
+  function handleCombatRoundResponse(data) {
+    // Update state
+    combatSession.state = data.state;
+
+    // Append to combat log
+    var logEl = document.getElementById('combat-log');
+    var roundHeader = '<div class="text-gray-500 font-bold mt-2">—— 第' + (data.round - 1) + '轮 ——</div>';
+    var roundEntries = '';
+    (data.round_log || []).forEach(function(a) {
+      var actor = a.actor === 'player' ? '调查员' : a.actor;
+      var color = a.actor === 'player' ? 'text-coc-green' : 'text-red-400';
+      var detail = '';
+      if (a.action_type === 'attack') {
+        detail = a.weapon + ' D100=' + a.roll + ' ' + (a.success ? '命中' : '未命中');
+        if (a.success && a.damage > 0) detail += ' 造成' + a.damage + '点伤害';
+      } else if (a.action_type === 'flee') {
+        detail = '逃跑 ' + (a.success ? '成功' : '失败');
+      } else {
+        detail = a.action_type;
+      }
+      roundEntries += '<div class="' + color + '">' + actor + ' | ' + detail + '</div>';
+    });
+    if (data.round_narrative) {
+      roundEntries += '<div class="text-gray-500 italic">' + escapeHtml(data.round_narrative).replace(/\n/g, '<br>') + '</div>';
+    }
+    logEl.innerHTML += roundHeader + roundEntries;
+
+    // Check finished
+    if (data.finished) {
+      finishCombat(data);
+      return;
+    }
+
+    // Reset selections for next round
+    combatSelections.actionId = null;
+    combatSelections.weaponId = null;
+    combatSelections.targetCounts = {};
+    document.getElementById('combat-extra').value = '';
+
+    // Render updated panel
+    renderCombatPanel();
+
+    // Restore button
+    var btn = document.getElementById('combat-execute-btn');
+    btn.disabled = false;
+    btn.innerHTML = '<span>执行回合</span>';
+  }
+
+  function finishCombat(data) {
+    // Build combat result summary
+    var outcomeLabel = data.outcome === 'win' ? '胜利' : data.outcome === 'loss' ? '败北' : data.outcome === 'flee' ? '逃跑成功' : data.outcome === 'draw' ? '平局' : data.outcome;
+    var outcomeColor = data.outcome === 'win' ? 'text-coc-green' : data.outcome === 'loss' ? 'text-coc-red' : 'text-yellow-400';
+    var summaryHtml = '<div class="px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r mt-2">' +
+      '<div class="flex items-center gap-2"><svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
+      '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + outcomeLabel + '</span></div>';
+    if (data.round_narrative) {
+      summaryHtml += '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' + escapeHtml(data.round_narrative).replace(/\n/g, '<br>') + '</div>';
+    }
+    summaryHtml += '</div>';
+
+    // Insert into narrative area
+    var outputArea = document.getElementById('turn-output');
+    outputArea.innerHTML = summaryHtml;
+    outputArea.scrollTop = 0;
+
+    // Update character HUD
+    fetch('/api/game/player-status?format=json')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { updateCharHUD(d); })
+      .catch(function() {});
+
+    // Exit combat mode UI
+    exitCombatMode();
+
+    // If game over from combat
+    if (data.game_over) {
+      document.getElementById('user-input').disabled = true;
+      setTimeout(function() {
+        outputArea.insertAdjacentHTML('beforeend',
+          '<div class="turn-ending px-4 py-3 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410]/80 mt-2">' +
+          '<div class="font-bold mb-1">游戏结束</div>你在战斗中倒下...</div>');
+      }, 500);
+    }
+  }
+
+  function exitCombatMode() {
+    // Hide combat panel, restore scene panel
+    document.getElementById('combat-panel').classList.add('hidden');
+    document.getElementById('scene-panel').classList.remove('hidden');
+
+    // Unlock input
+    document.getElementById('user-input').disabled = false;
+    document.getElementById('user-input').placeholder = '输入你的行动...';
+    document.getElementById('user-input').focus();
+
+    // Clear session
+    combatSession = null;
+    combatSelections = { actionId: null, weaponId: null, targetCounts: {}, playerExtra: '' };
+  }
 </script>
 {% endblock %}

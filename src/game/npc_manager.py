@@ -1,6 +1,7 @@
 """NPC dataclass + NPCManager — NPC 全量管理（对话/态度/跟随/状态）"""
 from __future__ import annotations
 from dataclasses import dataclass, field
+import re
 
 from config import NPC_MEMORY_CAP
 
@@ -29,6 +30,58 @@ class NPC:
     extra: dict | None = None
 
 
+def _build_req_text(req_text: str, world) -> str:
+    """Turn a requirement string into natural language with entity names.
+    
+    "E1&&E2||soft text" → "需要先完成「事件名1」和「事件名2」。软条件：soft text"
+    "I1 AND I3" → "需要先完成「交互名1」和「交互名3」"
+    """
+    if not world or not req_text:
+        return req_text
+    id_to_name: dict[str, str] = {}
+    try:
+        for node in world.graph.nodes.values():
+            for e in node.interactions:
+                id_to_name[e.id] = e.name
+            for e in node.auto_triggers:
+                id_to_name[e.id] = e.name
+        for eid, entity in world.graph.events.items():
+            id_to_name[eid] = entity.name
+        for npc in world.npcs._npcs.values():
+            for e in npc.bound_interactions:
+                id_to_name[e.get("id", "")] = e.get("name", e.get("id", ""))
+            for e in npc.bound_auto_triggers:
+                id_to_name[e.get("id", "")] = e.get("name", e.get("id", ""))
+    except Exception:
+        return req_text
+
+    def _resolve(ids_text: str) -> str:
+        result = ids_text
+        for eid in sorted(id_to_name, key=len, reverse=True):
+            if eid in result:
+                result = result.replace(eid, f"「{id_to_name[eid]}」")
+        for op in ("AND", "OR", "&&", "||"):
+            result = result.replace(f" {op} ", "、").replace(f" {op}", "、").replace(f"{op} ", "、").replace(op, "、")
+        while "  " in result:
+            result = result.replace("  ", " ")
+        return result.strip()
+
+    if "||" in req_text:
+        hard, soft = req_text.split("||", 1)
+        hard, soft = hard.strip(), soft.strip()
+    else:
+        hard = req_text.strip()
+        soft = ""
+
+    hard_named = _resolve(hard)
+    parts = []
+    if hard_named:
+        parts.append(f"需要先完成 {hard_named}")
+    if soft:
+        parts.append(f"软条件：{soft}")
+    return "。".join(parts)
+
+
 class NPCManager:
     def __init__(self):
         self._npcs: dict[str, NPC] = {}
@@ -46,7 +99,11 @@ class NPCManager:
         Also checks can_follow bool + state gate.
         """
         if not npc.can_follow:
-            return False, f"{npc.name} 不愿意跟随你"
+            hint = ""
+            if npc.follow_requirements and npc.follow_requirements.strip():
+                resolved = _build_req_text(npc.follow_requirements.strip(), world)
+                hint = f"，{resolved}"
+            return False, f"{npc.name} 不愿意跟随你{hint}"
         if npc.state in ("dead", "left"):
             return False, f"{npc.name} 无法跟随（{npc.state}）"
 
@@ -65,7 +122,8 @@ class NPCManager:
         if hard:
             from scenario_core import parse_hard_requirement
             if not parse_hard_requirement(hard, world.runtime_state):
-                return False, f"尚未满足 {npc.name} 的跟随条件"
+                resolved = _build_req_text(hard + (f"||{soft}" if soft else ""), world)
+                return False, f"尚未满足 {npc.name} 的跟随条件，{resolved}"
         return True, ""
 
     # ── 初始化 ──
@@ -131,20 +189,26 @@ class NPCManager:
             return gate.format(name=npc.name)
 
         if not npc.can_interact:
-            return f"（{npc.name} 似乎不愿与你交谈。）"
+            hint = ""
+            if npc.interact_requirements and npc.interact_requirements.strip():
+                resolved = _build_req_text(npc.interact_requirements.strip(), world)
+                hint = f"，{resolved}"
+            return f"（{npc.name} 似乎不愿与你交谈{hint}。）"
 
         # Check interact_requirements (hard part evaluated against runtime_state)
         if npc.interact_requirements and npc.interact_requirements.strip():
             req = npc.interact_requirements.strip()
             if "||" in req:
-                hard, _ = req.split("||", 1)
-                hard = hard.strip()
+                hard, soft = req.split("||", 1)
+                hard, soft = hard.strip(), soft.strip()
             else:
                 hard = req
+                soft = ""
             if hard and world and hasattr(world, 'runtime_state'):
                 from scenario_core import parse_hard_requirement
                 if not parse_hard_requirement(hard, world.runtime_state):
-                    return f"（{npc.name} 暂时不愿与你交谈。）"
+                    resolved = _build_req_text(hard + (f"||{soft}" if soft else ""), world)
+                    return f"（{npc.name} 暂时不愿与你交谈，{resolved}。）"
 
         triggers_text = ""
         if npc.interaction_triggers:
