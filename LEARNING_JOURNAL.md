@@ -240,3 +240,26 @@
 - **判断信号**：当你发现自己在同一个函数里反复追加边界条件、特殊字符替换、try/except 守卫时，不是在"完善"——是在对抗一个**有根本缺陷的设计选型**。此时应该退一步问："有没有一个不需要解析这些的输入方式？"
 - **代价比较**：字符串解析方案总复杂度 = 解析逻辑 + N 个边界条件 + 未来未知字符的维护。交互式方案总复杂度 = 空行确认。两者的长期维护成本差一个数量级
 - 泛化：任何"用户自由文本 → 结构化数据"的解析任务——如果自由文本格式**不是**用户需求的一部分（即用户不关心用什么格式，只要能选就行），就用结构化交互替代文本解析
+
+## JSON 配置库与运行时的字段传播链
+
+- **反模式**：改了 JSON 库的字段（如 damage 字符串→dict、新增 special_rules），只更新了 library dataclass 的 `from_dict`，忘记了消费端（Weapon 类、EnemyManager.spawn()、combat._any_special_rules）也需要同步。本 session 的 5 个连锁 bug 都源于此：
+  1. `damage` 改为 dict → `Weapon.damage: str` 仍期望字符串 → 拾取后 combat 读伤害 crash
+  2. `EnemyAttack` 新增 `weight/skill_name/skill_value` → combat 中 `attack.get()` 拿不到这些字段（EnemyAttack 是 dataclass 不是 dict）
+  3. `LibraryEnemy` 未设 `status` → `EnemyInstance` 默认 `"neutral"` → 战斗判定看到中立敌人不触发
+  4. Boss 攻击 `dice_n:0` 无 `special_rules` → 伤害永远 0，LLM 修正从不触发
+  5. `Weapon` 无 `special_rules/damage_type` 字段 → 拾取时只存了 name+skill+damage → `_any_special_rules` 永远 False
+- **检查清单**：JSON 字段变更后，必须逐层审计：
+  1. Library dataclass (`from_dict`/`to_dict`) ✓
+  2. 运行时桥接对象（`EnemyInstance`、`Weapon`）
+  3. 桥接代码（`spawn()`、`build_combat_init()`、拾取代码）
+  4. 消费端（`_any_special_rules`、`_get_player_actions`、`_roll_damage`）
+- **检测信号**：运行时某个功能"看起来配置了但不生效"——99% 是字段在某一层断了
+- 与"修改后追溯上下游"互补：前者是改功能代码后的影响面检查，这个是改数据格式后每个消费层是否都收到了新字段
+
+## LLM 只做布尔决策，确定性代码做数据查找
+
+- **反模式**：让 LLM 返回精确的 `instance_id`（如 `Clicker_bdef558a`），然后确定性代码用 `get_by_id()` 查找。LLM 编造 ID（`Clicker_1`）→ 查找失败 → 战斗永不触发。
+- **正确模式**：LLM 只回答布尔问题（`enter_combat: true/false`），确定性代码从已有数据结构中直接收集匹配项（`get_active_in_scene()`）。
+- **原则**：LLM 的职责边界是语义判断（"是否应该战斗"），不是数据精确匹配（"哪个 ID 的敌人"）。后者永远比 LLM 可靠，因为数据已经在内存里了。
+- **泛化**：任何"LLM 判断 → 确定性查找"的流水线——LLM 只输出布尔/分类标签，确定代码负责从结构化数据中按标签筛选。不要让 LLM 通过生成字符串去"引用"确定性侧的对象。

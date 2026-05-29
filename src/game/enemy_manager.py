@@ -48,6 +48,16 @@ class EnemyManager:
         lib_enemy = self._library.get(enemy_ref)
         if not lib_enemy:
             raise KeyError(f"Enemy '{enemy_ref}' not found in library")
+
+        # 同场景同类型合并：scene + enemy_ref 作为群组 key
+        for existing in self._instances.values():
+            if existing.scene == scene and existing.enemy_ref == enemy_ref:
+                existing.quantity += quantity
+                attrs = existing.attributes
+                base_hp = (attrs.get("CON", 50) + attrs.get("SIZ", 50)) // 10 * existing.quantity
+                existing.hp = base_hp
+                return existing
+
         instance_id = f"{enemy_ref}_{_short_id()}"
         attrs = lib_enemy.attributes
         base_hp = (attrs.get("CON", 50) + attrs.get("SIZ", 50)) // 10 * quantity
@@ -56,7 +66,7 @@ class EnemyManager:
             enemy_ref=enemy_ref,
             scene=scene,
             quantity=quantity,
-            flags=list(lib_enemy.flags),
+            status=getattr(lib_enemy, 'status', 'hostile'),
             combat_behavior=lib_enemy.combat_behavior,
             description=lib_enemy.description,
             attributes=dict(attrs),
@@ -83,7 +93,7 @@ class EnemyManager:
     def get_active_in_scene(self, scene: str) -> list[EnemyInstance]:
         return [
             i for i in self._instances.values()
-            if i.scene == scene and i.status != "dead"
+            if i.scene == scene and i.status not in ("dead", "defeated")
         ]
 
     def get_active_in_range(self, scene: str, graph) -> list[EnemyInstance]:
@@ -91,7 +101,7 @@ class EnemyManager:
         for inst in self._instances.values():
             if "adjacent_aware" not in inst.flags:
                 continue
-            if inst.status == "dead":
+            if inst.status in ("dead", "defeated"):
                 continue
             if inst in candidates:
                 continue  # already in queried scene via get_active_in_scene
@@ -114,7 +124,7 @@ class EnemyManager:
                 "quantity": i.quantity,
             }
             for i in self._instances.values()
-            if i.scene == scene and i.status != "dead"
+            if i.scene == scene and i.status not in ("dead", "defeated")
         ]
 
     def group_by_ref(self, scene: str) -> dict[str, list[EnemyInstance]]:
@@ -127,8 +137,22 @@ class EnemyManager:
         if instance_id in self._instances:
             self._instances[instance_id].status = status
 
+    def register(self, instance: EnemyInstance):
+        """Register an externally-created EnemyInstance (e.g. boss)."""
+        self._instances[instance.instance_id] = instance
+
+    def add_to_combat(self, instance_id: str):
+        if instance_id in self._instances and instance_id not in self._combat_enemies:
+            self._instances[instance_id].status = "engaged"
+            self._combat_enemies.append(instance_id)
+        if not self._combat_active:
+            self._combat_active = True
+
+    def mark_defeated(self, instance_id: str):
+        self.set_status(instance_id, "defeated")
+
     def mark_dead(self, instance_id: str):
-        self.set_status(instance_id, "dead")
+        self.set_status(instance_id, "defeated")
 
     def get_by_id(self, instance_id: str) -> Optional[EnemyInstance]:
         return self._instances.get(instance_id)
@@ -141,15 +165,17 @@ class EnemyManager:
         self._combat_active = True
 
     def exit_combat(self, result: dict):
-        defeated = set(result.get("defeated_instance_ids", []))
-        for iid in self._combat_enemies:
-            inst = self._instances.get(iid)
-            if not inst:
-                continue
-            if iid in defeated:
-                inst.status = "dead"
-            elif inst.status == "engaged":
-                inst.status = "hostile"
+        outcome = result.get("outcome", "")
+        if outcome == "win":
+            for iid in self._combat_enemies:
+                inst = self._instances.get(iid)
+                if inst:
+                    inst.status = "defeated"
+        else:
+            for iid in self._combat_enemies:
+                inst = self._instances.get(iid)
+                if inst and inst.status == "engaged":
+                    inst.status = "hostile"
         self._combat_enemies.clear()
         self._combat_active = False
 

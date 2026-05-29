@@ -27,6 +27,13 @@ from config import MAX_ESCALATION_DEPTH, INTENT_COOLDOWN_WINDOW
 from config_llm import LLM_FLASH_MODEL, RE_COMBAT_ENTRY, RE_KEEPER_PARSE
 
 
+def _wattr(lib_wep, key, default):
+    """Safe attribute access for both dict and dataclass weapon/attack entries."""
+    if isinstance(lib_wep, dict):
+        return lib_wep.get(key, default)
+    return getattr(lib_wep, key, default)
+
+
 class Keeper:
     """Keeper agent. Owns L2 + ScenarioWorld, coordinates the turn.
 
@@ -84,6 +91,11 @@ class Keeper:
                         inv_wep = Weapon(
                             name=wo["weapon_ref"], skill_name=skill or "格斗",
                             damage=dmg_str,
+                            damage_type=_wattr(lib_wep, 'damage_type', '物理'),
+                            armor_piercing=int(_wattr(lib_wep, 'armor_piercing', 0)),
+                            attack_bonus=int(_wattr(lib_wep, 'attack_bonus', 0)),
+                            multi_attack=int(_wattr(lib_wep, 'multi_attack', 1)),
+                            special_rules=_wattr(lib_wep, 'special_rules', ''),
                         )
                         self.world.player.add_weapon(inv_wep)
                         scene = wo.get("scene", "")
@@ -299,20 +311,24 @@ class Keeper:
                                     lib_wep = self.world.weapon_library.get(sw.weapon_ref)
                                     if lib_wep:
                                         from investigator.models import Weapon
-                                        skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
-                                        dmg_raw = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
+                                        skill = _wattr(lib_wep, "skill_name", "")
+                                        dmg_raw = _wattr(lib_wep, "damage", "")
                                         dmg_str = dmg_raw if isinstance(dmg_raw, str) else (str(dmg_raw) if dmg_raw else "1D6+DB")
                                         inv_wep = Weapon(
                                             name=sw.weapon_ref, skill_name=skill or "格斗",
                                             damage=dmg_str,
+                                            damage_type=_wattr(lib_wep, 'damage_type', '物理'),
+                                            armor_piercing=int(_wattr(lib_wep, 'armor_piercing', 0)),
+                                            attack_bonus=int(_wattr(lib_wep, 'attack_bonus', 0)),
+                                            multi_attack=int(_wattr(lib_wep, 'multi_attack', 1)),
+                                            special_rules=_wattr(lib_wep, 'special_rules', ''),
                                         )
                                         self.world.player.add_weapon(inv_wep)
                                         picked_up = True
-                                scene_weps.remove(sw)
+                                        scene_weps.remove(sw)
                                 if not scene_weps:
                                     del self.world.scene_weapons[self.world.current_location]
                                 msg = f"你拾起了{sw.weapon_ref}。"
-                                # Add pickup as separate outcome for enrich/narrator
                                 all_outcomes.append(ActionOutcome(
                                     intent=ActionIntent(action="pickup", target=sw.weapon_ref),
                                     success=True,
@@ -357,6 +373,11 @@ class Keeper:
                                     damage=lib_wep.damage,
                                     range=lib_wep.range,
                                     malfunction=lib_wep.malfunction,
+                                    damage_type=_wattr(lib_wep, 'damage_type', '物理'),
+                                    armor_piercing=int(_wattr(lib_wep, 'armor_piercing', 0)),
+                                    attack_bonus=int(_wattr(lib_wep, 'attack_bonus', 0)),
+                                    multi_attack=int(_wattr(lib_wep, 'multi_attack', 1)),
+                                    special_rules=_wattr(lib_wep, 'special_rules', ''),
                                 )
                                 self.world.player.add_weapon(inv_wep)
                         scene_weps.remove(sw)
@@ -428,6 +449,10 @@ class Keeper:
             enemy_ctx = self.world.enemies.get_combat_context(
                 self.world.current_location, self.world.graph
             )
+            n_instances = len(self.world.enemies._instances)
+            print(f"[Combat Entry] scene={self.world.current_location} total_instances={n_instances} has_context={bool(enemy_ctx)}")
+            if enemy_ctx:
+                print(f"  {enemy_ctx[:200]}")
         if enemy_ctx:
             outcomes_summary = "\n".join(
                 f"[{o.entity_type}] {o.message}" for o in all_outcomes
@@ -456,6 +481,7 @@ class Keeper:
                     enemy_instance_ids=result.get("enemy_instance_ids", []),
                     reasoning=result.get("reasoning", ""),
                 )
+                print(f"[Combat Entry] LLM decided: enter={combat_entry.enter_combat} ids={combat_entry.enemy_instance_ids} reason={combat_entry.reasoning[:80]}")
             except Exception:
                 combat_entry = None
 
@@ -463,14 +489,23 @@ class Keeper:
         standoff_prompt = None
         combat_init_result = None
         if combat_entry and combat_entry.enter_combat:
-            avoidable_by_ref: dict[str, list[str]] = {}
-            hostile_iids: list[str] = []
-            for iid in combat_entry.enemy_instance_ids:
-                inst = self.world.enemies.get_by_id(iid) if self.world.enemies else None
-                if inst and "avoidable" in inst.flags:
-                    avoidable_by_ref.setdefault(inst.enemy_ref, []).append(iid)
-                elif inst:
-                    hostile_iids.append(iid)
+            # 直接从场景收集所有敌对敌人，不依赖 LLM 返回的 ID 列表
+            scene_enemies = self.world.enemies.get_active_in_scene(
+                self.world.current_location
+            ) if self.world.enemies else []
+            # 过滤出 hostile 或可战斗状态的敌人
+            combat_candidates = [
+                inst for inst in scene_enemies
+                if inst.status not in ("dead", "defeated")
+            ]
+            if combat_candidates:
+                avoidable_by_ref: dict[str, list[str]] = {}
+                hostile_iids: list[str] = []
+                for inst in combat_candidates:
+                    if "avoidable" in inst.flags:
+                        avoidable_by_ref.setdefault(inst.enemy_ref, []).append(inst.instance_id)
+                    else:
+                        hostile_iids.append(inst.instance_id)
 
             if avoidable_by_ref:
                 first_ref = next(iter(avoidable_by_ref))
@@ -478,7 +513,7 @@ class Keeper:
                     "groups": {ref: iids for ref, iids in avoidable_by_ref.items()},
                     "current_group": first_ref,
                     "hostile_iids": hostile_iids,
-                    "all_enemy_iids": list(combat_entry.enemy_instance_ids),
+                    "all_enemy_iids": [inst.instance_id for inst in combat_candidates],
                     "reasoning": combat_entry.reasoning,
                 }
                 standoff_msg = f"你还有最后一次机会避免与{first_ref}的战斗——你要怎么做？"
@@ -591,7 +626,17 @@ class Keeper:
                 if boss_combat_init:
                     break
         if boss_combat_init:
-            combat_init_result = boss_combat_init
+            boss_enemy = boss_combat_init.enemies[0] if boss_combat_init.enemies else None
+            if boss_enemy:
+                if combat_init_result and combat_init_result.enemies:
+                    # 合并：Boss 加入当前场景的已有战斗
+                    combat_init_result.enemies.append(boss_enemy)
+                    self.world.enemies.register(boss_enemy)
+                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
+                else:
+                    combat_init_result = boss_combat_init
+                    self.world.enemies.register(boss_enemy)
+                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
 
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input
 

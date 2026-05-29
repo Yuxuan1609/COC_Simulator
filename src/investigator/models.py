@@ -72,6 +72,11 @@ class Weapon:
     range: str = "接触"         # 射程
     ammo: int = 0              # 弹药（0 表示不需要）
     malfunction: int = 100     # 故障值
+    damage_type: str = "物理"
+    armor_piercing: int = 0
+    attack_bonus: int = 0
+    multi_attack: int = 1
+    special_rules: str = ""
 
 
 @dataclass

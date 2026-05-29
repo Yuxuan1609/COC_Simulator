@@ -72,6 +72,7 @@ class LibraryEnemy:
     dodge_bonus: int = 0
     special_rules: str = ""
     phases: list = field(default_factory=list)
+    status: str = "hostile"
 
     def to_dict(self) -> dict:
         return {
@@ -92,6 +93,7 @@ class LibraryEnemy:
             "dodge_bonus": self.dodge_bonus,
             "special_rules": self.special_rules,
             "phases": self.phases,
+            "status": self.status,
         }
 
     @classmethod
@@ -128,6 +130,7 @@ class LibraryEnemy:
             dodge_bonus=data.get("dodge_bonus", 0),
             special_rules=data.get("special_rules", ""),
             phases=data.get("phases", []),
+            status=data.get("status", "hostile"),
         )
 
 

@@ -852,7 +852,7 @@ def build_combat_entry_prompt(
 {enemy_context}
 
 请判断是否有敌人应进入战斗。输出 JSON：
-{{"enter_combat": true/false, "enemy_instance_ids": ["..."], "reasoning": "简述判定理由"}}"""
+{{"enter_combat": true/false, "reasoning": "简述判定理由"}}"""
     _show_prompt("Combat Entry", prompt)
     return prompt
 

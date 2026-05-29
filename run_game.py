@@ -53,7 +53,7 @@ def run_game(character_path: str = None):
         l2_path="data/modules/测试模组0528v2/l2_keeper_test.json",
         l1_path="data/modules/测试模组0528v2/l1_player.json",
         l3_path="data/modules/测试模组0528v2/l3_designer.json",
-        start_node="5号车厢",
+        start_node="6号车厢",
     )
 
     keeper = game["keeper"]
@@ -171,14 +171,18 @@ def run_game(character_path: str = None):
         if combat_init and combat_init.enemies:
             combat_result = _run_interactive_combat(game, combat_init)
             result["combat"] = combat_result
-            # 更新 session 中的 combat 信息用于输出
-            result["combat_death"] = False
-            result["combat_boss_loss"] = False
-            if combat_result:
-                # 回写 HP/SAN 到 result 的 snapshot
-                snap = result.get("player_snapshot")
-                if snap and hasattr(snap, 'combat'):
-                    snap.combat = combat_result
+            if combat_result and combat_result.get("outcome"):
+                narrative_text = combat_result.get("narrative", "")
+                outcome = combat_result.get("outcome", "?")
+                labels = {"win": "你战胜了敌人。", "loss": "你被击败了…", "draw": "战斗陷入僵局。", "flee": "你成功逃离了战斗。"}
+                summary = narrative_text or labels.get(outcome, f"战斗结束({outcome})。")
+                result["narrative"] = (result.get("narrative", "") or "") + f"\n\n---\n⚔ {summary}"
+                result["brief"] = (result.get("brief", "") or "") + f" [战斗: {outcome}]"
+                # 被普通敌人击败 → 游戏结束
+                if combat_result.get("game_over"):
+                    result["game_over"] = True
+                    print(f"\n💀 你被击败了…游戏结束。")
+                    break
 
         ending = result.get("ending")
         if ending:
@@ -206,6 +210,7 @@ def _build_scene_snapshot(world) -> dict | None:
         "exits": [{"target": e.target, "method": e.method} for e in node.edges],
         "time": world.clock.to_dict(),
         "npcs": world.npcs.get_in_scene_snapshot(world.current_location) if world.npcs else [],
+        "enemies": world.enemies.get_active_in_scene_snapshot(world.current_location) if world.enemies else [],
         "combat": None,
         "skill_checks": [],
     }
@@ -264,6 +269,17 @@ def _format_snapshot_chapters(snap) -> str:
             for n in npcs
         )
         chapters.append(f"## 角色\n{npc_prose}。")
+
+    # Enemies
+    enemies_data = _g(snap, "enemies", [])
+    if enemies_data:
+        enemy_lines = []
+        for e in enemies_data:
+            ref = _g(e, "enemy_ref", "?")
+            status = _g(e, "status", "?")
+            qty = _g(e, "quantity", 1)
+            enemy_lines.append(f"{ref}×{qty} [{status}]")
+        chapters.append(f"## 敌人\n{'，'.join(enemy_lines)}")
     
     # Time — clock.to_dict() returns {"game_time": int, "time_context": str}
     t = _g(snap, "time", {})
@@ -391,6 +407,11 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
                     tc = input("> ").strip()
                     if tc.isdigit() and 1 <= int(tc) <= len(alive):
                         target = alive[int(tc) - 1].instance_id
+                # 额外意图（可选，仅特殊规则时生效）
+                player_extra = ""
+                if weapon_actions:
+                    print("额外描述（可选，如\"攻击核心\"，直接回车跳过）:")
+                    player_extra = input("> ").strip()
                 break
         # 执行一轮
         state.log = []
@@ -421,12 +442,30 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
                           for a in state.log if a.actor == "player"]
             rresult = cs._build_round_result(state, player_pas, [], state.round - 1)
             rresult = cs._llm_correct_round(rresult, combat_init, state.enemies,
-                                             "", "", "", player_pas)
+                                             player_extra, "", "", player_pas)
             for a in state.log:
                 if a.actor == "player" and a.action_type == "attack":
                     corrected = rresult.get("player_damage", a.damage)
                     if corrected != a.damage:
                         a.damage = corrected
+
+            # ── 敌人 LLM 修正 ──
+            inv_context = getattr(player, 'personal_description', '') or ''
+            if getattr(player, 'extra', ''):
+                inv_context = (inv_context + '\n' + player.extra).strip()
+            for ea in state.log:
+                if ea.actor == "player":
+                    continue
+                enemy = next((e for e in state.enemies if e.instance_id == ea.actor), None)
+                if enemy and getattr(enemy, 'special_rules', ''):
+                    ea_data = {"actor": ea.actor, "action_type": ea.weapon,
+                               "roll": ea.roll, "tier": ea.tier,
+                               "damage": ea.damage, "damage_type": getattr(ea, 'damage_type', '物理')}
+                    corrected = cs._llm_correct_enemy_round(
+                        enemy, ea_data, player, player_extra, inv_context)
+                    new_dmg = max(0, int(corrected.get("damage", ea.damage)))
+                    state.player_hp = max(0, state.player_hp + ea.damage - new_dmg)
+                    ea.damage = new_dmg
 
         # 显示结果
         if pa.action_type == "dodge":
@@ -464,13 +503,17 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
         state.round += 1
 
     outcome = "win"
-    if state.player_hp <= 0:
+    player_fled = any(a.actor == "player" and a.action_type == "flee" and a.success
+                      for a in state.full_log)
+    if player_fled:
+        outcome = "flee"
+    elif state.player_hp <= 0:
         outcome = "loss"
     elif state.round > max_rounds:
         outcome = "draw"
 
     print(f"\n── 战斗结束 ──")
-    labels = {"win": "✅ 胜利", "loss": "💀 败北", "draw": "⏱ 平局"}
+    labels = {"win": "✅ 胜利", "loss": "💀 败北", "draw": "⏱ 平局", "flee": "🏃 逃跑成功"}
     print(f"结果: {labels.get(outcome, outcome)} | HP:{state.player_hp} 轮次:{state.round - 1}")
 
     # 回写
@@ -478,23 +521,61 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
     player.derived.SAN = max(0, state.player_san)
 
     # 善后
-    defeated = [e.instance_id for e in combat_init.enemies if getattr(e, 'hp', 1) <= 0]
-    world.enemy_manager.exit_combat({
-        "outcome": outcome, "defeated_instance_ids": defeated,
-    })
     combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
-    if combat_is_boss:
-        from game.messages import CombatResult as CR
-        world.bosses.resolve_outcome(CR(
-            outcome=outcome, defeated_instance_ids=defeated,
-            player_hp=state.player_hp, player_san=state.player_san,
-            rounds=state.round - 1, narrative="",
-        ))
-        if outcome == "win":
-            world.mark_completed(world.bosses.active_boss_id, "")
-        world.bosses.set_active(None)
+    from game.messages import CombatResult as CR
+    if outcome == "flee":
+        world.enemy_manager.exit_combat({"outcome": "flee"})
+        if combat_is_boss:
+            world.bosses.set_active(None)
+    else:
+        world.enemy_manager.exit_combat({"outcome": outcome})
+        if combat_is_boss:
+            world.bosses.resolve_outcome(CR(
+                outcome=outcome, defeated_instance_ids=[],
+                player_hp=state.player_hp, player_san=state.player_san,
+                rounds=state.round - 1, narrative="",
+            ))
+            if outcome == "win":
+                world.mark_completed(world.bosses.active_boss_id, "")
+            world.bosses.set_active(None)
 
-    return {"outcome": outcome, "narrative": "", "is_boss": combat_is_boss}
+    # 生成 LLM 战斗叙事摘要
+    combat_narrative = cs._generate_combat_narrative(state, player, combat_init.scene, log_dir=_log_dir)
+    if combat_narrative:
+        print(f"\n  📜 {combat_narrative}")
+
+    # 写入战斗完整日志（文本格式，修正后数据）
+    try:
+        import os as _os
+        log_path = f"{_log_dir}/combat_log_{_log_timestamp}_r{state.round-1}.txt"
+        lines = []
+        lines.append(f"战斗日志")
+        lines.append(f"场景: {combat_init.scene}")
+        lines.append(f"调查员: {getattr(player, 'name', '?')}")
+        lines.append(f"回合数: {state.round - 1}")
+        lines.append(f"结果: {outcome}")
+        lines.append(f"HP: {state.player_hp}/{state.player_hp_max}  SAN: {state.player_san}")
+        lines.append("")
+        lines.append("=" * 60)
+        for a in state.full_log:
+            actor = "调查员" if a.actor == "player" else a.actor
+            hp_str = f" HP{a.hp_before}→{a.hp_after}" if a.damage > 0 else ""
+            lines.append(
+                f"[R{a.round_num:02d}] {actor} | {a.action_type} | "
+                f"{a.skill_name}={a.skill_value} | "
+                f"D100={a.roll} {a.tier} | "
+                f"伤害={a.damage}{'(' + getattr(a, 'damage_type', '') + ')' if getattr(a, 'damage_type', '物理') != '物理' else ''}{hp_str}"
+                f"{' | ' + a.narrative if a.narrative else ''}"
+            )
+        lines.append("=" * 60)
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write("\n".join(lines))
+    except Exception:
+        pass
+
+    return {"outcome": outcome, "narrative": combat_narrative or "",
+            "is_boss": combat_is_boss,
+            "game_over": outcome == "loss" and not combat_is_boss}
 
 
 if __name__ == "__main__":

@@ -824,12 +824,16 @@ def combat_turn_loop(cs: CombatSystem, combat_init: CombatInit, player_weapons: 
     # ── 战斗结果 ──
     _divider("═")
     outcome = "win"
-    if state.player_hp <= 0:
+    player_fled = any(a.actor == "player" and a.action_type == "flee" and a.success
+                      for a in state.full_log)
+    if player_fled:
+        outcome = "flee"
+    elif state.player_hp <= 0:
         outcome = "loss"
     elif state.round > max_rounds:
         outcome = "draw"
 
-    outcome_labels = {"win": "✅ 胜利！", "loss": "💀 败北！", "draw": "⏱ 时间耗尽，平局"}
+    outcome_labels = {"win": "✅ 胜利！", "loss": "💀 败北！", "draw": "⏱ 时间耗尽，平局", "flee": "🏃 逃跑成功"}
     print(f"  {outcome_labels.get(outcome, outcome)}")
     print(f"  轮数: {state.round - 1}")
     print(f"  剩余 HP: {state.player_hp}/{state.player_hp_max}")

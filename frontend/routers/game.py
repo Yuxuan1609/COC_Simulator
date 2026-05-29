@@ -257,15 +257,17 @@ async def process_turn(user_input: str = Form(...)):
         p = world.player
         p.derived.HP = max(0, cr.player_hp)
         p.derived.SAN = max(0, cr.player_san)
-        world.enemy_manager.exit_combat({
-            "outcome": cr.outcome,
-            "defeated_instance_ids": cr.defeated_instance_ids,
-        })
-        if world.bosses and world.bosses.active_boss_id:
-            world.bosses.resolve_outcome(cr)
-            if cr.outcome == "win":
-                world.mark_completed(world.bosses.active_boss_id, "")
-            world.bosses.set_active(None)
+        if cr.outcome == "flee":
+            world.enemy_manager.exit_combat({"outcome": "flee"})
+            if world.bosses and world.bosses.active_boss_id:
+                world.bosses.set_active(None)
+        else:
+            world.enemy_manager.exit_combat({"outcome": cr.outcome})
+            if world.bosses and world.bosses.active_boss_id:
+                world.bosses.resolve_outcome(cr)
+                if cr.outcome == "win":
+                    world.mark_completed(world.bosses.active_boss_id, "")
+                world.bosses.set_active(None)
 
     skill_results = turn.get("skill_results", []) if turn else []
     game_over = turn.get("game_over", False) if turn else False

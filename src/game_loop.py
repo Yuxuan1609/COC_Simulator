@@ -209,13 +209,17 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
                 if isinstance(eff, SpawnEnemy):
                     if world.enemies:
                         target = eff.scene or start_node
-                        world.enemies.spawn(eff.enemy_ref, target, eff.quantity)
+                        inst = world.enemies.spawn(eff.enemy_ref, target, eff.quantity)
+                        print(f"[World AT] spawned {eff.enemy_ref} x{eff.quantity} in {target} ({inst.instance_id})")
                 elif isinstance(eff, GrantWeapon):
                     scene = eff.scene or start_node
                     if scene not in world.scene_weapons:
                         world.scene_weapons[scene] = []
                     world.scene_weapons[scene].append(SW(
                         weapon_ref=eff.weapon_ref, scene=scene, quantity=eff.quantity))
+                    print(f"[World AT] granted {eff.weapon_ref} x{eff.quantity} in {scene}")
+    else:
+        print("[World AT] No 'world' node found in graph")
 
     # Load time costs reference
     try:
@@ -436,6 +440,7 @@ def run_turn(game: dict, user_input: str,
         exits=exits_data,
         time=time_data,
         npcs=scene_npcs,
+        enemies=world.enemies.get_active_in_scene_snapshot(scene_name) if world.enemies else [],
         combat=combat_data,
         skill_checks=skill_checks_out,
         investigator=world.player,
@@ -464,6 +469,9 @@ def run_turn(game: dict, user_input: str,
         "npcs_visible": npcs_visible,
         "npc_events": npc_events_out,
     }
+    if combat_init:
+        print(f"[run_turn] returning combat_init with {len(combat_init.enemies)} enemies")
+    return result
 
 
 def continue_standoff(keeper, player_input: str) -> dict:
@@ -529,10 +537,7 @@ def continue_standoff(keeper, player_input: str) -> dict:
         if combat_init.player:
             combat_init.player.derived.HP = max(0, cr.player_hp)
             combat_init.player.derived.SAN = max(0, cr.player_san)
-        keeper.world.enemy_manager.exit_combat({
-            "outcome": cr.outcome,
-            "defeated_instance_ids": cr.defeated_instance_ids,
-        })
+        keeper.world.enemy_manager.exit_combat({"outcome": cr.outcome})
 
     return result
 

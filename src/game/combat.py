@@ -190,7 +190,7 @@ class CombatSystem:
 
         while not state.finished and state.round <= max_rounds:
             alive_enemies = [e for e in state.enemies
-                            if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') != 'dead']
+                            if getattr(e, 'hp', 1) > 0 and getattr(e, 'status', '') not in ('dead', 'defeated')]
             if not alive_enemies:
                 state.finished = True
                 break
@@ -237,7 +237,7 @@ class CombatSystem:
                     continue
 
                 enemy = next((e for e in state.enemies if e.instance_id == iid), None)
-                if not enemy or getattr(enemy, 'status', '') == 'dead' or getattr(enemy, 'hp', 1) <= 0:
+                if not enemy or getattr(enemy, 'status', '') in ('dead', 'defeated') or getattr(enemy, 'hp', 1) <= 0:
                     continue
 
                 multi = getattr(enemy, 'multi_attack', 1)
@@ -312,7 +312,7 @@ class CombatSystem:
                 enemy.hp = max(0, getattr(enemy, 'hp', 10) - effective)
 
             for enemy in state.enemies:
-                if getattr(enemy, 'hp', 1) <= 0 or getattr(enemy, 'status', '') == 'dead':
+                if getattr(enemy, 'hp', 1) <= 0 or getattr(enemy, 'status', '') in ('dead', 'defeated'):
                     continue
                 triggered = self._check_phase(state, enemy)
                 if triggered:
@@ -340,16 +340,13 @@ class CombatSystem:
         elif state.round > max_rounds:
             outcome = "draw"
 
-        defeated = [e.instance_id for e in combat_init.enemies
-                    if getattr(e, 'hp', 1) <= 0 or getattr(e, 'status', '') == 'dead']
-
         combat_narrative = self._generate_combat_narrative(
             state, combat_init.player, combat_init.scene
         )
 
         return CombatResult(
             outcome=outcome,
-            defeated_instance_ids=defeated,
+            defeated_instance_ids=[],
             player_hp=state.player_hp,
             player_san=state.player_san,
             rounds=state.round,
@@ -357,13 +354,15 @@ class CombatSystem:
             round_log=round_log,
         )
 
-    def _generate_combat_narrative(self, state, player, scene: str) -> str:
+    def _generate_combat_narrative(self, state, player, scene: str, log_dir: str = "") -> str:
         """Generate LLM combat summary from full round log."""
         if not state.full_log:
             return ""
+        import json as _json, os as _os
         try:
             from llm import call_deepseek
             from config_llm import LLM_FLASH_MODEL
+            from datetime import datetime
 
             log_lines = []
             enemies_desc = ", ".join(
@@ -394,12 +393,32 @@ class CombatSystem:
 {{"summary": "战斗摘要（中文≤120字），包含关键回合和最终结果"}}
 直接输出 JSON。"""
 
-            import json as _json
             response = call_deepseek(
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
                 system="你是TRPG战斗叙事者，简洁概述战斗过程。",
                 fallback_schema={"summary": ""},
             )
+
+            # 保存 LLM prompt + response
+            if not log_dir:
+                try:
+                    from run_game import _log_dir as _gld
+                    log_dir = _gld
+                except Exception:
+                    log_dir = "logs"
+            try:
+                if log_dir:
+                    _os.makedirs(log_dir, exist_ok=True)
+                    ts = datetime.now().strftime("%H%M%S")
+                    prompt_path = f"{log_dir}/combat_narrative_{ts}_prompt.txt"
+                    resp_path = f"{log_dir}/combat_narrative_{ts}_response.txt"
+                    with open(prompt_path, 'w', encoding='utf-8') as f:
+                        f.write(prompt)
+                    with open(resp_path, 'w', encoding='utf-8') as f:
+                        f.write(str(response))
+            except Exception:
+                pass
+
             data = _json.loads(response) if isinstance(response, str) else response
             return data.get("summary", "") or ""
         except Exception:
@@ -408,10 +427,25 @@ class CombatSystem:
     # ── Init ──
 
     def _init_combat(self, combat_init: CombatInit) -> CombatState:
-        """Set up combat state from CombatInit. Initiative by DEX descending."""
+        """Set up combat state from CombatInit. Initiative by DEX descending.
+        
+        群组展开：quantity > 1 的 EnemyInstance 拆为独立战斗实体，分别计算 HP 和先攻。
+        """
+        import copy
         player = combat_init.player
+        expanded_enemies = []
+        for e in combat_init.enemies:
+            qty = max(1, getattr(e, 'quantity', 1))
+            per_hp = max(1, getattr(e, 'hp', 10) // qty)
+            for i in range(qty):
+                ce = copy.copy(e)
+                ce.instance_id = f"{e.instance_id}_c{i}"
+                ce.hp = per_hp
+                ce.hp_max = per_hp
+                ce.quantity = 1
+                expanded_enemies.append(ce)
         state = CombatState(
-            enemies=combat_init.enemies,
+            enemies=expanded_enemies,
             player_hp=player.derived.HP,
             player_hp_max=player.derived.HP,
             player_san=player.derived.SAN,
@@ -419,7 +453,7 @@ class CombatSystem:
 
         # Build initiative order: (actor_id, DEX)
         order = [("player", player.stats.DEX if hasattr(player, 'stats') else 50)]
-        for enemy in combat_init.enemies:
+        for enemy in expanded_enemies:
             dex = 50
             if hasattr(enemy, 'attributes'):
                 dex = enemy.attributes.get("DEX", 50)
@@ -431,7 +465,7 @@ class CombatSystem:
 
         first_actor = state.initiative_order[0]
         state.is_player_turn = (first_actor == "player")
-        for e in combat_init.enemies:
+        for e in expanded_enemies:
             if getattr(e, 'boss_mechanics', ''):
                 state._boss_hp_max = getattr(e, 'hp', state.player_hp)
                 break

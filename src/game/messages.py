@@ -164,6 +164,7 @@ class PlayerFacingSnapshot:
     exits: list[dict] = field(default_factory=list)  # [{"target":"...","method":"..."}]
     time: dict = field(default_factory=dict)          # {"game_time": 0, "time_context": ""}
     npcs: list[dict] = field(default_factory=list)    # [{"name":"...","brief":"...","demeanor":"..."}]
+    enemies: list[dict] = field(default_factory=list)  # [{"enemy_ref":"...","status":"...","quantity":1}]
     combat: dict | None = None         # {"outcome","narrative","is_boss"} or None
     skill_checks: list[SkillCheckResult] = field(default_factory=list)
     investigator: Optional[Investigator] = None  # 调查员对象，可读取 weapons / item_manager

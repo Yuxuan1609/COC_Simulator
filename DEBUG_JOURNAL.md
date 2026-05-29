@@ -373,3 +373,22 @@
 - **根因**：`game_loop.py` 返回 `PlayerFacingSnapshot` dataclass，消费端用 `.get("key")` 当 dict 访问
 - **解决**：`_g(obj, key, default)` 辅助函数——对 dict 用 `.get()`，对 dataclass 用 `getattr()`。在 `_format_snapshot_chapters` 中全面替换 `.get()` → `_g()`
 - **教训**：dataclass 和 dict 在消费端最好统一类型。无法统一时在入口做 isinstance 分派或统一转换
+
+## 61. JSON 配置 → 运行时字段断裂导致静默失效（连锁 5 层）
+
+- **症状**：(a) 拾取武器后战斗无伤害；(b) World AT 生成的敌人不触发战斗；(c) Boss 攻击无伤害；(d) LLM 修正从不触发；(e) damage 格式 crash
+- **根因链**：一次 damage 格式迁移（str→dict）触发 5 层断裂：
+  1. **damage dict→Weapon.str** — `Weapon` 类 `damage: str`，拾取时传入了 dict，combat `_get_player_actions` 读到的仍是 dict → `_roll_damage` 处理 dict（兼容）但特殊规则武器 base 伤害 0
+  2. **special_rules 未传播** — `Weapon` 类无 `special_rules` 字段，拾取代码只存 name/skill/damage → `_any_special_rules` 始终 False → LLM 修正不触发
+  3. **status 默认 neutral** — `EnemyInstance.status` 默认 `"neutral"`，`spawn()` 未从库读 → LLM 战斗判定看到中立敌人跳过
+  4. **Boss attack dice_n:0** — Boss 攻击描述是特殊效果（POW/SAN 损失），但基础 damage=0 + 无 special_rules → 攻击命中但无伤害
+  5. **拾取代码同步遗漏** — `_wattr` helper 只加到一个拾取路径，另外两个路径仍用旧字段
+- **解决**：逐层修复传播链；`LibraryEnemy` 加 `status: "hostile"` 默认 + `spawn()` 读取；`Weapon` 类新增 5 个字段 + 拾取代码统一用 `_wattr()`；Boss 加 `special_rules`；CLI 补 `_llm_correct_enemy_round`
+- **教训**：见 LEARNING_JOURNAL "JSON 配置库与运行时的字段传播链"
+
+## 62. LLM 返回编造的 instance_id → 战斗永不触发
+
+- **症状**：LLM combat entry 判定 `enter_combat=True`，返回 `enemy_instance_ids=["Clicker_1","Clicker_2"]`，但实际 ID 是 `Clicker_bdef558a`。`get_by_id("Clicker_1")` → None → 敌人列表为空 → 不进入战斗
+- **根因**：`get_combat_context` 没暴露真实 instance_id，LLM 自己猜的。更根本的问题是让 LLM 跨越语义判断去做精确数据引用
+- **解决**：LLM 只返回 `enter_combat: bool`，keeper 直接从 `get_active_in_scene()` 收集当前场景所有存活敌人，不再依赖 LLM 返回的 ID 列表。`all_enemy_iids` 也从 `combat_candidates` 直接收集
+- **教训**：见 LEARNING_JOURNAL "LLM 只做布尔决策，确定性代码做数据查找"
