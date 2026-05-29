@@ -14,12 +14,18 @@
       "attacks": [
         {
           "name": "噬咬",
-          "damage": "1D8+DB",
+          "damage": {"dice_n": 1, "dice_d": 8, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 50,
+          "weight": 2,
           "notes": ""
         },
         {
           "name": "利爪",
-          "damage": "1D6+DB",
+          "damage": {"dice_n": 1, "dice_d": 6, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 45,
+          "weight": 1,
           "notes": ""
         }
       ],
@@ -35,6 +41,9 @@
       ],
       "san_loss": "0/1D4 (目睹), 1/1D6 (被攻击)",
       "combat_behavior": "[adjacent_aware] | 优先攻击发出最大声音的目标。若无人出声则随机攻击。被击伤后会狂暴，每轮攻击两次。",
+      "phases": [
+        {"trigger": "hp_below_pct:0.5", "name": "狂暴", "overrides": {"multi_attack": 2}, "description": "Clicker受伤后陷入狂暴，每轮攻击两次"}
+      ],
       "multi_attack": 1,
       "damage_multipliers": {},
       "dodge_bonus": 0,
@@ -55,12 +64,18 @@
       "attacks": [
         {
           "name": "利爪",
-          "damage": "1D6+DB",
+          "damage": {"dice_n": 1, "dice_d": 6, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 45,
+          "weight": 2,
           "notes": ""
         },
         {
           "name": "抓取",
-          "damage": "特殊",
+          "damage": {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": false},
+          "skill_name": "格斗",
+          "skill_value": 50,
+          "weight": 1,
           "notes": "擒抱后每轮自动造成1D3+DB伤害"
         }
       ],
@@ -72,6 +87,7 @@
       ],
       "san_loss": "0/1D6",
       "combat_behavior": "[avoidable] | 偏好伏击，从水中或暗处突袭。受伤后会撤退到水中。",
+      "special_rules": "受伤后攻击变得更加凶猛，伤害+2。每轮对流血目标额外造成1点撕裂伤害。",
       "description": "克苏鲁神话经典两栖人形生物，偏好水下伏击，受伤后会撤退"
     },
     {
@@ -88,12 +104,18 @@
       "attacks": [
         {
           "name": "噬咬",
-          "damage": "1D6+DB",
+          "damage": {"dice_n": 1, "dice_d": 6, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 45,
+          "weight": 1,
           "notes": ""
         },
         {
           "name": "利爪",
-          "damage": "1D4+DB",
+          "damage": {"dice_n": 1, "dice_d": 4, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 50,
+          "weight": 2,
           "notes": "两次攻击/轮"
         }
       ],
@@ -125,12 +147,18 @@
       "attacks": [
         {
           "name": "匕首",
-          "damage": "1D4+DB",
+          "damage": {"dice_n": 1, "dice_d": 4, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 40,
+          "weight": 2,
           "notes": ""
         },
         {
           "name": "拳头",
-          "damage": "1D3+DB",
+          "damage": {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 35,
+          "weight": 1,
           "notes": ""
         }
       ],
@@ -158,12 +186,18 @@
       "attacks": [
         {
           "name": "镐头",
-          "damage": "1D8+DB",
+          "damage": {"dice_n": 1, "dice_d": 8, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 35,
+          "weight": 2,
           "notes": "作为矿工自带工具"
         },
         {
           "name": "徒手",
-          "damage": "1D3+DB",
+          "damage": {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 30,
+          "weight": 1,
           "notes": ""
         }
       ],
@@ -195,7 +229,10 @@
       "attacks": [
         {
           "name": "徒手",
-          "damage": "1D3",
+          "damage": {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": false},
+          "skill_name": "格斗",
+          "skill_value": 20,
+          "weight": 1,
           "notes": "弱攻击，测试用"
         }
       ],
@@ -218,13 +255,19 @@
       "attacks": [
         {
           "name": "触手鞭击",
-          "damage": "1D6+DB",
+          "damage": {"dice_n": 1, "dice_d": 6, "bonus": 0, "use_db": true},
+          "skill_name": "格斗",
+          "skill_value": 55,
+          "weight": 2,
           "notes": "左手的触手状手指可延伸攻击，射程3米"
         },
         {
           "name": "铜镜冲击",
-          "damage": "特殊",
-          "notes": "用铜镜照射目标，目标需POW对抗，失败失去1D3记忆片段（对应1点POW临时损失）"
+          "damage": {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": false},
+          "skill_name": "POW对抗",
+          "skill_value": 80,
+          "weight": 1,
+          "notes": "用铜镜照射目标，目标需POW对抗，失败失去1D3记忆片段"
         }
       ],
       "special_abilities": [

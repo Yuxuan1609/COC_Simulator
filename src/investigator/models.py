@@ -161,6 +161,7 @@ class Investigator:
         appearance: str = "",
         personal_description: str = "",
         avatar_url: str = "",       # optional avatar image URL
+        extra: str = "",            # reserved for future trait/mechanic extensions
     ):
         self.name = name
         self.age = age
@@ -179,6 +180,7 @@ class Investigator:
         self.appearance = appearance
         self.personal_description = personal_description
         self.avatar_url = avatar_url
+        self.extra = extra
 
     # ── 兼容旧 Player 接口 ──
 

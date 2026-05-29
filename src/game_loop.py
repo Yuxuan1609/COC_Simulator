@@ -259,12 +259,14 @@ def run_turn(game: dict, user_input: str,
     combat_boss_loss = False
     combat_init = result.get("combat_init")
     if combat_init and combat_init.enemies:
+        # 每场战斗最多 5 个敌人
+        enemies = combat_init.enemies[:5]
         enemy_names = ", ".join(
             getattr(e, 'enemy_ref', getattr(e, 'name', '未知敌人'))
-            for e in combat_init.enemies
+            for e in enemies
         )
         defeated_ids = []
-        for ei in combat_init.enemies:
+        for ei in enemies:
             eid = getattr(ei, 'instance_id', '')
             if eid:
                 defeated_ids.append(eid)
@@ -278,17 +280,14 @@ def run_turn(game: dict, user_input: str,
         )
         combat_is_boss = bool(world.bosses and world.bosses.active_boss_id)
 
-        # Write back HP/SAN (unchanged — no damage in short-circuit)
-        # Callback to EnemyManager
-        result_dict = {
-            "outcome": "win",
+        # 统一战斗善后：EnemyManager 清理 + Boss 标记
+        world.enemy_manager.exit_combat({
+            "outcome": combat_result_outcome,
             "defeated_instance_ids": defeated_ids,
-        }
-        world.enemy_manager.exit_combat(result_dict)
-
+        })
         if combat_is_boss:
             world.bosses.resolve_outcome(CombatResult(
-                outcome="win",
+                outcome=combat_result_outcome,
                 defeated_instance_ids=defeated_ids,
                 player_hp=combat_init.player.derived.HP if combat_init.player else 10,
                 player_san=combat_init.player.derived.SAN if combat_init.player else 60,

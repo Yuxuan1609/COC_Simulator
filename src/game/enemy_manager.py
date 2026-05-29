@@ -70,6 +70,8 @@ class EnemyManager:
         inst.damage_multipliers = dict(getattr(lib_enemy, 'damage_multipliers', {}))
         inst.dodge_bonus = getattr(lib_enemy, 'dodge_bonus', 0)
         inst.special_rules = getattr(lib_enemy, 'special_rules', '')
+        inst.phases = list(getattr(lib_enemy, 'phases', []))
+        inst.boss_mechanics = getattr(lib_enemy, 'boss_mechanics', '')
         self._instances[instance_id] = inst
         return inst
 

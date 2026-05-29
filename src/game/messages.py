@@ -115,10 +115,16 @@ class CombatInit:
     player: Any = None
     scene: str = ""
     initiative_context: str = ""
-    environment_actions: list[dict] = field(default_factory=list)  # [{"id":"panel","label":"操作面板","skill":"电气维修"}, ...]
+    environment_actions: list[dict] = field(default_factory=list)
     player_action: str = ""
     player_targets: list[str] = field(default_factory=list)
     player_extra: str = ""
+
+    MAX_ENEMIES: int = field(default=5, init=False, repr=False)
+
+    def __post_init__(self):
+        if len(self.enemies) > self.MAX_ENEMIES:
+            self.enemies = self.enemies[:self.MAX_ENEMIES]
 
 
 @dataclass

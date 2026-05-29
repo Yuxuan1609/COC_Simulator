@@ -10,17 +10,34 @@ import re
 @dataclass
 class EnemyAttack:
     name: str
-    damage: str
+    damage: dict = field(default_factory=lambda: {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": False})
+    skill_name: str = ""
+    skill_value: int = 0
+    weight: int = 1
     notes: str = ""
 
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
     def to_dict(self) -> dict:
-        return {"name": self.name, "damage": self.damage, "notes": self.notes}
+        return {
+            "name": self.name, "damage": self.damage,
+            "skill_name": self.skill_name, "skill_value": self.skill_value,
+            "weight": self.weight, "notes": self.notes,
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> "EnemyAttack":
+        dmg = data["damage"]
+        if isinstance(dmg, str):
+            from library.weapons import _damage_str_to_dict
+            dmg = _damage_str_to_dict(dmg)
         return cls(
             name=data["name"],
-            damage=data["damage"],
+            damage=dmg,
+            skill_name=data.get("skill_name", ""),
+            skill_value=data.get("skill_value", 0),
+            weight=data.get("weight", 1),
             notes=data.get("notes", ""),
         )
 
@@ -54,6 +71,7 @@ class LibraryEnemy:
     damage_multipliers: dict = field(default_factory=dict)
     dodge_bonus: int = 0
     special_rules: str = ""
+    phases: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -73,6 +91,7 @@ class LibraryEnemy:
             "damage_multipliers": self.damage_multipliers,
             "dodge_bonus": self.dodge_bonus,
             "special_rules": self.special_rules,
+            "phases": self.phases,
         }
 
     @classmethod
@@ -108,6 +127,7 @@ class LibraryEnemy:
             damage_multipliers=data.get("damage_multipliers", {}),
             dodge_bonus=data.get("dodge_bonus", 0),
             special_rules=data.get("special_rules", ""),
+            phases=data.get("phases", []),
         )
 
 

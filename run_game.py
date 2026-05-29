@@ -204,7 +204,14 @@ def _scene_text(world):
         return "（未知场景）"
     return _format_snapshot_chapters(snap)
 
-def _format_snapshot_chapters(snap: dict) -> str:
+def _g(obj, key, default=None):
+    """Safe getter that works for both dicts and dataclass objects."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _format_snapshot_chapters(snap) -> str:
     """将 PlayerFacingSnapshot 格式化为半结构化 Markdown。
     
     输出示例:
@@ -223,9 +230,9 @@ def _format_snapshot_chapters(snap: dict) -> str:
     chapters = []
     
     # Scene
-    name = snap.get("scene_name", "")
-    desc = snap.get("scene_description", "")
-    exits = snap.get("exits", [])
+    name = _g(snap, "scene_name", "")
+    desc = _g(snap, "scene_description", "")
+    exits = _g(snap, "exits", [])
     scene_prose = name or "未知"
     if desc:
         scene_prose += f"。{desc.strip().rstrip('。')}"
@@ -236,19 +243,19 @@ def _format_snapshot_chapters(snap: dict) -> str:
     chapters.append(f"## 场景\n{scene_prose}")
     
     # NPCs
-    npcs = snap.get("npcs", [])
+    npcs = _g(snap, "npcs", [])
     if npcs:
         npc_prose = "、".join(
-            f"{n.get('name','?')}——{n.get('brief','')}{'，'+n.get('demeanor','') if n.get('demeanor') else ''}"
+            f"{_g(n, 'name', '?')}——{_g(n, 'brief', '')}{'，'+_g(n,'demeanor','') if _g(n,'demeanor') else ''}"
             for n in npcs
         )
         chapters.append(f"## 角色\n{npc_prose}。")
     
     # Time — clock.to_dict() returns {"game_time": int, "time_context": str}
-    t = snap.get("time", {})
+    t = _g(snap, "time", {})
     if t:
         parts = []
-        gt = t.get("game_time", 0)
+        gt = _g(t, "game_time", 0)
         day = gt // 1440 if gt else 0
         hour_val = (gt % 1440) // 60 if gt else 0
         min_val = gt % 60
@@ -265,28 +272,28 @@ def _format_snapshot_chapters(snap: dict) -> str:
             chapters.append(f"## 时间\n{'，'.join(parts)}\u3002")
     
     # Combat
-    combat = snap.get("combat")
+    combat = _g(snap, "combat")
     if combat:
-        outcome = combat.get("outcome", "?")
-        narrative = combat.get("narrative", "")
+        outcome = _g(combat, "outcome", "?")
+        narrative = _g(combat, "narrative", "")
         chapters.append(f"## 战斗\n结果: {outcome}\u3002{narrative}")
     
     # Skills
-    skill_checks = snap.get("skill_checks", [])
+    skill_checks = _g(snap, "skill_checks", [])
     if skill_checks:
         tier_labels = {"extreme": "极难成功", "hard": "困难成功", "regular": "常规成功",
                        "failure": "失败", "fumble": "大失败"}
         lines = []
         for sc in skill_checks:
-            eid = sc.get("entity_id", "?")
-            tier = sc.get("tier", "")
+            eid = _g(sc, "entity_id", "?")
+            tier = _g(sc, "tier", "")
             tier_label = tier_labels.get(tier, tier or "?")
-            raw = sc.get("raw_roll", 0)
-            target = sc.get("target", 0)
+            raw = _g(sc, "raw_roll", 0)
+            target = _g(sc, "target", 0)
             dice_str = f"（D100={raw}/{target}）" if raw else ""
-            succ = "成功" if sc.get("success") else "失败"
-            enh = sc.get("enhancement")
-            enh_str = f"→特质增强为{enh.get('tier','')}" if enh and enh.get("tier") else ""
+            succ = "成功" if _g(sc, "success") else "失败"
+            enh = _g(sc, "enhancement")
+            enh_str = f"→特质增强为{_g(enh,'tier','')}" if enh and _g(enh, "tier") else ""
             lines.append(f"{eid}: {succ}，{tier_label}{dice_str}{'，'+enh_str if enh_str else ''}")
         chapters.append(f"## 技能\n" + "\n".join(lines))
     

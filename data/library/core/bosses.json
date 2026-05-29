@@ -5,7 +5,7 @@
     "attributes": {"STR": 200, "CON": 300, "SIZ": 250, "DEX": 10, "POW": 150},
     "armor": "10点厚皮（常规武器无效，需环境交互破解）",
     "attacks": [
-      {"name": "吞噬车厢", "damage": "即死", "notes": "环境性攻击，非直接战斗伤害"}
+      {"name": "吞噬车厢", "damage": {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": false}, "skill_name": "", "skill_value": 0, "weight": 1, "notes": "环境性攻击，非直接战斗伤害"}
     ],
     "special_abilities": [
       {"name": "不可阻挡", "desc": "常规武器攻击无法造成有效伤害"}
@@ -26,8 +26,8 @@
     "attributes": {"STR": 80, "CON": 70, "SIZ": 65, "DEX": 60, "POW": 40},
     "armor": "2点厚皮（对普通武器有一定承受力）",
     "attacks": [
-      {"name": "扑咬", "damage": "1D8+DB", "notes": "双爪按住猎物后低头撕咬颈部"},
-      {"name": "利爪挥击", "damage": "1D6+DB", "notes": "绕对手跛行后挥击"}
+      {"name": "扑咬", "damage": {"dice_n": 1, "dice_d": 8, "bonus": 0, "use_db": true}, "skill_name": "格斗", "skill_value": 60, "weight": 2, "notes": "双爪按住猎物后低头撕咬颈部"},
+      {"name": "利爪挥击", "damage": {"dice_n": 1, "dice_d": 6, "bonus": 0, "use_db": true}, "skill_name": "格斗", "skill_value": 55, "weight": 1, "notes": "绕对手跛行后挥击"}
     ],
     "special_abilities": [
       {"name": "银器弱点", "desc": "被银制物品刺中后诅咒碎裂，强制恢复人形。银器净化绝对生效"},
@@ -45,8 +45,8 @@
     "attributes": {"STR": 300, "CON": 500, "SIZ": 400, "DEX": 5, "POW": 200},
     "armor": "20点异界物质（常规武器无效；需以古代封印术式强制压制后，以仪式武器攻击才可造成伤害）",
     "attacks": [
-      {"name": "吞噬存在", "damage": "特殊", "notes": "每轮吞噬一个目标的全部记忆和身份，目标永久失去1D6+2点POW。被吞噬者成为无意识空壳"},
-      {"name": "深渊凝视", "damage": "特殊", "notes": "所有目击者需进行SAN检定，失败额外失去1D10点SAN并陷入临时疯狂"}
+      {"name": "吞噬存在", "damage": {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": false}, "skill_name": "POW对抗", "skill_value": 200, "weight": 2, "notes": "每轮吞噬一个目标的全部记忆和身份，目标永久失去1D6+2点POW。被吞噬者成为无意识空壳"},
+      {"name": "深渊凝视", "damage": {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": false}, "skill_name": "SAN对抗", "skill_value": 200, "weight": 1, "notes": "所有目击者需进行SAN检定，失败额外失去1D10点SAN并陷入临时疯狂"}
     ],
     "special_abilities": [
       {"name": "不可直视", "desc": "雕像的形态是对三维空间的亵渎。任何试图理解其形状的行为需要INT检定，失败失去1/1D6 SAN"},

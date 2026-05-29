@@ -11,38 +11,81 @@ from config import COMBAT_LLM_ENHANCEMENT
 
 # ── Module-level helpers ──
 
-def _roll_damage(formula: str, STR: int, SIZ: int) -> int:
-    """Roll damage from formula like '1D6+DB' or '1D3'."""
+def _roll_damage(damage_spec, STR: int = 50, SIZ: int = 50) -> int:
+    """Roll damage from structured spec or legacy string formula.
+
+    新格式 (dict):
+        {"dice_n": int, "dice_d": int, "bonus": int, "use_db": bool}
+        伤害 = Σ(dice_n × D dice_d) + bonus + DB(if use_db)
+
+    旧格式 (str):  "1D6+DB", "1D10+2", "4D6/2D6/1D6" 等，自动解析。
+    """
     from investigator.rules import calc_db
+
+    if damage_spec is None:
+        return 0
+    if not isinstance(damage_spec, (str, dict)):
+        return 0
+
+    # ── 旧格式字符串 → 自动转 dict ──
+    if isinstance(damage_spec, str):
+        damage_spec = _parse_legacy_damage(damage_spec)
+
     total = 0
-    parts = formula.replace(" ", "").split("+")
+
+    # base dice
+    dice_n = damage_spec.get("dice_n", 0)
+    dice_d = damage_spec.get("dice_d", 0)
+    if dice_n > 0 and dice_d > 0:
+        for _ in range(dice_n):
+            total += random.randint(1, dice_d)
+
+    # flat bonus
+    total += damage_spec.get("bonus", 0)
+
+    # damage bonus
+    if damage_spec.get("use_db", False):
+        db = calc_db(STR, SIZ)
+        if db.startswith("+"):
+            db = db[1:]
+        if db.startswith("-"):
+            total += int(db)
+        elif "D" in db:
+            total += _roll_damage(db, STR, SIZ)
+        else:
+            try:
+                total += int(db)
+            except ValueError:
+                pass
+
+    return max(0, total)
+
+
+def _parse_legacy_damage(formula: str) -> dict:
+    """Convert legacy damage formula string to structured dict. 一次迁移用。"""
+    f = formula.replace(" ", "")
+    spec = {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": False}
+
+    # 散弹枪射程格式
+    if "/" in f:
+        f = f.split("/")[0].strip()
+
+    parts = f.split("+")
     for part in parts:
         part = part.strip()
-        if not part:
-            continue
         if part == "DB":
-            db = calc_db(STR, SIZ)
-            if db.startswith("+"):
-                db = db[1:]
-            if db.startswith("-"):
-                total += int(db)  # negative number string
-            elif "D" in db:
-                total += _roll_damage(db, STR, SIZ)
-            else:
-                total += int(db)
+            spec["use_db"] = True
         elif "D" in part:
             m = re.match(r"(\d*)D(\d+)", part)
             if m:
-                count = int(m.group(1)) if m.group(1) else 1
-                sides = int(m.group(2))
-                for _ in range(count):
-                    total += random.randint(1, sides)
+                spec["dice_n"] = int(m.group(1)) if m.group(1) else 1
+                spec["dice_d"] = int(m.group(2))
         else:
             try:
-                total += int(part)
+                spec["bonus"] += int(part)
             except ValueError:
                 pass
-    return max(0, total)
+    return spec
 
 
 def _apply_armor(damage: int, armor: str) -> int:
@@ -154,6 +197,13 @@ class CombatSystem:
 
             round_targets = targets if targets else [alive_enemies[0].instance_id]
 
+            # ── 玩家多轮攻击：根据武器 multi_attack 扩展目标列表 ──
+            match = next((a for a in available if a["id"] == action_id), None)
+            multi = match.get("multi_attack", 1) if match else 1
+            if multi > len(round_targets):
+                last = round_targets[-1] if round_targets else alive_enemies[0].instance_id
+                round_targets = round_targets + [last] * (multi - len(round_targets))
+
             player_actions_this_round = []
             enemy_actions_this_round = []
             state.log = []
@@ -173,6 +223,7 @@ class CombatSystem:
                         player_actions_this_round.append({
                             "action_type": pa.action_type,
                             "target": pa.target,
+                            "weapon": pa.weapon,
                             "roll": pa.roll,
                             "tier": pa.tier,
                             "damage": pa.damage,
@@ -219,14 +270,46 @@ class CombatSystem:
                 snapshot = self._build_battle_snapshot(state, player, boss_phase)
                 rresult = self._llm_correct_round(
                     rresult, combat_init, state.enemies,
-                    player_extra, snapshot, boss_phase
+                    player_extra, snapshot, boss_phase, player_actions_this_round
                 )
 
-            if rresult.get("player_damage", 0) > 0:
-                target_iid = rresult.get("player_target", "")
-                enemy = next((e for e in state.enemies if e.instance_id == target_iid), None)
-                if enemy:
-                    enemy.hp = max(0, getattr(enemy, 'hp', 10) - rresult["player_damage"])
+                # ── 敌人 LLM 修正：每个有 special_rules 的敌人独立调用 ──
+                inv_context = getattr(player, 'personal_description', '') or ''
+                if getattr(player, 'extra', ''):
+                    inv_context = (inv_context + '\n' + player.extra).strip()
+                for ea_data in enemy_actions_this_round:
+                    old_dmg = ea_data.get("damage", 0)
+                    if old_dmg <= 0:
+                        continue
+                    enemy_id = ea_data.get("actor", "")
+                    enemy = next((e for e in state.enemies
+                                 if getattr(e, 'instance_id', '') == enemy_id), None)
+                    if enemy and getattr(enemy, 'special_rules', ''):
+                        corrected = self._llm_correct_enemy_round(
+                            enemy, ea_data, player, player_extra, inv_context
+                        )
+                        new_dmg = max(0, corrected.get("damage", old_dmg))
+                        state.player_hp = max(0, state.player_hp + old_dmg - new_dmg)
+                        ea_data["damage"] = new_dmg
+                        if corrected.get("narrative"):
+                            ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
+
+            # 玩家伤害结算 — 每击独立应用
+            for pa in player_actions_this_round:
+                if pa.get("action_type") != "attack":
+                    continue
+                dmg = pa.get("damage", 0)
+                tgt_iid = pa.get("target", "")
+                enemy = next((e for e in state.enemies if getattr(e, 'instance_id', '') == tgt_iid), None)
+                if not enemy:
+                    continue
+                # LLM 修正后的伤害优先，int() 防 None/str
+                corrected_dmg = rresult.get("player_damage", 0)
+                try:
+                    effective = max(0, int(corrected_dmg if corrected_dmg is not None else dmg))
+                except (ValueError, TypeError):
+                    effective = max(0, int(dmg) if dmg else 0)
+                enemy.hp = max(0, getattr(enemy, 'hp', 10) - effective)
 
             for enemy in state.enemies:
                 if getattr(enemy, 'hp', 1) <= 0 or getattr(enemy, 'status', '') == 'dead':
@@ -575,7 +658,7 @@ class CombatSystem:
         """Weight-based attack selection from enemy attack list."""
         attacks = enemy.attacks if hasattr(enemy, 'attacks') else []
         if not attacks:
-            return {"name": "攻击", "damage": "1D3", "weight": 1}
+            return {"name": "攻击", "damage": {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False}, "weight": 1}
         weights = [getattr(a, "weight", 1) for a in attacks]
         return random.choices(attacks, weights=weights, k=1)[0]
 
@@ -614,7 +697,7 @@ class CombatSystem:
         if action.success:
             en_str = enemy_attrs.get("STR", 50)
             en_siz = enemy_attrs.get("SIZ", 50)
-            damage_formula = attack.get("damage", "1D3") if isinstance(attack, dict) else getattr(attack, "damage", "1D3")
+            damage_formula = attack.get("damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False}) if isinstance(attack, dict) else getattr(attack, "damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False})
             damage = _roll_damage(damage_formula, en_str, en_siz)
             action.damage = damage
             action.hp_before = state.player_hp
@@ -664,7 +747,7 @@ class CombatSystem:
         if action.success:
             en_str = enemy_attrs.get("STR", 50)
             en_siz = enemy_attrs.get("SIZ", 50)
-            damage_formula = attack.get("damage", "1D3") if isinstance(attack, dict) else getattr(attack, "damage", "1D3")
+            damage_formula = attack.get("damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False}) if isinstance(attack, dict) else getattr(attack, "damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False})
             damage = _roll_damage(damage_formula, en_str, en_siz)
             action.damage = damage
             action.hp_before = state.player_hp
@@ -786,62 +869,160 @@ class CombatSystem:
         }
 
     def _llm_correct_round(self, round_result: dict, combat_init, enemies,
-                           player_extra: str, battle_snapshot: str, boss_phase: str) -> dict:
-        """Call LLM to correct RoundResult based on special_rules. Fallback to original."""
+                           player_extra: str, battle_snapshot: str,
+                           boss_phase: str, player_actions: list = None) -> dict:
+        """LLM 修正玩家回合伤害。自然语言输入，仅当前武器 special_rules。"""
         try:
             from llm import call_deepseek
             from config_llm import LLM_FLASH_MODEL
             import json as _json
 
-            weapon_rules = " ".join(
-                getattr(w, 'special_rules', '')
-                for w in getattr(combat_init.player, 'weapons', [])
-                if getattr(w, 'special_rules', '')
-            )
-            boss_rules = " ".join(
-                getattr(e, 'special_rules', '')
-                for e in enemies if getattr(e, 'boss_mechanics', '')
-            )
-            enemy_rules = " ".join(
-                getattr(e, 'special_rules', '')
-                for e in enemies if not getattr(e, 'boss_mechanics', '')
-            )
+            player_actions = player_actions or []
+            player = combat_init.player
 
-            prompt = f"""根据以下 special_rules 修正 RoundResult 的字段值。
-只能修改参数值（抗性、伤害倍率、目标映射、状态变更、叙事文本），不能改变判决逻辑。
+            # ── 调查员背景 ──
+            inv_desc = getattr(player, 'personal_description', '') or ''
+            if getattr(player, 'extra', ''):
+                inv_desc = (inv_desc + '\n' + player.extra).strip()
+            inv_name = getattr(player, 'name', '调查员')
 
-【RoundResult】
-{_json.dumps(round_result, ensure_ascii=False, indent=2)}
+            # ── 本轮所有攻击动作（支持 multi_attack） ──
+            active_weapon_rules = ""
+            active_weapon_name = ""
+            attack_lines = []
+            for i, pa in enumerate(player_actions):
+                if pa.get("action_type") != "attack":
+                    continue
+                if not active_weapon_name and pa.get("weapon"):
+                    active_weapon_name = pa["weapon"]
+                    for w in getattr(player, 'weapons', []):
+                        if getattr(w, 'name', '') == active_weapon_name:
+                            active_weapon_rules = getattr(w, 'special_rules', '') or ''
+                            break
+                tgt = next((e for e in enemies if getattr(e, 'instance_id', '') == pa.get("target", "")), None)
+                tgt_name = getattr(tgt, 'enemy_ref', pa.get("target", "?"))
+                attack_lines.append(
+                    f"第{i+1}击: {active_weapon_name or '基础攻击'} → {tgt_name}"
+                    f" | D100={pa.get('roll', 0)} → {pa.get('tier', '')}"
+                    f" | 原始伤害{pa.get('damage', 0)}（{pa.get('damage_type', '物理')}）"
+                )
+            if not attack_lines and player_actions:
+                pa = player_actions[0]
+                attack_lines.append(
+                    f"动作: {pa.get('action_type', '?')}"
+                    f" | D100={pa.get('roll', 0)} → {pa.get('tier', '')}"
+                )
 
-【战场快照】
-{battle_snapshot}
-{f"【Boss阶段】{boss_phase}" if boss_phase else ""}
+            # ── 目标敌人 ──
+            target_iid = round_result.get("player_target", "")
+            target_enemy = next((e for e in enemies if getattr(e, 'instance_id', '') == target_iid), None)
 
-【武器 special_rules】
-{weapon_rules or "（无）"}
+            lines = []
+            if inv_desc:
+                lines.append(f"【调查员背景】\n{inv_name}: {inv_desc}")
+            extra = (player_extra or '').strip()
+            if extra:
+                lines.append(f"【本轮额外意图】\n{extra}\n（仅在有特殊规则且意图匹配时生效）")
 
-【Boss special_rules】
-{boss_rules or "（无）"}
+            lines.append(f"玩家使用「{active_weapon_name or '基础攻击'}」发动攻击：")
+            lines.extend(attack_lines)
 
-【敌人 special_rules】
-{enemy_rules or "（无）"}
+            if active_weapon_rules:
+                lines.append(f"\n【武器特殊规则】\n{active_weapon_name}: {active_weapon_rules}")
 
-【玩家额外描述】
-{player_extra or "（无）"}
+            if target_enemy:
+                e = target_enemy
+                hp = getattr(e, 'hp', 0)
+                hp_max = getattr(e, 'hp_max', hp) or 1
+                lines.append(f"\n【目标当前状态】")
+                lines.append(f"{getattr(e, 'enemy_ref', '?')}: HP {hp}/{hp_max}")
 
-返回 JSON：
-{{"corrected": 与 RoundResult 完全同结构的 JSON}}
-直接输出 JSON。"""
+            # 目标 + 在场所有敌人特殊规则
+            all_sr = []
+            for e in enemies:
+                sr = getattr(e, 'special_rules', '') or ''
+                if sr:
+                    tag = "[Boss]" if getattr(e, 'boss_mechanics', '') else ""
+                    same_target = (getattr(e, 'instance_id', '') == target_iid)
+                    prefix = "→ " if same_target else ""
+                    all_sr.append(f"{prefix}{getattr(e, 'enemy_ref', '?')}{tag}: {sr}")
+            if all_sr:
+                lines.append(f"\n【目标/在场敌人特殊规则】")
+                lines.extend(all_sr)
+
+            lines.append(f"\n【修正指令】")
+            if active_weapon_rules or any(getattr(e, 'special_rules', '') for e in enemies):
+                lines.append("根据上述特殊规则和额外意图，修正 player_damage 和 narrative。")
+            else:
+                lines.append("无特殊规则，原值返回。")
+            lines.append("返回 JSON：{\"player_damage\": <int>, \"narrative\": \"<string>\"}")
 
             response = call_deepseek(
-                prompt, json_mode=True, model=LLM_FLASH_MODEL,
-                system="你是 COC 7th 战斗裁判助理。根据 special_rules 修正 RoundResult 的字段值。",
-                fallback_schema={"corrected": round_result},
+                "\n".join(lines), json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是 COC 7th 战斗裁判助理。根据武器/敌人特殊规则修正伤害值。narrative 用中文简述修正理由。",
+                fallback_schema={"player_damage": round_result.get("player_damage", 0),
+                                "narrative": round_result.get("narrative", "")},
             )
             data = _json.loads(response) if isinstance(response, str) else response
-            return data.get("corrected", round_result)
+            corrected = dict(round_result)
+            corrected["player_damage"] = int(data.get("player_damage", round_result.get("player_damage", 0)))
+            corrected["narrative"] = data.get("narrative", round_result.get("narrative", ""))
+            return corrected
         except Exception:
             return round_result
+
+    def _llm_correct_enemy_round(self, enemy, action_data: dict, player,
+                                 player_extra: str = "",
+                                 investigator_context: str = "") -> dict:
+        """LLM 修正敌人/Boss 攻击伤害。与玩家修正独立，可并行。"""
+        try:
+            from llm import call_deepseek
+            from config_llm import LLM_FLASH_MODEL
+            import json as _json
+
+            enemy_name = getattr(enemy, 'enemy_ref', '敌人')
+            atk_name = action_data.get("action_type", "攻击")
+            roll = action_data.get("roll", 0)
+            tier = action_data.get("tier", "")
+            damage = action_data.get("damage", 0)
+            dmg_type = action_data.get("damage_type", "物理")
+            enemy_rules = getattr(enemy, 'special_rules', '') or ''
+            inv_name = getattr(player, 'name', '调查员')
+
+            lines = []
+            if investigator_context:
+                lines.append(f"【调查员背景】\n{inv_name}: {investigator_context}")
+            extra = (player_extra or '').strip()
+            if extra:
+                lines.append(f"【本轮额外意图】\n{extra}\n（可能影响敌人攻击效果）")
+
+            lines.append(f"{enemy_name}使用「{atk_name}」攻击{inv_name}")
+            lines.append(f"D100={roll} → {tier}")
+            lines.append(f"原始伤害值: {damage}（{dmg_type}）")
+
+            if enemy_rules:
+                lines.append(f"\n【敌人特殊规则】\n{enemy_name}: {enemy_rules}")
+
+            if investigator_context:
+                lines.append(f"\n【调查员特质影响】\n若调查员背景中有关联属性，请据此调整伤害。")
+                lines.append(f"（例如：对某类型攻击脆弱/抗性、心理创伤触发额外伤害等）")
+
+            lines.append(f"\n【修正指令】")
+            if enemy_rules:
+                lines.append("根据敌人特殊规则和调查员特质，修正伤害值和叙事。")
+            else:
+                lines.append("无特殊规则，原值返回。")
+            lines.append("返回 JSON：{\"damage\": <int>, \"narrative\": \"<string>\"}")
+
+            response = call_deepseek(
+                "\n".join(lines), json_mode=True, model=LLM_FLASH_MODEL,
+                system="你是 COC 7th 战斗裁判助理。根据敌人特殊规则和调查员特质修正伤害。narrative 用中文简述修正理由。",
+                fallback_schema={"damage": damage, "narrative": ""},
+            )
+            data = _json.loads(response) if isinstance(response, str) else response
+            return {"damage": int(data.get("damage", damage)), "narrative": data.get("narrative", "")}
+        except Exception:
+            return {"damage": int(action_data.get("damage", 0)), "narrative": ""}
 
     # ── Round processing ──
 

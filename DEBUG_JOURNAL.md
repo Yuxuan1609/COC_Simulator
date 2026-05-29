@@ -344,3 +344,32 @@
 - **解决**：三个拾取路径统一改为 `scene_weps.remove(sw)` + 条件 `del`，同时 `_weapon_offer` 拾取时匹配 `weapon_ref` 精确删除
 - **教训**：同一逻辑的多条代码路径，只要有一条正确其余必然出 bug
 - **关联**：`src/game/agents/keeper.py:297, 86, 357-359`
+
+## 57. 交互输入格式解析 — 不可见字符差异
+
+- **症状**：`choose_enemies` 的 `1x2` 格式解析失败——输入 `1x2,3x1` 后只有一个敌人生成
+- **根因**：用户可能使用 `×`（U+00D7 乘号）而非 `x`（U+0078）、`，`（U+FF0C 中文逗号）而非 `,`（U+002C）。`"x" in "1×2"` → False，`replace(",", " ")` 不匹配中文逗号
+- **解决**：放弃字符串格式解析，改为逐步交互式输入——先选类型→再选数量→空行确认。零格式风险
+- **教训**：用户输入永远不可信。`x`/`×`/`X`、`,`/`，` 在终端里肉眼无法区分。交互式逐步选择比一步式格式解析稳健得多
+
+## 58. Windows cp932/GBK 编码 — 三层表现同一根因
+
+- **症状**：(1) print 中文 crash（`UnicodeEncodeError: 'cp932'`）；(2) subprocess `capture_output=True` 管道输出 crash；(3) PowerShell 管道 `echo "a" | python script` 后中文乱码
+- **根因**：Windows 终端默认 ANSI 代码页为 cp932/GBK。影响三层：Python stdout 编码、subprocess 管道解码、PowerShell 管道编码
+- **解决**：(a) 命令前缀 `$env:PYTHONIOENCODING='utf-8'`；(b) 入口脚本 `sys.stdout.reconfigure(encoding='utf-8')`；(c) subprocess 显式传 `encoding='utf-8'`
+- **关联**：#29（GBK emoji）、#45（cp932 em dash），均为同一根因的不同表征
+- **教训**：Windows 下所有 Python 中文输出必须在 UTF-8 环境中运行。AGENTS.md 应写明编码要求
+
+## 59. Python 3.12+ f-string 内禁用反斜杠转义
+
+- **症状**：`f'(HP{getattr(e, \"hp\", 0)})'` → `SyntaxError: unexpected character after line continuation character`
+- **根因**：Python 3.12 起禁止 f-string 表达式内的反斜杠（PEP 701）
+- **解决**：改用外层不同引号类型：`f"(HP{getattr(e, 'hp', 0)})"`，或提取到外部变量
+- **教训**：f-string 表达式内混用引号时换引号类型，不要转义
+
+## 60. PlayerFacingSnapshot — dataclass 被当 dict 用 .get()
+
+- **症状**：`run_game.py:226` → `AttributeError: 'PlayerFacingSnapshot' object has no attribute 'get'`
+- **根因**：`game_loop.py` 返回 `PlayerFacingSnapshot` dataclass，消费端用 `.get("key")` 当 dict 访问
+- **解决**：`_g(obj, key, default)` 辅助函数——对 dict 用 `.get()`，对 dataclass 用 `getattr()`。在 `_format_snapshot_chapters` 中全面替换 `.get()` → `_g()`
+- **教训**：dataclass 和 dict 在消费端最好统一类型。无法统一时在入口做 isinstance 分派或统一转换

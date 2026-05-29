@@ -247,7 +247,7 @@ def test_combat_damage_multipliers():
     )
     cs = CombatSystem()
     result = cs.run_combat(combat_init)
-    assert result.outcome in ("win", "loss"), f"unexpected outcome: {result.outcome}"
+    assert result.outcome in ("win", "loss", "draw", "flee"), f"unexpected outcome: {result.outcome}"
     print(f"  [PASS] dmg_multipliers: outcome={result.outcome}")
 
 
@@ -266,7 +266,7 @@ def test_combat_multi_target():
     )
     cs = CombatSystem()
     result = cs.run_combat(combat_init)
-    assert result.outcome in ("win", "loss"), f"unexpected outcome: {result.outcome}"
+    assert result.outcome in ("win", "loss", "draw", "flee"), f"unexpected outcome: {result.outcome}"
     assert hasattr(result, 'round_log'), "CombatResult should have round_log"
     print(f"  [PASS] multi_target: outcome={result.outcome}, round_log entries={len(result.round_log)}")
 

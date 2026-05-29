@@ -4,14 +4,38 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 import json
 import os
+import re
+
+
+def _damage_str_to_dict(formula: str) -> dict:
+    """Convert legacy damage formula string to structured dict."""
+    f = formula.replace(" ", "")
+    spec = {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": False}
+    if "/" in f:
+        f = f.split("/")[0].strip()
+    for part in f.split("+"):
+        part = part.strip()
+        if part == "DB":
+            spec["use_db"] = True
+        elif "D" in part:
+            m = re.match(r"(\d*)D(\d+)", part)
+            if m:
+                spec["dice_n"] = int(m.group(1)) if m.group(1) else 1
+                spec["dice_d"] = int(m.group(2))
+        else:
+            try:
+                spec["bonus"] += int(part)
+            except ValueError:
+                pass
+    return spec
 
 
 @dataclass
 class LibraryWeapon:
     name: str
     skill_name: str
-    damage: str
-    range: str
+    damage: dict = field(default_factory=lambda: {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": False})
+    range: str = ""
     shots: int = 0
     malfunction: int = 100
     era: str = "all"
@@ -43,19 +67,22 @@ class LibraryWeapon:
 
     @classmethod
     def from_dict(cls, data: dict) -> "LibraryWeapon":
+        dmg = data["damage"]
+        if isinstance(dmg, str):
+            dmg = _damage_str_to_dict(dmg)
         return cls(
             name=data["name"],
             skill_name=data["skill_name"],
-            damage=data["damage"],
-            range=data["range"],
-            shots=data.get("shots", 0),
+            damage=dmg,
+            range=data.get("range", ""),
+            shots=data.get("shots", data.get("ammo", 0)),
             malfunction=data.get("malfunction", 100),
             era=data.get("era", "all"),
             rarity=data.get("rarity", "common"),
             damage_type=data.get("damage_type", "物理"),
             armor_piercing=data.get("armor_piercing", 0),
             attack_bonus=data.get("attack_bonus", 0),
-            multi_attack=data.get("multi_attack", 1),
+            multi_attack=data.get("multi_attack", data.get("attacks_per_round", 1)),
             special_rules=data.get("special_rules", ""),
             description=data.get("description", ""),
         )

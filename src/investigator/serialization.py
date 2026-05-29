@@ -50,6 +50,7 @@ def to_dict(inv: Investigator) -> dict:
             "occupation": occ_data,
             "description": inv.personal_description,
             "appearance": inv.appearance,
+            "extra": getattr(inv, 'extra', ''),
         },
         "stats": {
             "STR": inv.stats.STR, "CON": inv.stats.CON, "SIZ": inv.stats.SIZ,
@@ -168,6 +169,7 @@ def from_dict(data: dict) -> Investigator:
         appearance=personal.get("appearance", ""),
         personal_description=personal.get("description", ""),
         avatar_url=data.get("avatar_url", ""),
+        extra=personal.get("extra", ""),
     )
     im_data = data.get("item_manager", {})
     if im_data:
