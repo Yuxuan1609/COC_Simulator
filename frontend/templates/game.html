@@ -91,11 +91,11 @@
     {# Header -- #}
     <div class="flex items-center justify-between p-3 border-b border-gray-800/60">
       <span class="text-sm text-aged-gold font-bold flex items-center gap-1">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>
         战斗
       </span>
       <button onclick="toggleCombatPanel()" class="text-gray-500 hover:text-aged-gold" title="折叠">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>
       </button>
     </div>
     <div id="combat-panel-inner" class="p-3 space-y-3 overflow-y-auto flex-1">
@@ -234,6 +234,19 @@
     <div id="char-panel-expanded" class="hidden p-3 border-t border-gray-800/60 space-y-3"></div>
   </div>
 
+</div>
+
+{# Freeze overlay — shown when game_frozen signal received #}
+<div id="freeze-overlay" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+  <div class="bg-[#1a1410] border-2 border-red-600 rounded-lg p-6 max-w-lg mx-4 text-center">
+    <div class="text-red-400 text-lg font-bold mb-3">&#9888; 游戏已暂停</div>
+    <div id="freeze-message" class="text-gray-400 text-sm leading-relaxed"></div>
+    <div class="mt-4 flex gap-3 justify-center">
+      <button onclick="location.href='/'" class="px-4 py-1.5 text-xs border border-gray-600 rounded text-gray-400 hover:bg-gray-800">
+        返回启动页
+      </button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -451,7 +464,7 @@
         var narrative = lines.slice(1).join('\n').trim();
         var outcomeColor = title === '胜利' ? 'text-coc-green' : title === '败北' ? 'text-coc-red' : 'text-yellow-400';
         html.push('<div class="turn-combat px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r">' +
-          '<div class="flex items-center gap-2"><svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
+          '<div class="flex items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
           '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + escapeHtml(title) + '</span></div>' +
           (narrative ? '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' + escapeHtml(narrative) + '</div>' : '') +
           '</div>');
@@ -495,6 +508,21 @@
 
   // == Handle turn response ==
   function handleTurnResponse(userText, data) {
+    if (data.game_frozen) {
+      var overlay = document.getElementById('freeze-overlay');
+      var msg = document.getElementById('freeze-message');
+      if (overlay && msg) {
+        msg.textContent = data.frozen_message || '系统异常，游戏已暂停。';
+        overlay.classList.remove('hidden');
+      }
+      var input = document.getElementById('user-input');
+      if (input) input.disabled = true;
+      var sendBtn = document.getElementById('send-btn');
+      if (sendBtn) sendBtn.disabled = true;
+      document.getElementById('step-indicator').innerHTML = '';
+      return;
+    }
+
     var snap = data.player_snapshot;
 
     // Update scene card
@@ -529,7 +557,7 @@
         var outcomeLabel = combatData.outcome === 'win' ? '胜利' : combatData.outcome === 'loss' ? '败北' : combatData.outcome;
         var outcomeColor = combatData.outcome === 'win' ? 'text-coc-green' : combatData.outcome === 'loss' ? 'text-coc-red' : 'text-yellow-400';
         turnParts.push('<div class="turn-combat px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r">' +
-          '<div class="flex items-center gap-2"><svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
+          '<div class="flex items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
           '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + outcomeLabel + '</span></div>' +
           (combatData.narrative ? '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' + combatData.narrative + '</div>' : '') +
           '</div>');
@@ -1035,7 +1063,7 @@
     var outcomeLabel = data.outcome === 'win' ? '胜利' : data.outcome === 'loss' ? '败北' : data.outcome === 'flee' ? '逃跑成功' : data.outcome === 'draw' ? '平局' : data.outcome;
     var outcomeColor = data.outcome === 'win' ? 'text-coc-green' : data.outcome === 'loss' ? 'text-coc-red' : 'text-yellow-400';
     var summaryHtml = '<div class="px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r mt-2">' +
-      '<div class="flex items-center gap-2"><svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
+      '<div class="flex items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
       '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + outcomeLabel + '</span></div>';
     if (data.round_narrative) {
       summaryHtml += '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' + escapeHtml(data.round_narrative).replace(/\n/g, '<br>') + '</div>';

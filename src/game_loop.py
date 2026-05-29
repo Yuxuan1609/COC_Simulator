@@ -261,6 +261,8 @@ def run_turn(game: dict, user_input: str,
     author = game["author"]
     world = keeper.world
 
+    _check_autosave(game)
+
     # Handle debug commands
     if user_input.strip().startswith("/"):
         cmd_result = _handle_spawn_command(user_input, world, weapon_lib, enemy_lib, injector)
@@ -472,6 +474,87 @@ def run_turn(game: dict, user_input: str,
     if combat_init:
         print(f"[run_turn] returning combat_init with {len(combat_init.enemies)} enemies")
     return result
+
+
+# ── Save / Load ──
+
+def save_game(game: dict, path: str) -> None:
+    world = game["keeper"].world
+    keeper = game["keeper"]
+    author = game.get("author")
+
+    world.save_state(path)
+    import json as _json
+    with open(path, "r", encoding="utf-8") as f:
+        data = _json.load(f)
+    data["_meta"] = {
+        "turn_number": keeper.turn_number,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        _json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_game(game: dict, path: str) -> None:
+    world = game["keeper"].world
+    import json as _json
+
+    restored = world.__class__.load_state(path)
+    with open(path, "r", encoding="utf-8") as f:
+        data = _json.load(f)
+    meta = data.get("_meta", {})
+
+    for attr in list(world.__dict__.keys()):
+        if hasattr(restored, attr):
+            setattr(world, attr, getattr(restored, attr))
+
+    game["keeper"].turn_number = meta.get("turn_number", 0)
+
+
+# ── Autosave ──
+
+import threading
+from config import AUTOSAVE_ENABLED, AUTOSAVE_INTERVAL_SEC, AUTOSAVE_MAX_COPIES, AUTOSAVE_DIR
+
+_autosave_flag: bool = False
+_autosave_timer: threading.Timer | None = None
+_autosave_counter: int = 0
+
+
+def _autosave_callback():
+    global _autosave_flag, _autosave_timer
+    _autosave_flag = True
+    if AUTOSAVE_ENABLED:
+        _autosave_timer = threading.Timer(AUTOSAVE_INTERVAL_SEC, _autosave_callback)
+        _autosave_timer.daemon = True
+        _autosave_timer.start()
+
+
+def start_autosave(game: dict) -> None:
+    global _autosave_timer
+    if not AUTOSAVE_ENABLED:
+        return
+    if _autosave_timer:
+        _autosave_timer.cancel()
+    _autosave_timer = threading.Timer(AUTOSAVE_INTERVAL_SEC, _autosave_callback)
+    _autosave_timer.daemon = True
+    _autosave_timer.start()
+
+
+def _check_autosave(game: dict) -> None:
+    global _autosave_flag, _autosave_counter
+    if not _autosave_flag:
+        return
+    _autosave_flag = False
+    import os as _os
+    save_dir = _os.path.join(AUTOSAVE_DIR)
+    _os.makedirs(save_dir, exist_ok=True)
+
+    _autosave_counter = (_autosave_counter % AUTOSAVE_MAX_COPIES) + 1
+    path = _os.path.join(save_dir, f"autosave_{_autosave_counter}.json")
+    try:
+        save_game(game, path)
+    except Exception:
+        pass
 
 
 def continue_standoff(keeper, player_input: str) -> dict:
