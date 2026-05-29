@@ -1,11 +1,14 @@
-"""PipelineHealth — cross-Agent read-only aggregation, not involved in degradation decisions."""
+"""PipelineHealth — deprecated, logic merged into TurnMonitor.snapshot()."""
 from __future__ import annotations
+import warnings
 import time
 from monitor.sensor import LLMSensor
 
 
 class PipelineHealth:
     def __init__(self, sensor: LLMSensor):
+        warnings.warn("PipelineHealth is deprecated. Use TurnMonitor.snapshot() instead.",
+                      DeprecationWarning, stacklevel=2)
         self._sensor = sensor
         self._start_time = time.time()
 

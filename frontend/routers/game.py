@@ -245,6 +245,15 @@ async def process_turn(user_input: str = Form(...)):
     import traceback
     from game_loop import run_turn
 
+    # Check autosave flag before processing
+    try:
+        import game_loop as _gl
+        g = get_game()
+        if g:
+            _gl._check_autosave(g)
+    except Exception:
+        pass
+
     # Route slash commands directly — skip LLM pipeline
     stripped = user_input.strip()
     if stripped.startswith("/"):
@@ -304,6 +313,24 @@ async def process_turn(user_input: str = Form(...)):
     _push_progress("curate", "done")
     _push_progress("narrate", "done")
     _push_progress("complete", "")
+
+    if turn and turn.get("game_frozen"):
+        return {
+            "brief": "",
+            "narrative": "",
+            "narrative_html": (
+                '<div class="msg-frozen px-4 py-3 text-red-400 border-2 border-red-600 '
+                'bg-[#1a0a0a] rounded">' + (turn.get("frozen_message", "系统异常").replace("\n", "<br>")) + '</div>'
+            ),
+            "combat": None,
+            "skill_results": [],
+            "game_frozen": True,
+            "frozen_message": turn.get("frozen_message", ""),
+            "game_over": False,
+            "ending": None,
+            "timestamp": "",
+            "player_snapshot": None,
+        }
 
     narrative = turn.get("narrative", "") if turn else ""
     brief = turn.get("brief", "") if turn else ""
@@ -735,6 +762,9 @@ async def init_game_api(
 
     g["keeper"].world.set_player(inv)
     _game_instance = g
+
+    from game_loop import start_autosave
+    start_autosave(g)
 
     # Fire initial turn to trigger scene auto_triggers
     initial_brief = ""

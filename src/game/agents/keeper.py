@@ -25,6 +25,7 @@ from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt
 from llm import call_deepseek
 from config import MAX_ESCALATION_DEPTH, INTENT_COOLDOWN_WINDOW
 from config_llm import LLM_FLASH_MODEL, RE_COMBAT_ENTRY, RE_KEEPER_PARSE
+from monitor.turn_monitor import TurnFrozenError, TurnMonitor
 
 
 def _wattr(lib_wep, key, default):
@@ -69,6 +70,7 @@ class Keeper:
         self._npc_events: list[str] = []  # NPC follow/state events collected this turn
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
+        self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
         """Execute full turn: parse → judge → enrich → curate."""
@@ -137,7 +139,11 @@ class Keeper:
             raw = pre_result.resolved_text
 
         # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
-        parse_result = self._parse(raw)
+        try:
+            parse_result = self.turn_monitor.execute_step(
+                "parse", lambda: self._parse(raw), is_critical=True)
+        except TurnFrozenError as e:
+            return self._build_frozen_response(e)
 
         # Handle npc_interact — general conversation (no matching entity).
         # NPC-bound entities ([NPC_INTERACT]/[NPC_AT]) are matched as normal
@@ -176,7 +182,22 @@ class Keeper:
             if not non_npc_entries:
                 dialogue_text = self._npc_events[-1] if self._npc_events else ""
                 return {"brief": dialogue_text, "narrative": dialogue_text,
-                        "npc_events": list(self._npc_events)}
+                "npc_events": list(self._npc_events)}
+
+    def _build_frozen_response(self, exc: TurnFrozenError) -> dict:
+        return {
+            "brief": "",
+            "narrative": "",
+            "ending": None,
+            "combat_entry": None,
+            "standoff_prompt": None,
+            "combat_init": None,
+            "time_agent": None,
+            "enrich": None,
+            "npc_events": list(self._npc_events),
+            "game_frozen": True,
+            "frozen_message": str(exc),
+        }
             parse_result = non_npc_entries
 
         # Launch IntentDetector early if there are "other" entries
@@ -562,23 +583,34 @@ class Keeper:
 
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input
         emphasis = ""
-        enrich_future = None
-        ta_future = None
-        enrich_executor = None
+        enrichment = None
+        ta_result = None
         if enrich_input.entities or enrich_input.actions:
-            n_workers = (1 if enrich_input.entities else 0) + (1 if enrich_input.actions else 0)
-            enrich_executor = ThreadPoolExecutor(max_workers=n_workers) if n_workers > 0 else None
-            if enrich_executor:
-                if enrich_input.entities:
-                    enrich_future = enrich_executor.submit(self._enrich, enrich_input.entities, raw)
-                if enrich_input.actions:
-                    ta_future = enrich_executor.submit(self._run_time_agent, enrich_input.actions, raw)
+            have_enrich = bool(enrich_input.entities)
+            have_ta = bool(enrich_input.actions)
+            steps = []
+            if have_enrich:
+                steps.append(("enrich",
+                    lambda: self._enrich(enrich_input.entities, raw),
+                    False, 2))
+            else:
+                steps.append(("enrich",
+                    lambda: {"results": {}, "reasoning": "", "emphasis_hint": ""},
+                    False, 0))
+            if have_ta:
+                steps.append(("time_agent",
+                    lambda: self._run_time_agent(enrich_input.actions, raw),
+                    False, 2))
+            else:
+                steps.append(("time_agent",
+                    lambda: {"time_delta": 0, "narrative_hint": ""},
+                    False, 0))
+            parallel_results = self.turn_monitor.execute_parallel(steps)
+            enrichment = parallel_results.get("enrich")
+            ta_result = parallel_results.get("time_agent")
 
         # Step 3.5: Collect enrich + TA results
-        ta_result = None
-        enrichment = None
-        if enrich_future:
-            enrichment = enrich_future.result()
+        if enrichment:
             emphasis = enrichment.get("emphasis_hint", "")
             results = enrichment.get("results", "")
             if isinstance(results, str) and results and all_outcomes:
@@ -590,15 +622,12 @@ class Keeper:
                         break
                 if not updated:
                     all_outcomes[0].message = results
-        if ta_future:
-            ta_result = ta_future.result()
+        if ta_result:
             if ta_result.get("time_delta", 0) > 0:
                 self.world.clock.advance_time(ta_result["time_delta"])
             narrative = (ta_result.get("narrative_hint", "") or "")
             if narrative:
                 self.world.clock.time_context = narrative
-        if enrich_executor:
-            enrich_executor.shutdown(wait=False)
 
         # Boss "at" / "interaction" check: scene-bound bosses
         boss_combat_init = None
@@ -672,10 +701,13 @@ class Keeper:
         # Step 4: IntentDetector decision point (was Escalation check)
         if detect_future:
             try:
-                intent_result = detect_future.result()
-            except Exception:
+                intent_result = self.turn_monitor.execute_step(
+                    "intent_detect",
+                    lambda: detect_future.result(),
+                    is_critical=False,
+                )
+            except TurnFrozenError:
                 intent_result = None
-                self._warnings.append("意图检测失败，流程无中断。")
             finally:
                 executor.shutdown(wait=False)
 
@@ -764,7 +796,14 @@ class Keeper:
 
         # Step 5: Curate
         ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
-        brief = self.curator.assemble(all_outcomes, ambient, emphasis)
+        try:
+            brief = self.turn_monitor.execute_step(
+                "curate",
+                lambda: self.curator.assemble(all_outcomes, ambient, emphasis),
+                is_critical=True,
+            )
+        except TurnFrozenError as e:
+            return self._build_frozen_response(e)
 
         # Step 6: Memory (now handled in game_loop after narrator.narrate)
         if self.world.memory.should_compress():
@@ -1055,8 +1094,7 @@ class Keeper:
             )
             data = json.loads(response) if isinstance(response, str) else response
         except Exception as e:
-            self._warnings.append(f"意图解析失败（{e}），将你的输入作为即兴行为处理。")
-            return [{"type": "other", "text": raw}]
+            raise  # let TurnMonitor handle retries
         actions = data.get("actions", [])
         if not actions:
             return [{"type": "other", "text": raw}]

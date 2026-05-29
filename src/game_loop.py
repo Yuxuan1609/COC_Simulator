@@ -26,7 +26,7 @@ def set_turn_logger(logger: TurnLogger):
 
 # ── Debug command handler ──
 
-def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=None, injector=None) -> dict | None:
+def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None) -> dict | None:
     """Handle /spawn and /inject debug commands. Returns None if not a debug command."""
     parts = user_input.strip().split()
     if not parts:
@@ -92,13 +92,31 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
         return {"brief": "用法：/inject [toggle|status]", "narrative": "用法错误", "full": "用法错误"}
 
     if cmd == "/health":
+        if keeper and hasattr(keeper, 'turn_monitor') and keeper.turn_monitor:
+            snap = keeper.turn_monitor.snapshot()
+            llm = snap["llm"]
+            turn = snap["turn"]
+            lines = ["Pipeline Health:"]
+            lines.append(f"  Total calls: {llm['total_calls']} / Failures: {llm['total_failures']} / Slow: {llm['total_slow']}")
+            for agent, stats in llm.get("agents", {}).items():
+                lines.append(f"  {agent}: {stats['calls']} calls, {stats['failures']} fail, "
+                           f"{stats['avg_ms']}ms avg, {stats['slow_rate']:.0%} slow")
+            if turn["steps"]:
+                lines.append("Turn Steps:")
+                for s in turn["steps"]:
+                    icon = {"ok": "O", "failed": "X", "skipped": "-"}.get(s["status"], "?")
+                    lines.append(f"  [{icon}] {s['step']} {s['duration_ms']:.0f}ms"
+                               + (f" (retry x{s['retries']})" if s['retries'] else ""))
+            frozen_str = "FROZEN" if turn["frozen"] else "OK"
+            lines.append(f"Turn Status: {frozen_str}")
+            return {"brief": "\n".join(lines), "narrative": "\n".join(lines), "full": "\n".join(lines)}
         from monitor.health import PipelineHealth
         from llm import get_sensor
         sensor = get_sensor()
         if sensor:
             health = PipelineHealth(sensor)
             snap = health.snapshot()
-            lines = ["Pipeline Health:"]
+            lines = ["Pipeline Health (legacy):"]
             lines.append(f"  Uptime: {snap['uptime_seconds']}s")
             lines.append(f"  Total calls: {snap['total_calls']} / Failures: {snap['total_failures']} / Slow: {snap['total_slow']}")
             for agent, stats in snap.get("agents", {}).items():
@@ -265,7 +283,7 @@ def run_turn(game: dict, user_input: str,
 
     # Handle debug commands
     if user_input.strip().startswith("/"):
-        cmd_result = _handle_spawn_command(user_input, world, weapon_lib, enemy_lib, injector)
+        cmd_result = _handle_spawn_command(user_input, world, weapon_lib, enemy_lib, injector, keeper=keeper)
         if cmd_result:
             return cmd_result
 
