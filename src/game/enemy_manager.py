@@ -67,6 +67,7 @@ class EnemyManager:
             scene=scene,
             quantity=quantity,
             status=getattr(lib_enemy, 'status', 'hostile'),
+            flags=list(getattr(lib_enemy, 'flags', [])),
             combat_behavior=lib_enemy.combat_behavior,
             description=lib_enemy.description,
             attributes=dict(attrs),

@@ -923,6 +923,27 @@ async def combat_round(request: Request):
         "round": result.get("round", 1),
     }
 
+    if result.get("finished") and result.get("outcome") == "win":
+        g = get_game()
+        if g:
+            world = g["keeper"].world
+            boss_id = world.bosses.active_boss_id if world.bosses else None
+            if boss_id:
+                world.get_runtime_state(boss_id).completed = True
+                world.bosses.set_active(None)
+            world.enemies.exit_combat({"outcome": "win"})
+
+    # On combat finish, mark boss as completed and clean up enemy manager
+    if result.get("finished") and result.get("outcome") == "win":
+        g = get_game()
+        if g:
+            world = g["keeper"].world
+            boss_id = world.bosses.active_boss_id if world.bosses else None
+            if boss_id:
+                world.get_runtime_state(boss_id).completed = True
+                world.bosses.set_active(None)
+            world.enemies.exit_combat({"outcome": "win"})
+
 
 @router.get("/api/game/npcs", response_class=HTMLResponse)
 async def npc_list():

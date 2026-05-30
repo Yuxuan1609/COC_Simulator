@@ -631,9 +631,12 @@ class Keeper:
                     boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
                     if self.world.is_entity_completed(boss_id):
                         continue
+                    if self.world.bosses.has_spawned(boss_id):
+                        continue
                     if self._check_boss_requirements(boss_entity, turn_input.raw_text):
                         boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
                         self.world.bosses.set_active(boss_id)
+                        self.world.bosses.mark_spawned(boss_id)
                         boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
                         boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
                         enrich_input.entities.append({
@@ -843,9 +846,12 @@ class Keeper:
                 boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
                 if self.world.is_entity_completed(boss_id):
                     continue
+                if self.world.bosses.has_spawned(boss_id):
+                    continue
                 if self._check_boss_requirements(boss_entity, turn_input.raw_text):
                     combat_init_result = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
                     self.world.bosses.set_active(boss_id)
+                    self.world.bosses.mark_spawned(boss_id)
                     break  # only handle one boss per turn; curate + return below
 
         # Step 5: Curate

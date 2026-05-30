@@ -8,6 +8,13 @@ class BossManager:
         self._library = boss_library
         self._encounters = boss_encounters
         self._active_boss_id: str | None = None
+        self._spawned_boss_ids: set[str] = set()  # 已生成的 Boss entity ID，防止重复生成
+
+    def has_spawned(self, boss_id: str) -> bool:
+        return boss_id in self._spawned_boss_ids
+
+    def mark_spawned(self, boss_id: str) -> None:
+        self._spawned_boss_ids.add(boss_id)
 
     def check_by_engage_type(self, engage_type: str, *, scene: str | None = None) -> list[dict]:
         results = []
@@ -101,10 +108,12 @@ class BossManager:
         return {
             "active_boss_id": self._active_boss_id,
             "encounters": self._encounters,
+            "spawned_boss_ids": list(self._spawned_boss_ids),
         }
 
     @classmethod
     def from_dict(cls, data: dict, boss_library: BossLibrary) -> "BossManager":
         mgr = cls(boss_library, data.get("encounters", []))
         mgr._active_boss_id = data.get("active_boss_id")
+        mgr._spawned_boss_ids = set(data.get("spawned_boss_ids", []))
         return mgr
