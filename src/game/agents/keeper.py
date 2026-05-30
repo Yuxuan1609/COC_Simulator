@@ -622,7 +622,44 @@ class Keeper:
                     player_extra="",
                 )
 
-        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input
+        # Boss "at" / "interaction" check: scene-bound bosses — must run BEFORE Step 3 enrich
+        boss_combat_init = None
+        if self.world.bosses:
+            for engage in ("at", "interaction"):
+                candidates = self.world.bosses.check_by_engage_type(engage, scene=self.world.current_location)
+                for boss_entity in candidates:
+                    boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
+                    if self.world.is_entity_completed(boss_id):
+                        continue
+                    if self._check_boss_requirements(boss_entity, turn_input.raw_text):
+                        boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                        self.world.bosses.set_active(boss_id)
+                        boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
+                        boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
+                        enrich_input.entities.append({
+                            "entity_type": "boss_encounter",
+                            "id": f"BOSS_{boss_id}",
+                            "name": f"Boss遭遇：{boss_name}",
+                            "result": boss_msg,
+                            "success": True,
+                            "skill_tier": "",
+                        })
+                        break
+                if boss_combat_init:
+                    break
+        if boss_combat_init:
+            boss_enemy = boss_combat_init.enemies[0] if boss_combat_init.enemies else None
+            if boss_enemy:
+                if combat_init_result and combat_init_result.enemies:
+                    combat_init_result.enemies.append(boss_enemy)
+                    self.world.enemies.register(boss_enemy)
+                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
+                else:
+                    combat_init_result = boss_combat_init
+                    self.world.enemies.register(boss_enemy)
+                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
+
+        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into enrich_input
         emphasis = ""
         enrichment = None
         ta_result = None
@@ -669,46 +706,6 @@ class Keeper:
             narrative = (ta_result.get("narrative_hint", "") or "")
             if narrative:
                 self.world.clock.time_context = narrative
-
-        # Boss "at" / "interaction" check: scene-bound bosses
-        boss_combat_init = None
-        if self.world.bosses:
-            for engage in ("at", "interaction"):
-                candidates = self.world.bosses.check_by_engage_type(engage, scene=self.world.current_location)
-                for boss_entity in candidates:
-                    boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
-                    if self.world.is_entity_completed(boss_id):
-                        continue
-                    if self._check_boss_requirements(boss_entity, turn_input.raw_text):
-                        boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
-                        self.world.bosses.set_active(boss_id)
-                        boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
-                        boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
-                        enrich_input.entities.append({
-                            "entity_type": "boss_encounter",
-                            "id": f"BOSS_{boss_id}",
-                            "name": f"Boss遭遇：{boss_name}",
-                            "result": boss_msg,
-                            "success": True,
-                            "skill_tier": "",
-                        })
-                        break
-                if boss_combat_init:
-                    break
-        if boss_combat_init:
-            boss_enemy = boss_combat_init.enemies[0] if boss_combat_init.enemies else None
-            if boss_enemy:
-                if combat_init_result and combat_init_result.enemies:
-                    # 合并：Boss 加入当前场景的已有战斗
-                    combat_init_result.enemies.append(boss_enemy)
-                    self.world.enemies.register(boss_enemy)
-                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
-                else:
-                    combat_init_result = boss_combat_init
-                    self.world.enemies.register(boss_enemy)
-                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
-
-        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat info already injected into enrich_input
 
         # TimePressure comms dispatch (at most 1 per turn)
         tp = author.time_pressure if author else None

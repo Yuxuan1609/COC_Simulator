@@ -7,6 +7,7 @@ from typing import Any
 
 from .messages import CombatInit, CombatResult
 from config import COMBAT_LLM_ENHANCEMENT
+from prompts import _show_prompt
 
 
 # ── Module-level helpers ──
@@ -605,9 +606,13 @@ class CombatSystem:
 
             response = call_deepseek(
                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                _label="combat_narrative",
                 system="你是TRPG战斗叙事者，简洁概述战斗过程。",
                 fallback_schema={"summary": ""},
             )
+
+            _show_prompt("Combat Narrative", prompt,
+                system="你是TRPG战斗叙事者，简洁概述战斗过程。")
 
             # 保存 LLM prompt + response
             if not log_dir:
@@ -1201,8 +1206,12 @@ class CombatSystem:
                 lines.append("无特殊规则，原值返回。")
             lines.append("返回 JSON：{\"player_damage\": <int>, \"narrative\": \"<string>\"}")
 
+            prompt_text = "\n".join(lines)
+            _show_prompt("Combat Correct Round", prompt_text,
+                system="你是 COC 7th 战斗裁判助理。根据武器/敌人特殊规则修正伤害值。narrative 用中文简述修正理由。")
             response = call_deepseek(
-                "\n".join(lines), json_mode=True, model=LLM_FLASH_MODEL,
+                prompt_text, json_mode=True, model=LLM_FLASH_MODEL,
+                _label="combat_correct_round",
                 system="你是 COC 7th 战斗裁判助理。根据武器/敌人特殊规则修正伤害值。narrative 用中文简述修正理由。",
                 fallback_schema={"player_damage": round_result.get("player_damage", 0),
                                 "narrative": round_result.get("narrative", "")},
@@ -1258,8 +1267,12 @@ class CombatSystem:
                 lines.append("无特殊规则，原值返回。")
             lines.append("返回 JSON：{\"damage\": <int>, \"narrative\": \"<string>\"}")
 
+            prompt_text = "\n".join(lines)
+            _show_prompt("Combat Correct Enemy", prompt_text,
+                system="你是 COC 7th 战斗裁判助理。根据敌人特殊规则和调查员特质修正伤害。narrative 用中文简述修正理由。")
             response = call_deepseek(
-                "\n".join(lines), json_mode=True, model=LLM_FLASH_MODEL,
+                prompt_text, json_mode=True, model=LLM_FLASH_MODEL,
+                _label="combat_correct_enemy",
                 system="你是 COC 7th 战斗裁判助理。根据敌人特殊规则和调查员特质修正伤害。narrative 用中文简述修正理由。",
                 fallback_schema={"damage": damage, "narrative": ""},
             )
