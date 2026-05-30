@@ -67,11 +67,26 @@ def _describe_time_condition(tc: str) -> str:
     return "需要" + " 或 ".join(parts) + "时触发"
 
 
-def _wattr(lib_wep, key, default):
-    """Safe attribute access for both dict and dataclass weapon/attack entries."""
-    if isinstance(lib_wep, dict):
-        return lib_wep.get(key, default)
-    return getattr(lib_wep, key, default)
+def _build_investigator_weapon(lib_wep, name_override: str = "") -> 'Weapon':
+    """Build an Investigator Weapon from a LibraryWeapon dataclass.
+
+    LibraryWeapon.damage is always a structured dict ({\"dice_n\": N, \"dice_d\": N,
+    \"bonus\": N, \"use_db\": bool}), which _roll_damage() in combat.py handles
+    natively — so we pass it through unchanged.
+    """
+    from investigator.models import Weapon as InvWeapon
+    return InvWeapon(
+        name=name_override or getattr(lib_wep, 'name', ''),
+        skill_name=getattr(lib_wep, 'skill_name', '') or '格斗',
+        damage=getattr(lib_wep, 'damage', {"dice_n": 0, "dice_d": 0, "bonus": 0, "use_db": False}),
+        range=getattr(lib_wep, 'range', ''),
+        malfunction=int(getattr(lib_wep, 'malfunction', 100)),
+        damage_type=getattr(lib_wep, 'damage_type', '物理'),
+        armor_piercing=int(getattr(lib_wep, 'armor_piercing', 0)),
+        attack_bonus=int(getattr(lib_wep, 'attack_bonus', 0)),
+        multi_attack=int(getattr(lib_wep, 'multi_attack', 1)),
+        special_rules=getattr(lib_wep, 'special_rules', ''),
+    )
 
 
 class Keeper:
@@ -128,19 +143,7 @@ class Keeper:
                 for wo in offer_list:
                     lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
                     if lib_wep:
-                        from investigator.models import Weapon
-                        skill = lib_wep.get("skill_name", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "skill_name", "")
-                        dmg_raw = lib_wep.get("damage", "") if isinstance(lib_wep, dict) else getattr(lib_wep, "damage", "")
-                        dmg_str = dmg_raw if isinstance(dmg_raw, str) else (str(dmg_raw) if dmg_raw else "1D6+DB")
-                        inv_wep = Weapon(
-                            name=wo["weapon_ref"], skill_name=skill or "格斗",
-                            damage=dmg_str,
-                            damage_type=_wattr(lib_wep, 'damage_type', '物理'),
-                            armor_piercing=int(_wattr(lib_wep, 'armor_piercing', 0)),
-                            attack_bonus=int(_wattr(lib_wep, 'attack_bonus', 0)),
-                            multi_attack=int(_wattr(lib_wep, 'multi_attack', 1)),
-                            special_rules=_wattr(lib_wep, 'special_rules', ''),
-                        )
+                        inv_wep = _build_investigator_weapon(lib_wep, name_override=wo["weapon_ref"])
                         self.world.player.add_weapon(inv_wep)
                         scene = wo.get("scene", "")
                         if scene:
@@ -375,52 +378,8 @@ class Keeper:
                             f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
                             for sw in scene_weps
                         )
-                        # Handle pickup intent embedded in search input
-                        picked_up = False
-                        for sw in list(scene_weps):
-                            if sw.weapon_ref.lower() in raw.lower() and \
-                               ("拾取" in raw or "捡" in raw or "拿" in raw):
-                                if self.world.weapon_library:
-                                    lib_wep = self.world.weapon_library.get(sw.weapon_ref)
-                                    if lib_wep:
-                                        from investigator.models import Weapon
-                                        skill = _wattr(lib_wep, "skill_name", "")
-                                        dmg_raw = _wattr(lib_wep, "damage", "")
-                                        dmg_str = dmg_raw if isinstance(dmg_raw, str) else (str(dmg_raw) if dmg_raw else "1D6+DB")
-                                        inv_wep = Weapon(
-                                            name=sw.weapon_ref, skill_name=skill or "格斗",
-                                            damage=dmg_str,
-                                            damage_type=_wattr(lib_wep, 'damage_type', '物理'),
-                                            armor_piercing=int(_wattr(lib_wep, 'armor_piercing', 0)),
-                                            attack_bonus=int(_wattr(lib_wep, 'attack_bonus', 0)),
-                                            multi_attack=int(_wattr(lib_wep, 'multi_attack', 1)),
-                                            special_rules=_wattr(lib_wep, 'special_rules', ''),
-                                        )
-                                        self.world.player.add_weapon(inv_wep)
-                                        picked_up = True
-                                        scene_weps.remove(sw)
-                                if not scene_weps:
-                                    del self.world.scene_weapons[self.world.current_location]
-                                msg = f"你拾起了{sw.weapon_ref}。"
-                                all_outcomes.append(ActionOutcome(
-                                    intent=ActionIntent(action="pickup", target=sw.weapon_ref),
-                                    success=True,
-                                    message=f"你拾起了{sw.weapon_ref}。",
-                                    entity_id="WEAPON_PICKUP",
-                                    entity_type="interaction",
-                                ))
-                                enrich_input.entities.append({
-                                    "entity_type": "weapon_pickup",
-                                    "id": "WEAPON_PICKUP",
-                                    "name": f"拾取{sw.weapon_ref}",
-                                    "result": f"你拾起了{sw.weapon_ref}。",
-                                    "success": True,
-                                    "skill_tier": "",
-                                })
-                                break
-                        if not picked_up:
-                            msg += f'\n\n（你发现了 {wep_names}。是否拾取？（是/否））'
-                            self._weapon_offer = [{"weapon_ref": sw.weapon_ref, "scene": self.world.current_location} for sw in scene_weps]
+                        msg += f'\n\n（你发现了 {wep_names}。是否拾取？（是/否））'
+                        self._weapon_offer = [{"weapon_ref": sw.weapon_ref, "scene": self.world.current_location} for sw in scene_weps]
                 else:
                     msg = "（仔细查看四周，没有特别的发现）"
                 all_outcomes.append(ActionOutcome(
@@ -446,66 +405,17 @@ class Keeper:
                 })
             elif entry_type == "other":
                 text = entry.get("text", "")
-                scene = self.world.current_location
-                scene_weps = self.world.scene_weapons.get(scene, [])
-                picked_up = False
-                for sw in list(scene_weps):
-                    if sw.weapon_ref.lower() in text.lower() and \
-                       ("拾取" in text or "捡" in text or "拿" in text or "pick" in text.lower()):
-                        if self.world.weapon_library:
-                            lib_wep = self.world.weapon_library.get(sw.weapon_ref)
-                            if lib_wep:
-                                from investigator.models import Weapon
-                                inv_wep = Weapon(
-                                    name=lib_wep.name,
-                                    skill_name=lib_wep.skill_name,
-                                    damage=lib_wep.damage,
-                                    range=lib_wep.range,
-                                    malfunction=lib_wep.malfunction,
-                                    damage_type=_wattr(lib_wep, 'damage_type', '物理'),
-                                    armor_piercing=int(_wattr(lib_wep, 'armor_piercing', 0)),
-                                    attack_bonus=int(_wattr(lib_wep, 'attack_bonus', 0)),
-                                    multi_attack=int(_wattr(lib_wep, 'multi_attack', 1)),
-                                    special_rules=_wattr(lib_wep, 'special_rules', ''),
-                                )
-                                self.world.player.add_weapon(inv_wep)
-                        scene_weps.remove(sw)
-                        if not scene_weps:
-                            del self.world.scene_weapons[scene]
-                        all_outcomes.append(ActionOutcome(
-                            intent=ActionIntent(action="pickup", target=sw.weapon_ref),
-                            success=True,
-                            message=f"你拾起了{sw.weapon_ref}。",
-                        ))
-                        picked_up = True
-                        enrich_input.entities.append({
-                            "entity_type": "weapon_pickup",
-                            "id": "WEAPON_PICKUP",
-                            "name": f"拾取{sw.weapon_ref}",
-                            "result": f"你拾起了{sw.weapon_ref}。",
-                            "success": True,
-                            "skill_tier": "",
-                        })
-                        enrich_input.actions.append({
-                            "type": "other",
-                            "name": f"拾取{sw.weapon_ref}",
-                            "success": True,
-                            "time_range": None,
-                            "time_category": "other",
-                        })
-                        break
-                if not picked_up:
-                    all_outcomes.append(ActionOutcome(
-                        intent=ActionIntent(action="other"), success=True,
-                        message=f"（{text}）"))
-                    enrich_input.actions.append({
-                        "type": "other",
-                        "name": text,
-                        "success": True,
-                        "time_range": None,
-                        "time_category": "other",
-                    })
-                    enrich_input.entities.append({
+                all_outcomes.append(ActionOutcome(
+                    intent=ActionIntent(action="other"), success=True,
+                    message=f"（{text}）"))
+                enrich_input.actions.append({
+                    "type": "other",
+                    "name": text,
+                    "success": True,
+                    "time_range": None,
+                    "time_category": "other",
+                })
+                enrich_input.entities.append({
                         "entity_type": "other",
                         "id": "OTHER",
                         "name": text[:40],
@@ -1160,67 +1070,10 @@ class Keeper:
             return True  # LLM unavailable → optimistic pass
 
     def _inject_npc_at(self):
-        """Inject condition-satisfied NPC bound entities (interactions + ATs) into current node."""
-        if not self.world.npcs:
-            return
-        self.world._npc_injected_at_ids.clear()
-        node = self.world._current_node()
-        if not node:
-            return
-        existing_interact_ids = {e.id for e in node.interactions}
-        existing_at_ids = {e.id for e in node.auto_triggers}
-        for npc in self.world.npcs._npcs.values():
-            if npc.scene != self.world.current_location:
-                continue
-            # Inject bound interactions
-            for ent in npc.bound_interactions:
-                eid = ent.get("id", "")
-                if self.world.is_entity_completed(eid) or eid in existing_interact_ids:
-                    continue
-                req = ent.get("requirement", "")
-                if req:
-                    from scenario_core import parse_hard_requirement
-                    if not parse_hard_requirement(req, self.world.runtime_state):
-                        continue
-                from scenario_core import Entity
-                node.interactions.append(Entity(
-                    id=eid, entity_type="interaction",
-                    name=ent.get("name", ""), scene=ent.get("source_scene", ""),
-                    type=ent.get("type", ""), requirement=req,
-                    trigger=ent.get("trigger", ""), result=ent.get("result", ""),
-                    side_effects=ent.get("side_effects", []),
-                    graded_result=ent.get("graded_result"),
-                    difficulty=ent.get("difficulty", ""),
-                    extra=ent.get("extra"),
-                    time_condition=ent.get("time_condition", ""),
-                ))
-                self.world._npc_injected_at_ids.add(eid)
-            # Inject bound auto_triggers
-            for at in npc.bound_auto_triggers:
-                at_scene = at.get("source_scene", "")
-                if at_scene != self.world.current_location and at_scene:
-                    continue
-                eid = at.get("id", "")
-                if self.world.is_entity_completed(eid) or eid in existing_at_ids:
-                    continue
-                req = at.get("requirement", "")
-                if req:
-                    from scenario_core import parse_hard_requirement
-                    if not parse_hard_requirement(req, self.world.runtime_state):
-                        continue
-                from scenario_core import Entity
-                node.auto_triggers.append(Entity(
-                    id=eid, entity_type="auto_trigger",
-                    name=at.get("name", ""), scene=at_scene,
-                    type=at.get("type", ""), requirement=req,
-                    trigger=at.get("trigger", ""), result=at.get("result", ""),
-                    side_effects=at.get("side_effects", []),
-                    graded_result=at.get("graded_result"),
-                    difficulty=at.get("difficulty", ""),
-                    extra=at.get("extra"),
-                    time_condition=at.get("time_condition", ""),
-                ))
-                self.world._npc_injected_at_ids.add(eid)
+        """No-op: NPC entities are now dynamically resolved in prompts.py and
+        _find_entity_by_id() based on NPC's current location.  Entities follow
+        the NPC — wherever the NPC goes, their bound entities go with them."""
+        pass
 
     # ── Internal ──
 
@@ -1330,7 +1183,7 @@ class Keeper:
             f.write("\n\n")
 
     def _find_entity_by_id(self, entity_id: str):
-        """Find entity by ID across graph (scenes + events + boss encounters)."""
+        """Find entity by ID across graph (scenes + events + boss encounters + NPCs)."""
         if entity_id in self.world.graph.events:
             return self.world.graph.events[entity_id]
         node = self.world._current_node()
@@ -1343,6 +1196,33 @@ class Keeper:
             for e in node.interactions + node.auto_triggers:
                 if e.id == entity_id:
                     return e
+        # NPC bound entities — dynamically resolved, follow the NPC's current location
+        if self.world.npcs:
+            from scenario_core import Entity
+            for npc in self.world.npcs._npcs.values():
+                if npc.scene != self.world.current_location:
+                    continue
+                for ent in npc.bound_interactions + npc.bound_auto_triggers:
+                    eid = ent.get("id", "")
+                    if eid != entity_id:
+                        continue
+                    if self.world.is_entity_completed(eid):
+                        continue
+                    return Entity(
+                        id=eid,
+                        entity_type=ent.get("entity_type", "interaction"),
+                        name=ent.get("name", ""),
+                        scene=ent.get("source_scene", ""),
+                        type=ent.get("type", ""),
+                        requirement=ent.get("requirement", ""),
+                        trigger=ent.get("trigger", ""),
+                        result=ent.get("result", ""),
+                        side_effects=ent.get("side_effects", []),
+                        graded_result=ent.get("graded_result"),
+                        difficulty=ent.get("difficulty", ""),
+                        extra=ent.get("extra"),
+                        time_condition=ent.get("time_condition", ""),
+                    )
         # Boss encounters
         if self.world.bosses:
             for enc in self.world.bosses._encounters:

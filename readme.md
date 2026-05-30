@@ -77,7 +77,7 @@ flowchart LR
 ## 安装与启动
 
 ```bash
-pip install openai python-docx PyPDF2 ipython fastapi uvicorn jinja2 websockets
+pip install openai httpx python-docx PyPDF2 ipython fastapi uvicorn jinja2 websockets pyinstaller
 # 在项目根目录创建 .env: DEEPSEEK_API_KEY=your-key
 ```
 
@@ -292,7 +292,9 @@ pyinstaller --onedir --noconsole --name "TRPG助手" \
 
 `--onedir` 误报率低于 `--onefile`。若 Windows Defender 拦截，需用户手动加白名单。
 
-### pywebview 集成
+### pywebview 集成（待实现）
+
+> **状态**：已安装 `pywebview`，但代码中尚未集成。当前使用 `webbrowser.open()` 打开默认浏览器。下方为提案设计。
 
 `pywebview` 将浏览器嵌入原生窗口，替代 `webbrowser.open()`：
 
@@ -601,6 +603,8 @@ llm_player 模拟测试在以下环节存在有意短接，不影响测试目标
 - **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md`
 - **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md`
 - **设计文档（架构原理）**: `docs/design.md`
+- **TurnRunner + Keeper 拆分**: `docs/superpowers/specs/2026-05-30-turnrunner-keeper-split-design.md`
+- **打包分析**: `docs/packaging.md`
 
 ## 待升级
 

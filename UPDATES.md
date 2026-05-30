@@ -85,25 +85,32 @@
 
 ## Combat Entry LLM 异常静默吞掉（2026-05-30）
 
-- **现状**：`keeper.py:550` `except Exception: combat_entry = None`。场景有敌对敌人但 LLM 调用失败时，战斗永远不会触发。
-- **方案**：降级为确定性规则——若 LLM 失败且场景中有 hostile 状态的敌人，则无条件进入战斗。
-- **涉及文件**：`src/game/agents/keeper.py:512-551`
+- **決議**：当前行为（LLM 失败 → 默认不进入战斗）是合理设计。战斗入口判定是 LLM 增强功能，失败时退避为"不战斗"比"无条件进入战斗"更安全。保留现状。
 
 ---
 
-## Memory 压缩线程无错误反馈（2026-05-30）
+## Memory 压缩线程无错误反馈（2026-05-30）【低优先级】
 
-- **现状**：`keeper.py:890-897` daemon 线程 `t.start()` 无 try/except/log。压缩失败时记忆膨胀但无人知晓。
-- **方案**：线程内加 try/except + 写入 log 文件。
+- **决议**：daemon 线程静默失败可接受。压缩是 best-effort 功能，失败不影响游戏。延后处理。
 - **涉及文件**：`src/game/agents/keeper.py:890-897`
 
 ---
 
-## PreParse 消歧计数器跨回合不累积（2026-05-30）
+## PreParse 消歧计数器跨回合不累积（2026-05-30）【低优先级】
 
-- **现状**：`_consecutive_ambiguous` 计数器仅在单次 `process_turn()` 调用内有效。如果玩家长期给出模糊输入但每回合只触发一次 ambiguous，计数器永远达不到兜底阈值。
-- **方案**：将计数器提升为 PreParseDisambiguator 的实例属性，跨回合追踪。
+- **决议**：当前行为（仅单回合内 2 次兜底）可接受。跨回合追踪可能引入更复杂的状态管理。延后处理。
 - **涉及文件**：`src/game/pre_parse.py`
+
+---
+
+## Enemy/Boss 特殊字段统一化（2026-05-30）
+
+- **现状**：`flags` 标签（`avoidable` / `adjacent_aware` / `guardian` / `boss`）定义散落在 `enemies.json` 和 `bosses.json`，消费者各自解析，部分标签无消费代码（`guardian` 是死数据）。
+- **目标**：
+  1. 统一定义：所有特殊行为标记收敛到一个枚举或常量集，消除僵尸标签
+  2. 统一消费：`avoidable` → 对峙流程、`adjacent_aware` → 跨场景感知、`boss` → Boss 战斗路由，三者走同一个 flag 解析入口
+  3. 字段完整性：`EnemyManager.spawn()` 和 `BossManager.build_combat_init()` 共享唯一的 `create_instance()` 入口，消除 flags 字段丢失的 Bug
+- **涉及文件**：`src/game/enemy_manager.py`、`src/game/boss_manager.py`、`src/game/agents/keeper.py`、`src/library/enemies.py`、`data/library/core/enemies.json`
 
 ---
 

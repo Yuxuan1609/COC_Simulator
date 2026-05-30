@@ -265,7 +265,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     Returns (triggerable_scene, non_triggerable_scene, triggerable_npc,
              non_triggerable_npc, triggerable_events, non_triggerable_events,
              completed_scene, completed_npc).
-    NPC-injected ATs are separated from scene ATs for prompt clarity.
+    NPC entities are resolved dynamically from NPC profiles based on NPC location.
     """
     node = world._current_node()
 
@@ -273,8 +273,6 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     nontrig_scene = []
     trig_npc = []
     nontrig_npc = []
-
-    npc_injected_ids = getattr(world, '_npc_injected_at_ids', set())
 
     def _split_req(entity) -> tuple[str, str, bool]:
         """Split entity requirement by ||: hard (before) | soft (after).
@@ -289,7 +287,6 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             hard, soft = req.strip(), ""
         if not hard:
             return "", soft, True
-        # Check hard condition
         if hard.startswith("flag:"):
             from scenario_core import parse_hard_requirement
             met = parse_hard_requirement(hard, world.runtime_state)
@@ -318,50 +315,91 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
     completed_npc: list[str] = []
 
     if node:
-        # Collect all NPC-bound entity IDs for the current scene
-        npc_bound_interact_ids: set[str] = set()
-        npc_bound_at_ids: set[str] = set()
-        if hasattr(world, 'npcs') and world.npcs:
-            for npc in world.npcs._npcs.values():
-                if npc.scene != world.current_location:
-                    continue
-                for e in npc.bound_interactions:
-                    npc_bound_interact_ids.add(e.get("id", ""))
-                for e in npc.bound_auto_triggers:
-                    npc_bound_at_ids.add(e.get("id", ""))
-
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
-            is_npc = at.id in npc_bound_at_ids or at.id in npc_injected_ids
-            line = _fmt_at(at, "[NPC_AT]" if is_npc else "[AUTO_TRIGGER]")
+            line = _fmt_at(at, "[AUTO_TRIGGER]")
             if world.is_entity_completed(at.id):
-                (completed_npc if is_npc else completed_scene).append(line)
-            elif is_npc:
-                if met:
-                    trig_npc.append(line)
-                else:
-                    nontrig_npc.append(line)
+                completed_scene.append(line)
+            elif met:
+                trig_scene.append(line)
             else:
-                if met:
-                    trig_scene.append(line)
-                else:
-                    nontrig_scene.append(line)
+                nontrig_scene.append(line)
         for inter in node.interactions:
             _, _, met = _split_req(inter)
-            is_npc = inter.id in npc_bound_interact_ids or inter.id in npc_injected_ids
-            line = _fmt_inter(inter, "[NPC_INTERACT]" if is_npc else "[INTERACT]")
+            line = _fmt_inter(inter, "[INTERACT]")
             if world.is_entity_completed(inter.id):
-                (completed_npc if is_npc else completed_scene).append(line)
-            elif is_npc:
+                completed_scene.append(line)
+            elif met:
+                trig_scene.append(line)
+            else:
+                nontrig_scene.append(line)
+
+    # ── Dynamic NPC entities: resolved from NPC profiles based on NPC's current scene ──
+    if hasattr(world, 'npcs') and world.npcs:
+        from scenario_core import Entity, parse_hard_requirement as _phr
+
+        def _parse_req(req_str: str):
+            """Parse requirement string into (hard_met, soft_display)."""
+            if not req_str.strip():
+                return True, ""
+            if "||" in req_str:
+                hard, soft = req_str.split("||", 1)
+                hard, soft = hard.strip(), soft.strip()
+            else:
+                hard, soft = req_str.strip(), ""
+            if not hard:
+                return True, soft
+            met = _phr(hard, world.runtime_state)
+            return met, soft
+        for npc in world.npcs._npcs.values():
+            if npc.scene != world.current_location:
+                continue
+            # Bound interactions
+            for ent in npc.bound_interactions:
+                eid = ent.get("id", "")
+                if not eid or world.is_entity_completed(eid):
+                    continue
+                req = ent.get("requirement", "") or ""
+                met, soft = _parse_req(req)
+                e = Entity(
+                    id=eid, entity_type="interaction",
+                    name=ent.get("name", ""), scene=ent.get("source_scene", ""),
+                    type=ent.get("type", ""), requirement=req,
+                    trigger=ent.get("trigger", ""), result=ent.get("result", ""),
+                    side_effects=ent.get("side_effects", []),
+                    graded_result=ent.get("graded_result"),
+                    difficulty=ent.get("difficulty", ""),
+                    extra=ent.get("extra"),
+                    time_condition=ent.get("time_condition", ""),
+                )
+                line = _fmt_inter(e, "[NPC_INTERACT]")
                 if met:
                     trig_npc.append(line)
                 else:
                     nontrig_npc.append(line)
-            else:
+            # Bound auto_triggers
+            for at in npc.bound_auto_triggers:
+                eid = at.get("id", "")
+                if not eid or world.is_entity_completed(eid):
+                    continue
+                req = at.get("requirement", "") or ""
+                hard, soft, met = _split_req_str(req, world)
+                e = Entity(
+                    id=eid, entity_type="auto_trigger",
+                    name=at.get("name", ""), scene=at.get("source_scene", ""),
+                    type=at.get("type", ""), requirement=req,
+                    trigger=at.get("trigger", ""), result=at.get("result", ""),
+                    side_effects=at.get("side_effects", []),
+                    graded_result=at.get("graded_result"),
+                    difficulty=at.get("difficulty", ""),
+                    extra=at.get("extra"),
+                    time_condition=at.get("time_condition", ""),
+                )
+                line = _fmt_at(e, "[NPC_AT]")
                 if met:
-                    trig_scene.append(line)
+                    trig_npc.append(line)
                 else:
-                    nontrig_scene.append(line)
+                    nontrig_npc.append(line)
 
     trig_events = []
     nontrig_events = []
