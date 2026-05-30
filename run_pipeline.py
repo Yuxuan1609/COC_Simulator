@@ -186,6 +186,7 @@ class PipelineConfig:
     #   中间结果输出根目录（相对于项目根目录）
     weapon_lib_path: str = "data/library/core/weapons.json"
     enemy_lib_path: str = "data/library/core/enemies.json"
+    boss_lib_path: str = "data/library/core/bosses.json"
     skill_checks_path: str = "data/skill_checks.json"
 
     # ── 模型 ──
@@ -1149,9 +1150,9 @@ def run_interactive(config: PipelineConfig):
 
     # ── 加载库 ──
     print("加载武器/敌人/Boss库...")
-    wl = WeaponLibrary(); wl.load_core()
-    el = EnemyLibrary(); el.load_core()
-    bl = BossLibrary("data/library/core/bosses.json")
+    wl = WeaponLibrary(); wl.load_core(str(PROJECT_ROOT / config.weapon_lib_path))
+    el = EnemyLibrary(); el.load_core(str(PROJECT_ROOT / config.enemy_lib_path))
+    bl = BossLibrary(str(PROJECT_ROOT / config.boss_lib_path))
     runner.wl = wl
     runner.el = el
     runner.bl = bl
@@ -1226,9 +1227,9 @@ def run_auto(config: PipelineConfig):
 
     # ── 加载库 ──
     print("加载武器/敌人/Boss库...")
-    wl = WeaponLibrary(); wl.load_core()
-    el = EnemyLibrary(); el.load_core()
-    bl = BossLibrary("data/library/core/bosses.json")
+    wl = WeaponLibrary(); wl.load_core(str(PROJECT_ROOT / config.weapon_lib_path))
+    el = EnemyLibrary(); el.load_core(str(PROJECT_ROOT / config.enemy_lib_path))
+    bl = BossLibrary(str(PROJECT_ROOT / config.boss_lib_path))
     runner.wl = wl
     runner.el = el
     runner.bl = bl
@@ -1338,6 +1339,12 @@ def main():
                         help="LLM 模型（覆盖配置文件，JSON 和文本模式同时设置）")
     parser.add_argument("--thinking-off", action="store_true",
                         help="关闭思考模式")
+    parser.add_argument("--weapon-lib", type=str,
+                        help="武器库 JSON 路径（覆盖默认值）")
+    parser.add_argument("--enemy-lib", type=str,
+                        help="敌人库 JSON 路径（覆盖默认值）")
+    parser.add_argument("--boss-lib", type=str,
+                        help="Boss 库 JSON 路径（覆盖默认值）")
 
     args = parser.parse_args()
 
@@ -1372,6 +1379,12 @@ def main():
         config.text_model = args.model
     if args.thinking_off:
         config.thinking_enabled = False
+    if args.weapon_lib:
+        config.weapon_lib_path = args.weapon_lib
+    if args.enemy_lib:
+        config.enemy_lib_path = args.enemy_lib
+    if args.boss_lib:
+        config.boss_lib_path = args.boss_lib
 
     # ── 推断模组名 ──
     if not config.module_name and config.docx_path:
