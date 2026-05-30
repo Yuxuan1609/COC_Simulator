@@ -37,6 +37,7 @@ def _serialize_enemies_for_frontend(enemies: list) -> list[dict]:
             "enemy_ref": getattr(e, 'enemy_ref', ''),
             "hp": getattr(e, 'hp', 0),
             "hp_max": getattr(e, 'hp_max', getattr(e, 'hp', 0)),
+            "quantity": getattr(e, 'quantity', 1),
             "status": getattr(e, 'status', ''),
             "attributes": getattr(e, 'attributes', {}),
             "boss_mechanics": getattr(e, 'boss_mechanics', ''),

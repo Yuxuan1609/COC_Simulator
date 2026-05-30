@@ -354,6 +354,8 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         for npc in world.npcs._npcs.values():
             if npc.scene != world.current_location:
                 continue
+            if npc.state in ("dead", "left"):
+                continue
             # Bound interactions
             for ent in npc.bound_interactions:
                 eid = ent.get("id", "")

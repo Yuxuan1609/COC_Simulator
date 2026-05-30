@@ -191,14 +191,16 @@ class Keeper:
             return self._build_frozen_response(e)
 
         # Handle npc_interact — general conversation (no matching entity).
-        # NPC-bound entities ([NPC_INTERACT]/[NPC_AT]) are matched as normal
-        # interaction/auto_trigger by parse — they follow the main pipeline.
-        # npc_interact here means "talk to NPC about something no entity covers."
+        # ...
         npc_interact_entries = [e for e in parse_result if e.get("type") == "npc_interact"]
         non_npc_entries = [e for e in parse_result if e.get("type") != "npc_interact"]
         _FOLLOW_KEYWORDS = ("跟我", "跟着", "跟随", "一起走", "加入我", "跟我来", "跟我走",
                            "一起行动", "陪同", "随行", "随我")
         _has_follow_request = lambda txt: any(kw in txt for kw in _FOLLOW_KEYWORDS)
+
+        all_outcomes = []
+        enrich_input = EnrichInput()
+
         if npc_interact_entries:
             for entry in npc_interact_entries:
                 npc_name = entry.get("npc_name", "")
@@ -250,9 +252,7 @@ class Keeper:
                 self.intent_detector.detect, other_text, world_snapshot
             )
 
-        # Step 2: Judge (deterministic) — flag check, skill check, ##GRADED##
-        all_outcomes = []
-        enrich_input = EnrichInput()
+        # Step 2: Judge — iterate over parse result entries
         for entry in parse_result:
             entry_type = entry.get("type", "")
             if entry_type in ("auto_trigger", "interaction", "event"):

@@ -1367,7 +1367,12 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
    @npc_state_change(npc_name="NPC名", new_state="新状态")
    @npc_follow(npc_name="NPC名", follow=true)
 
-   特别说明：@grant_weapon 的 scene 为空字符串（scene=""）表示直接授予调查员，无需放置到场景中等待搜索发现。scene 有值时，武器放置到对应场景中，由调查员通过搜索发现并拾取。
+    特别说明：
+    - @npc_state_change 有两个硬编码的特殊状态：
+      \"dead\" — NPC 死亡，此后该 NPC 不再参与对话、跟随和场景互动，其 bound entity 也不会出现在玩家可用的实体列表中。
+      \"left\" — NPC 永久离开模组（如离场、失踪、退场），效果同 dead，但用于非死亡离场场景。
+    - 其他状态（alive / unconscious / hostile / neutral / friendly 等）由 LLM 在对话时根据状态值自行发挥，不需硬编码处理。
+    - @grant_weapon 的 scene 为空字符串（scene=\"\"）表示直接授予调查员，无需放置到场景中等待搜索发现。scene 有值时，武器放置到对应场景中，由调查员通过搜索发现并拾取。
 
    无法归入以上类型的保留原自然语言。
 
