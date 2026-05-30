@@ -170,6 +170,14 @@ class Keeper:
                     world=self.world,
                 )
                 self._npc_events.append(f"{npc_name}：{dialogue}")
+                enrich_input.entities.append({
+                    "entity_type": "npc_dialogue",
+                    "id": f"NPC_{npc_name}",
+                    "name": f"与{npc_name}对话",
+                    "result": f"「{dialogue[:120]}」",
+                    "success": True,
+                    "skill_tier": "",
+                })
                 # Detect follow request via keyword match
                 if _has_follow_request(raw):
                     ok, reason = self.world.npcs._check_follow_conditions(npc, self.world)
@@ -342,6 +350,14 @@ class Keeper:
                                     entity_id="WEAPON_PICKUP",
                                     entity_type="interaction",
                                 ))
+                                enrich_input.entities.append({
+                                    "entity_type": "weapon_pickup",
+                                    "id": "WEAPON_PICKUP",
+                                    "name": f"拾取{sw.weapon_ref}",
+                                    "result": f"你拾起了{sw.weapon_ref}。",
+                                    "success": True,
+                                    "skill_tier": "",
+                                })
                                 break
                         if not picked_up:
                             msg += f'\n\n（你发现了 {wep_names}。是否拾取？（是/否））'
@@ -395,6 +411,14 @@ class Keeper:
                             message=f"你拾起了{sw.weapon_ref}。",
                         ))
                         picked_up = True
+                        enrich_input.entities.append({
+                            "entity_type": "weapon_pickup",
+                            "id": "WEAPON_PICKUP",
+                            "name": f"拾取{sw.weapon_ref}",
+                            "result": f"你拾起了{sw.weapon_ref}。",
+                            "success": True,
+                            "skill_tier": "",
+                        })
                         enrich_input.actions.append({
                             "type": "other",
                             "name": f"拾取{sw.weapon_ref}",
@@ -680,6 +704,14 @@ class Keeper:
                         entity_id="TIME_PRESS",
                         entity_type="time_pressure",
                     ))
+                    enrich_input.entities.append({
+                        "entity_type": "time_pressure",
+                        "id": "TIME_PRESS",
+                        "name": tp.get('name', '时间压力'),
+                        "result": tp_result.get('signal', ''),
+                        "success": True,
+                        "skill_tier": "",
+                    })
             except Exception:
                 pass  # Comms is best-effort
 
@@ -731,6 +763,14 @@ class Keeper:
                             all_outcomes.append(ActionOutcome(
                                 intent=ActionIntent(action="other"), success=True,
                                 message=f"（你尝试了，但{rejection_msg}）"))
+                            enrich_input.entities.append({
+                                "entity_type": "author_response",
+                                "id": "AUTHOR_REJECT",
+                                "name": "作者回应",
+                                "result": rejection_msg[:120],
+                                "success": False,
+                                "skill_tier": "",
+                            })
 
         # ── Apply all deferred side effects + move (Author check passed) ──
         self._apply_pending()

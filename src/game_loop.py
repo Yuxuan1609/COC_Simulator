@@ -333,6 +333,11 @@ def run_turn(game: dict, user_input: str,
             )
             if scene_update:
                 world.apply_scene_update(scene_update)
+                # Also update L1 description on narrator
+                if narrator.l1_data and world.current_location in narrator.l1_data:
+                    l1_scene = narrator.l1_data[world.current_location]
+                    if isinstance(l1_scene, dict):
+                        l1_scene["description"] = scene_update
 
             # TurnLogger: record player input + enrich + narrator output
             if _turn_logger:

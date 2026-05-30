@@ -563,7 +563,7 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 {{
   "brief": "简洁、清晰、客观的概括——本轮发生了什么。仅陈述事实，不含情绪色彩。",
   "narrative": "基于结果进行文学性展开，融入场景氛围，让玩家身临其境。中文不超过100字。",
-  "scene_update": ""
+  "scene_update": "当本轮行动导致场景发生持久可见变化时，输出变化后的完整场景描述（如物品被移走、门被打开、血迹出现、光源变化、NPC出现或离开）。无变化时填空字符串。"
 }}
 
 规则：
@@ -572,7 +572,7 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 - 「即兴行为」仅为叙述性描写，不对世界产生任何实际影响，一带而过即可
 - 直接输出 JSON。
 """
-    _show_prompt("Narrator", prompt, system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。\n\n你的任务是结合实体行动结果和场景感知信息，为玩家本轮的行动生成沉浸式叙事。\n\n输出格式：{\"brief\": \"...\", \"narrative\": \"...\", \"scene_update\": \"\"}。直接输出 JSON。\n\n── 字段规则 ──\n- brief: 第三人称视角，简单清晰阐述本轮发生了什么。仅陈述事实，不含情绪色彩。不超过50字。\n- narrative: 第一人称视角（用「你」），以沉浸式语言描述玩家主观感受和经历。融入场景氛围。不超过100字。\n- scene_update: 当本轮行动导致场景发生持久可见变化时输出完整描述。无变化时为空。")
+    _show_prompt("Narrator", prompt, system="你是一个优秀的跑团KP，擅长生动、沉浸的叙事。\n\n你的任务是结合实体行动结果和场景感知信息，为玩家本轮的行动生成沉浸式叙事。\n\n输出格式：{\"brief\": \"...\", \"narrative\": \"...\", \"scene_update\": \"\"}。直接输出 JSON。\n\n── 字段规则 ──\n- brief: 第三人称视角，简单清晰阐述本轮发生了什么。仅陈述事实，不含情绪色彩。不超过50字。\n- narrative: 第一人称视角（用「你」），以沉浸式语言描述玩家主观感受和经历。融入场景氛围。不超过100字。\n- scene_update: 当本轮行动导致场景发生持久可见变化时输出完整描述。该字段直接更新玩家可见的场景描述（L1），后续回合使用新描述。无变化时为空。")
     return prompt
 
 
