@@ -139,9 +139,10 @@ class CombatState:
     full_log: list[CombatAction] = field(default_factory=list)
     _player_dodging: bool = False
     _player_concealed: bool = False
-    _player_aiming: bool = False
-    _player_charged: bool = False
+    _player_aim_counter: int = 0
+    _boss_hp_max: int = 0
     _boss_current_phase: str = ""
+    _correction_log: list[str] = field(default_factory=list)  # LLM per-round correction narratives
     _boss_hp_max: int = 0
 
 
@@ -273,6 +274,9 @@ class CombatSystem:
                     rresult, combat_init, state.enemies,
                     player_extra, snapshot, boss_phase, player_actions_this_round
                 )
+                corr_narr = rresult.get("narrative", "")
+                if corr_narr:
+                    state._correction_log.append(f"第{state.round}轮玩家修正: {corr_narr}")
 
                 # ── 敌人 LLM 修正：每个有 special_rules 的敌人独立调用 ──
                 inv_context = getattr(player, 'personal_description', '') or ''
@@ -294,6 +298,7 @@ class CombatSystem:
                         ea_data["damage"] = new_dmg
                         if corrected.get("narrative"):
                             ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
+                            state._correction_log.append(f"第{state.round}轮{enemy_id}修正: {corrected['narrative']}")
 
             # 玩家伤害结算 — 每击独立应用
             for pa in player_actions_this_round:
@@ -452,6 +457,9 @@ class CombatSystem:
                 rresult, combat_init, state.enemies,
                 player_extra, snapshot, boss_phase, player_actions_this_round
             )
+            corr_narr = rresult.get("narrative", "")
+            if corr_narr:
+                state._correction_log.append(f"第{state.round}轮玩家修正: {corr_narr}")
 
             inv_context = getattr(player, 'personal_description', '') or ''
             if getattr(player, 'extra', ''):
@@ -471,6 +479,7 @@ class CombatSystem:
                     ea_data["damage"] = new_dmg
                     if corrected.get("narrative"):
                         ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
+                        state._correction_log.append(f"第{state.round}轮{enemy_id}修正: {corrected['narrative']}")
 
         # Apply player damage to enemies
         for pa in player_actions_this_round:
@@ -576,10 +585,11 @@ class CombatSystem:
             from datetime import datetime
 
             log_lines = []
-            enemies_desc = ", ".join(
-                f"{getattr(e, 'enemy_ref', getattr(e, 'name', '未知'))}"
-                for e in state.enemies
-            )
+            enemies_desc = []
+            for e in state.enemies:
+                name = getattr(e, 'enemy_ref', getattr(e, 'name', '未知'))
+                desc = getattr(e, 'description', '')
+                enemies_desc.append(f"{name}" + (f"（{desc}）" if desc else ""))
 
             for a in state.full_log:
                 hp_info = f" HP{a.hp_before}→{a.hp_after}" if a.damage > 0 else ""
@@ -591,14 +601,19 @@ class CombatSystem:
                 )
 
             player_name = getattr(player, 'name', '调查员') if player else '调查员'
+            player_desc = getattr(player, 'personal_description', '') or "" if player else ""
             prompt = f"""你是TRPG战斗叙事者。根据以下战斗记录生成一段简洁的摘要。
 
 【场景】{scene}
-【调查员】{player_name}
-【敌人】{enemies_desc}
+【调查员】{player_name}{f' —— {player_desc}' if player_desc else ''}
+【敌人】
+{chr(10).join(f'  - {d}' for d in enemies_desc)}
 
 【战斗日志】
 {chr(10).join(log_lines)}
+
+【LLM修正记录】
+{chr(10).join(state._correction_log) if state._correction_log else '（无修正）'}
 
 【最终结果】
 调查员 HP: {state.player_hp}, SAN: {state.player_san}
