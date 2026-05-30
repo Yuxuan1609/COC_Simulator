@@ -945,6 +945,25 @@ async def combat_round(request: Request):
                 "is_boss": result.get("is_boss", False),
             }
             completed = keep.complete_combat_turn(keep._last_player_input, combat_result) if keep._last_player_input else {}
+            completed_brief = ""
+            completed_narrative = ""
+            if completed.get("brief"):
+                try:
+                    snap = world.build_snapshot()
+                    completed_brief, completed_narrative, _ = narr.narrate(
+                        completed["brief"], snap=snap, user_input=keep._last_player_input)
+                    from game.turn_logger import TurnLogger
+                    from game_loop import _turn_logger as tl
+                    if tl:
+                        tl.log(
+                            player_input=keep._last_player_input,
+                            enrich_result=completed.get("enrich"),
+                            narrator_brief=completed_brief,
+                            narrator_narrative=completed_narrative,
+                        )
+                except Exception:
+                    pass
+            keep._last_player_input = ""
 
         return {
             "session_id": session_id,
@@ -957,7 +976,9 @@ async def combat_round(request: Request):
             "is_boss": result.get("is_boss", False),
             "game_over": result.get("game_over", False),
             "round": state.round,
-            "combat_completed": completed.get("brief", None) is not None,
+            "combat_completed": bool(completed_brief),
+            "combat_completed_brief": completed_brief,
+            "combat_completed_narrative": completed_narrative,
         }
 
     return {

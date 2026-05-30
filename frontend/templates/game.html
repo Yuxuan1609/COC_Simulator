@@ -1071,6 +1071,9 @@
     if (data.combat_narrative) {
       summaryHtml += '<div class="text-aged-gold text-xs mt-2 pt-2 border-t border-gray-700/50 leading-relaxed">' + escapeHtml(data.combat_narrative).replace(/\n/g, '<br>') + '</div>';
     }
+    if (data.combat_completed_narrative) {
+      summaryHtml += '<div class="text-parchment text-sm mt-3 pt-2 border-t border-aged-gold/30 leading-relaxed narrative-flash">' + escapeHtml(data.combat_completed_narrative).replace(/\n/g, '<br>') + '</div>';
+    }
     summaryHtml += '</div>';
 
     // Insert into narrative area

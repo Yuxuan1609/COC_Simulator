@@ -970,6 +970,8 @@ class Keeper:
         ambient = [o.message for o in outcomes if o.entity_type == "auto_trigger"]
         brief = self.curator.assemble(outcomes, ambient, emphasis)
         return {"brief": brief, "enrich": enrichment}
+
+    def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
         from prompts import build_standoff_match_prompt
         from llm import evaluate_trait_enhancement
