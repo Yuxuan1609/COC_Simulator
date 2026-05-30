@@ -60,3 +60,96 @@
 | `adjacent_aware` | enemies.json (Clicker) | enemy_manager.py 跨场景感知 | **失效**（spawn 未传 flags） |
 | `guardian` | enemies.json (石卫) | 无消费代码 | 死数据 |
 | `boss` | bosses.json (全部 Boss) | combat.py Boss 战斗路由 | **正常** |
+
+---
+
+## 武器拾取逻辑三处重复（2026-05-30）
+
+- **现状**：`keeper.py` 中有三处几乎相同的"库武器 → Investigator Weapon"构造逻辑：
+  - L83-118：武器拾取确认流程（`_weapon_offer` 消费）
+  - L330-375：搜索中的武器拾取
+  - L399-448：other 路径中的武器拾取
+- **风险**：三处独立维护，已有一处代码路径使用了不同的属性访问模式（`lib_wep.name` vs `lib_wep["weapon_ref"]` vs `_wattr(lib_wep, key, default)`）。修复一处 bug 另两处可能遗留。
+- **方案**：抽 `_build_investigator_weapon(lib_weapon)` 工厂方法，统一构造 `investigator.models.Weapon` 实例
+- **涉及文件**：`src/game/agents/keeper.py`
+
+---
+
+## process_turn() 过长（2026-05-30）
+
+- **现状**：单一 `process_turn()` 方法 920 行，承载 parse → judge → enrich → combat → boss → time → author → curate 全流程。出问题时 920 行中定位根因困难。
+- **方案**：拆为 5 个阶段方法：`_step_parse()` / `_step_judge_combat()` / `_step_enrich_time()` / `_step_author()` / `_step_curate()`。每个方法职责单一，返回下一阶段的输入。
+- **涉及文件**：`src/game/agents/keeper.py`
+
+---
+
+## Combat Entry LLM 异常静默吞掉（2026-05-30）
+
+- **现状**：`keeper.py:550` `except Exception: combat_entry = None`。场景有敌对敌人但 LLM 调用失败时，战斗永远不会触发。
+- **方案**：降级为确定性规则——若 LLM 失败且场景中有 hostile 状态的敌人，则无条件进入战斗。
+- **涉及文件**：`src/game/agents/keeper.py:512-551`
+
+---
+
+## Memory 压缩线程无错误反馈（2026-05-30）
+
+- **现状**：`keeper.py:890-897` daemon 线程 `t.start()` 无 try/except/log。压缩失败时记忆膨胀但无人知晓。
+- **方案**：线程内加 try/except + 写入 log 文件。
+- **涉及文件**：`src/game/agents/keeper.py:890-897`
+
+---
+
+## PreParse 消歧计数器跨回合不累积（2026-05-30）
+
+- **现状**：`_consecutive_ambiguous` 计数器仅在单次 `process_turn()` 调用内有效。如果玩家长期给出模糊输入但每回合只触发一次 ambiguous，计数器永远达不到兜底阈值。
+- **方案**：将计数器提升为 PreParseDisambiguator 的实例属性，跨回合追踪。
+- **涉及文件**：`src/game/pre_parse.py`
+
+---
+
+## NPC 注入实体无限增长（2026-05-30）
+
+- **现状**：`_inject_npc_at()`（keeper.py:1114-1175）每回合将 NPC 的 bound_interactions 和 bound_auto_triggers 追加到当前场景 node 的列表中。去重仅检查 `(id, not completed)`，但 NPC 离场/死亡后已注入的 entity 永远不会被清理。
+- **风险**：多回合游戏（尤其是 NPC 频繁进出场景时）node 列表线性增长，Parse prompt 越来越长，LLM 延迟逐步增加，最终 token 超限。
+- **方案**：在 NPC 离场/状态变更时清理其注入的 entity（从 node 中移除 `id in _npc_injected_at_ids` 的 entity），或改为不注入到 node 本体而是动态生成 entity 列表供 Parse 使用。
+- **涉及文件**：`src/game/agents/keeper.py:1114-1175`、`src/scenario_core.py:721`
+
+---
+
+## TurnMonitor 每回合全量序列化（2026-05-30）
+
+- **现状**：`TurnMonitor.begin_turn()` 调用 `inv_to_dict(player)` + `graph.to_dict()` + `world.to_dict()`——相当于每次行动前做一次完整存档。每回合耗时 ~50-200ms 纯 Python 序列化。
+- **方案**：改为 lazy snapshot——仅在步骤失败时才触发回退序列化。正常流程不执行。
+- **涉及文件**：`src/monitor/turn_monitor.py:34-46`
+
+---
+
+## 时间条件不满足时无玩家反馈（2026-05-30）
+
+- **现状**：Judge 在 `keeper.py:222-226` 仅 `continue`，不做叙事提示。玩家输入匹配 entity 但 `time_condition` 不满足时静默跳过，Parse 可能将输入误匹配到 other。
+- **方案**：生成 `ActionOutcome` 提示"现在不是合适的时机"，让玩家感知到条件限制的存在。
+- **涉及文件**：`src/game/agents/keeper.py:222-226`
+
+---
+
+## _weapon_offer 在递归时状态可能冲突（2026-05-30）
+
+- **现状**：`_weapon_offer` 是 Keeper 实例属性。Author 触发 `process_turn()` 递归时，内层递归可能覆盖外层的 `_weapon_offer`。
+- **方案**：递归前保存，递归后恢复；或将 offer 改为局部变量通过回调传递。
+- **涉及文件**：`src/game/agents/keeper.py:68, 83-118, 375, 900`
+
+---
+
+## Author 降级时持续注入拒绝叙事（2026-05-30）
+
+- **现状**：Author 降级后 `reject_all_structural=True`，Keeper 的 Step 4 每次 Reject 都向玩家注入"你尝试了，但..."叙事。连续多回合降级会让玩家感觉"作者一直在拒绝我"。
+- **方案**：降级时直接跳过 Author 整个 Step 4，不注入拒绝叙事，让游戏退化为纯 Closed-World 模式。
+- **涉及文件**：`src/game/agents/keeper.py:784-826`、`src/monitor/policies.py`
+
+---
+
+## 技能检定返回裸 tuple（2026-05-30）
+
+- **现状**：`Investigator.check_skill()` 返回 `(ok: bool, msg: str, tier: str)`，调用方用位置解包——参数顺序易错。且已经定义了 `SkillCheckResult` dataclass 但未在此处使用。
+- **方案**：`check_skill()` 返回 `SkillCheckResult` dataclass。
+- **涉及文件**：`src/investigator/models.py`、所有 `check_skill()` 调用方

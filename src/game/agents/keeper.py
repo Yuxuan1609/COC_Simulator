@@ -28,6 +28,45 @@ from config_llm import LLM_FLASH_MODEL, RE_COMBAT_ENTRY, RE_KEEPER_PARSE
 from monitor.turn_monitor import TurnFrozenError, TurnMonitor
 
 
+def _describe_time_condition(tc: str) -> str:
+    """Parse time_condition JSON into a human-readable hint for the player.
+    Returns empty string if unparseable or no constraint."""
+    if not tc or tc == "[]":
+        return ""
+    import json as _json
+    try:
+        entries = _json.loads(tc)
+    except (_json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(entries, list) or not entries:
+        return ""
+    parts = []
+    for entry in entries:
+        day_str = entry.get("day", "ALL") if isinstance(entry, dict) else "ALL"
+        times = entry.get("times", ["ALL"]) if isinstance(entry, dict) else ["ALL"]
+        day_text = ""
+        if day_str != "ALL":
+            if day_str.startswith(">="):
+                day_text = f"第{day_str[2:]}天起"
+            elif day_str.startswith("<="):
+                day_text = f"第{day_str[2:]}天前"
+            else:
+                day_text = f"第{day_str}天"
+        time_set = set(times)
+        time_text = ""
+        if "ALL" not in time_set and time_set:
+            time_text = "、".join(sorted(time_set))
+        if day_text and time_text:
+            parts.append(f"{day_text}{time_text}")
+        elif day_text:
+            parts.append(day_text)
+        elif time_text:
+            parts.append(f"需要{time_text}")
+    if not parts:
+        return "时间条件未满足"
+    return "需要" + " 或 ".join(parts) + "时触发"
+
+
 def _wattr(lib_wep, key, default):
     """Safe attribute access for both dict and dataclass weapon/attack entries."""
     if isinstance(lib_wep, dict):
@@ -223,6 +262,15 @@ class Keeper:
                     from scenario_core import check_time_condition as _check_tc
                     tc = entity.get("time_condition", "") if isinstance(entity, dict) else getattr(entity, "time_condition", "")
                     if not _check_tc(tc, self.world.clock.day, self.world.clock.time_of_day):
+                        hint = _describe_time_condition(tc) or "当前时间不满足触发条件"
+                        now = f"第{self.world.clock.day}天 {self.world.clock.time_of_day}"
+                        all_outcomes.append(ActionOutcome(
+                            intent=ActionIntent(action=entry_type, target=entity.name),
+                            success=False,
+                            message=f"「{entity.name}」{hint}（当前：{now}）",
+                            entity_id=entity.id,
+                            entity_type=entity.entity_type,
+                        ))
                         continue
                 intent = ActionIntent(
                     action=entry_type,
