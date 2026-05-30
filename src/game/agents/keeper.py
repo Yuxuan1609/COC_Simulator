@@ -71,6 +71,8 @@ class Keeper:
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
         self._combat_result_pending: dict | None = None  # {outcome, narrative, is_boss} from last combat
+        self._last_outcomes: list = []  # stored outcomes for combat completion replay
+        self._last_player_input: str = ""  # original input that triggered combat
         self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
@@ -622,6 +624,7 @@ class Keeper:
                     player_targets=[],
                     player_extra="",
                 )
+                self._last_player_input = raw  # stored for combat completion replay
 
         # Boss "at" / "interaction" check: scene-bound bosses — must run BEFORE Step 3 enrich
         boss_combat_init = None
@@ -658,10 +661,12 @@ class Keeper:
                     combat_init_result.enemies.append(boss_enemy)
                     self.world.enemies.register(boss_enemy)
                     self.world.enemies.add_to_combat(boss_enemy.instance_id)
+                    self._last_player_input = raw  # stored for combat completion replay
                 else:
                     combat_init_result = boss_combat_init
                     self.world.enemies.register(boss_enemy)
                     self.world.enemies.add_to_combat(boss_enemy.instance_id)
+                    self._last_player_input = raw  # stored for combat completion replay
 
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into enrich_input
 
@@ -900,6 +905,8 @@ class Keeper:
             ))
             self._weapon_offer_msg = ""
 
+        self._last_outcomes = list(all_outcomes)  # store for combat resolution replay
+
         return {"brief": brief,
                 "ending": ending_result,
                 "combat_entry": combat_entry,
@@ -924,7 +931,45 @@ class Keeper:
             "frozen_message": str(exc),
         }
 
-    def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
+    def complete_combat_turn(self, original_input: str, combat_result: dict) -> dict:
+        """After combat resolves, replay enrich→curate with combat result injected.
+        Uses stored outcomes from the original process_turn that triggered combat.
+        Returns brief that caller passes to narrator."""
+        if not self._last_outcomes:
+            return {}
+        outcomes = list(self._last_outcomes)
+        self._last_outcomes = []
+
+        # Inject combat result
+        cr_outcome = combat_result.get("outcome", "")
+        cr_label = {"win": "胜利", "loss": "败北", "flee": "逃脱", "draw": "平局"}.get(cr_outcome, cr_outcome)
+        outcomes.append(ActionOutcome(
+            intent=ActionIntent(action="combat"), success=(cr_outcome == "win"),
+            message=f"战斗{cr_label}。{combat_result.get('narrative', '')}"[:200],
+            entity_id="COMBAT_RESULT", entity_type="combat_result",
+        ))
+
+        # Build enrich_input from all outcomes
+        enrichment = None
+        enrich_entities = [
+            {"entity_type": "combat_result", "id": "COMBAT_RESULT",
+             "name": f"战斗{cr_label}", "result": combat_result.get("narrative", "")[:200],
+             "success": cr_outcome == "win", "skill_tier": ""}
+        ]
+        if enrich_entities:
+            enrichment = self._enrich(enrich_entities, original_input)
+
+        emphasis = enrichment.get("emphasis_hint", "") if enrichment else ""
+        result_text = enrichment.get("results", "") if enrichment else ""
+        if isinstance(result_text, str) and result_text and outcomes:
+            for o in outcomes:
+                if o.success and o.entity_type != "auto_trigger":
+                    o.message = result_text
+                    break
+
+        ambient = [o.message for o in outcomes if o.entity_type == "auto_trigger"]
+        brief = self.curator.assemble(outcomes, ambient, emphasis)
+        return {"brief": brief, "enrich": enrichment}
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
         from prompts import build_standoff_match_prompt
         from llm import evaluate_trait_enhancement

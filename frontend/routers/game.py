@@ -921,23 +921,44 @@ async def combat_round(request: Request):
                 log_dir=prompt_log_dir or "")
         except Exception:
             pass
-        # Mark boss as completed on win + cleanup enemy manager
+        # Write HP/SAN back to player
+        if combat_init.player:
+            combat_init.player.derived.HP = max(0, state.player_hp)
+            combat_init.player.derived.SAN = max(0, state.player_san)
+
         g = get_game()
         if g:
             world = g["keeper"].world
             keep = g["keeper"]
+            narr = g["narrator"]
             if result.get("outcome") == "win":
                 boss_id = world.bosses.active_boss_id if world.bosses else None
                 if boss_id:
                     world.get_runtime_state(boss_id).completed = True
                     world.bosses.set_active(None)
             world.enemies.exit_combat({"outcome": result.get("outcome", "")})
-            # Store combat result for next turn's enrich
-            keep._combat_result_pending = {
+
+            # Combat completion: re-enrich + curate with combat result (same turn)
+            combat_result = {
                 "outcome": result.get("outcome", ""),
                 "narrative": combat_narrative or "",
                 "is_boss": result.get("is_boss", False),
             }
+            completed = keep.complete_combat_turn(keep._last_player_input, combat_result) if keep._last_player_input else {}
+
+        return {
+            "session_id": session_id,
+            "state": _serialize_combat_state_for_frontend(state),
+            "finished": True,
+            "outcome": result.get("outcome"),
+            "round_log": round_log,
+            "round_narrative": result.get("round_narrative", ""),
+            "combat_narrative": combat_narrative,
+            "is_boss": result.get("is_boss", False),
+            "game_over": result.get("game_over", False),
+            "round": state.round,
+            "combat_completed": completed.get("brief", None) is not None,
+        }
 
     return {
         "session_id": session_id,
