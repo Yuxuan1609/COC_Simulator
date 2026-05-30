@@ -911,6 +911,27 @@ async def combat_round(request: Request):
             "round_num": getattr(a, 'round_num', 0),
         })
 
+    # Generate combat narrative on finish
+    combat_narrative = ""
+    if result.get("finished"):
+        try:
+            from prompts import _log_dir as prompt_log_dir
+            combat_narrative = cs._generate_combat_narrative(
+                state, session.get("combat_init"), state.round,
+                log_dir=prompt_log_dir or "")
+        except Exception:
+            pass
+        # Mark boss as completed on win + cleanup enemy manager
+        g = get_game()
+        if g:
+            world = g["keeper"].world
+            if result.get("outcome") == "win":
+                boss_id = world.bosses.active_boss_id if world.bosses else None
+                if boss_id:
+                    world.get_runtime_state(boss_id).completed = True
+                    world.bosses.set_active(None)
+            world.enemies.exit_combat({"outcome": result.get("outcome", "")})
+
     return {
         "session_id": session_id,
         "state": _serialize_combat_state_for_frontend(state),
@@ -918,20 +939,11 @@ async def combat_round(request: Request):
         "outcome": result.get("outcome"),
         "round_log": round_log,
         "round_narrative": result.get("round_narrative", ""),
+        "combat_narrative": combat_narrative,
         "is_boss": result.get("is_boss", False),
         "game_over": result.get("game_over", False),
         "round": result.get("round", 1),
     }
-
-    if result.get("finished") and result.get("outcome") == "win":
-        g = get_game()
-        if g:
-            world = g["keeper"].world
-            boss_id = world.bosses.active_boss_id if world.bosses else None
-            if boss_id:
-                world.get_runtime_state(boss_id).completed = True
-                world.bosses.set_active(None)
-            world.enemies.exit_combat({"outcome": "win"})
 
     # On combat finish, mark boss as completed and clean up enemy manager
     if result.get("finished") and result.get("outcome") == "win":
