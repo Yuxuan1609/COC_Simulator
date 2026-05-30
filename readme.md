@@ -134,6 +134,7 @@ python run_game.py                      # 生产模式（自动打开浏览器�
 | `/help` | 帮助 |
 | `/spawn enemy <名称>` | 从敌人库生成敌人 |
 | `/spawn weapon <名称>` | 从武器库分发武器 |
+| `/health` | 查看 Pipeline 监控快照（LLM 调用统计 + 回合步骤状态 + 冻结检测） |
 
 ---
 
@@ -365,6 +366,7 @@ if __name__ == "__main__":
 | SpellJudge | `game/spell_judge.py` | 确定性 + LLM | 法术识别/约束检查/Author 联动（U9 待实现） | — |
 | SpellLibrary | `library/spells.py` | 纯数据 | 法术库加载/查询（U9 待实现） | — |
 | SideEffects | `game/side_effects.py` | 纯解析 | 8 种 @markup → dataclass 解析器 | ✅ |
+| Monitor | `monitor/` | 纯确定性 | LLM 调用传感器 → AgentMonitor 自动降级 → TurnMonitor 回合状态机 + 冻结恢复 | ✅ |
 | Investigator | `investigator/` | 纯规则 | COC 7th 车卡、D100 检定、物品/武器管理 | ✅ |
 
 ## 三层信息架构
@@ -475,6 +477,64 @@ run_turn() 后处理:
 
 独立烟雾测试：`tests/test_combat_smoke.py`（6 case，无需 LLM）。
 
+## Pipeline 监控与降级系统
+
+`src/monitor/` 提供三层监控体系，保障长时间游戏的稳定性。
+
+### 架构
+
+```
+LLMSensor → AgentMonitor → TurnMonitor → TurnFrozenError (自动存档+冻结)
+   ↓ 记录             ↓ 降级决策            ↓ 回合状态机
+ LLMCallRecord     DegradationPolicy    StepResult × N
+```
+
+### LLMSensor — 调用传感器
+
+记录每次 LLM 调用的 `(label, duration_ms, ok)`。按 Agent 聚合统计：调用次数、失败率、慢调用率。阈值来自 `config.py`：`LLM_SLOW_THRESHOLD_MS`（默认 8000ms）、`LLM_TIMEOUT_MS`（默认 45000ms）。
+
+### AgentMonitor — 自动降级
+
+每个 Agent（Keeper/Narrator/Author/TimeAgent/IntentDetector）持有独立的 `AgentMonitor` 实例。当连续失败 ≥ `LLM_MAX_CONSECUTIVE_FAILURES`（默认 3）或近期慢调用率 ≥ `LLM_SLOW_RATE_THRESHOLD` 时自动进入降级状态。降级行为由 `config.py:DEGRADE_POLICY` 按 Agent 分策略配置：
+
+| 降级行为 | 说明 |
+|----------|------|
+| `skip` | 跳过该 Agent 调用，返回空结果 |
+| `fallback_model` | 切换为备选模型（如 flash） |
+| `reject_all_structural` | Author 专属：仅接受 Patch，拒绝 StructuralEdit |
+| `thinking` / `reasoning_effort` | 降低推理强度以加速恢复 |
+
+降级后累计 `LLM_DEGRADE_RECOVERY_COUNT`（默认 5）次连续成功调用后自动恢复正常状态。
+
+### TurnMonitor — 回合状态机
+
+追踪 `process_turn()` 的每个步骤（parse / judge / enrich / time_agent / intent_detect / curate）。每步支持自动重试（`TURN_STEP_MAX_RETRIES`）。
+
+- **关键段**（is_critical=True，含 parse/curate）：失败耗尽重试后触发 `TurnFrozenError`：
+  - 自动恢复世界状态到上回合 snapshot
+  - 将恢复存档写入 `data/autosave/recovery.json`
+  - 通知玩家使用 `/load recovery` 恢复或 `/reset` 重试
+- **非关键段**（is_critical=False）：失败返回 None，不影响游戏进行
+- **并行执行**：`execute_parallel()` 通过 `ThreadPoolExecutor` 并行运行多个步骤（如 enrich ∥ time_agent），任一关键段冻结则整体冻结
+
+调试命令 `/health` 可通过 CLI 或前端查看当前监控快照：每个 Agent 的调用次数/失败率/慢调用率、各步骤耗时与状态、是否冻结。
+
+## 自动存档系统
+
+`game_loop.py` 内置的 autosave 机制，通过全局定时器 + 回合触发实现。
+
+| 配置项（`config.py`） | 默认值 | 说明 |
+|------------------------|--------|------|
+| `AUTOSAVE_ENABLED` | True | 自动存档开关 |
+| `AUTOSAVE_INTERVAL_SEC` | 300 | 定时器间隔（秒），到期后在下回合触发保存 |
+| `AUTOSAVE_MAX_COPIES` | 5 | 循环归档数，超过后覆盖最旧文件 |
+| `AUTOSAVE_DIR` | "data/autosave" | 存档输出目录 |
+
+- 定时器回调仅置标志位 `_autosave_flag = True`，不做 I/O
+- `run_turn()` 入口处调用 `_check_autosave()`：检查标志位 → 执行 `save_game()` → 写入 `autosave_1.json` ~ `autosave_5.json` 循环
+- 存档内容：graph + world + memory + player_snapshot + turn_number，与 `/save` 命令等价
+- TurnMonitor 冻结时额外保存 `recovery.json`（含上一回合世界状态），与自动存档分离
+
 ## 测试策略
 
 端到端集成测试为主，以真实 LLM 调用结果为准。
@@ -540,13 +600,14 @@ llm_player 模拟测试在以下环节存在有意短接，不影响测试目标
 - 法术体系: `docs/superpowers/specs/2026-05-27-magic-system-design.md`
 - **Cookbook 代码导航**: `docs/superpowers/guides/cookbook.md`
 - **模组创作指南**: `docs/superpowers/guides/module-authoring-guide.md`
+- **设计文档（架构原理）**: `docs/design.md`
 
 ## 待升级
 
 | # | 事项 | 状态 |
 |----|------|------|
 | U1 | 自动化测试体系 | 30 轮跑局、战斗 Harness、子系统覆盖率 已完成基本版待优化| 
-| U2 | 战斗系统升级 | 回合上限保护、对峙完整接入、player_action 可选 |
+| U2 | ~~战斗系统升级~~ | ✅ 已完成 — Combat v2：群组模型、结构化 damage、LLM 双 Agent 回合修正、交互式 CLI + 自动战斗、phase 机制 |
 | U3 | ~~Author "other" 消歧~~ | ✅ 已完成 — Pre-Parse Disambiguator（pre-parse）：Parse 前的 flash 消歧网关，跨 turn 上下文整合，模糊输入反问引导 |
 | U4 | NPC 系统升级 | 态度硬性规则、半主动行为 |
 | U5 | 世界状态系统 | Logger 驱动的状态解读模型 |
