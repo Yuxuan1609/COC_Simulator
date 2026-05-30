@@ -925,12 +925,19 @@ async def combat_round(request: Request):
         g = get_game()
         if g:
             world = g["keeper"].world
+            keep = g["keeper"]
             if result.get("outcome") == "win":
                 boss_id = world.bosses.active_boss_id if world.bosses else None
                 if boss_id:
                     world.get_runtime_state(boss_id).completed = True
                     world.bosses.set_active(None)
             world.enemies.exit_combat({"outcome": result.get("outcome", "")})
+            # Store combat result for next turn's enrich
+            keep._combat_result_pending = {
+                "outcome": result.get("outcome", ""),
+                "narrative": combat_narrative or "",
+                "is_boss": result.get("is_boss", False),
+            }
 
     return {
         "session_id": session_id,

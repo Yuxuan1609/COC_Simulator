@@ -644,6 +644,12 @@ def continue_standoff(keeper, player_input: str) -> dict:
             combat_init.player.derived.HP = max(0, cr.player_hp)
             combat_init.player.derived.SAN = max(0, cr.player_san)
         keeper.world.enemy_manager.exit_combat({"outcome": cr.outcome})
+        # Store combat result for next turn's enrich
+        keeper._combat_result_pending = {
+            "outcome": cr.outcome,
+            "narrative": cr.narrative or "",
+            "is_boss": bool(keeper.world.bosses and keeper.world.bosses.active_boss_id),
+        }
         # Mark boss as completed on win
         if cr.outcome == "win":
             boss_id = keeper.world.bosses.active_boss_id

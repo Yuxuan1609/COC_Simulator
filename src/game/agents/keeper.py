@@ -70,6 +70,7 @@ class Keeper:
         self._npc_events: list[str] = []  # NPC follow/state events collected this turn
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
+        self._combat_result_pending: dict | None = None  # {outcome, narrative, is_boss} from last combat
         self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
@@ -663,6 +664,21 @@ class Keeper:
                     self.world.enemies.add_to_combat(boss_enemy.instance_id)
 
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into enrich_input
+
+        # Inject pending combat result (from frontend combat path, same turn)
+        if self._combat_result_pending:
+            cr = self._combat_result_pending
+            self._combat_result_pending = None
+            outcome_label = {"win": "胜利", "loss": "败北", "flee": "逃脱", "draw": "平局"}.get(cr.get("outcome", ""), cr.get("outcome", ""))
+            enrich_input.entities.append({
+                "entity_type": "combat_result",
+                "id": "COMBAT_RESULT",
+                "name": f"战斗{outcome_label}",
+                "result": cr.get("narrative", f"战斗结束，结果是{outcome_label}。")[:300],
+                "success": cr.get("outcome") == "win",
+                "skill_tier": "",
+            })
+
         emphasis = ""
         enrichment = None
         ta_result = None
