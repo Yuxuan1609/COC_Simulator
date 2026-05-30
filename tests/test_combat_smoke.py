@@ -219,7 +219,7 @@ def test_combat_result_structure():
 def test_combat_phase_trigger():
     """Phase triggers at hp_below_pct and applies overrides."""
     player = _make_investigator(hp=30, san=60)
-    boss = _TestEnemy("PhaseBoss", hp=3, armor="0", instance_id="E_PHASE_1",
+    boss = _TestEnemy("PhaseBoss", hp=1, armor="0", instance_id="E_PHASE_1",
         dex=10, attacks=[{"name": "轻触", "damage": "1D2"},],
         phases=[{"trigger": "hp_below_pct:0.5", "name": "狂怒",
                  "overrides": {}, "description": "Boss狂暴了"}])
