@@ -260,6 +260,14 @@ class Keeper:
                     "time_range": None,
                     "time_category": "move",
                 })
+                enrich_input.entities.append({
+                    "entity_type": "move",
+                    "id": f"MOVE_{target}",
+                    "name": f"前往{target}",
+                    "result": f"从{origin}前往{target}。",
+                    "success": True,
+                    "skill_tier": "",
+                })
             elif entry_type == "search":
                 # Search always performs a 侦查 (Spot Hidden) check.
                 # No dependency check, no flag update, no enrich.
@@ -377,6 +385,14 @@ class Keeper:
                     "time_range": None,
                     "time_category": "search",
                 })
+                enrich_input.entities.append({
+                    "entity_type": "search",
+                    "id": "SEARCH",
+                    "name": "搜索",
+                    "result": msg[:200],
+                    "success": True,
+                    "skill_tier": tier if self.world.player else "",
+                })
             elif entry_type == "other":
                 text = entry.get("text", "")
                 scene = self.world.current_location
@@ -438,6 +454,14 @@ class Keeper:
                         "time_range": None,
                         "time_category": "other",
                     })
+                    enrich_input.entities.append({
+                        "entity_type": "other",
+                        "id": "OTHER",
+                        "name": text[:40],
+                        "result": f"（{text}）"[:200],
+                        "success": True,
+                        "skill_tier": "",
+                    })
             else:
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
@@ -448,6 +472,14 @@ class Keeper:
                     "success": True,
                     "time_range": None,
                     "time_category": "other",
+                })
+                enrich_input.entities.append({
+                    "entity_type": "other",
+                    "id": "OTHER",
+                    "name": str(entry.get("text", ""))[:40],
+                    "result": f"（{entry.get('text', '没有特别的事情发生')}）"[:200],
+                    "success": True,
+                    "skill_tier": "",
                 })
 
         # Deterministic event auto-trigger: after judge, fire events whose dependencies just satisfied
