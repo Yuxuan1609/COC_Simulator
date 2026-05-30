@@ -917,7 +917,7 @@ async def combat_round(request: Request):
         try:
             from prompts import _log_dir as prompt_log_dir
             combat_narrative = cs._generate_combat_narrative(
-                state, session.get("combat_init"), state.round,
+                state, combat_init.player, combat_init.scene,
                 log_dir=prompt_log_dir or "")
         except Exception:
             pass

@@ -294,11 +294,6 @@ class CombatSystem:
                         ea_data["damage"] = new_dmg
                         if corrected.get("narrative"):
                             ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
-                        if new_dmg != old_dmg:
-                            for a in state.full_log:
-                                if getattr(a, 'actor', '') == enemy_id and a.damage == old_dmg:
-                                    a.damage = new_dmg
-                                    break
 
             # 玩家伤害结算 — 每击独立应用
             for pa in player_actions_this_round:
@@ -316,12 +311,6 @@ class CombatSystem:
                 except (ValueError, TypeError):
                     effective = max(0, int(dmg) if dmg else 0)
                 enemy.hp = max(0, getattr(enemy, 'hp', 10) - effective)
-                if effective != dmg:
-                    for a in state.full_log:
-                        if a.actor == "player" and getattr(a, 'target', '') == tgt_iid and a.action_type == "attack":
-                            if a.damage == dmg:
-                                a.damage = effective
-                                break
 
             for enemy in state.enemies:
                 if getattr(enemy, 'hp', 1) <= 0 or getattr(enemy, 'status', '') in ('dead', 'defeated'):
@@ -482,12 +471,6 @@ class CombatSystem:
                     ea_data["damage"] = new_dmg
                     if corrected.get("narrative"):
                         ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
-                    # Update full_log with corrected enemy damage
-                    if new_dmg != old_dmg:
-                        for a in state.full_log:
-                            if getattr(a, 'actor', '') == enemy_id and a.damage == old_dmg:
-                                a.damage = new_dmg
-                                break
 
         # Apply player damage to enemies
         for pa in player_actions_this_round:
@@ -504,13 +487,6 @@ class CombatSystem:
             except (ValueError, TypeError):
                 effective = max(0, int(dmg) if dmg else 0)
             enemy.hp = max(0, getattr(enemy, 'hp', 10) - effective)
-            # Update full_log with corrected player damage
-            if effective != dmg:
-                for a in state.full_log:
-                    if a.actor == "player" and getattr(a, 'target', '') == tgt_iid and a.action_type == "attack":
-                        if a.damage == dmg:  # match exact pre-correction value
-                            a.damage = effective
-                            break
 
         # Phase check
         for enemy in state.enemies:
@@ -623,6 +599,11 @@ class CombatSystem:
 
 【战斗日志】
 {chr(10).join(log_lines)}
+
+【最终结果】
+调查员 HP: {state.player_hp}, SAN: {state.player_san}
+敌人: {', '.join(f'{getattr(e, "enemy_ref", getattr(e, "name", "?"))} HP:{getattr(e, "hp", 0)}' for e in state.enemies)}
+结果: {state.finished and ('玩家胜利' if all(getattr(e, 'hp', 0) <= 0 for e in state.enemies) else '玩家败北') or '未结束'}
 
 返回 JSON：
 {{"summary": "战斗摘要（中文≤120字），包含关键回合和最终结果"}}
