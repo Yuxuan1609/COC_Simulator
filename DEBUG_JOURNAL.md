@@ -392,3 +392,25 @@
 - **根因**：`get_combat_context` 没暴露真实 instance_id，LLM 自己猜的。更根本的问题是让 LLM 跨越语义判断去做精确数据引用
 - **解决**：LLM 只返回 `enter_combat: bool`，keeper 直接从 `get_active_in_scene()` 收集当前场景所有存活敌人，不再依赖 LLM 返回的 ID 列表。`all_enemy_iids` 也从 `combat_candidates` 直接收集
 - **教训**：见 LEARNING_JOURNAL "LLM 只做布尔决策，确定性代码做数据查找"
+
+## 63. Boss 击败后反复生成 — 3 层连锁 Bug
+
+- **症状**：(a) Boss 被击败后仍显示 Engage 状态，玩家下一回合再次触发战斗；(b) 同一场景 Boss 反复生成新实例；(c) Boss entity ID 永不标记 completed
+- **根因链**（3 层）：
+  1. `BossManager.build_combat_init()` 每次生成新 UUID 实例，无重复防御 — Boss 可无限生成
+  2. Boss entity ID 永不调用 `world.get_runtime_state(boss_id).completed = True` — 依赖图和运行时状态层面 Boss 始终"待触发"
+  3. `continue_standoff` 和前端 `combat_round` 的 exit_combat 只改 enemy status 不改 runtime_state
+- **解决**：
+  - BossManager 新增 `_spawned_boss_ids: set[str]` + `has_spawned()`/`mark_spawned()` — 每 Boss 只生成一次
+  - `continue_standoff` 和前端 combat 路径中，combat win 后标记 `runtime_state[boss_id].completed = True`
+  - Boss "at" 和 "event" 检查增加 `has_spawned(boss_id)` 过滤
+
+## 64. EnemyManager.spawn() 不拷贝 flags → avoidable/adjacent_aware/guardian 全失效
+
+- **症状**：`avoidable` 敌人不触发对峙（standoff），`adjacent_aware` 敌人不跨场景感知
+- **根因**：`LibraryEnemy.from_dict()` 通过正则从 `combat_behavior` 文本中正确解析 `[avoidable]`/`[adjacent_aware]` 等 tag 存入 `flags` 列表。但 `EnemyManager.spawn()` 构造 `EnemyInstance` 时传了所有字段唯独漏了 `flags` → 运行时 flags 始终为空 `[]`
+- **对比 Boss**：`BossManager.build_combat_init()` 正确传递 `flags=list(lib_boss.flags)` → Boss 标签正常
+- **影响**：所有 spawned 敌人都丢失标签，仅 Boss（通过单独路径创建）不受影响。`from_dict` 反序列化路径正常（保存/加载后恢复正确）
+- **flags 清单**：`adjacent_aware`（Clicker 跨场景感知）、`avoidable`（深潜者可对峙）、`guardian`（石卫，代码库无消费逻辑）、`boss`（Boss 战斗路由）
+- **修复**：`spawn()` 中补 `flags=list(getattr(lib_enemy, 'flags', []))`
+- **待办**：Boss 管理应统一到 EnemyManager，Boss 不应走独立 build_combat_init 路径创建 instance（避免双轨制维护）

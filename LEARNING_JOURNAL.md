@@ -278,3 +278,10 @@
 - **方案**：目标按钮点击一次→选中（显示 ×1），再次点击同一目标→升级（×2, ×3...），点击其他目标→转移剩余次数。实时显示剩余可分配次数
 - **收益**：(a) 直观表达"对同一目标多次攻击"；(b) 无需下拉菜单/多选框等复杂控件；(c) 玩家误操作可立即纠正（再次点击降级或重置）
 - **泛化**：任何需要"N 个资源分配到 M 个目标，且允许目标重复"的场景——战斗多目标、技能点分配、资源投放
+
+## 同类子系统的双轨制是 Bug 温床 — 统一管理入口
+- **场景**：Enemy 和 Boss 是两个"同类但不同源"的实体类型——都是 EnemyInstance，但 Enemy 通过 `EnemyManager.spawn()` 创建，Boss 通过 `BossManager.build_combat_init()` 创建。两个入口维护不同的字段完整性逻辑
+- **后果**：`spawn()` 漏传 `flags` 字段 → `avoidable`/`adjacent_aware` 全失效。`build_combat_init()` 正确传 `flags` → Boss 不受影响。同一类型的同一字段，两个创建路径行为不同 — 这是最隐蔽的 Bug 来源
+- **原则**：如果两个子系统管理同一核心类型（EnemyInstance），应共享同一个创建/注册入口。Boss 只是"来源数据不同"（从 bosses.json 而非 enemies.json 读取），不是"需要不同的创建逻辑"。差异应该在数据层消解，不在管理层分叉
+- **具体做法**：`EnemyManager.create_instance(lib_data, scene, quantity)` 作为唯一入口，Boss 和 Enemy 都走这条路。Boss 的特殊性（不可 spawn、不可批量生成）通过属性标记（如 `flags=["boss"]`）而非分离 API 表达
+- **与"等价事件共享同一抽象"互补**——前者管行动/状态分支，这个管实体创建
