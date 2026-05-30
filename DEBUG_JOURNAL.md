@@ -414,3 +414,23 @@
 - **flags 清单**：`adjacent_aware`（Clicker 跨场景感知）、`avoidable`（深潜者可对峙）、`guardian`（石卫，代码库无消费逻辑）、`boss`（Boss 战斗路由）
 - **修复**：`spawn()` 中补 `flags=list(getattr(lib_enemy, 'flags', []))`
 - **待办**：Boss 管理应统一到 EnemyManager，Boss 不应走独立 build_combat_init 路径创建 instance（避免双轨制维护）
+
+## 65. complete_combat_turn 覆盖 resolve_standoff 的 def 行 → standoff 运行时崩溃
+
+- **症状**：`continue_standoff()` 调用 `keeper.resolve_standoff(s, player_input)` 报 `AttributeError`
+- **根因**：新增 `complete_combat_turn` 方法时，method body 结束于 }，紧接着是 orphaned `resolve_standoff` 的 docstring + body，但 **`def resolve_standoff` 声明行被覆盖/丢失了**，导致 body 缩进在 `complete_combat_turn` 末尾 → Python 视之为死代码
+- **解决**：在 body 前补回 `def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:`
+- **教训**：新增方法时检查相邻方法的完整性，特别是 `grep "def <method_name>"` 确认声明行存在
+
+## 66. 架构审计：子回合模式不统一
+
+- **审计范围**：7 个子系统（Pre-parse、NPC Dialogue、Weapon Offer、Combat、Standoff、IntentDetector/Author、TimeAgent）
+- **设计模式**：主回合 parse → judge → enrich → curate。子系统在 parse 同期或之后启动，结果在主回合外作为子回合处理，再接回
+- **发现**：
+  - **IntentDetector/Author** — 最干净的子回合实现：ThreadPoolExecutor 早启动，晚收集，递归 escalation 有深度保护
+  - **Combat** — `complete_combat_turn()` 接回仅重放 enrich→curate，不重跑完整 pipeline。side_effects 已在前次 process_turn 中 apply，不安全但可接受
+  - **Weapon Offer** — 跨两回合：turn N 设 offer → turn N+1 消费。应改为同回合可中断子回合
+  - **Pre-parse** — docstring 声称并行但实际串行（Step 0 gate）。应与 parse 真正并行以降低延迟
+  - **NPC 纯对话** — 短接整个 pipeline，不经过 narrator。设计正确（对话文本无需 enrich），但缺乏 L1 沉浸
+  - **Standoff** — 每个 standoff group 消费一个回合输入，应改为可中断同回合子回合
+  - **TimeAgent** — 不是子回合，是 enrich 阶段内的并行 LLM 调用
