@@ -353,15 +353,15 @@ data/
 
 | # | 事项 | 状态 |
 |----|------|------|
-| U1 | 自动化测试体系 | 已完成基本版，待优化 |
-| U2 | 战斗系统升级 | ✅ v2 完成：群组模型、LLM 修正、交互式 CLI、phase |
-| U3 | Author "other" 消歧 | ✅ Pre-Parse Disambiguator 完成 |
-| U4 | NPC 系统升级 | 态度硬性规则、半主动行为 |
-| U5 | 世界状态系统 | Logger 驱动的状态解读 |
-| U6 | LLM Provider 抽象 | OpenAI/Anthropic 多 provider |
-| U7 | 跨模组持久化 | 调查员永久化、Patch 永久化、战役系统 |
-| U8 | 多人模式 (Hotseat) | 同机多调查员 |
-| U9 | 法术体系 | SpellJudge + @grant_spell |
-| U10 | LLM 调用成本优化 | 各步骤 thinking/reasoning_effort 最低配置 |
-| U11 | 审计 Agent 重构 | 多 Agent 分层审计 |
-| U12 | Narrator 大失败处理 | fumble 叙事后果 |
+| U1 | NPC 系统升级 | 态度硬性规则、半主动行为 |
+| U2 | 世界状态系统 | Logger 驱动的状态解读 |
+| U3 | LLM Provider 抽象 | OpenAI/Anthropic 多 provider |
+| U4 | 跨模组持久化 | 调查员永久化、Patch 永久化、战役系统 |
+| U5 | 多人模式 (Hotseat) | 同机多调查员 |
+| U6 | 法术体系 | SpellJudge + @grant_spell |
+| U7 | LLM 调用成本优化 | 各步骤 thinking/reasoning_effort 最低配置 |
+| U8 | 审计 Agent 重构 | 多 Agent 分层审计 |
+| U9 | Narrator 大失败处理 | fumble 叙事后果 |
+| U10 | 物品系统升级 | |
+| U11 | 技能系统重修 | |
+| U12 | 自动化测试体系 | 已完成基本版，待优化 |
