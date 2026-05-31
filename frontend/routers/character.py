@@ -262,7 +262,6 @@ def _build_export(name: str, age: int, gender: str,
             inv.occupation = Occupation(
                 name=_occ["name"], description=_occ.get("description", ""),
                 occupation_skills=_occ.get("occupation_skills", []),
-                credit_rating_range=_occ.get("credit_rating_range", "9-30"),
             )
             break
     inv.appearance = appearance or ""
