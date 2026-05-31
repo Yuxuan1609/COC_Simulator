@@ -11,7 +11,7 @@ TRPG 调查员助手是一个**模块化、多层 LLM 协作的跑团游戏引�
 **核心思路**：将 TRPG 游戏分解为可独立演进的子系统——战斗、NPC、时间、检定、叙事、模组创作——每个子系统通过 dataclass 消息合约通信，可单独替换或增强。LLM 负责叙事与意图判定，确定性规则负责数值检定与状态管理。
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Creation[模组创作]
         S0[Step 0<br/>小说→模组] --> S1[Step 1-4<br/>模组→三层 JSON]
         S1 --> L1[L1 玩家层]
@@ -19,30 +19,99 @@ flowchart LR
         S1 --> L3[L3 设计层]
     end
 
-    subgraph Runtime[运行时引擎]
-        UI[玩家输入] --> KP[Keeper<br/>Agent 层封装]
-        L2 -.-> KP
-        KP --> Judge[确定性闸门<br/>D100 / 需求 / 惩罚]
-        KP --> Enrich[叙事润色]
-        KP --> Combat[CombatSystem<br/>回合制战斗]
-        KP --> Author[Author<br/>动态创作]
-        KP --> Curator[策展器]
-        KP --> TA[TimeAgent<br/>时间推进]
-        Curator --> Nar[Narrator<br/>沉浸式叙事]
-        L1 -.-> Nar
-        L3 -.-> Author
-        Nar --> UI
-    end
-
     subgraph Support[基础架构]
+        direction LR
         CL[GameClock] & EM[EnemyManager] & NM[NPCManager] & BM[BossManager] & MM[MemoryManager]
         Lib[武器/敌人/法术库]
         Markup[8 种 @markup 副效果]
         Test[llm_player + audit + harness]
     end
 
-    Runtime --> Support
-    Creation --> Support
+    Creation -.-> Support
+
+    subgraph Turn[单个回合内流转 · Keeper.process_turn]
+        direction TB
+
+        subgraph Step0[Step 0 消歧]
+            PreParse[PreParseDisambiguator<br/>模糊输入反问/跨turn整合]
+        end
+
+        subgraph Step1[Step 1 解析]
+            Parse[Parse · LLM<br/>实体匹配 + 行动分类]
+            NPCDialogue[NPC对话 · LLM<br/>talk_to + 跟随检测]
+        end
+
+        subgraph Step2[Step 2 判定]
+            Judge[Judge · 确定性闸门<br/>requirement / dependency_graph<br/>time_condition / D100 检定]
+            Search[Search · 侦查检定<br/>发现隐藏物品/线索/武器]
+            Move[Move · 场景移动<br/>defer 至 Author 确认后]
+            DepFire[依赖图自动触发<br/>dependency_graph → 事件自动点火]
+        end
+
+        subgraph Step25[Step 2.5 战斗入口]
+            CombatEntry[CombatEntry · LLM<br/>敌意检测 → 是否进入战斗]
+            Standoff[Standoff · 对峙<br/>avoidable 敌人 → 最后一次机会]
+            BossCheck[Boss 遭遇检测<br/>at / interaction / event]
+        end
+
+        subgraph Step3[Step 3 并行增强]
+            Enrich[Enrich · LLM<br/>叙事润色 + emphasis]
+            TimeAgent[TimeAgent · LLM<br/>时间评估 → Clock.advance_time]
+            TimeComm[TimePressure · 时间压力通信<br/>L3 time_pressure → 玩家提示]
+        end
+
+        subgraph Step4[Step 4 Author 响应]
+            IntentDetect[IntentDetector<br/>other 行动 → 意图判定]
+            AuthorResp{Author 响应}
+            Structural[StructuralEdit<br/>触发补充管线 → 递归]
+            Patch[ModulePatch<br/>实体注入 → 递归]
+            Reject[Reject<br/>注入玩家可见提示]
+        end
+
+        subgraph Step5[Step 5-6 输出]
+            SideEffects[应用副效果 + Move<br/>@markup / item_gain / stat_change]
+            Ending[结局检测<br/>##END_ + L3 ending_conditions]
+            Curate[Curator · 确定性<br/>outcomes → NarratorBrief]
+            Narrator[Narrator · LLM<br/>L1 + NarratorBrief → 沉浸式叙事]
+        end
+
+        PreParse --> Parse
+        PreParse --> NPCDialogue
+        Parse --> Judge
+        Judge --> Search
+        Judge --> Move
+        Judge --> DepFire
+        Judge --> CombatEntry
+        CombatEntry -->|enter_combat| Standoff
+        CombatEntry -->|hostile| BossCheck
+        Standoff -->|进入战斗| BossCheck
+        DepFire --> Enrich
+        Move --> Enrich
+        Search --> Enrich
+        BossCheck --> Enrich
+        CombatEntry -->|no combat| Enrich
+        Standoff -->|避免战斗| Enrich
+        Enrich & TimeAgent --> TimeComm
+        TimeComm --> IntentDetect
+        IntentDetect -->|needs_author| AuthorResp
+        AuthorResp --> Structural
+        AuthorResp --> Patch
+        AuthorResp --> Reject
+        Structural -->|supplement 完成| SideEffects
+        Patch -->|patch 完成| SideEffects
+        Reject --> SideEffects
+        IntentDetect -->|no author needed| SideEffects
+        SideEffects --> Ending
+        Ending --> Curate
+        Curate --> Narrator
+        Narrator -->|返回玩家| UI[玩家 UI]
+    end
+
+    UI -->|玩家输入| PreParse
+    Narrator -.-> L1
+    AuthorResp -.-> L3
+    Parse -.-> L2
+    Support -.-> Turn
 ```
 
 ### 关键特性
