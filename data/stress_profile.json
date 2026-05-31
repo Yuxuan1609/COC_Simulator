@@ -24,7 +24,7 @@
   ],
   "player_config": {
     "max_turns": 60,
-    "max_duration_s": 300,
+    "max_duration_s": 1800,
     "memory_compress_interval": 5,
     "model": "deepseek-v4-flash",
     "reasoning_effort": "low",
