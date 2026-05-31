@@ -363,20 +363,9 @@ class NPCManager:
         all_outcomes: list[ActionOutcome] = []
         enrich_input = EnrichInput()
         for entity in matched_entities:
-            ent = EntityCls(
-                id=entity.get("id", ""),
-                entity_type=entity.get("entity_type", "interaction"),
-                name=entity.get("name", ""),
-                scene=entity.get("source_scene", ""),
-                type=entity.get("type", ""),
-                requirement=entity.get("requirement", ""),
-                trigger=entity.get("trigger", ""),
-                result=entity.get("result", ""),
-                side_effects=entity.get("side_effects", []),
-                graded_result=entity.get("graded_result"),
-                difficulty=entity.get("difficulty", ""),
-                extra=entity.get("extra"),
-            )
+            ent = EntityCls.from_dict(entity, overrides={
+                "scene": entity.get("source_scene", ""),
+            })
             intent = ActionIntent(action="interact", target=entity.get("name", ""))
             outcome = judge._execute_entity(ent, intent=intent, player_input=user_input)
             all_outcomes.append(outcome)

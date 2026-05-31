@@ -1372,27 +1372,17 @@ class Keeper:
         graph = self.world.graph
 
         interactions = [
-            EntityClass(
-                id=inter["id"], entity_type=inter.get("entity_type", "interaction"),
-                name=inter["name"], scene=inter.get("scene", scene_name),
-                type=inter.get("type", ""), requirement=inter.get("requirement", ""),
-                trigger=inter.get("trigger", ""), result=inter.get("result", ""),
-                side_effects=inter.get("side_effects", []),
-                graded_result=inter.get("graded_result"), difficulty=inter.get("difficulty", ""),
-                time_condition=inter.get("time_condition", ""),
-            )
+            EntityClass.from_dict(inter, overrides={
+                "entity_type": inter.get("entity_type", "interaction"),
+                "scene": inter.get("scene", scene_name),
+            })
             for inter in scene_data.get("interactions", [])
         ]
         auto_triggers = [
-            EntityClass(
-                id=at["id"], entity_type=at.get("entity_type", "auto_trigger"),
-                name=at["name"], scene=at.get("scene", scene_name),
-                type=at.get("type", ""), requirement=at.get("requirement", ""),
-                trigger=at.get("trigger", ""), result=at.get("result", ""),
-                side_effects=at.get("side_effects", []),
-                graded_result=at.get("graded_result"), difficulty=at.get("difficulty", ""),
-                time_condition=at.get("time_condition", ""),
-            )
+            EntityClass.from_dict(at, overrides={
+                "entity_type": at.get("entity_type", "auto_trigger"),
+                "scene": at.get("scene", scene_name),
+            })
             for at in scene_data.get("auto_triggers", [])
         ]
 
