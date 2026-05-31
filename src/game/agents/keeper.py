@@ -332,30 +332,20 @@ class Keeper:
                         f"[SEARCH] 侦查检定 | 等级={tier} | {'成功' if ok else '失败'}\n"
                         f"  {skill_msg}"
                     )
-                    from prompts import log_skill_result
+                    from prompts import log_skill_result, apply_trait_enhancement
                     log_skill_result(skill_detail)
                     # Trait enhancement for search
-                    inv_desc = getattr(self.world.player, 'personal_description', '') or \
-                               getattr(self.world.player, 'description', '')
-                    if inv_desc:
-                        from llm import evaluate_trait_enhancement
-                        roll_m = re.search(r'D100=(\d+)/', skill_msg)
-                        dice_roll = int(roll_m.group(1)) if roll_m else 0
-                        skill_val = self.world.player.get_skill_value("侦查") if self.world.player else 0
-                        enh = evaluate_trait_enhancement(
-                            inv_desc=inv_desc,                             skill_name="侦查", skill_detail=skill_msg,
-                            dice_roll=dice_roll, skill_value=skill_val,
-                            entity_name="搜索",
-                            search_context=True,
-                            player_input=raw,
-                        )
-                        new_tier = enh.get("tier", tier)
-                        if new_tier != tier:
-                            skill_detail += f"\n  [特质修正] {tier} → {new_tier}：{enh.get('reason', '')}"
-                            log_skill_result(skill_detail)
-                            tier = new_tier
-                            ok = (tier != "failure")
-                        trait_enh = enh
+                    new_tier, enh = apply_trait_enhancement(
+                        self.world.player, "侦查", skill_msg,
+                        entity_name="搜索", search_context=True,
+                        player_input=raw,
+                    )
+                    if new_tier and new_tier != tier:
+                        skill_detail += f"\n  [特质修正] {tier} → {new_tier}：{enh.get('reason', '') if enh else ''}"
+                        log_skill_result(skill_detail)
+                        tier = new_tier
+                        ok = (tier != "failure")
+                    trait_enh = enh
                     if ok:
                         interactions = self.world.get_available_interactions()
                         done = self.world.completed_interactions.get(self.world.current_location, set())
@@ -970,29 +960,16 @@ class Keeper:
         )
 
         # Step 3: Trait enhancement
-        inv_desc = (getattr(self.world.player, 'personal_description', '') or
-                   getattr(self.world.player, 'description', ''))
-        if inv_desc:
-            roll_m = re.search(r'D100=(\d+)/', skill_msg)
-            dice_roll = int(roll_m.group(1)) if roll_m else 0
-            skill_val = self.world.player.get_skill_value(skill_name) if self.world.player else 0
-            enh = evaluate_trait_enhancement(
-                inv_desc=inv_desc,
-                skill_name=skill_name,
-                skill_detail=skill_msg,
-                dice_roll=dice_roll,
-                skill_value=skill_val,
-                entity_name=f"避免与{enemy_ref}战斗",
-                search_context=False,
-                player_input=player_input,
-            )
-            from prompts import log_skill_result
-            log_skill_result(f"[STANDOFF特质增强完整响应] {json.dumps(enh, ensure_ascii=False)}")
-            new_tier = enh.get("tier", tier)
-            if new_tier != tier:
-                skill_detail += f"\n  [特质修正] {tier} -> {new_tier}: {enh.get('reason', '')}"
-                tier = new_tier
-                ok = (tier != "failure")
+        from prompts import log_skill_result, apply_trait_enhancement
+        new_tier, _ = apply_trait_enhancement(
+            self.world.player, skill_name, skill_msg,
+            entity_name=f"避免与{enemy_ref}战斗",
+            player_input=player_input,
+        )
+        if new_tier and new_tier != tier:
+            skill_detail += f"\n  [特质修正] {tier} -> {new_tier}"
+            tier = new_tier
+            ok = (tier != "failure")
 
         # Step 4: Apply result
         if ok:
@@ -1083,7 +1060,15 @@ class Keeper:
             result = self.world.move(self._pending_move)
             self._pending_move = None
         if self._pending_side_effects:
-            self._apply_side_effects(list(self._pending_side_effects))
+            from scenario_core import apply_side_effects
+            def _direct_weapon(wref):
+                self._weapon_offer = [{"weapon_ref": wref, "scene": ""}]
+                self._weapon_offer_msg = f"（获得了{wref}，是否接受？（是/否））"
+            apply_side_effects(
+                self.world, list(self._pending_side_effects),
+                npc_events=self._npc_events,
+                direct_weapon_callback=_direct_weapon,
+            )
         # ── Inject NPC follow entity for NPCs that just started following ──
         for npc in self.world.npcs._npcs.values():
             if not npc.following or npc.scene != self.world.current_location:
@@ -1461,114 +1446,6 @@ class Keeper:
                    quantity=sw.get("quantity", 1))
                 for sw in raw_weapons
             ]
-
-    def _apply_side_effects(self, side_effects: list) -> list[str]:
-        """Apply side effect dataclasses via respective managers. Returns log messages."""
-        msgs = []
-        for effect in side_effects:
-            if isinstance(effect, ItemGain):
-                self.world.memory.note_item(effect.item_name)
-                if self.world.player and hasattr(self.world.player, 'item_manager'):
-                    self.world.player.item_manager.add(effect.item_name, quantity=effect.quantity)
-                    qty_str = f" x{effect.quantity}" if effect.quantity > 1 else ""
-                    msgs.append(f"[获得物品] {effect.item_name}{qty_str}（已加入背包）")
-                else:
-                    msgs.append(f"[获得物品] {effect.item_name}")
-
-            elif isinstance(effect, ConsumeItem):
-                consumed = False
-                if self.world.player and hasattr(self.world.player, 'item_manager'):
-                    im = self.world.player.item_manager
-                    if im.has(effect.item_name) and im.get(effect.item_name).quantity >= effect.quantity:
-                        im.remove(effect.item_name, effect.quantity)
-                        consumed = True
-                    else:
-                        try:
-                            from llm import call_deepseek
-                            from prompts import build_consume_item_fuzzy_prompt
-                            held = im.describe()
-                            if held and held != "（未持有物品）":
-                                prompt = build_consume_item_fuzzy_prompt(
-                                    target=effect.item_name, quantity=effect.quantity, held_items=held)
-                                result = call_deepseek(
-                                    prompt, json_mode=True, model=LLM_FLASH_MODEL,
-                                    system="你是 COC 7th KP 助理。",
-                                    fallback_schema={"matched": False, "item_name": "", "reason": ""})
-                                if isinstance(result, str):
-                                    import json as _json
-                                    result = _json.loads(result)
-                                if result.get("matched") and result.get("item_name"):
-                                    if im.has(result["item_name"]):
-                                        im.remove(result["item_name"], effect.quantity)
-                                        consumed = True
-                        except Exception:
-                            pass
-                msgs.append(f"[消耗物品] {effect.item_name} x{effect.quantity}" +
-                           ("" if consumed else "（未找到匹配物品）"))
-
-            elif isinstance(effect, SpawnEnemy):
-                target_scene = effect.scene or self.world.current_location
-                if self.world.enemies:
-                    instance = self.world.enemies.spawn(effect.enemy_ref, target_scene, effect.quantity)
-                    msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene} ({instance.instance_id})")
-                else:
-                    msgs.append(f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}")
-
-            elif isinstance(effect, GrantWeapon):
-                scene = effect.scene.strip() if effect.scene else ""
-                if scene:
-                    # 有场景名：武器放置到场景中，玩家通过搜索发现
-                    sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=scene, quantity=effect.quantity)
-                    if scene not in self.world.scene_weapons:
-                        self.world.scene_weapons[scene] = []
-                    self.world.scene_weapons[scene].append(sw)
-                    self.world.memory.note_item(effect.weapon_ref)
-                    msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {scene}")
-                else:
-                    # scene 为空：直接授予调查员，通过 _weapon_offer 走确认流程
-                    self._weapon_offer = [{"weapon_ref": effect.weapon_ref, "scene": ""}]
-                    self._weapon_offer_msg = f"（获得了{effect.weapon_ref}，是否接受？（是/否））"
-                    msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员（待确认）")
-
-            elif isinstance(effect, NPCStateChange):
-                self.world.npcs.set_state(effect.npc_name, effect.new_state)
-                msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
-
-            elif isinstance(effect, NPCFollow):
-                self.world.npcs.set_following(effect.npc_name, effect.follow)
-                status = "开始跟随" if effect.follow else "停止跟随"
-                msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
-                self._npc_events.append(f"{effect.npc_name} {status}你")
-
-            elif isinstance(effect, StatChange):
-                if self.world.player:
-                    new_val, detail = self.world.player.modify_stat(effect.stat_name, effect.delta)
-                    msgs.append(f"[属性变化] {detail}")
-                    if effect.narrative and hasattr(self.world.player, 'personal_description'):
-                        try:
-                            from llm import call_deepseek
-                            from prompts import build_stat_narrative_prompt
-                            prompt = build_stat_narrative_prompt(
-                                inv_desc=self.world.player.personal_description or self.world.player.appearance or "",
-                                stat_name=effect.stat_name, delta=str(effect.delta), narrative=effect.narrative)
-                            result = call_deepseek(
-                                prompt, json_mode=True, model=LLM_FLASH_MODEL,
-                                system="你是 COC 7th KP 助理，负责更新调查员描述。",
-                                fallback_schema={"description": self.world.player.personal_description or ""})
-                            if isinstance(result, str):
-                                import json as _json
-                                result = _json.loads(result)
-                            new_desc = result.get("description", "")
-                            if new_desc and new_desc != (self.world.player.personal_description or ""):
-                                self.world.player.personal_description = new_desc
-                                msgs.append(f"[描述更新] {effect.stat_name} 变化影响了外貌/心理描述")
-                        except Exception:
-                            pass
-                else:
-                    sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
-                    msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（无调查员，未应用）")
-
-        return msgs
 
     def _integrate_patch(self, patch):
         """Integrate ModulePatch entities into world graph."""

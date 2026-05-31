@@ -1221,8 +1221,17 @@ class ScenarioWorld:
         )
 
 
-def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
-    """Apply side effect dataclass instances to the world. Returns human-readable summaries."""
+def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
+                       npc_events: list | None = None,
+                       direct_weapon_callback=None) -> list:
+    """Apply side effect dataclass instances to the world. Returns human-readable summaries.
+    
+    Args:
+        world: ScenarioWorld instance
+        side_effects: list of side effect dataclass instances
+        npc_events: optional list to append NPC follow events (keeper path)
+        direct_weapon_callback: optional callable(weapon_ref) for direct weapon grants (keeper path)
+    """
     msgs = []
     for effect in side_effects:
         if isinstance(effect, ItemGain):
@@ -1289,16 +1298,26 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
                 )
         elif isinstance(effect, GrantWeapon):
             target_scene = effect.scene or world.current_location
-            sw = SceneWeapon(
-                weapon_ref=effect.weapon_ref,
-                scene=target_scene,
-                quantity=effect.quantity,
-            )
-            if target_scene not in world.scene_weapons:
-                world.scene_weapons[target_scene] = []
-            world.scene_weapons[target_scene].append(sw)
-            world.memory.note_item(effect.weapon_ref)
-            msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
+            if not effect.scene or not effect.scene.strip():
+                # scene 为空：直接授予调查员
+                if direct_weapon_callback:
+                    direct_weapon_callback(effect.weapon_ref)
+                    msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员（待确认）")
+                else:
+                    # fallback: 放置到当前场景
+                    if target_scene not in world.scene_weapons:
+                        world.scene_weapons[target_scene] = []
+                    world.scene_weapons[target_scene].append(SceneWeapon(
+                        weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity))
+                    world.memory.note_item(effect.weapon_ref)
+                    msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
+            else:
+                sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity)
+                if target_scene not in world.scene_weapons:
+                    world.scene_weapons[target_scene] = []
+                world.scene_weapons[target_scene].append(sw)
+                world.memory.note_item(effect.weapon_ref)
+                msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
         elif isinstance(effect, NPCStateChange):
             world.npcs.set_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
@@ -1306,6 +1325,8 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list) -> list:
             world.npcs.set_following(effect.npc_name, effect.follow)
             status = "开始跟随" if effect.follow else "停止跟随"
             msgs.append(f"[NPC跟随] {effect.npc_name} {status}")
+            if npc_events is not None:
+                npc_events.append(f"{effect.npc_name} {status}你")
         elif isinstance(effect, StatChange):
             if world.player:
                 new_val, detail = world.player.modify_stat(effect.stat_name, effect.delta)

@@ -187,36 +187,16 @@ class Judge:
             log_skill_result(skill_detail)
 
             # Rule enhancement: trait-based tier correction via LLM sub-agent
-            inv_desc = getattr(self.world.player, 'personal_description', '') or \
-                       getattr(self.world.player, 'description', '')
-            if inv_desc:
-                from llm import evaluate_trait_enhancement
-                roll_m = _re.search(r'D100=(\d+)/', skill_result)
-                dice_roll = int(roll_m.group(1)) if roll_m else 0
-                skill_val = self.world.player.get_skill_value(skill_name) if self.world.player else 0
-                enhancement = evaluate_trait_enhancement(
-                    inv_desc=inv_desc,
-                    skill_name=skill_name,
-                    skill_detail=skill_result,
-                    dice_roll=dice_roll,
-                    skill_value=skill_val,
-                    entity_name=entity.name,
-                    graded_tiers=entity.graded_result,
-                    player_input=player_input,
-                )
-                log_skill_result(f"[特质增强完整响应] {json.dumps(enhancement, ensure_ascii=False)}")
-                new_tier = enhancement.get("tier", skill_tier)
-                if new_tier != skill_tier:
-                    reason = enhancement.get("reason", "")
-                    detail_override = enhancement.get("detail_override")
-                    skill_detail += (
-                        f"\n  [特质修正] {skill_tier} → {new_tier}：{reason}"
-                    )
-                    if detail_override:
-                        skill_detail += f"\n  修正描述：{detail_override}"
-                    log_skill_result(skill_detail)
-                    skill_tier = new_tier
-                    skill_passed = (skill_tier != "failure")
+            from prompts import apply_trait_enhancement
+            new_tier, _ = apply_trait_enhancement(
+                self.world.player, skill_name, skill_result,
+                entity_name=entity.name,
+                graded_tiers=entity.graded_result,
+                player_input=player_input,
+            )
+            if new_tier and new_tier != skill_tier:
+                skill_tier = new_tier
+                skill_passed = (skill_tier != "failure")
 
         # Resolve result text (handle ##GRADED##)
         result_text = entity.result

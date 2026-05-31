@@ -87,6 +87,41 @@ def log_skill_result(text: str, log_path: str | None = None):
             f.write("\n\n")
 
 
+def apply_trait_enhancement(player, skill_name: str, skill_detail: str,
+                            entity_name: str = "", search_context: bool = False,
+                            player_input: str = "",
+                            graded_tiers: dict | None = None) -> tuple[str, dict | None]:
+    """共享的 trait enhancement 逻辑 — judge/search/standoff 三处复用。
+    
+    Returns (new_tier, enhancement_dict_or_None).
+    """
+    inv_desc = getattr(player, 'personal_description', '') or \
+               getattr(player, 'description', '')
+    if not inv_desc:
+        return "", None
+    import re as _re
+    from llm import evaluate_trait_enhancement
+    roll_m = _re.search(r'D100=(\d+)/', skill_detail)
+    dice_roll = int(roll_m.group(1)) if roll_m else 0
+    skill_val = player.get_skill_value(skill_name) if player else 0
+    enh = evaluate_trait_enhancement(
+        inv_desc=inv_desc, skill_name=skill_name, skill_detail=skill_detail,
+        dice_roll=dice_roll, skill_value=skill_val, entity_name=entity_name,
+        search_context=search_context, player_input=player_input,
+        graded_tiers=graded_tiers,
+    )
+    log_skill_result(f"[特质增强完整响应] {json.dumps(enh, ensure_ascii=False)}")
+    new_tier = enh.get("tier", "")
+    if new_tier:
+        reason = enh.get("reason", "")
+        detail_override = enh.get("detail_override")
+        skill_detail += f"\n  [特质修正] {new_tier}：{reason}"
+        if detail_override:
+            skill_detail += f"\n  修正描述：{detail_override}"
+        log_skill_result(skill_detail)
+    return new_tier, enh
+
+
 # ── 场景上下文（确定性，不依赖 LLM）──
 
 def _build_scene_context(snap: dict) -> str:
