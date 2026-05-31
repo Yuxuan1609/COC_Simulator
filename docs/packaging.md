@@ -56,7 +56,7 @@ if __name__ == "__main__":
 --hidden-import jinja2
 --hidden-import openai
 --hidden-import websockets
---hidden-import python-docx
+--hidden-import docx
 --hidden-import PyPDF2
 --hidden-import webview
 --hidden-import uvicorn.loops.auto
@@ -82,7 +82,7 @@ pyinstaller --onedir --noconsole --name "TRPG助手" ^
   --hidden-import jinja2 ^
   --hidden-import openai ^
   --hidden-import websockets ^
-  --hidden-import python-docx ^
+  --hidden-import docx ^
   --hidden-import PyPDF2 ^
   --hidden-import webview ^
   --hidden-import uvicorn.loops.auto ^

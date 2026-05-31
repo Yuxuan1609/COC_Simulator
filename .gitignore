@@ -11,6 +11,11 @@ CLAUDE.md
 素材/
 *.iml
 
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
 # Uploaded avatars
 frontend/static/uploads/avatars/*
 

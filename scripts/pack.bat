@@ -2,7 +2,6 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-REM ---- 切换到项目根目录（脚本所在目录的上级） ----
 cd /d "%~dp0.."
 
 echo ============================================
@@ -11,10 +10,9 @@ echo ============================================
 echo.
 
 REM ---- 检查 pyinstaller ----
-where pyinstaller >nul 2>&1
+python -c "import PyInstaller" 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo [错误] 未找到 pyinstaller，请先安装：
-    echo   pip install pyinstaller
+    echo [错误] 未找到 PyInstaller，请先安装：pip install pyinstaller
     pause
     exit /b 1
 )
@@ -23,8 +21,7 @@ REM ---- 检查必要模块 ----
 echo [检查] 验证依赖模块...
 python -c "import fastapi, uvicorn, jinja2, openai, websockets, webview, docx, PyPDF2" 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo [错误] 缺少必要的 Python 模块，请安装：
-    echo   pip install fastapi uvicorn jinja2 openai websockets pywebview python-docx PyPDF2
+    echo [错误] 缺少必要的 Python 模块。
     pause
     exit /b 1
 )
@@ -41,32 +38,11 @@ REM ---- 运行 PyInstaller ----
 echo [打包] 正在运行 PyInstaller（可能需要几分钟）...
 echo.
 
-pyinstaller --onedir --noconsole --name "TRPG助手" ^
-  --add-data "frontend\templates;frontend\templates" ^
-  --add-data "frontend\static;frontend\static" ^
-  --add-data "data\library;data\library" ^
-  --add-data "data\modules;data\modules" ^
-  --add-data "data\templates;data\templates" ^
-  --add-data "data\occupations.json;data" ^
-  --add-data "data\skill_checks.json;data" ^
-  --add-data "data\stress_profile.json;data" ^
-  --add-data "data\saves;data\saves" ^
-  --add-data "src;src" ^
-  --hidden-import fastapi ^
-  --hidden-import uvicorn ^
-  --hidden-import jinja2 ^
-  --hidden-import openai ^
-  --hidden-import websockets ^
-  --hidden-import python-docx ^
-  --hidden-import PyPDF2 ^
-  --hidden-import webview ^
-  --hidden-import uvicorn.loops.auto ^
-  --hidden-import uvicorn.protocols.http.auto ^
-  frontend\server.py
+python -m PyInstaller --onedir --noconsole --name "TRPG助手" --add-data "frontend/templates;frontend/templates" --add-data "frontend/static;frontend/static" --add-data "data/library;data/library" --add-data "data/modules;data/modules" --add-data "data/templates;data/templates" --add-data "data/occupations.json;data" --add-data "data/skill_checks.json;data" --add-data "data/stress_profile.json;data" --add-data "data/saves;data/saves" --add-data "src;src" --hidden-import fastapi --hidden-import uvicorn --hidden-import jinja2 --hidden-import openai --hidden-import websockets --hidden-import docx --hidden-import PyPDF2 --hidden-import webview --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto frontend/server.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [错误] PyInstaller 打包失败，请检查上面的错误信息。
+    echo [错误] PyInstaller 打包失败。
     pause
     exit /b 1
 )
