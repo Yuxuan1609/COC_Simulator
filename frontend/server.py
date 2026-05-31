@@ -12,6 +12,11 @@ import os
 import sys
 from pathlib import Path
 
+# Ensure project root is in sys.path before local imports (for dev mode)
+_proj = Path(__file__).resolve().parent.parent
+if str(_proj) not in sys.path:
+    sys.path.insert(0, str(_proj))
+
 from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
 
 sys.path.insert(0, str(PROJECT_ROOT))
