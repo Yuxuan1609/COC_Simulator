@@ -4,6 +4,16 @@
 
 ---
 
+## PyInstaller 封包后调查员头像路径解析（2026-05-31）
+
+**现状**：`_build_export()` 中通过 `PROJECT_ROOT / 'frontend' / 'static' / 'uploads' / 'avatars' / ...` 查找头像。打包后 `PROJECT_ROOT` 由 `character.py` 的 `Path(__file__).resolve().parent.parent.parent` 计算得出，在 PyInstaller 模块中可能指向异常路径。
+
+**影响**：导出角色卡时头像文件可能无法正确包含到 zip 中（但角色 json 本身不受影响，功能不阻塞）。
+
+**后续**：如需修复，应将 avatar 路径改为使用 `FRONTEND_DIR`（已在 `server.py` 正确定义）或 `character.py` 自身的 `UPLOADS_DIR`，而非重新拼接 `PROJECT_ROOT`。
+
+---
+
 ## 代码库结构审计（2026-05-31）
 
 **Top 3 高影响优化**：
