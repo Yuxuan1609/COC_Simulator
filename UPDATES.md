@@ -4,6 +4,20 @@
 
 ---
 
+## @consume_item 在 requirement 中作为前置门禁（2026-05-31）
+
+**现状**：Phase 2 管线将 requirement 中的自然语言（如"需要消耗1个急救包"）标准化为 `@consume_item` 写入 `side_effects`。运行时 `parse_markup_all` 解析后，物品在 entity 执行后删除（后置副作用），不在执行前作为前置门禁。
+
+**问题**：
+- 玩家没有物品时无法拒绝（"你没有这个物品"）
+- 技能检定失败时物品照样被消耗
+
+**修改方式**：在 requirement 解析中加入物品消耗检查，或额外增设一个字段。本质上仍须通过自然语言处理——`@consume_item` 本身可嵌入 requirement 文本中，由 `parse_markup_all` 提取后作为前置门禁判断。
+
+**涉及文件**：`src/game/judge.py:_execute_entity()`、`src/game/agents/keeper.py`、`src/module_designer/layered_parser.py`（Phase 2 prompt）
+
+---
+
 ## [P0] 模组打包：深渊第七城 + 常暗之厢_0531（2026-05-31）
 
 待打包模组：
