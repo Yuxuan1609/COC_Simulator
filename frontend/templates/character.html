@@ -134,17 +134,33 @@ function charSyncAllFields() {
 function exportCharacter() {
   charSyncAllFields();
   var form = document.getElementById('char-form');
-  var parts = [];
+  var params = new URLSearchParams();
   form.querySelectorAll('input').forEach(function(el) {
-    if (el.value) parts.push(encodeURIComponent(el.name) + '=' + encodeURIComponent(el.value));
+    if (el.value) params.append(el.name, el.value);
   });
   document.querySelectorAll('#step-content [name]').forEach(function(el) {
-    if (el.value) parts.push(encodeURIComponent(el.name) + '=' + encodeURIComponent(el.value));
+    if (el.value) params.append(el.name, el.value);
   });
-  if (!parts.some(function(p) { return p.startsWith('name='); })) {
-    parts.push('name=' + encodeURIComponent('调查员'));
-  }
-  window.open('/character/export?' + parts.join('&'), '_blank');
+  if (!params.has('name')) params.append('name', '调查员');
+
+  fetch('/character/export?' + params.toString())
+    .then(function(r) {
+      if (!r.ok) throw new Error('导出失败');
+      return r.blob();
+    })
+    .then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = (params.get('name') || 'character') + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch(function(e) {
+      alert('导出失败: ' + e.message);
+    });
 }
 </script>
 {% endblock %}
