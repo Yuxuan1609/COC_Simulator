@@ -10,6 +10,41 @@ TRPG 调查员助手是一个**模块化、多层 LLM 协作的跑团游戏引�
 
 **核心思路**：将 TRPG 游戏分解为可独立演进的子系统——战斗、NPC、时间、检定、叙事、模组创作——每个子系统通过 dataclass 消息合约通信，可单独替换或增强。LLM 负责叙事与意图判定，确定性规则负责数值检定与状态管理。
 
+```mermaid
+flowchart LR
+    subgraph Creation[模组创作]
+        S0[Step 0<br/>小说→模组] --> S1[Step 1-4<br/>模组→三层 JSON]
+        S1 --> L1[L1 玩家层]
+        S1 --> L2[L2 KP 层]
+        S1 --> L3[L3 设计层]
+    end
+
+    subgraph Runtime[运行时引擎]
+        UI[玩家输入] --> KP[Keeper<br/>Agent 层封装]
+        L2 -.-> KP
+        KP --> Judge[确定性闸门<br/>D100 / 需求 / 惩罚]
+        KP --> Enrich[叙事润色]
+        KP --> Combat[CombatSystem<br/>回合制战斗]
+        KP --> Author[Author<br/>动态创作]
+        KP --> Curator[策展器]
+        KP --> TA[TimeAgent<br/>时间推进]
+        Curator --> Nar[Narrator<br/>沉浸式叙事]
+        L1 -.-> Nar
+        L3 -.-> Author
+        Nar --> UI
+    end
+
+    subgraph Support[基础架构]
+        CL[GameClock] & EM[EnemyManager] & NM[NPCManager] & BM[BossManager] & MM[MemoryManager]
+        Lib[武器/敌人/法术库]
+        Markup[8 种 @markup 副效果]
+        Test[llm_player + audit + harness]
+    end
+
+    Runtime --> Support
+    Creation --> Support
+```
+
 ### 关键特性
 
 | 维度 | 说明 |
