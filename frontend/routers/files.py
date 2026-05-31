@@ -5,14 +5,15 @@ from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
+
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 ALLOWED_EXTENSIONS = {".json", ".docx", ".txt", ".pdf", ".md"}
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── Jinja2 (reuse server's template engine path) ──
 from fastapi.templating import Jinja2Templates
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = FRONTEND_DIR / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 

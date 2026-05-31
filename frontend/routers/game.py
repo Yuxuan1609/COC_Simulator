@@ -7,10 +7,11 @@ from pathlib import Path
 from fastapi import APIRouter, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
+
 router = APIRouter(tags=["game"])
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = FRONTEND_DIR / "templates"
 
 from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))

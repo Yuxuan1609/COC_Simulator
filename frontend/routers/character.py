@@ -8,11 +8,12 @@ from pathlib import Path
 from fastapi import APIRouter, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response, JSONResponse
 
+from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
+
 router = APIRouter(prefix="/character", tags=["character"])
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-UPLOADS_DIR = Path(__file__).resolve().parent.parent / "static" / "uploads"
+TEMPLATES_DIR = FRONTEND_DIR / "templates"
+UPLOADS_DIR = FRONTEND_DIR / "static" / "uploads"
 
 from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))

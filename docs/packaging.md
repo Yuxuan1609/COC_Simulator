@@ -104,19 +104,80 @@ pyinstaller --onedir --noconsole --name "TRPG助手" ^
 
 ## PyInstaller 运行时路径
 
-`frontend/server.py` 在打包后需通过 `sys._MEIPASS` 定位资源文件：
+`frontend/_paths.py` 统一管理 dev / PyInstaller / Nuitka 三种模式的路径解析：
 
 ```python
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    BASE = Path(sys._MEIPASS)                # → _internal/
-    FRONTEND_DIR = BASE / "frontend"         # → _internal/frontend/
+# frontend/_paths.py
+_exe_dir = Path(sys.executable).parent
+IS_FROZEN = getattr(sys, 'frozen', False) or _exe_dir.name.endswith('.dist')
+
+if IS_FROZEN:
+    _bundle = Path(sys._MEIPASS) if hasattr(sys, '_MEIPASS') else _exe_dir
+    PROJECT_ROOT = _bundle                    # _internal/ 或 .dist/
+    FRONTEND_DIR = _bundle / "frontend"       # _internal/frontend/ 或 .dist/frontend/
 else:
-    FRONTEND_DIR = Path(__file__).parent      # → frontend/（开发模式）
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    FRONTEND_DIR = PROJECT_ROOT / "frontend"
 ```
 
-`--add-data "frontend/templates;frontend/templates"` 将模板放到 `_internal/frontend/templates/`，与上述路径匹配。`src/` 目录同理。
+所有 6 个路由器文件（`frontend/routers/*.py`）通过 `from frontend._paths import PROJECT_ROOT, FRONTEND_DIR` 统一导入，不再各自用 `Path(__file__)` 计算路径。
 
-## pywebview 集成（已实现）
+### 打包器检测差异
+
+| 打包器 | `sys.frozen` | `sys._MEIPASS` | `__compiled__` | 检测方式 |
+|--------|:--:|:--:|:--:|------|
+| PyInstaller | ✓ | ✓ | ✗ | `sys.frozen` |
+| Nuitka 4.1.2 | ✗ | ✗ | ✗ | `sys.executable.parent` 以 `.dist` 结尾 |
+
+## Nuitka 打包
+
+### 环境要求
+
+- **Nuitka** ≥ 4.1（当前 4.1.2）
+- **Python** 3.14（实验性支持，推荐 3.13）
+- **Visual Studio** 2022/2026 + **Desktop C++ 工作负载**
+- **MSVC** cl.exe ≥ 14.5
+- **Windows SDK** 10.0.26100+（`D:\Windows Kits\10\`）
+
+### 构建命令
+
+```powershell
+# VS 编码修复（非英语 VS 必需）
+$env:CL = "/utf-8"
+
+python -m nuitka --standalone --windows-console-mode=disable `
+  --msvc=14.5 --output-dir=dist_nuitka `
+  --include-data-dir=frontend/templates=frontend/templates `
+  --include-data-dir=frontend/static=frontend/static `
+  --include-data-dir=data=data `
+  --include-data-files=src/config_llm.template.py=src/config_llm.template.py `
+  --include-data-files=src/config_llm.py=src/config_llm.py `
+  --no-deployment-flag=excluded-module-usage `
+  --assume-yes-for-downloads `
+  frontend/server.py
+```
+
+输出在 `dist_nuitka/server.dist/server.exe`。
+
+### Nuitka 注意点
+
+1. **Nuitka 4.1.2 不设置 `sys.frozen`、`sys._MEIPASS`、`__compiled__`**。项目通过 `sys.executable.parent` 以 `.dist` 结尾来识别 Nuitka 模式（见 `frontend/_paths.py`）
+2. **非英语 Visual Studio** 需要 `$env:CL = "/utf-8"` 否则 C4819 编码错误
+3. **`--include-data-dir=src=src` 无效**：Nuitka 排除 `.py` 文件，需用 `--include-data-files` 逐个添加
+4. **`--no-deployment-flag=excluded-module-usage`**：避免 webview 平台模块被排除
+5. **Python 3.14 为实验性支持**，可能出现未预期的兼容性问题
+6. **首次构建需下载 Dependency Walker**（`--assume-yes-for-downloads`）
+7. `_paths.py` 由 Nuitka 编译为 C 代码，无需作为数据文件包含
+
+### 与 PyInstaller 输出对比
+
+| 项目 | PyInstaller | Nuitka |
+|------|------------|--------|
+| 输出结构 | `dist/TRPG助手/TRPG助手.exe` + `_internal/` | `dist_nuitka/server.dist/server.exe` |
+| exe 大小 | ~14 MB (stub) | ~43 MB (compiled) |
+| 总大小 | ~157 MB | ~? MB |
+| 启动速度 | 解包 .pyc（慢） | 原生 C（快） |
+| `src/` 数据 | 通过 `--add-data` 完整包含 | 仅 `config_llm.*` 通过 `--include-data-files`
 
 已集成 `pywebview` 嵌入原生窗口：
 

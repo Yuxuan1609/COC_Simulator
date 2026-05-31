@@ -12,24 +12,13 @@ import os
 import sys
 from pathlib import Path
 
-# Detect PyInstaller frozen bundle
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    BASE = Path(sys._MEIPASS)
-    PROJECT_ROOT = BASE.parent
-    FRONTEND_DIR = BASE / "frontend"
-else:
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    FRONTEND_DIR = Path(__file__).resolve().parent
+from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
 
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    sys.path.insert(0, str(BASE))
-    sys.path.insert(0, str(BASE / "src"))
-else:
-    sys.path.insert(0, str(PROJECT_ROOT))
-    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Auto-create config_llm.py from template if missing
-_src_dir = (BASE if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else PROJECT_ROOT) / "src"
+_src_dir = PROJECT_ROOT / "src"
 _config_template = _src_dir / "config_llm.template.py"
 _config_actual = _src_dir / "config_llm.py"
 if _config_template.exists() and not _config_actual.exists():

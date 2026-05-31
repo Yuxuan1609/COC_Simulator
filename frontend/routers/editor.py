@@ -7,10 +7,11 @@ from fastapi import APIRouter, Request, Query, Form
 from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 
+from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
+
 router = APIRouter(prefix="/editor", tags=["editor"])
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = FRONTEND_DIR / "templates"
 
 from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))

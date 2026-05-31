@@ -7,10 +7,11 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
+from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
+
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-ASSETS_DIR = PROJECT_ROOT / "frontend" / "static" / "assets"
+ASSETS_DIR = FRONTEND_DIR / "static" / "assets"
 
 # Map page context to asset subfolder
 CONTEXT_MAP = {
