@@ -38,7 +38,7 @@ REM ---- 运行 PyInstaller ----
 echo [打包] 正在运行 PyInstaller（可能需要几分钟）...
 echo.
 
-python -m PyInstaller --onedir --noconsole --name "TRPG助手" --add-data "frontend/templates;frontend/templates" --add-data "frontend/static;frontend/static" --add-data "data/library;data/library" --add-data "data/modules;data/modules" --add-data "data/templates;data/templates" --add-data "data/occupations.json;data" --add-data "data/skill_checks.json;data" --add-data "data/stress_profile.json;data" --add-data "data/saves;data/saves" --add-data "src;src" --hidden-import fastapi --hidden-import uvicorn --hidden-import jinja2 --hidden-import openai --hidden-import websockets --hidden-import docx --hidden-import PyPDF2 --hidden-import webview --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto frontend/server.py
+python -m PyInstaller --onedir --noconsole --name "TRPG助手" --add-data "frontend/templates;frontend/templates" --add-data "frontend/static;frontend/static" --add-data "data/library;data/library" --add-data "data/modules;data/modules" --add-data "data/templates;data/templates" --add-data "data/investigator;investigator" --add-data "data/occupations.json;data" --add-data "data/skill_checks.json;data" --add-data "data/stress_profile.json;data" --add-data "data/saves;data/saves" --add-data "src;src" --hidden-import fastapi --hidden-import uvicorn --hidden-import jinja2 --hidden-import openai --hidden-import websockets --hidden-import docx --hidden-import PyPDF2 --hidden-import webview --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto frontend/server.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

@@ -72,6 +72,7 @@ pyinstaller --onedir --noconsole --name "TRPG助手" ^
   --add-data "data/library;data/library" ^
   --add-data "data/modules;data/modules" ^
   --add-data "data/templates;data/templates" ^
+  --add-data "data/investigator;investigator" ^
   --add-data "data/occupations.json;data" ^
   --add-data "data/skill_checks.json;data" ^
   --add-data "data/stress_profile.json;data" ^
@@ -152,6 +153,7 @@ python -m nuitka --standalone --windows-console-mode=disable `
   --include-data-dir=data=data `
   --include-data-files=src/config_llm.template.py=src/config_llm.template.py `
   --include-data-files=src/config_llm.py=src/config_llm.py `
+  --include-package=pythonnet --include-package=clr `
   --no-deployment-flag=excluded-module-usage `
   --assume-yes-for-downloads `
   frontend/server.py
