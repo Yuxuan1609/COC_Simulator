@@ -12,13 +12,22 @@ import os
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Detect PyInstaller frozen bundle
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    BASE = Path(sys._MEIPASS)
+    PROJECT_ROOT = BASE.parent
+    FRONTEND_DIR = BASE / "frontend"
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    FRONTEND_DIR = Path(__file__).resolve().parent
+
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Auto-create config_llm.py from template if missing
-_config_template = PROJECT_ROOT / "src" / "config_llm.template.py"
-_config_actual = PROJECT_ROOT / "src" / "config_llm.py"
+_src_dir = (BASE if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else PROJECT_ROOT) / "src"
+_config_template = _src_dir / "config_llm.template.py"
+_config_actual = _src_dir / "config_llm.py"
 if _config_template.exists() and not _config_actual.exists():
     _config_actual.write_text(_config_template.read_text(encoding="utf-8"), encoding="utf-8")
     print("  [init] Created src/config_llm.py from template")
@@ -36,7 +45,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRONTEND_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 UPLOADS_DIR = FRONTEND_DIR / "static" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

@@ -102,6 +102,20 @@ pyinstaller --onedir --noconsole --name "TRPG助手" ^
 3. pywebview 弹出原生窗口（1280×800），加载 `http://localhost:8080/`
 4. 用户在启动页配置 API Key → 开始游戏
 
+## PyInstaller 运行时路径
+
+`frontend/server.py` 在打包后需通过 `sys._MEIPASS` 定位资源文件：
+
+```python
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    BASE = Path(sys._MEIPASS)                # → _internal/
+    FRONTEND_DIR = BASE / "frontend"         # → _internal/frontend/
+else:
+    FRONTEND_DIR = Path(__file__).parent      # → frontend/（开发模式）
+```
+
+`--add-data "frontend/templates;frontend/templates"` 将模板放到 `_internal/frontend/templates/`，与上述路径匹配。`src/` 目录同理。
+
 ## pywebview 集成（已实现）
 
 已集成 `pywebview` 嵌入原生窗口：
