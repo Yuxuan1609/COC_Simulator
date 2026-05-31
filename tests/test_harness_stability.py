@@ -249,6 +249,22 @@ CASE_C = {
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Case D: Ending Trigger Test (常暗之厢_0531, 3 turns)
+#  Requires IT_TEST_END entity + END_TEST in L3
+# ═══════════════════════════════════════════════════════════════
+
+CASE_D = {
+    "name": "D_end_trigger_0531",
+    "init": {"l2_path": L2_PATH_0531, "l1_path": L1_PATH_0531, "l3_path": L3_PATH_0531,
+             "start_node": "6号车厢"},
+    "turns": [
+        ("说出测试密码 test_end_0531",
+         "说出测试密码 → 触发 IT_TEST_END → END_TEST 结局"),
+    ],
+}
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Runner
 # ═══════════════════════════════════════════════════════════════
 
@@ -365,6 +381,7 @@ def run_all(case_filter=None):
         (CASE_A, os.path.join(OUT_ROOT, "case_A"), {}),
         (CASE_B, os.path.join(OUT_ROOT, "case_B"), {}),
         (CASE_C, os.path.join(OUT_ROOT, "case_C"), CASE_C.get("init", {})),
+        (CASE_D, os.path.join(OUT_ROOT, "case_D"), CASE_D.get("init", {})),
     ]
 
     if case_filter:

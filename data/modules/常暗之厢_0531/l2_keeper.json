@@ -54,6 +54,19 @@
           },
           "difficulty": "regular",
           "time_condition": []
+        },
+        {
+          "id": "IT_TEST_END",
+          "entity_type": "interaction",
+          "name": "说出测试密码触发结局",
+          "scene": "6号车厢",
+          "type": "无",
+          "requirement": "|| 玩家说出了密码 test_end_0531",
+          "trigger": "说出测试密码 test_end_0531 即可触发结局",
+          "result": "##END_TEST:测试密码触发结局成功## 你说出了预设的密码，系统确认测试结局触发成功。",
+          "side_effects": [],
+          "difficulty": "",
+          "time_condition": ""
         }
       ],
       "auto_triggers": [
@@ -557,11 +570,11 @@
           "trigger": "模组开始时自动触发",
           "result": "世界环境初始化",
           "side_effects": [
-        "@spawn_enemy(enemy_ref=\"Clicker\", scene=\"2号车厢\", quantity=3)",
-        "@item_gain(item_name=\"手机\", quantity=1)",
-        "@item_gain(item_name=\"手电筒\", quantity=1)",
-        "@grant_weapon(weapon_ref=\"试作型裁决者\", scene=\"6号车厢\", quantity=1)",
-        "@grant_weapon(weapon_ref=\"试作型湮灭者\", scene=\"6号车厢\", quantity=1)"
+            "@spawn_enemy(enemy_ref=\"Clicker\", scene=\"2号车厢\", quantity=3)",
+            "@item_gain(item_name=\"手机\", quantity=1)",
+            "@item_gain(item_name=\"手电筒\", quantity=1)",
+            "@grant_weapon(weapon_ref=\"试作型裁决者\", scene=\"6号车厢\", quantity=1)",
+            "@grant_weapon(weapon_ref=\"试作型湮灭者\", scene=\"6号车厢\", quantity=1)"
           ],
           "graded_result": null,
           "difficulty": "None",

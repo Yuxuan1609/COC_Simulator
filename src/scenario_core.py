@@ -132,7 +132,7 @@ class Entity:
 
 
 _GRADED_PATTERN = re.compile(r'^##GRADED##$')
-_END_PATTERN = re.compile(r'^##END_([^:]+):(.+?)##')
+_END_PATTERN = re.compile(r'##END_([^:]+):(.+?)##')
 
 
 def resolve_graded_result(entity: Entity, tier: str) -> str:
@@ -161,7 +161,7 @@ def resolve_graded_result(entity: Entity, tier: str) -> str:
 
 def has_ending(text: str) -> tuple[str | None, str | None]:
     """Check if text contains an ending marker. Returns (ending_name, description) or (None, None)."""
-    match = _END_PATTERN.match(text)
+    match = _END_PATTERN.search(text)
     if match:
         return match.group(1), match.group(2)
     return None, None

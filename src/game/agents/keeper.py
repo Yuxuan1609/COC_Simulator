@@ -661,6 +661,26 @@ class Keeper:
             ta_result = parallel_results.get("time_agent")
 
         # Step 3.5: Collect enrich + TA results
+        # Scan for endings BEFORE enrich overwrites outcome messages
+        from scenario_core import has_ending as _has_ending
+        ending_result = None
+        for o in all_outcomes:
+            en, ed = _has_ending(o.message)
+            if en:
+                full_narrative = ed or ""
+                if author and hasattr(author, 'l3_data') and author.l3_data:
+                    ec = author.l3_data.get("ending_conditions", [])
+                    for ec_item in ec:
+                        eid = ec_item.get("id", "")
+                        ename = ec_item.get("name", eid)
+                        if eid == en or ename == en:
+                            full_narrative = ec_item.get("narrative", ed)
+                            break
+                ending_result = {
+                    "name": en, "narrative": full_narrative, "game_over": True,
+                }
+                break
+
         if enrichment:
             emphasis = enrichment.get("emphasis_hint", "")
             results = enrichment.get("results", "")
@@ -777,30 +797,23 @@ class Keeper:
         # ── Apply all deferred side effects + move (Author check passed) ──
         self._apply_pending()
 
-        # Ending detection — scan outcomes for ##END_ markers + L3 ending_conditions lookup
-        # TODO: 跨模组结局 — 当支持多模组串联时，结局可能需要在模组间传递状态或触发不同后续。
-        # 当前实现仅查询当前 L3 的 ending_conditions。跨模组时需要合并多个 L3 或增加全局结局表。
-        from scenario_core import has_ending as _has_ending
-        ending_result = None
-        for o in all_outcomes:
-            en, ed = _has_ending(o.message)
-            if en:
-                # Look up L3 ending_conditions for rich narrative (match by id or name)
-                full_narrative = ed or ""
-                if author and hasattr(author, 'l3_data') and author.l3_data:
-                    ec = author.l3_data.get("ending_conditions", [])
-                    for ec_item in ec:
-                        eid = ec_item.get("id", "")
-                        ename = ec_item.get("name", eid)
-                        if eid == en or ename == en:
-                            full_narrative = ec_item.get("narrative", ed)
-                            break
-                ending_result = {
-                    "name": en,
-                    "narrative": full_narrative,
-                    "game_over": True,
-                }
-                break
+        # Ending detection — already scanned pre-enrich; if not found, scan post-enrich messages as fallback
+        if not ending_result:
+            from scenario_core import has_ending as _has_ending
+            for o in all_outcomes:
+                en, ed = _has_ending(o.message)
+                if en:
+                    full_narrative = ed or ""
+                    if author and hasattr(author, 'l3_data') and author.l3_data:
+                        ec = author.l3_data.get("ending_conditions", [])
+                        for ec_item in ec:
+                            if ec_item.get("id") == en or ec_item.get("name", ec_item.get("id")) == en:
+                                full_narrative = ec_item.get("narrative", ed)
+                                break
+                    ending_result = {
+                        "name": en, "narrative": full_narrative, "game_over": True,
+                    }
+                    break
 
         # Inject LLM error warnings as player-visible outcomes
         for w in self._warnings:
