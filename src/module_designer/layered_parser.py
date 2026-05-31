@@ -1359,18 +1359,25 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
 1. **type 标准化**: 从标准技能列表中选择最匹配的技能名。不涉及检定的保持"无"。
 2. **@标记转化**: 将 side_effects / result / graded_result 中的自然语言转化为 @函数(参数=值) 标记:
 
-   @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=1)
-   @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=1)
-   @stat_change(stat_name="属性名", delta=-1, narrative="角色经历（可选）")
-   @item_gain(item_name="物品名", quantity=1)
-   @consume_item(item_name="物品名", quantity=1, narrative="消耗原因（可选）")
-   @npc_state_change(npc_name="NPC名", new_state="新状态")
-   @npc_follow(npc_name="NPC名", follow=true)
+    @spawn_enemy(enemy_ref="敌人名", scene="场景名", quantity=1)
+      用法：在某个场景中生成敌人。enemy_ref 必须来自约束列表。
+    @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=1)
+      用法：武器放置到场景中（scene 非空），或直接授予调查员（scene=""）。
+    @stat_change(stat_name="属性名", delta=-1, narrative="角色经历（可选）")
+      用法：调查员属性变化——包括损失/恢复 HP、SAN、MP，或获得技能点。delta 正数为增加，负数为减少。stat_name 必须来自标准属性列表。
+    @item_gain(item_name="物品名", quantity=1)
+      用法：调查员获得可携带的剧情/消耗品（非武器）。物品名不做库匹配，自由命名。
+    @consume_item(item_name="物品名", quantity=1, narrative="消耗原因（可选）")
+      用法：调查员使用或消耗了一个可消耗物品，使用后该物品不可再用（如急救包、火柴、弹药）。注意：仅用于"用完即没"的可消耗品，不用于可重复使用的装备。
+    @npc_state_change(npc_name="NPC名", new_state="新状态")
+      用法：NPC 本身的状态变化——如从"alive"变为"dead"、从"unconscious"变为"alive"、从"hostile"变为"neutral"等。npc_name 必须与 NPC 列表中精确一致。
+    @npc_follow(npc_name="NPC名", follow=true)
+      用法：NPC 开始（true）或停止（false）跟随调查员行动。仅用于跟随关系的切换，不使用其他场合。
 
     特别说明：
     - @npc_state_change 有两个硬编码的特殊状态：
-      \"dead\" — NPC 死亡，此后该 NPC 不再参与对话、跟随和场景互动，其 bound entity 也不会出现在玩家可用的实体列表中。
-      \"left\" — NPC 永久离开模组（如离场、失踪、退场），效果同 dead，但用于非死亡离场场景。
+      "dead" — NPC 死亡，此后该 NPC 不再参与对话、跟随和场景互动，其 bound entity 也不会出现在玩家可用的实体列表中。
+      "left" — NPC 永久离开模组（如离场、失踪、退场），效果同 dead，但用于非死亡离场场景。
     - 其他状态（alive / unconscious / hostile / neutral / friendly 等）由 LLM 在对话时根据状态值自行发挥，不需硬编码处理。
     - @grant_weapon 的 scene 为空字符串（scene=\"\"）表示直接授予调查员，无需放置到场景中等待搜索发现。scene 有值时，武器放置到对应场景中，由调查员通过搜索发现并拾取。
 
