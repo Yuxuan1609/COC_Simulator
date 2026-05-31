@@ -21,8 +21,12 @@ else:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     FRONTEND_DIR = Path(__file__).resolve().parent
 
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    sys.path.insert(0, str(BASE))
+    sys.path.insert(0, str(BASE / "src"))
+else:
+    sys.path.insert(0, str(PROJECT_ROOT))
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Auto-create config_llm.py from template if missing
 _src_dir = (BASE if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else PROJECT_ROOT) / "src"
