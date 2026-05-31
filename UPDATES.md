@@ -4,6 +4,24 @@
 
 ---
 
+## 战斗伤害结算重检（2026-05-31）✅ 已确认无阻塞问题
+
+**重检结果**：
+
+```
+玩家伤害链：_roll_damage → -armor(+AP) → ×damage_multiplier → ×1.5(charge) → action.damage → LLM修正 → enemy.hp -= action.damage
+敌人伤害链：_roll_damage → action.damage → state.player_hp -= action.damage → LLM修正(回退旧+应用新) → state.player_hp
+```
+
+- **交互式路径**（run_game.py）：LLM 修正通过修改 `state.log` 中的 `a.damage` 实现，最终 `enemy.hp -= act.damage` 读取的是修正后值。对象共享引用，`state.full_log` 自动反映修正。✅
+- **自动战斗路径**（combat.py run_combat）：玩家伤害读取 `rresult["player_damage"]`（LLM 返回），敌人伤害通过回退旧值 + 应用新值修正。✅
+- **群组展开**：`_init_combat` 拆分后的独立实体各有独立 hp，damage 独立结算。✅
+- **hp_before/hp_after**：`_resolve_enemy_action` 中设置后在 LLM 修正时未同步更新，仅影响日志展示不影响游戏。⚠️ 低优先级。
+
+结论：两部分损伤结算路径逻辑正确，暂无明显 Bug。
+
+---
+
 ## [P0] 架构审计：子回合模式统一化（2026-05-30）
 
 **设计模式**：主回合 parse → judge → enrich → curate。7 个独立子系统以子回合形式接入——在 parse 同期或之后启动，结果在主回合外处理，再接回。

@@ -1,7 +1,7 @@
 # TRPG 调查员助手 — 设计文档
 
 > 面向开发者的架构原理与代码编写指引。
-> 最后更新：2026-05-30
+> 最后更新：2026-05-31
 
 ---
 
@@ -9,13 +9,14 @@
 
 ### 1.1 确定性 + LLM 混合（Deterministic-LLM Hybrid）
 
-项目的根本原则：**硬性规则由确定性代码执行，叙事与意图判定由 LLM 承担。**
+项目的根本原则：**主要硬性规则由确定性代码执行，edge-case和部分难以用确定性逻辑处理的规则和叙事与意图判定由 LLM 承担**
 
 | 层 | 执行者 | 示例 |
 |----|--------|------|
 | 硬性规则 | 纯 Python | D100 检定、伤害公式、护甲减免、时间条件检查、AND/OR 依赖解析 |
 | 叙事生成 | LLM | Keeper Enrich 叙事整合、Narrator 沉浸式描写、Author 动态扩展 |
 | 意图判定 | LLM (flash) | Parse 实体匹配、Combat Entry 触发判定、Standoff 语义匹配 |
+| 增强规则 | LLM (flash) | 调查员背景为行动带来的优势、武器的特殊规则 |
 
 **为什么这样设计？** LLM 擅长语义理解但不擅长数值精确性。如果让 LLM 掷骰、计算伤害、判定 HP 归零，会产生不可预期的行为。将数值逻辑锁在 Python 中，LLM 只接收结构化数据并生成文本，保证了游戏规则的可预测性与一致性。
 
@@ -679,12 +680,28 @@ class Keeper:
 
 `src/game/combat.py` — Combat v2 群组模型。完整文档见 `docs/combat-system-v2.md`。
 
-### 9.1 入口与退出
+### 9.1 群组模型
+
+所有敌人以**群组(group)**为单位管理，三元组 `(scene, enemy_ref)` 为唯一键：
+
+```
+spawn(enemy_ref, scene, quantity)
+  → 已存在群组 → quantity 叠加，HP 重新计算
+  → 新群组 → 创建
+
+_init_combat()  展开 quantity > 1 的群组为独立实体
+exit_combat()   outcome 驱动 — win → 群组 status="defeated"，非 win → 恢复 "hostile"
+```
+
+- **ID 生命周期**：展开后的 `_c0`/`_c1` 后缀 ID 仅用于战斗过程，战后丢弃不映射
+- **≥5 敌人**：CombatInit 自动截断到 5，打赢 → 全部群组 defeat，不考虑 partial survival
+
+### 9.2 入口与退出
 
 ```
 Keeper.process_turn()
     ├─ Step 2.5: CombatEntryCheck → enter_combat = true → CombatInit
-    ├─ Step 2.6: Boss "at"/"interaction" → 合并到 CombatInit
+    ├─ Step 2.6: Boss "at"/"interaction" → 合并到已有 CombatInit（不覆盖）
     └─ Step 5: Boss "event" → CombatInit
 
 game_loop.run_turn()
@@ -692,9 +709,9 @@ game_loop.run_turn()
         ├─ CLI: _run_interactive_combat() (每轮玩家选择动作)
         └─ 前端: CombatSystem.run_combat() (自动战斗)
 
-CombatResult → EnemyManager.exit_combat()
-    ├─ defeated → status="dead"
-    ├─ survivors → status="hostile"
+exit_combat({"outcome"})
+    ├─ win → 全部 _combat_enemies 群组 → status="defeated"
+    ├─ loss/flee/draw → 恢复 "hostile"，不清理
     └─ HP/SAN 回写到 player.derived
 ```
 
@@ -728,17 +745,26 @@ _llm_correct_enemy_round() → LLM: "敌人动作结果的叙事修正"
 
 | 类型 | 进入方式 | 失败后果 |
 |------|----------|----------|
-| 普通战斗 | Combat Entry Detection | loss → `combat_death` → game_over |
-| Boss 战斗 | BossManager "at"/"interaction"/"event" | loss → `combat_boss_loss`，不强制结束 |
+| 普通战斗 | Combat Entry Detection | loss → game_over=True，游戏结束 |
+| Boss 战斗 | BossManager "at"/"interaction"/"event" | loss → game_over=False，不强制结束 |
+
+**Boss 判定**：只要 `CombatInit.enemies` 中存在 `boss_mechanics != ""` 的敌人，或有 `world.bosses.active_boss_id`，即为 Boss 战斗。
 
 Boss 支持 phase 机制（`hp_below_pct` / `round` 触发），同一 Boss 可多次遭遇。
 
-### 9.5 对峙系统
+### 9.5 战斗系统改动对比
 
-`src/game/agents/keeper.py:974-1061`
+| 特性 | v1 (已废弃) | v2 (当前) |
+|------|-----------|----------|
+| 敌人管理 | 逐实例追踪 | 按 `(scene, enemy_ref)` 群组管理 |
+| 战后状态 | "dead" | "defeated" |
+| 战后清理 | 基于 defeated_instance_ids 精确匹配 | outcome 驱动（win → 全部 defeat） |
+| Boss 覆盖 | Boss 战斗覆盖普通战斗 | Boss 合并到已有 CombatInit |
+| 数量处理 | quantity 仅影响群组总 HP | quantity 展开为独立实体，各自战斗 |
+| ≥5 敌人 | 保留 5 个，其余存活 | 保留 5 个，打赢 → 全部 defeat |
+| 战斗日志 | JSON 格式 | 可读文本 `.txt` + LLM prompt/response 归档 |
 
-```
-avoidable 敌人 → standoff_prompt:
+### 9.6 对峙系统
     1. 语义匹配(LLM flash): 玩家输入 → 技能名
     2. D100 检定: check_skill(skill_name, "regular")
     3. trait_enhancement(LLM)
@@ -886,8 +912,9 @@ AGENT_SYSTEM_PROMPTS = {"keeper_parse": "", ...}
 | 检定逻辑 | `src/game/judge.py` | `_execute_entity()` |
 | 敌人管理 | `src/game/enemy_manager.py` | `spawn()` / `get_combat_context()` |
 | NPC 对话 | `src/game/npc_manager.py` | `talk_to()` |
-| 战斗系统 | `src/game/combat.py` | `CombatSystem.run_combat()` |
-| 战斗触发判定 | `src/game/agents/keeper.py:512-668` | Step 2.5 / Step 2.6 |
+| 战斗系统 | `src/game/combat.py` | `CombatSystem.run_combat()` / `_run_interactive_combat()` |
+| 战斗触发判定 | `src/game/agents/keeper.py:488-561` | Step 2.5 / Step 2.6 |
+| 敌人管理 | `src/game/enemy_manager.py` | `spawn()` / `get_combat_context()` / `exit_combat()` |
 | Author 动态创作 | `src/game/agents/author.py` | `handle_request()` |
 | 叙事输出 | `src/game/agents/narrator.py` | `narrate()` |
 | Prompt 构建 | `src/prompts.py` | 各 `build_*_prompt()` 函数 |
@@ -899,7 +926,8 @@ AGENT_SYSTEM_PROMPTS = {"keeper_parse": "", ...}
 | 配置开关 | `src/config.py` | 全局常量 |
 | API 密钥 | `src/config_llm.py` | 模型/Key |
 | 模组数据 | `data/modules/<name>/` | `.json` / `.txt` |
-| 资源库 | `data/library/core/` | `enemies.json` / `weapons.json` / `bosses.json` |
+| 资源库 | `data/library/core/` | `enemies.json` / `weapons.json` / `bosses.json` / `templates.json` |
+| 提取工具 | `scripts/extract_library.py` | 小说 → 标准库素材自动提取 |
 | 测试 | `tests/` | 各 `test_*.py` |
 
 ### 13.2 关键常量与魔法数字
