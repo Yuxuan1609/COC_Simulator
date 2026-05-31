@@ -249,6 +249,9 @@ class NPCManager:
         if name in self._npcs:
             self._npcs[name].following = following
 
+    def get_following(self) -> list[NPC]:
+        return [n for n in self._npcs.values() if n.following]
+
     def set_state(self, name: str, state: str):
         if name in self._npcs:
             self._npcs[name].state = state
