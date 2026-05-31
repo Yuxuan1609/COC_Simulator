@@ -22,9 +22,13 @@ TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_ROOT = os.path.join(os.path.dirname(__file__), "..", "data", "debug", "test_stability", TIMESTAMP)
 
 PROJECT_ROOT = os.path.dirname(__file__)
+# Case C 使用 常暗之厢_0531，其他 case 使用 测试模组0528v2
 L2_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "测试模组0528v2", "l2_keeper_test.json")
 L1_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "测试模组0528v2", "l1_player.json")
 L3_PATH = os.path.join(PROJECT_ROOT, "..", "data", "modules", "测试模组0528v2", "l3_designer.json")
+L2_PATH_0531 = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢_0531", "l2_keeper.json")
+L1_PATH_0531 = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢_0531", "l1_player.json")
+L3_PATH_0531 = os.path.join(PROJECT_ROOT, "..", "data", "modules", "常暗之厢_0531", "l3_designer.json")
 CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.json")
 
 
@@ -32,13 +36,13 @@ CHAR_PATH = os.path.join(PROJECT_ROOT, "..", "investigator", "test_character.jso
 #  Init
 # ═══════════════════════════════════════════════════════════════
 
-def _init_game():
+def _init_game(l2_path=L2_PATH, l1_path=L1_PATH, l3_path=L3_PATH, start_node="6号车厢"):
     from game_loop import init_game
     from investigator import load_investigator
 
     game = init_game(
-        l2_path=L2_PATH, l1_path=L1_PATH, l3_path=L3_PATH,
-        start_node="6号车厢",
+        l2_path=l2_path, l1_path=l1_path, l3_path=l3_path,
+        start_node=start_node,
     )
     world = game["keeper"].world
     if os.path.exists(CHAR_PATH):
@@ -222,18 +226,45 @@ CASE_B = {
 
 
 # ═══════════════════════════════════════════════════════════════
+#  Case C: NPC Interaction (常暗之厢_0531, 4-5 turns)
+# ═══════════════════════════════════════════════════════════════
+
+CASE_C = {
+    "name": "C_npc_interact_0531",
+    "init": {"l2_path": L2_PATH_0531, "l1_path": L1_PATH_0531, "l3_path": L3_PATH_0531,
+             "start_node": "4号车厢"},
+    "turns": [
+        ("检查京山人吉的伤势，查看他身上发生了什么",
+         "I10: 检查乘务员 — 无检定"),
+        ("对京山人吉进行急救，给他包扎伤口",
+         "I11: 对乘务员进行急救 — 急救检定"),
+        ("安抚京山人吉的情绪，告诉他你会帮助他",
+         "I12: 安抚乘务员情绪 — 话术检定 (req: I11)"),
+        ("与京山人吉交谈，询问这里发生了什么事",
+         "npc_interact: 京山人吉 — 自由对话 (req: I11 AND I12)"),
+        ("请求京山人吉跟你一起离开",
+         "follow request + 对话"),
+    ],
+}
+
+
+# ═══════════════════════════════════════════════════════════════
 #  Runner
 # ═══════════════════════════════════════════════════════════════
 
-def run_case(case, case_dir):
+def run_case(case, case_dir, init_kwargs: dict = None):
     """Run one case, return summary dict."""
     os.makedirs(case_dir, exist_ok=True)
     stop_logging = _setup_llm_logging(case_dir, case["name"])
 
     try:
         from game_loop import run_turn
-        game = _init_game()
+        game = _init_game(**(init_kwargs or {}))
         world = game["keeper"].world
+        # Apply pending world items
+        for ig in game.get("pending_world_items", []):
+            if hasattr(world.player, 'item_manager'):
+                world.player.item_manager.add(ig.item_name, quantity=ig.quantity)
         print(f"  Player: {world.player.name}, SAN={world.player.derived.SAN}")
         print(f"  Location: {world.current_location}")
 
@@ -331,22 +362,23 @@ def run_all(case_filter=None):
     os.makedirs(OUT_ROOT, exist_ok=True)
 
     cases = [
-        (CASE_A, os.path.join(OUT_ROOT, "case_A")),
-        (CASE_B, os.path.join(OUT_ROOT, "case_B")),
+        (CASE_A, os.path.join(OUT_ROOT, "case_A"), {}),
+        (CASE_B, os.path.join(OUT_ROOT, "case_B"), {}),
+        (CASE_C, os.path.join(OUT_ROOT, "case_C"), CASE_C.get("init", {})),
     ]
 
     if case_filter:
-        cases = [(c, d) for c, d in cases if c["name"].startswith(case_filter)]
+        cases = [(c, d, ik) for c, d, ik in cases if c["name"].startswith(case_filter)]
 
     print(f"Stability Test Harness -- {len(cases)} case(s)")
     print(f"Output: {OUT_ROOT}")
     print()
 
     all_summaries = []
-    for case, case_dir in cases:
+    for case, case_dir, init_kwargs in cases:
         print(f"=== Case {case['name']} ({len(case['turns'])} turns) ===")
         t0 = time.perf_counter()
-        summary = run_case(case, case_dir)
+        summary = run_case(case, case_dir, init_kwargs)
         elapsed = time.perf_counter() - t0
         summary["total_elapsed"] = round(elapsed, 1)
         all_summaries.append(summary)
