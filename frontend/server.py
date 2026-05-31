@@ -67,10 +67,24 @@ async def health():
 
 
 if __name__ == "__main__":
+    import threading
     import uvicorn
-    import webbrowser
+    import webview
     port = int(os.environ.get("PORT", 8080))
     url = f"http://localhost:{port}"
-    print(f"  TRPG Assistant v2.0 → {url}")
-    webbrowser.open(url + "/")  # Launch page at root
-    uvicorn.run(app, host="127.0.0.1", port=port)
+
+    def start_server():
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+
+    t = threading.Thread(target=start_server, daemon=True)
+    t.start()
+
+    import time
+    time.sleep(0.5)
+
+    window = webview.create_window(
+        "TRPG 调查员助手", url,
+        width=1280, height=800, min_size=(960, 600),
+        text_select=True,
+    )
+    webview.start()

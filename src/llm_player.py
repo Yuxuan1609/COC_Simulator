@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from llm import call_deepseek
+from config_llm import LLM_FLASH_MODEL, RE_INTENT_DETECTOR
 from game_loop import init_game, run_turn, set_turn_logger
 from game.turn_logger import TurnLogger
 from investigator import load_investigator
@@ -78,7 +79,7 @@ def compress_memory(short_history: list[str]) -> str:
     try:
         result = call_deepseek(
             prompt, json_mode=False, system=MEMORY_COMPRESS_SYSTEM,
-            model="deepseek-v4-flash", reasoning_effort="low",
+            model=LLM_FLASH_MODEL, reasoning_effort="low",
         )
         return result.strip()
     except Exception:
@@ -159,7 +160,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     player_name = game["keeper"].world.player.name
 
     print(f"LLM Player — {module_name}")
-    print(f"  Player: {player_name}, Model: {pc['model']}")
+    print(f"  Player: {player_name}, Model: {LLM_FLASH_MODEL}")
     print(f"  Strategy: {profile.get('player_strategy', [])}")
     print(f"  Max turns: {max_turns}, Max duration: {max_duration_s}s")
     print(f"  Log: {log_dir}")
@@ -192,7 +193,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         try:
             response = call_deepseek(
                 user, json_mode=True, system=system,
-                model=pc["model"], reasoning_effort=pc["reasoning_effort"],
+                model=LLM_FLASH_MODEL, reasoning_effort=RE_INTENT_DETECTOR,
                 fallback_schema={"action": "环顾四周", "reasoning": "fallback"},
                 max_retries=3, timeout=300,
             )

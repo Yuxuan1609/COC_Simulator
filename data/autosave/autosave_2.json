@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": "2026-05-30T21:31:12.768579",
+  "timestamp": "2026-05-30T21:42:00.791877",
   "graph": {
     "nodes": {
       "6号车厢": {
@@ -467,7 +467,7 @@
       },
       "4号车厢": {
         "node_id": "4号车厢",
-        "description": "惨烈而紧张，空气中弥漫着痛苦和铁锈的味道。",
+        "description": "4号车厢内，战斗的痕迹依旧：座椅歪倒，物品散落，地上血迹斑斑。乘务员京山人吉已被你包扎好伤口，她虚弱但坚定地站在你身边，准备与你同行。",
         "edges": [
           {
             "target": "3号车厢",
@@ -502,6 +502,19 @@
             "requirement": "I7",
             "trigger": "你请求京山人吉跟随你一起行动",
             "result": "@npc_follow(npc_name='京山人吉', follow=true) 京山人吉开始跟随你",
+            "side_effects": [],
+            "graded_result": null,
+            "difficulty": "None"
+          },
+          {
+            "id": "EVT_NPC_FOLLOW_京山人吉",
+            "entity_type": "interaction",
+            "name": "京山人吉开始跟随你",
+            "scene": "4号车厢",
+            "type": "无",
+            "requirement": "I7",
+            "trigger": "你请求京山人吉跟随你一起行动",
+            "result": "京山人吉加入了你的队伍，你可以随时与其交谈",
             "side_effects": [],
             "graded_result": null,
             "difficulty": "None"
@@ -569,12 +582,17 @@
     ]
   },
   "world": {
-    "current_location": "5号车厢",
+    "current_location": "4号车厢",
     "triggered_events": {
       "EVT_JING_DEATH": false,
       "EVT_RETREAT_CUT": false
     },
-    "completed_interactions": {},
+    "completed_interactions": {
+      "4号车厢": [
+        "救治乘务员京山人吉",
+        "请求京山人吉跟随"
+      ]
+    },
     "runtime_state": {
       "I1": {
         "completed": false,
@@ -667,14 +685,14 @@
         "escalated_difficulty": ""
       },
       "NPC_FOLLOW_UNLOCK_京山人吉": {
-        "completed": false,
+        "completed": true,
         "result_tier": "",
         "retries": 0,
         "escalated_difficulty": ""
       },
       "I7": {
-        "completed": false,
-        "result_tier": "",
+        "completed": true,
+        "result_tier": "regular",
         "retries": 0,
         "escalated_difficulty": ""
       },
@@ -897,18 +915,18 @@
       "3号车厢": "混乱而压抑，过道难行，黑暗中似乎潜伏着未知。",
       "2号车厢": "极度的黑暗与恐惧，每一步都可能惊动潜伏的怪物。",
       "先头车厢": "寂静得让人不安，仿佛暴风雨前的宁静。",
-      "4号车厢": "惨烈而紧张，空气中弥漫着痛苦和铁锈的味道。",
+      "4号车厢": "4号车厢内，战斗的痕迹依旧：座椅歪倒，物品散落，地上血迹斑斑。乘务员京山人吉已被你包扎好伤口，她虚弱但坚定地站在你身边，准备与你同行。",
       "world": ""
     },
     "npc_states": {},
     "wr0_enabled": false,
     "clock": {
-      "game_time": 21,
-      "game_time_minutes": 21,
+      "game_time": 34,
+      "game_time_minutes": 34,
       "day": 0,
       "hour": 0,
       "time_of_day": "夜间",
-      "time_context": "你唱完一首歌，精神振奋了一些。"
+      "time_context": "你成功说服京山人吉跟随你行动，他点点头表示同意。"
     },
     "enemies": {
       "instances": {
@@ -942,7 +960,7 @@
       "京山人吉": {
         "scene": "4号车厢",
         "attitude": "friendly",
-        "following": false,
+        "following": true,
         "memory": [],
         "state": "alive",
         "can_interact": true
@@ -974,102 +992,50 @@
     "memory": {
       "raw_history": [
         {
-          "turn": 1,
-          "location": "6号车厢",
-          "user_input": "[游戏开始]",
+          "turn": 7,
+          "location": "4号车厢",
+          "user_input": "请乘务员跟我一起行动",
           "action": "narrated",
           "target": "",
-          "result": "你从睡梦中醒来，发现自己坐在一列老旧电车的6号车厢里，四周空无一人。",
-          "success": true
-        },
-        {
-          "turn": 2,
-          "location": "6号车厢",
-          "user_input": "仔细搜索一下当前车厢",
-          "action": "narrated",
-          "target": "",
-          "result": "索托斯在6号车厢中搜索，发现了撬棍、手电筒、试作型湮灭者武器以及便签和地图。",
-          "success": true
-        },
-        {
-          "turn": 3,
-          "location": "5号车厢",
-          "user_input": "前往5号车厢",
-          "action": "narrated",
-          "target": "",
-          "result": "索托斯拿着手电筒，瞥了一眼墙角的撬棍，推门进入5号车厢。",
-          "success": true
-        },
-        {
-          "turn": 4,
-          "location": "5号车厢",
-          "user_input": "唱一首歌给自己助助性",
-          "action": "narrated",
-          "target": "",
-          "result": "你开口唱歌，歌声引来了一只潜伏的Clicker，它从座位间扑出，向你发动攻击。",
+          "result": "索托斯小心地包扎好乘务员京山人吉的伤口，她感激地点头，虚弱但坚定地站起身，跟随在索托斯身后。",
           "success": true
         }
       ],
-      "summary": "",
+      "summary": "索托斯从睡梦中醒来，发现自己身处老旧电车的6号车厢，四周无人。他搜索车厢，找到撬棍、手电筒、试作型湮灭者武器、便签和地图。随后他拿起手电筒，瞥了一眼撬棍，推门进入5号车厢。在5号车厢，他开口唱歌给自己助兴，歌声引来一只潜伏的Clicker，从座位间扑出攻击他。索托斯离开5号车厢，进入4号车厢，在这里救治了一名受伤的乘务员。乘务员苏醒后告知，怪物对声音敏感，并提到装有驾驶室钥匙的黑色包包掉在3号车厢前门附近。",
       "visited": [
         "6号车厢",
-        "5号车厢"
+        "5号车厢",
+        "4号车厢"
       ],
       "key_items": [],
-      "turn": 4
+      "turn": 7
     }
   },
   "memory": {
     "raw_history": [
       {
-        "turn": 1,
-        "location": "6号车厢",
-        "user_input": "[游戏开始]",
+        "turn": 7,
+        "location": "4号车厢",
+        "user_input": "请乘务员跟我一起行动",
         "action": "narrated",
         "target": "",
-        "result": "你从睡梦中醒来，发现自己坐在一列老旧电车的6号车厢里，四周空无一人。",
-        "success": true
-      },
-      {
-        "turn": 2,
-        "location": "6号车厢",
-        "user_input": "仔细搜索一下当前车厢",
-        "action": "narrated",
-        "target": "",
-        "result": "索托斯在6号车厢中搜索，发现了撬棍、手电筒、试作型湮灭者武器以及便签和地图。",
-        "success": true
-      },
-      {
-        "turn": 3,
-        "location": "5号车厢",
-        "user_input": "前往5号车厢",
-        "action": "narrated",
-        "target": "",
-        "result": "索托斯拿着手电筒，瞥了一眼墙角的撬棍，推门进入5号车厢。",
-        "success": true
-      },
-      {
-        "turn": 4,
-        "location": "5号车厢",
-        "user_input": "唱一首歌给自己助助性",
-        "action": "narrated",
-        "target": "",
-        "result": "你开口唱歌，歌声引来了一只潜伏的Clicker，它从座位间扑出，向你发动攻击。",
+        "result": "索托斯小心地包扎好乘务员京山人吉的伤口，她感激地点头，虚弱但坚定地站起身，跟随在索托斯身后。",
         "success": true
       }
     ],
-    "summary": "",
+    "summary": "索托斯从睡梦中醒来，发现自己身处老旧电车的6号车厢，四周无人。他搜索车厢，找到撬棍、手电筒、试作型湮灭者武器、便签和地图。随后他拿起手电筒，瞥了一眼撬棍，推门进入5号车厢。在5号车厢，他开口唱歌给自己助兴，歌声引来一只潜伏的Clicker，从座位间扑出攻击他。索托斯离开5号车厢，进入4号车厢，在这里救治了一名受伤的乘务员。乘务员苏醒后告知，怪物对声音敏感，并提到装有驾驶室钥匙的黑色包包掉在3号车厢前门附近。",
     "visited": [
       "6号车厢",
-      "5号车厢"
+      "5号车厢",
+      "4号车厢"
     ],
     "key_items": [],
-    "turn": 4
+    "turn": 7
   },
   "player_snapshot": {
     "meta": {
       "version": "1.0",
-      "created_at": "2026-05-30T21:31:12.768753",
+      "created_at": "2026-05-30T21:42:00.792016",
       "rules_edition": "COC7"
     },
     "personal": {
@@ -1491,6 +1457,6 @@
     "avatar_url": ""
   },
   "_meta": {
-    "turn_number": 4
+    "turn_number": 8
   }
 }

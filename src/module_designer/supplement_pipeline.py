@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from llm import call_deepseek
 from utils import get_coc_skill_names
+from config_llm import LLM_FLASH_MODEL, RE_SUPPLEMENT_NARRATIVE, RE_SUPPLEMENT_ENTITIES, RE_SUPPLEMENT_L1, RE_SUPPLEMENT_L3
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -327,8 +328,8 @@ def _step_1_narrative(
 【出入口】
   入口场景: {entry_scene}
   出口场景: {exit_scene or '由你决定'}"""
-    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                             reasoning_effort="max",
+    response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                             reasoning_effort=RE_SUPPLEMENT_NARRATIVE,
                              system=SUPP_STEP1_SYSTEM,
                              fallback_schema={"overview": "", "scenes": [],
                                               "narrative_lines": [], "driving_force": "",
@@ -393,8 +394,8 @@ def _step_2a_entities(shared: dict, base_l3: dict) -> dict:
 {shared['player_intent']}
 
 标准技能: {skills}"""
-    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                             reasoning_effort="max",
+    response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                             reasoning_effort=RE_SUPPLEMENT_ENTITIES,
                              system=SUPP_STEP2A_SYSTEM,
                              fallback_schema={"scenes": {}, "events": [], "dependency_graph": {"nodes": {}, "edges": []}})
     return json.loads(response) if isinstance(response, str) else response
@@ -408,8 +409,8 @@ def _step_2b_l1(shared: dict, base_l3: dict) -> dict:
 
 【新场景】
 {scene_list}"""
-    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                             reasoning_effort="max",
+    response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                             reasoning_effort=RE_SUPPLEMENT_L1,
                              system=SUPP_STEP2B_SYSTEM,
                              fallback_schema={})
     return json.loads(response) if isinstance(response, str) else response
@@ -427,8 +428,8 @@ def _step_2c_l3(shared: dict, base_l3: dict) -> dict:
 【出入口】
 入口: {shared['entry_scene']}
 出口: {shared['exit_scene']}"""
-    response = call_deepseek(prompt, json_mode=True, model="deepseek-v4-flash",
-                             reasoning_effort="max",
+    response = call_deepseek(prompt, json_mode=True, model=LLM_FLASH_MODEL,
+                             reasoning_effort=RE_SUPPLEMENT_L3,
                              system=SUPP_STEP2C_SYSTEM,
                              fallback_schema={"scene_intents": {}, "new_rules": [], "tone_adjustments": {}})
     return json.loads(response) if isinstance(response, str) else response
