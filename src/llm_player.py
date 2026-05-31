@@ -46,6 +46,27 @@ def build_player_prompt(
         for n in npcs_raw
     ) or "无"
 
+    # Exits
+    exits = snap.get("exits", [])
+    exits_text = "、".join(f"{e['target']}({e['method']})" for e in exits) or "无已知出口"
+
+    # Enemies
+    enemies = snap.get("enemies_in_scene", [])
+    enemy_text = "、".join(f"{e['enemy_ref']}×{e.get('quantity',1)}[{e.get('status','?')}]" for e in enemies) or "无"
+
+    # Time
+    t = snap.get("time", {})
+    gt = int(t.get("game_time", 0)) if t else 0
+    day = gt // 1440 if gt else 0
+    hour_val = (gt % 1440) // 60 if gt else 0
+    min_val = gt % 60
+    if hour_val < 5: tod = "夜间"
+    elif hour_val < 8: tod = "早晨"
+    elif hour_val < 17: tod = "白天"
+    elif hour_val < 20: tod = "黄昏"
+    else: tod = "夜间"
+    time_text = f"第{day}天 {tod} {int(hour_val):02d}:{int(min_val):02d}" if gt else "游戏开始"
+
     brief = narrative_result.get("brief", "")
     narrative = narrative_result.get("narrative", "")
     turn_output = format_turn_dynamic(player_snapshot, brief, narrative)
@@ -66,6 +87,7 @@ def build_player_prompt(
         san=p.get("san", "?"), mp=p.get("mp", "?"),
         weapons=weapons, inventory=inv,
         location=loc, description=desc, npcs=npcs, npc_states=npc_states,
+        exits=exits_text, enemies=enemy_text, time=time_text,
         turn_output=turn_output,
         short_history="\n".join(short_history[-5:]) or "（游戏开始）",
         long_memory=long_memory or "（无）",
