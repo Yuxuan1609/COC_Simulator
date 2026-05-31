@@ -127,18 +127,8 @@ def get_game() -> dict | None:
         from investigator.rules import roll_stats, calc_derived, create_skill_list
         import os
         from datetime import datetime
-        from prompts import set_prompt_log_dir
-        from llm import set_llm_log_dir
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_dir = str(PROJECT_ROOT / f"logs/prompt_log_{timestamp}")
-        os.makedirs(log_dir, exist_ok=True)
-        set_prompt_log_dir(log_dir)
-        set_llm_log_dir(log_dir)
-
-        from game.turn_logger import TurnLogger
-        from game_loop import set_turn_logger
-        set_turn_logger(TurnLogger(log_dir=log_dir))
+        from game_loop import setup_logging
+        log_dir = setup_logging()
 
         _init_libraries()
 
@@ -581,76 +571,7 @@ async def player_status(format: str = ""):
 
 @router.post("/api/game/command", response_class=HTMLResponse)
 async def game_command(cmd: str = Form(...)):
-    global _game_instance
-    game = get_game()
-    world = game["keeper"].world
-    p = world.player
-    cmd = cmd.strip().lower()
-    lines = []
-    if cmd == "/help":
-        names = ["/scene", "/char", "/flags", "/events",
-                 "/save <slot>", "/load <slot>", "/quit", "/reset", "/help"]
-        lines = [f'<div class="text-xs text-gray-500">{"  ".join(names)}</div>']
-    elif cmd == "/scene":
-        loc = world.current_location
-        desc = world.get_current_description()
-        lines.append(f'<div class="font-bold text-aged-brown">{loc}</div>')
-        lines.append(f'<div class="text-xs text-gray-500 mt-1">{desc}</div>')
-        for e in world.get_possible_exits():
-            lines.append(f'<div class="text-xs text-gray-600">→ {e.target}：{e.method}</div>')
-    elif cmd == "/char":
-        if p:
-            lines.append(f'<div class="text-sm text-aged-gold">{p.name} (HP {p.derived.HP} SAN {p.derived.SAN})</div>')
-            lines.append(f'<div class="text-xs text-gray-500">属性: {" ".join(f"{k}={getattr(p.stats,k,0)}" for k in ["STR","CON","SIZ","DEX","APP","INT","POW","EDU","LUCK"])}</div>')
-        else:
-            lines.append('<div class="text-xs text-gray-500">未设置调查员</div>')
-    elif cmd == "/flags":
-        rs = world.runtime_state or {}
-        if rs:
-            for k, v in rs.items():
-                c = "text-green-400" if v.get("completed") else "text-gray-500"
-                lines.append(f'<div class="text-xs {c}">{k}: {v}</div>')
-        else:
-            lines.append('<div class="text-xs text-gray-500">无状态</div>')
-    elif cmd == "/events":
-        triggered = world.triggered_events or []
-        if triggered:
-            for ev in triggered:
-                lines.append(f'<div class="text-xs text-gray-400">• {ev}</div>')
-        else:
-            lines.append('<div class="text-xs text-gray-500">无已触发事件</div>')
-    elif cmd.startswith("/save"):
-        slot = cmd.replace("/save", "").strip() or "1"
-        try:
-            from game_loop import save_game
-            save_game(game, str(PROJECT_ROOT / f"save_{slot}.json"))
-            lines.append(f'<div class="text-xs text-green-400">已存档到 save_{slot}.json</div>')
-        except Exception as e:
-            lines.append(f'<div class="text-xs text-red-400">存档失败: {e}</div>')
-    elif cmd.startswith("/load"):
-        slot = cmd.replace("/load", "").strip() or "1"
-        spath = str(PROJECT_ROOT / f"save_{slot}.json")
-        if Path(spath).exists():
-            try:
-                from game_loop import load_game
-                load_game(game, spath)
-                lines.append(f'<div class="text-xs text-green-400">已从 save_{slot}.json 读档</div>')
-            except Exception as e:
-                lines.append(f'<div class="text-xs text-red-400">读档失败: {e}</div>')
-        else:
-            lines.append(f'<div class="text-xs text-gray-500">存档 save_{slot}.json 不存在</div>')
-    elif cmd in ("/quit", "/exit"):
-        global _game_quit
-        _game_instance = None
-        _game_quit = True
-        lines.append('<div class="text-xs text-green-400">游戏已退出。返回启动页以重新开始。</div>')
-    elif cmd == "/reset":
-        _game_instance = None
-        _game_quit = False
-        lines.append('<div class="text-xs text-green-400">游戏已重置，刷新页面以重新开始</div>')
-    else:
-        lines.append(f'<div class="text-xs text-gray-500">未知命令: {cmd}。输入 /help 查看可用命令。</div>')
-    return HTMLResponse("".join(lines))
+    return HTMLResponse(_handle_slash_command(cmd))
 
 
 @router.get("/api/game/scene", response_class=HTMLResponse)
@@ -734,15 +655,8 @@ async def init_game_api(
     # Initialize libraries with user-specified paths
     _init_libraries(weapon_path, enemy_path, boss_path)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = str(PROJECT_ROOT / f"logs/prompt_log_{timestamp}")
-    os.makedirs(log_dir, exist_ok=True)
-    set_prompt_log_dir(log_dir)
-    set_llm_log_dir(log_dir)
-
-    from game.turn_logger import TurnLogger
-    from game_loop import set_turn_logger
-    set_turn_logger(TurnLogger(log_dir=log_dir))
+    from game_loop import setup_logging
+    log_dir = setup_logging()
 
     # Determine start scene: L3.start_scene > L3.scene_intents first key > L2 first scene
     start_node = _resolve_start_scene(l2_path, l3_path)

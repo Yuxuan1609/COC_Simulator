@@ -22,6 +22,21 @@ def set_turn_logger(logger: TurnLogger):
     _turn_logger = logger
 
 
+def setup_logging() -> str:
+    """统一初始化日志目录 + TurnLogger。返回 log_dir 路径。"""
+    from datetime import datetime
+    from prompts import set_prompt_log_dir
+    from llm import set_llm_log_dir
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = f"logs/prompt_log_{timestamp}"
+    import os
+    os.makedirs(log_dir, exist_ok=True)
+    set_prompt_log_dir(log_dir)
+    set_llm_log_dir(log_dir)
+    set_turn_logger(TurnLogger(log_dir=log_dir))
+    return log_dir
+
+
 
 
 # ── Debug command handler ──
