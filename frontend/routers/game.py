@@ -157,6 +157,10 @@ def get_game() -> dict | None:
             inv.skills = create_skill_list()
             inv.derived = calc_derived(inv.stats, inv.age)
         g["keeper"].world.set_player(inv)
+        # 应用 AT_WORLD 中延后的 item_gain
+        for item_gain in g.get("pending_world_items", []):
+            if hasattr(inv, 'item_manager'):
+                inv.item_manager.add(item_gain.item_name, quantity=item_gain.quantity)
         _game_instance = g
     return _game_instance
 
@@ -762,6 +766,10 @@ async def init_game_api(
         inv = _make_default_inv()
 
     g["keeper"].world.set_player(inv)
+    # 应用 AT_WORLD 中延后的 item_gain
+    for item_gain in g.get("pending_world_items", []):
+        if hasattr(inv, 'item_manager'):
+            inv.item_manager.add(item_gain.item_name, quantity=item_gain.quantity)
     _game_instance = g
 
     from game_loop import start_autosave

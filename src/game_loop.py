@@ -216,8 +216,9 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
 
     # 显式执行 world 场景的 auto_triggers（world 不是玩家可达场景）
     world_node = graph.nodes.get("world")
+    _pending_world_items: list[ItemGain] = []  # 延后：玩家尚未设置时暂存
     if world_node:
-        from game.side_effects import parse_markup_all, SpawnEnemy, GrantWeapon, SceneWeapon as SW
+        from game.side_effects import parse_markup_all, SpawnEnemy, GrantWeapon, ItemGain, SceneWeapon as SW
         for at in world_node.auto_triggers:
             effects = parse_markup_all(getattr(at, 'result', '') or '')
             for se_text in (getattr(at, 'side_effects', []) or []):
@@ -236,6 +237,14 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
                     world.scene_weapons[scene].append(SW(
                         weapon_ref=eff.weapon_ref, scene=scene, quantity=eff.quantity))
                     print(f"[World AT] granted {eff.weapon_ref} x{eff.quantity} in {scene}")
+                elif isinstance(eff, ItemGain):
+                    if world.player and hasattr(world.player, 'item_manager'):
+                        world.player.item_manager.add(eff.item_name, quantity=eff.quantity)
+                        qty_str = f" x{eff.quantity}" if eff.quantity > 1 else ""
+                        print(f"[World AT] gained item {eff.item_name}{qty_str}")
+                    else:
+                        _pending_world_items.append(eff)
+                        print(f"[World AT] item_gain {eff.item_name} deferred (player not yet set)")
     else:
         print("[World AT] No 'world' node found in graph")
 
@@ -266,6 +275,7 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
         "keeper": keeper,
         "narrator": narrator,
         "author": author,
+        "pending_world_items": _pending_world_items,
     }
 
 

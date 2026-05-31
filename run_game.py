@@ -79,6 +79,11 @@ def run_game(character_path: str = None):
               f"HP={investigator.derived.HP} SAN={investigator.derived.SAN}")
 
     world.set_player(investigator)
+    # 应用 AT_WORLD 中延后的 item_gain（init_game 时 player 尚未设置）
+    for item_gain in game.get("pending_world_items", []):
+        if hasattr(investigator, 'item_manager'):
+            investigator.item_manager.add(item_gain.item_name, quantity=item_gain.quantity)
+            print(f"[World AT] gained item {item_gain.item_name} x{item_gain.quantity}")
     _os.makedirs("data/saves", exist_ok=True)
 
     print("[info] 游戏开始。输入 /help 查看可用命令。")

@@ -859,8 +859,10 @@
             "@item_gain(item_name=\"黑色石片(第二块)\", quantity=1)",
             "@grant_weapon(weapon_ref=\"斯普林菲尔德M1903步枪\", scene=\"\", quantity=1)",
             "@grant_weapon(weapon_ref=\"改造信号手枪\", scene=\"\", quantity=1)",
-            "@spawn_enemy(enemy_ref=\"石卫\", scene=\"拱门入口\", quantity=3)",
-            "@spawn_enemy(enemy_ref=\"石卫\", scene=\"居住区\", quantity=4)"
+        "@spawn_enemy(enemy_ref=\"石卫\", scene=\"拱门入口\", quantity=3)",
+        "@spawn_enemy(enemy_ref=\"石卫\", scene=\"居住区\", quantity=4)",
+        "@grant_weapon(weapon_ref=\"试作型裁决者\", scene=\"波士顿阿什克罗夫特办公室\", quantity=1)",
+        "@grant_weapon(weapon_ref=\"试作型湮灭者\", scene=\"波士顿阿什克罗夫特办公室\", quantity=1)"
           ],
           "graded_result": null,
           "difficulty": "None",
