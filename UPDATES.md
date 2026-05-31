@@ -4,6 +4,24 @@
 
 ---
 
+## 代码库结构审计（2026-05-31）
+
+**Top 3 高影响优化**：
+
+| # | 事项 | 影响面 | 预期减量 |
+|---|------|--------|----------|
+| 1 | `Entity.from_dict()` 统一工厂 | 8+ 处重复构造，散落在 3 个文件 | ~100 行 |
+| 2 | 合并双份 `apply_side_effects`（keeper vs scenario_core） | 两份 ~100 行处理同一套 7 种效果，维护不同步风险 | ~100 行 |
+| 3 | 提取 trait enhancement 为独立函数 | judge / keeper(search) / keeper(standoff) 三处完全相同的 20 行 block | ~40 行 |
+
+**重复代码全貌**：12 处重复（HIGH×4 / MEDIUM×7 / LOW×1），6 个结构问题，8 个合并机会。
+
+**结构性**: `process_turn()` 743 行需拆解，`world.enemy_manager` vs `world.enemies` 命名不一致，dead code 若干。
+
+---
+
+---
+
 ## @consume_item 在 requirement 中作为前置门禁（2026-05-31）
 
 **现状**：Phase 2 管线将 requirement 中的自然语言（如"需要消耗1个急救包"）标准化为 `@consume_item` 写入 `side_effects`。运行时 `parse_markup_all` 解析后，物品在 entity 执行后删除（后置副作用），不在执行前作为前置门禁。
