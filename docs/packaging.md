@@ -154,6 +154,8 @@ python -m nuitka --standalone --windows-console-mode=disable `
   --include-data-files=src/config_llm.template.py=src/config_llm.template.py `
   --include-data-files=src/config_llm.py=src/config_llm.py `
   --include-package=pythonnet --include-package=clr `
+  --include-package-data=pythonnet `
+  --include-package-data=clr_loader `
   --no-deployment-flag=excluded-module-usage `
   --assume-yes-for-downloads `
   frontend/server.py
@@ -170,14 +172,16 @@ python -m nuitka --standalone --windows-console-mode=disable `
 5. **Python 3.14 为实验性支持**，可能出现未预期的兼容性问题
 6. **首次构建需下载 Dependency Walker**（`--assume-yes-for-downloads`）
 7. `_paths.py` 由 Nuitka 编译为 C 代码，无需作为数据文件包含
+8. **pywebview 平台子模块由 Nuitka pywebview 插件自动处理**，无需手动 `--include-module`。手动指定反而会因与插件决策冲突导致 `FATAL: Conflict between user and plugin decision` 错误
+9. **pythonnet 运行时 DLL 需显式包含数据**：`--include-package=pythonnet` 只包含 Python 模块，不包含 `.dll` 等非 Python 数据文件。必须加 `--include-package-data=pythonnet` 才会把 `runtime/System.*.dll` 打包进去。同理 `clr_loader` 需要 `--include-package-data=clr_loader`
 
 ### 与 PyInstaller 输出对比
 
 | 项目 | PyInstaller | Nuitka |
 |------|------------|--------|
 | 输出结构 | `dist/TRPG助手/TRPG助手.exe` + `_internal/` | `dist_nuitka/server.dist/server.exe` |
-| exe 大小 | ~14 MB (stub) | ~43 MB (compiled) |
-| 总大小 | ~157 MB | ~? MB |
+| exe 大小 | ~14 MB (stub) | ~46 MB (compiled) |
+| 总大小 | ~157 MB | ~156 MB |
 | 启动速度 | 解包 .pyc（慢） | 原生 C（快） |
 | `src/` 数据 | 通过 `--add-data` 完整包含 | 仅 `config_llm.*` 通过 `--include-data-files`
 
