@@ -143,7 +143,6 @@ class CombatState:
     _boss_hp_max: int = 0
     _boss_current_phase: str = ""
     _correction_log: list[str] = field(default_factory=list)  # LLM per-round correction narratives
-    _boss_hp_max: int = 0
 
 
 # ── Combat system ──

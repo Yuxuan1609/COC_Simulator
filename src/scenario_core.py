@@ -66,6 +66,17 @@ class Interaction:
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
 
+
+def find_entity_by_id(world: 'ScenarioWorld', entity_id: str):
+    """Shared entity lookup — scans scenes + events. Called by judge and keeper."""
+    if entity_id in world.graph.events:
+        return world.graph.events[entity_id]
+    for node in world.graph.nodes.values():
+        for e in node.interactions + node.auto_triggers:
+            if e.id == entity_id:
+                return e
+    return None
+
     @classmethod
     def from_dict(cls, data: dict, overrides: dict | None = None) -> "Entity":
         """统一工厂 — 从 dict 构造 Entity，覆盖所有构造点（8+ 处）。

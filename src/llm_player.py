@@ -12,7 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from llm import call_deepseek
 from config_llm import LLM_FLASH_MODEL, RE_INTENT_DETECTOR
-from game_loop import init_game, run_turn, set_turn_logger
+from game_loop import init_game, run_turn, setup_logging
 from game.turn_logger import TurnLogger
 from investigator import load_investigator
 from llm_player_prompts import (
@@ -118,6 +118,10 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             inv.skills = create_skill_list()
             inv.derived = calc_derived(inv.stats, inv.age)
             game["keeper"].world.set_player(inv)
+    # 应用 AT_WORLD 延后的 item_gain
+    for item_gain in game.get("pending_world_items", []):
+        if hasattr(game["keeper"].world.player, 'item_manager'):
+            game["keeper"].world.player.item_manager.add(item_gain.item_name, quantity=item_gain.quantity)
 
     # Combat is short-circuited in game_loop.run_turn() (auto-win, Pyrrhic victory narrative).
     # CombatSystem.run_combat() is only used in standalone smoke tests.
@@ -131,13 +135,14 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             game["keeper"].world.set_player(load_investigator(str(char_path)))
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = PROJECT_ROOT / "logs" / "llm_player" / ts
-    log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = str(PROJECT_ROOT / "logs" / "llm_player" / ts)
+    import os as _os
+    _os.makedirs(log_dir, exist_ok=True)
     from llm import set_llm_log_dir
     from prompts import set_prompt_log_dir
-    set_prompt_log_dir(str(log_dir))
-    set_llm_log_dir(str(log_dir))
-    turn_logger = TurnLogger(log_dir=str(log_dir / "turn_logs"))
+    set_prompt_log_dir(log_dir)
+    set_llm_log_dir(log_dir)
+    TurnLogger(log_dir=log_dir)
     set_turn_logger(turn_logger)
 
     def _log_player_call(turn: int, system_prompt: str, user_prompt: str, response):

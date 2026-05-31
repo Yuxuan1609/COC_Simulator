@@ -82,14 +82,9 @@ class Judge:
         self.world.mark_completed(entity.id, tier)
 
     def _find_entity_by_id(self, entity_id: str):
-        """Find an entity by ID across graph (scenes + events)."""
-        if entity_id in self.world.graph.events:
-            return self.world.graph.events[entity_id]
-        for node in self.world.graph.nodes.values():
-            for e in node.interactions + node.auto_triggers:
-                if e.id == entity_id:
-                    return e
-        return None
+        """Find an entity by ID across graph. Delegates to shared lookup."""
+        from scenario_core import find_entity_by_id
+        return find_entity_by_id(self.world, entity_id)
 
     def _is_entity_completed(self, entity) -> bool:
         """Check if an entity has been completed/triggered via runtime_state."""

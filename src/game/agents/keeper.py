@@ -1167,19 +1167,11 @@ class Keeper:
             f.write("\n\n")
 
     def _find_entity_by_id(self, entity_id: str):
-        """Find entity by ID across graph (scenes + events + boss encounters + NPCs)."""
-        if entity_id in self.world.graph.events:
-            return self.world.graph.events[entity_id]
-        node = self.world._current_node()
-        if node:
-            for e in node.interactions + node.auto_triggers:
-                if e.id == entity_id:
-                    return e
-        # Scan all scenes
-        for node in self.world.graph.nodes.values():
-            for e in node.interactions + node.auto_triggers:
-                if e.id == entity_id:
-                    return e
+        """Find entity by ID across graph + NPCs + boss encounters."""
+        from scenario_core import find_entity_by_id
+        found = find_entity_by_id(self.world, entity_id)
+        if found:
+            return found
         # NPC bound entities — dynamically resolved, follow the NPC's current location
         if self.world.npcs:
             from scenario_core import Entity
