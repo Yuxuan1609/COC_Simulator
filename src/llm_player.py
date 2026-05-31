@@ -32,6 +32,7 @@ def build_player_prompt(
     long_memory: str, profile: dict,
     player_snapshot=None,
 ) -> tuple[str, str]:
+    from game_loop import format_turn_dynamic
     snap = world.build_snapshot()
     p = snap.get("player", {})
     weapons = ", ".join(str(w) for w in p.get("weapons", [])) or "无"
@@ -98,10 +99,13 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         max_duration_s = pc["max_duration_s"]
 
     module_dir = PROJECT_ROOT / "data" / "modules" / module_name
+    l2_name = "l2_keeper_test.json" if (module_dir / "l2_keeper_test.json").exists() else "l2_keeper.json"
+    l1_name = "l1_player.json"
+    l3_name = "l3_designer.json"
     game = init_game(
-        l2_path=str(module_dir / "l2_keeper_test.json"),
-        l1_path=str(module_dir / "l1_player.json"),
-        l3_path=str(module_dir / "l3_designer.json"),
+        l2_path=str(module_dir / l2_name),
+        l1_path=str(module_dir / l1_name),
+        l3_path=str(module_dir / l3_name),
         start_node="6号车厢",
     )
 
@@ -142,12 +146,14 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     from prompts import set_prompt_log_dir
     set_prompt_log_dir(log_dir)
     set_llm_log_dir(log_dir)
-    TurnLogger(log_dir=log_dir)
+    turn_logger = TurnLogger(log_dir=log_dir)
+    from game_loop import set_turn_logger
     set_turn_logger(turn_logger)
 
     def _log_player_call(turn: int, system_prompt: str, user_prompt: str, response):
         """Write full player LLM interaction (system + user + response) to log."""
-        player_log_path = log_dir / "player_llm.txt"
+        import os as _os
+        player_log_path = _os.path.join(log_dir, "player_llm.txt")
         resp_str = json.dumps(response, ensure_ascii=False, indent=2) if isinstance(response, dict) else str(response)
         with open(player_log_path, "a", encoding="utf-8") as f:
             f.write(f"\n{'='*60}\n")
@@ -273,7 +279,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         turn += 1
 
     total_elapsed = time.perf_counter() - t0
-    with open(log_dir / "_summary.json", "w", encoding="utf-8") as f:
+    with open(os.path.join(log_dir, "_summary.json"), "w", encoding="utf-8") as f:
         json.dump({
             "module": module_name, "player": player_name,
             "turns": len(summary_log), "total_elapsed_s": round(total_elapsed, 1),
