@@ -77,6 +77,27 @@ def find_entity_by_id(world: 'ScenarioWorld', entity_id: str):
                 return e
     return None
 
+
+@dataclass
+class Entity:
+    """Unified entity — interaction, auto_trigger, or event."""
+    id: str                        # I1, AT1, E1
+    entity_type: str               # "interaction" | "auto_trigger" | "event"
+    name: str
+    scene: str = ""                # empty for events
+    type: str = ""                 # COC 45 skill name, "" = no check
+    requirement: str = ""          # natural language
+    trigger: str = ""              # when this fires
+    result: str = ""               # may contain ##GRADED##, ##END_*, @markup
+    side_effects: list[str] = field(default_factory=list)  # @markup strings
+    graded_result: dict | None = None
+    difficulty: str = ""           # None/regular/hard/extreme
+    extra: dict | None = None      # time_range, etc.
+    time_condition: str = ""      # JSON list of {"day": ">=N|<=N|N|ALL", "times": ["时段",...]}, e.g. [{"day":">=2","times":["夜间","早晨"]}]. [] = no constraint
+
+    def summary(self) -> str:
+        return f"[{self.type}] {self.name}"
+
     @classmethod
     def from_dict(cls, data: dict, overrides: dict | None = None) -> "Entity":
         """统一工厂 — 从 dict 构造 Entity，覆盖所有构造点（8+ 处）。
