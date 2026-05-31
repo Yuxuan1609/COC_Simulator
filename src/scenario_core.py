@@ -56,15 +56,22 @@ class Requirement:
 @dataclass
 class Interaction:
     """场景中可执行的动作（调查、鉴定、对话、决策等）"""
-    type: str            # 调查 / 鉴定 / 搜索 / 急救 / 对话 / 决策 / 使用物品 / 策略 / 战斗 / 准备 / 事件
-    name: str            # 动作名称
-    trigger: str         # 触发条件描述
-    result: str          # 执行结果（含线索信息）
-    requirements: List[Requirement] = field(default_factory=list)   # 前置条件
-    side_effects: list = field(default_factory=list)   # ItemGain | StatChange | SpawnEnemy | GrantWeapon | NPCStateChange
+    type: str
+    name: str
+    trigger: str
+    result: str
+    requirements: List[Requirement] = field(default_factory=list)
+    side_effects: list = field(default_factory=list)
 
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
+
+
+@dataclass
+class ActionResult:
+    """Movement action result."""
+    success: bool
+    message: str
 
 
 def find_entity_by_id(world: 'ScenarioWorld', entity_id: str):

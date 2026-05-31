@@ -633,15 +633,9 @@ class CombatSystem:
             _show_prompt("Combat Narrative", prompt,
                 system="你是TRPG战斗叙事者，简洁概述战斗过程。")
 
-            # 保存 LLM prompt + response
-            if not log_dir:
+            # 保存 LLM prompt + response（仅在显式传入 log_dir 时写入文件）
+            if log_dir:
                 try:
-                    from run_game import _log_dir as _gld
-                    log_dir = _gld
-                except Exception:
-                    log_dir = "logs"
-            try:
-                if log_dir:
                     _os.makedirs(log_dir, exist_ok=True)
                     ts = datetime.now().strftime("%H%M%S")
                     prompt_path = f"{log_dir}/combat_narrative_{ts}_prompt.txt"
@@ -650,8 +644,8 @@ class CombatSystem:
                         f.write(prompt)
                     with open(resp_path, 'w', encoding='utf-8') as f:
                         f.write(str(response))
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
             data = _json.loads(response) if isinstance(response, str) else response
             return data.get("summary", "") or ""

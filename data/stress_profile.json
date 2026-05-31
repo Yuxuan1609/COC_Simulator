@@ -1,19 +1,34 @@
 {
   "test_mode": "exploration",
-  "player_strategy": ["NPC", "Enemy", "Boss", "Combat", "TimeAgent", "Author"],
+  "player_strategy": [
+    "NPC",
+    "Enemy",
+    "Boss",
+    "Combat",
+    "TimeAgent",
+    "Author"
+  ],
   "audit_targets": [
-    "NPC", "Enemy", "Boss", "Combat",
-    "TimeAgent", "Author", "IntentDetector",
-    "SideEffects", "Memory", "DependencyGraph",
-    "Judge", "Narrator"
+    "NPC",
+    "Enemy",
+    "Boss",
+    "Combat",
+    "TimeAgent",
+    "Author",
+    "IntentDetector",
+    "SideEffects",
+    "Memory",
+    "DependencyGraph",
+    "Judge",
+    "Narrator"
   ],
   "player_config": {
     "max_turns": 60,
-    "max_duration_s": 3600,
+    "max_duration_s": 300,
     "memory_compress_interval": 5,
     "model": "deepseek-v4-flash",
     "reasoning_effort": "low",
-    "module_name": "测试模组0528v2"
+    "module_name": "常暗之厢_0531"
   },
   "combat_testing": {
     "mode": "normal"
