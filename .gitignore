@@ -16,6 +16,10 @@ build/
 dist/
 *.spec
 
+# Nuitka build artifacts
+dist_nuitka/
+nuitka-crash-report.xml
+
 # Uploaded avatars
 frontend/static/uploads/avatars/*
 
