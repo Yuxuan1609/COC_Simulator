@@ -122,6 +122,7 @@ class Keeper:
         self._weapon_offer: list | None = None  # pending weapon pickup offers [{weapon_ref, scene}, ...]
         self._weapon_offer_msg: str = ""  # offer prompt message for current turn's output
         self._npc_events: list[str] = []  # NPC follow/state events collected this turn
+        self._npc_injected_at_ids: set[str] = set()  # track ATs injected from NPC bound_auto_triggers
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
         self._combat_result_pending: dict | None = None  # {outcome, narrative, is_boss} from last combat
@@ -1047,10 +1048,41 @@ class Keeper:
             return True  # LLM unavailable → optimistic pass
 
     def _inject_npc_at(self):
-        """No-op: NPC entities are now dynamically resolved in prompts.py and
-        _find_entity_by_id() based on NPC's current location.  Entities follow
-        the NPC — wherever the NPC goes, their bound entities go with them."""
-        pass
+        """Inject current-scene NPC bound entities into the scene node so parse sees them."""
+        if not self.world.npcs:
+            return
+        node = self.world._current_node()
+        if not node:
+            return
+        from scenario_core import Entity
+        injected = self._npc_injected_at_ids
+        for npc_name, npc in self.world.npcs._npcs.items():
+            if npc.scene != self.world.current_location:
+                continue
+            if npc.state in ("dead", "left"):
+                continue
+            for ent in npc.bound_interactions:
+                eid = ent.get("id", "")
+                if not eid or eid in injected:
+                    continue
+                if self.world.is_entity_completed(eid):
+                    continue
+                node.interactions.append(Entity.from_dict(ent, overrides={
+                    "entity_type": "interaction",
+                    "scene": npc.scene or self.world.current_location,
+                }))
+                injected.add(eid)
+            for at in npc.bound_auto_triggers:
+                eid = at.get("id", "")
+                if not eid or eid in injected:
+                    continue
+                if self.world.is_entity_completed(eid):
+                    continue
+                node.auto_triggers.append(Entity.from_dict(at, overrides={
+                    "entity_type": "auto_trigger",
+                    "scene": npc.scene or self.world.current_location,
+                }))
+                injected.add(eid)
 
     # ── Internal ──
 

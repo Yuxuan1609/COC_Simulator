@@ -72,6 +72,7 @@ class TurnMonitor:
         if is_critical:
             self._freeze_message = (
                 f"系统异常（{step} 段失败），游戏已暂停。\n"
+                f"错误: {last_error}\n"
                 "请使用 /load <最新存档> 恢复，或 /reset 重试。"
             )
             raise TurnFrozenError(self._freeze_message)

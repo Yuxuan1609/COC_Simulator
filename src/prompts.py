@@ -386,6 +386,20 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                 return True, soft
             met = _phr(hard, world.runtime_state)
             return met, soft
+
+        def _split_req_str(req_str: str, w):
+            """Parse requirement string into (hard, soft, met)."""
+            if not req_str.strip():
+                return "", "", True
+            if "||" in req_str:
+                hard, soft = req_str.split("||", 1)
+                hard, soft = hard.strip(), soft.strip()
+            else:
+                hard, soft = req_str.strip(), ""
+            met = True
+            if hard:
+                met = _phr(hard, w.runtime_state)
+            return hard, soft, met
         for npc in world.npcs._npcs.values():
             if npc.scene != world.current_location:
                 continue
