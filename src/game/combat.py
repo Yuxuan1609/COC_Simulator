@@ -935,56 +935,10 @@ class CombatSystem:
         """Enemy targets player (extendable to NPCs later)."""
         return "player"
 
-    def _resolve_boss_action_stub(self, state, enemy, player) -> CombatAction:
-        """Boss LLM path stub — current behavior mirrors regular enemy but reads boss_mechanics.
-        Actual LLM integration deferred to later phase.
-        """
-        attack = self._select_enemy_attack(enemy)
-        attack_name = attack.get("name", "攻击") if isinstance(attack, dict) else getattr(attack, "name", "攻击")
-        action = CombatAction(
-            actor=enemy.instance_id,
-            action_type="attack",
-            weapon=attack_name,
-            skill_name=attack_name,
-            target="player",
-        )
-        enemy_attrs = getattr(enemy, 'attributes', {})
-        dodge_bonus = getattr(enemy, 'dodge_bonus', 0)
-        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2 + dodge_bonus
-        action.skill_value = enemy_skill
-        action.roll = random.randint(1, 100)
-
-        if getattr(state, '_player_dodging', False):
-            action.success = False
-            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack_name}被你闪开了。"
-            state._player_dodging = False
-            return action
-
-        action.success = action.roll <= enemy_skill
-        action.tier = self._get_tier(action.roll, enemy_skill) if action.success else "failure"
-
-        if action.success:
-            en_str = enemy_attrs.get("STR", 50)
-            en_siz = enemy_attrs.get("SIZ", 50)
-            damage_formula = attack.get("damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False}) if isinstance(attack, dict) else getattr(attack, "damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False})
-            damage = _roll_damage(damage_formula, en_str, en_siz)
-            action.damage = damage
-            action.hp_before = state.player_hp
-            state.player_hp = max(0, state.player_hp - damage)
-            action.hp_after = state.player_hp
-            action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', 'Boss')}用{attack_name}击中了你！"
-                f"造成{damage}点伤害。"
-            )
-        else:
-            action.narrative = f"{getattr(enemy, 'enemy_ref', 'Boss')}的{attack_name}未能命中你。"
-
-        return action
-
     def _resolve_enemy_action(self, state, enemy, player) -> CombatAction:
-        """Rule-driven enemy action. Boss enemies route to LLM path."""
-        if "boss" in getattr(enemy, 'flags', []):
-            return self._resolve_boss_action_stub(state, enemy, player)
+        """Rule-driven enemy action. Boss flag changes label text only."""
+        is_boss = "boss" in getattr(enemy, 'flags', [])
+        enemy_label = getattr(enemy, 'enemy_ref', 'Boss' if is_boss else '敌人')
 
         attack = self._select_enemy_attack(enemy)
         attack_name = attack.get("name", "攻击") if isinstance(attack, dict) else getattr(attack, "name", "攻击")
@@ -1004,9 +958,7 @@ class CombatSystem:
 
         if getattr(state, '_player_dodging', False):
             action.success = False
-            action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', '敌人')}的{attack_name}被你闪开了。"
-            )
+            action.narrative = f"{enemy_label}的{attack_name}被你闪开了。"
             state._player_dodging = False
             return action
 
@@ -1022,14 +974,9 @@ class CombatSystem:
             action.hp_before = state.player_hp
             state.player_hp = max(0, state.player_hp - damage)
             action.hp_after = state.player_hp
-            action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', '敌人')}用{attack_name}击中了你！"
-                f"造成{damage}点伤害。"
-            )
+            action.narrative = f"{enemy_label}用{attack_name}击中了你！造成{damage}点伤害。"
         else:
-            action.narrative = (
-                f"{getattr(enemy, 'enemy_ref', '敌人')}的{attack_name}未能命中你。"
-            )
+            action.narrative = f"{enemy_label}的{attack_name}未能命中你。"
 
         return action
 

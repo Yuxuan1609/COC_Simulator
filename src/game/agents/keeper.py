@@ -1080,16 +1080,15 @@ class Keeper:
             if node and follow_eid not in {e.id for e in node.interactions}:
                 from scenario_core import Entity
                 req_text = npc.follow_requirements if npc.follow_requirements else "NPC愿意跟随"
-                node.interactions.append(Entity(
-                    id=follow_eid, entity_type="interaction",
-                    name=f"{npc.name}开始跟随你",
-                    scene=self.world.current_location, type="无",
-                    requirement=req_text,
-                    trigger=f"你请求{npc.name}跟随你一起行动",
-                    result=f"{npc.name}加入了你的队伍，你可以随时与其交谈",
-                    side_effects=[], difficulty="None",
-                    time_condition="",
-                ))
+                node.interactions.append(Entity.from_dict({
+                    "id": follow_eid, "entity_type": "interaction",
+                    "name": f"{npc.name}开始跟随你",
+                    "scene": self.world.current_location, "type": "无",
+                    "requirement": req_text,
+                    "trigger": f"你请求{npc.name}跟随你一起行动",
+                    "result": f"{npc.name}加入了你的队伍，你可以随时与其交谈",
+                    "difficulty": "None",
+                }))
 
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
@@ -1193,21 +1192,9 @@ class Keeper:
                         continue
                     if self.world.is_entity_completed(eid):
                         continue
-                    return Entity(
-                        id=eid,
-                        entity_type=ent.get("entity_type", "interaction"),
-                        name=ent.get("name", ""),
-                        scene=ent.get("source_scene", ""),
-                        type=ent.get("type", ""),
-                        requirement=ent.get("requirement", ""),
-                        trigger=ent.get("trigger", ""),
-                        result=ent.get("result", ""),
-                        side_effects=ent.get("side_effects", []),
-                        graded_result=ent.get("graded_result"),
-                        difficulty=ent.get("difficulty", ""),
-                        extra=ent.get("extra"),
-                        time_condition=ent.get("time_condition", ""),
-                    )
+                    return Entity.from_dict(ent, overrides={
+                        "scene": ent.get("source_scene", ""),
+                    })
         # Boss encounters
         if self.world.bosses:
             for enc in self.world.bosses._encounters:
@@ -1332,13 +1319,9 @@ class Keeper:
             for ev in l2.get("events", []):
                 eid = ev["id"]
                 if eid not in graph.events:
-                    graph.events[eid] = Entity(
-                        id=eid, entity_type="event",
-                        name=ev["name"], type=ev.get("type", ""),
-                        requirement=ev.get("requirement", ""), trigger=ev.get("trigger", ""),
-                        result=ev.get("result", ""), side_effects=ev.get("side_effects", []),
-                        graded_result=ev.get("graded_result"), difficulty=ev.get("difficulty", ""),
-                    )
+                    graph.events[eid] = Entity.from_dict(ev, overrides={
+                        "entity_type": "event",
+                    })
 
             if structural_edit.entry_scene in graph.nodes:
                 first_new_scene = next(iter(l2.get("scenes", {}).keys()), None)
@@ -1451,20 +1434,9 @@ class Keeper:
         """Integrate ModulePatch entities into world graph."""
         from scenario_core import Entity as EntityClass
         for ent_data in patch.entities:
-            entity = EntityClass(
-                id=ent_data.get("id", f"NEW_{hash(ent_data['name'])%10000}"),
-                entity_type=ent_data.get("entity_type", "interaction"),
-                name=ent_data.get("name", ""),
-                scene=ent_data.get("scene", ""),
-                type=ent_data.get("type", ""),
-                requirement=ent_data.get("requirement", ""),
-                trigger=ent_data.get("trigger", ""),
-                result=ent_data.get("result", ""),
-                side_effects=ent_data.get("side_effects", []),
-                graded_result=ent_data.get("graded_result"),
-                difficulty=ent_data.get("difficulty", ""),
-                time_condition=ent_data.get("time_condition", ""),
-            )
+            entity = EntityClass.from_dict(ent_data, overrides={
+                "id": ent_data.get("id", f"NEW_{hash(ent_data['name'])%10000}"),
+            })
             if entity.entity_type == "event":
                 self.world.graph.events[entity.id] = entity
             else:

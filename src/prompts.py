@@ -398,17 +398,10 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                     continue
                 req = ent.get("requirement", "") or ""
                 met, soft = _parse_req(req)
-                e = Entity(
-                    id=eid, entity_type="interaction",
-                    name=ent.get("name", ""), scene=ent.get("source_scene", ""),
-                    type=ent.get("type", ""), requirement=req,
-                    trigger=ent.get("trigger", ""), result=ent.get("result", ""),
-                    side_effects=ent.get("side_effects", []),
-                    graded_result=ent.get("graded_result"),
-                    difficulty=ent.get("difficulty", ""),
-                    extra=ent.get("extra"),
-                    time_condition=ent.get("time_condition", ""),
-                )
+                e = Entity.from_dict(ent, overrides={
+                    "entity_type": "interaction",
+                    "scene": ent.get("source_scene", ""),
+                })
                 line = _fmt_inter(e, "[NPC_INTERACT]")
                 if met:
                     trig_npc.append(line)
@@ -421,17 +414,10 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                     continue
                 req = at.get("requirement", "") or ""
                 hard, soft, met = _split_req_str(req, world)
-                e = Entity(
-                    id=eid, entity_type="auto_trigger",
-                    name=at.get("name", ""), scene=at.get("source_scene", ""),
-                    type=at.get("type", ""), requirement=req,
-                    trigger=at.get("trigger", ""), result=at.get("result", ""),
-                    side_effects=at.get("side_effects", []),
-                    graded_result=at.get("graded_result"),
-                    difficulty=at.get("difficulty", ""),
-                    extra=at.get("extra"),
-                    time_condition=at.get("time_condition", ""),
-                )
+                e = Entity.from_dict(at, overrides={
+                    "entity_type": "auto_trigger",
+                    "scene": at.get("source_scene", ""),
+                })
                 line = _fmt_at(e, "[NPC_AT]")
                 if met:
                     trig_npc.append(line)

@@ -66,37 +66,30 @@ class Interaction:
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
 
-
-
-@dataclass
-class ActionResult:
-    """交互/事件执行的统一返回类型"""
-    success: bool
-    message: str
-    side_effects: list = field(default_factory=list)     # JSON 声明的确定性副作用
-    suggested_flags: list = field(default_factory=list)   # LLM 建议（预留，本轮不实现）
-
-
-@dataclass
-class Entity:
-    """Unified entity — interaction, auto_trigger, or event."""
-    id: str                        # I1, AT1, E1
-    entity_type: str               # "interaction" | "auto_trigger" | "event"
-    name: str
-    scene: str = ""                # empty for events
-    type: str = ""                 # COC 45 skill name, "" = no check
-    requirement: str = ""          # natural language
-    trigger: str = ""              # when this fires
-    result: str = ""               # may contain ##GRADED##, ##END_*, @markup
-    side_effects: list[str] = field(default_factory=list)  # @markup strings
-    graded_result: dict | None = None
-    difficulty: str = ""           # None/regular/hard/extreme
-    extra: dict | None = None      # time_range, etc.
-    time_condition: str = ""      # JSON list of {"day": ">=N|<=N|N|ALL", "times": ["时段",...]}, e.g. [{"day":">=2","times":["夜间","早晨"]}]. [] = no constraint
-
-    def summary(self) -> str:
-        return f"[{self.type}] {self.name}"
-
+    @classmethod
+    def from_dict(cls, data: dict, overrides: dict | None = None) -> "Entity":
+        """统一工厂 — 从 dict 构造 Entity，覆盖所有构造点（8+ 处）。
+        
+        overrides: 可选，覆盖 data 中的特定字段（如 scene 需动态注入）。
+        """
+        d = dict(data)
+        if overrides:
+            d.update(overrides)
+        return cls(
+            id=d.get("id", ""),
+            entity_type=d.get("entity_type", "interaction"),
+            name=d.get("name", ""),
+            scene=d.get("scene", ""),
+            type=d.get("type", ""),
+            requirement=d.get("requirement", ""),
+            trigger=d.get("trigger", ""),
+            result=d.get("result", ""),
+            side_effects=list(d.get("side_effects", [])),
+            graded_result=d.get("graded_result"),
+            difficulty=d.get("difficulty", ""),
+            extra=d.get("extra"),
+            time_condition=d.get("time_condition", ""),
+        )
 
 
 _GRADED_PATTERN = re.compile(r'^##GRADED##$')
@@ -276,33 +269,17 @@ class DirectedGraph:
         for node_id, node_info in data.items():
             interactions = []
             for inter in node_info.get("interactions", []):
-                interactions.append(Entity(
-                    id=inter["id"], entity_type="interaction",
-                    name=inter["name"], scene=inter.get("scene", node_id),
-                    type=inter.get("type", ""),
-                    requirement=inter.get("requirement", ""),
-                    trigger=inter.get("trigger", ""),
-                    result=inter.get("result", ""),
-                    side_effects=inter.get("side_effects", []),
-                    graded_result=inter.get("graded_result"),
-                    difficulty=inter.get("difficulty", ""),
-                    time_condition=inter.get("time_condition", ""),
-                ))
+                interactions.append(Entity.from_dict(inter, overrides={
+                    "entity_type": "interaction",
+                    "scene": inter.get("scene", node_id),
+                }))
 
             auto_triggers = []
             for at in node_info.get("auto_triggers", []):
-                auto_triggers.append(Entity(
-                    id=at["id"], entity_type="auto_trigger",
-                    name=at["name"], scene=at.get("scene", node_id),
-                    type=at.get("type", ""),
-                    requirement=at.get("requirement", ""),
-                    trigger=at.get("trigger", ""),
-                    result=at.get("result", ""),
-                    side_effects=at.get("side_effects", []),
-                    graded_result=at.get("graded_result"),
-                    difficulty=at.get("difficulty", ""),
-                    time_condition=at.get("time_condition", ""),
-                ))
+                auto_triggers.append(Entity.from_dict(at, overrides={
+                    "entity_type": "auto_trigger",
+                    "scene": at.get("scene", node_id),
+                }))
 
             from_edges = [
                 Edge(target=conn["target"], method=conn["method"],
@@ -331,18 +308,9 @@ class DirectedGraph:
     def load_events(self, data: list):
         for item in data:
             eid = item["id"]
-            self.events[eid] = Entity(
-                id=eid, entity_type="event",
-                name=item["name"],
-                type=item.get("type", ""),
-                requirement=item.get("requirement", ""),
-                trigger=item.get("trigger", ""),
-                result=item.get("result", ""),
-                side_effects=item.get("side_effects", []),
-                graded_result=item.get("graded_result"),
-                difficulty=item.get("difficulty", ""),
-                time_condition=item.get("time_condition", ""),
-            )
+            self.events[eid] = Entity.from_dict(item, overrides={
+                "entity_type": "event",
+            })
 
     # ── 查询 ──
 
@@ -446,21 +414,12 @@ class DirectedGraph:
         nodes_data = data.get("nodes", {})
         for nid, node_data in nodes_data.items():
             interactions = [
-                Entity(
-                    id=inter["id"],
-                    entity_type=inter.get("entity_type", ""),
-                    name=inter["name"],
-                    scene=inter.get("scene", ""),
-                    type=inter.get("type", ""),
-                    requirement=inter.get("requirement", ""),
-                    trigger=inter.get("trigger", ""),
-                    result=inter.get("result", ""),
-                    side_effects=inter.get("side_effects", []),
-                    graded_result=inter.get("graded_result"),
-                    difficulty=inter.get("difficulty", ""),
-                    time_condition=inter.get("time_condition", ""),
-                )
+                Entity.from_dict(inter)
                 for inter in node_data.get("interactions", [])
+            ]
+            auto_triggers = [
+                Entity.from_dict(at)
+                for at in node_data.get("auto_triggers", [])
             ]
             auto_triggers = [
                 Entity(
@@ -494,19 +453,9 @@ class DirectedGraph:
             )
         events_data = data.get("events", [])
         for ev_data in events_data:
-            graph.events[ev_data["id"]] = Entity(
-                id=ev_data["id"],
-                entity_type=ev_data.get("entity_type", ""),
-                name=ev_data["name"],
-                type=ev_data.get("type", ""),
-                requirement=ev_data.get("requirement", ""),
-                trigger=ev_data.get("trigger", ""),
-                result=ev_data.get("result", ""),
-                side_effects=ev_data.get("side_effects", []),
-                graded_result=ev_data.get("graded_result"),
-                difficulty=ev_data.get("difficulty", ""),
-                time_condition=ev_data.get("time_condition", ""),
-            )
+            graph.events[ev_data["id"]] = Entity.from_dict(ev_data, overrides={
+                "entity_type": "event",
+            })
         return graph
 
 # ═══════════════════════════════════════════════════════════════
