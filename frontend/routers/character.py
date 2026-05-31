@@ -225,19 +225,15 @@ async def generate_description(type: str = Form(...), prompt: str = Form(...)):
         return PlainTextResponse(f"[生成失败: {e}]", status_code=500)
 
 
-@router.post("/export")
-async def export_character(
-    name: str = Form(""), age: int = Form(20), gender: str = Form(""),
-    occupation: str = Form(""), appearance: str = Form(""),
-    description: str = Form(""), backstory: str = Form(""),
-    stat_STR: int = Form(0), stat_CON: int = Form(0), stat_SIZ: int = Form(0),
-    stat_DEX: int = Form(0), stat_APP: int = Form(0), stat_INT: int = Form(0),
-    stat_POW: int = Form(0), stat_EDU: int = Form(0), stat_LUCK: int = Form(0),
-    stat_HP: int = Form(0), stat_MP: int = Form(0), stat_SAN: int = Form(0),
-    stat_DODGE: int = Form(0), stat_DB: str = Form("0"), stat_BUILD: int = Form(0),
-    skills_json: str = Form("{}"),
-    avatar_url: str = Form(""),
-):
+def _build_export(name: str, age: int, gender: str,
+                  occupation: str, appearance: str, description: str,
+                  backstory: str,
+                  stat_STR: int, stat_CON: int, stat_SIZ: int,
+                  stat_DEX: int, stat_APP: int, stat_INT: int,
+                  stat_POW: int, stat_EDU: int, stat_LUCK: int,
+                  stat_HP: int, stat_MP: int, stat_SAN: int,
+                  stat_DODGE: int, stat_DB: str, stat_BUILD: int,
+                  skills_json: str, avatar_url: str):
     import json as _json
     from datetime import datetime as _dt
     from investigator.models import Stats, DerivedStats, Occupation
@@ -264,21 +260,17 @@ async def export_character(
     for _occ in _load_occupations():
         if _occ["name"] == occupation:
             inv.occupation = Occupation(
-                name=_occ["name"],
-                description=_occ.get("description", ""),
+                name=_occ["name"], description=_occ.get("description", ""),
                 occupation_skills=_occ.get("occupation_skills", []),
-                credit_rating_min=_occ.get("credit_rating_min", 0),
-                credit_rating_max=_occ.get("credit_rating_max", 99),
-                skill_points_formula=_occ.get("skill_points_formula", "EDU*4"),
+                credit_rating_range=_occ.get("credit_rating_range", "9-30"),
             )
             break
-    inv.appearance = appearance
-    inv.personal_description = description
-    inv.backstory = backstory
-    inv.avatar_url = avatar_url.strip()
+    inv.appearance = appearance or ""
+    inv.description = description or ""
+    inv.backstory = backstory or ""
+    inv.avatar_url = avatar_url or ""
 
     data = to_dict(inv)
-    data.setdefault("meta", {})
     data["meta"].update({
         "version": "1.0",
         "created_at": _dt.now().isoformat(),
@@ -302,3 +294,42 @@ async def export_character(
     from fastapi.responses import Response
     return Response(content=buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"})
+
+
+@router.get("/export")
+async def export_character_get(
+    name: str = "", age: int = 20, gender: str = "",
+    occupation: str = "", appearance: str = "", description: str = "",
+    backstory: str = "",
+    stat_STR: int = 0, stat_CON: int = 0, stat_SIZ: int = 0,
+    stat_DEX: int = 0, stat_APP: int = 0, stat_INT: int = 0,
+    stat_POW: int = 0, stat_EDU: int = 0, stat_LUCK: int = 0,
+    stat_HP: int = 0, stat_MP: int = 0, stat_SAN: int = 0,
+    stat_DODGE: int = 0, stat_DB: str = "0", stat_BUILD: int = 0,
+    skills_json: str = "{}", avatar_url: str = "",
+):
+    return _build_export(name, age, gender, occupation, appearance, description,
+                         backstory, stat_STR, stat_CON, stat_SIZ, stat_DEX,
+                         stat_APP, stat_INT, stat_POW, stat_EDU, stat_LUCK,
+                         stat_HP, stat_MP, stat_SAN, stat_DODGE, stat_DB,
+                         stat_BUILD, skills_json, avatar_url)
+
+
+@router.post("/export")
+async def export_character(
+    name: str = Form(""), age: int = Form(20), gender: str = Form(""),
+    occupation: str = Form(""), appearance: str = Form(""),
+    description: str = Form(""), backstory: str = Form(""),
+    stat_STR: int = Form(0), stat_CON: int = Form(0), stat_SIZ: int = Form(0),
+    stat_DEX: int = Form(0), stat_APP: int = Form(0), stat_INT: int = Form(0),
+    stat_POW: int = Form(0), stat_EDU: int = Form(0), stat_LUCK: int = Form(0),
+    stat_HP: int = Form(0), stat_MP: int = Form(0), stat_SAN: int = Form(0),
+    stat_DODGE: int = Form(0), stat_DB: str = Form("0"), stat_BUILD: int = Form(0),
+    skills_json: str = Form("{}"),
+    avatar_url: str = Form(""),
+):
+    return _build_export(name, age, gender, occupation, appearance, description,
+                         backstory, stat_STR, stat_CON, stat_SIZ, stat_DEX,
+                         stat_APP, stat_INT, stat_POW, stat_EDU, stat_LUCK,
+                         stat_HP, stat_MP, stat_SAN, stat_DODGE, stat_DB,
+                         stat_BUILD, skills_json, avatar_url)

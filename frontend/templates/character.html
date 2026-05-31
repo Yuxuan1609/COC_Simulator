@@ -134,34 +134,17 @@ function charSyncAllFields() {
 function exportCharacter() {
   charSyncAllFields();
   var form = document.getElementById('char-form');
-  var fd = new FormData();
-  // Read all fields from hidden form
+  var parts = [];
   form.querySelectorAll('input').forEach(function(el) {
-    if (el.value) fd.append(el.name, el.value);
+    if (el.value) parts.push(encodeURIComponent(el.name) + '=' + encodeURIComponent(el.value));
   });
-  // Override with current step fields (step 3's backstory)
   document.querySelectorAll('#step-content [name]').forEach(function(el) {
-    if (el.value) fd.set(el.name, el.value);
+    if (el.value) parts.push(encodeURIComponent(el.name) + '=' + encodeURIComponent(el.value));
   });
-  // Ensure name is set
-  if (!fd.get('name')) fd.set('name', '调查员');
-
-  fetch('/character/export', { method: 'POST', body: fd })
-    .then(function(r) {
-      if (!r.ok) throw new Error('Export failed');
-      return r.blob();
-    })
-    .then(function(blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = (fd.get('name') || 'character') + '.zip';
-      a.click();
-      URL.revokeObjectURL(url);
-    })
-    .catch(function(e) {
-      alert('导出失败: ' + e.message);
-    });
+  if (!parts.some(function(p) { return p.startsWith('name='); })) {
+    parts.push('name=' + encodeURIComponent('调查员'));
+  }
+  window.open('/character/export?' + parts.join('&'), '_blank');
 }
 </script>
 {% endblock %}
