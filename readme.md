@@ -345,7 +345,7 @@ data/
 - 法术体系: `docs/superpowers/specs/2026-05-27-magic-system-design.md`
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
 - Packing: `docs/superpowers/specs/2026-05-23-packing-design.md`
-- Cookbook 代码导航: `docs/superpowers/guides/cookbook.md`
+- 维护文档（函数级）: `MAINTENANCE.md`
 - 模组创作指南: `docs/superpowers/guides/module-authoring-guide.md`
 - Journal: `LEARNING_JOURNAL.md` / `DEBUG_JOURNAL.md`
 
