@@ -236,7 +236,11 @@ def _handle_slash_command(cmd: str) -> str:
 
 
 @router.post("/api/game/turn")
-async def process_turn(user_input: str = Form(...)):
+async def process_turn(
+    user_input: str = Form(""),
+    action_type: str = Form(""),
+    action_target: str = Form(""),
+):
     import asyncio
     import traceback
     from game_loop import run_turn
@@ -293,7 +297,10 @@ async def process_turn(user_input: str = Form(...)):
     # Run blocking LLM call in thread pool to avoid blocking event loop
     loop = asyncio.get_running_loop()
     try:
-        turn = await loop.run_in_executor(None, run_turn, game, user_input, _weapon_lib, _enemy_lib, _injector)
+        turn = await loop.run_in_executor(
+            None, run_turn, game, user_input, _weapon_lib, _enemy_lib, _injector,
+            action_type, action_target,
+        )
     except Exception as e:
         traceback.print_exc()
         _push_progress("complete", "")

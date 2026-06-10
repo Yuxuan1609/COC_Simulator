@@ -133,6 +133,7 @@ class Keeper:
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
         """Execute full turn: parse → judge → enrich → curate."""
         raw = turn_input.raw_text
+        at = turn_input.action_type
 
         # Pending weapon offer check: yes/no, does NOT consume a turn
         if self._weapon_offer:
@@ -172,24 +173,42 @@ class Keeper:
         # Inject NPC ATs + interactions before normal parse
         self._inject_npc_at()
 
-        # Step 0: Pre-parse — disambiguation gate
-        pre_result = self.pre_parse.disambiguate(raw, self._build_world_brief())
-        if pre_result.clarity == "ambiguous":
-            return {
-                "brief": pre_result.question,
-                "narrative": pre_result.question,
-                "pre_parse_ambiguous": True,
-            }
-        # Use resolved_text as effective input when cross-turn integration happened
-        if pre_result.resolved_text:
-            raw = pre_result.resolved_text
+        # ── Pre-parse shortcut: move/search bypass LLM parse entirely ──
+        if at == "move":
+            target = (turn_input.action_target or "").strip()
+            if not target:
+                return {"brief": "（移动目标未指定。）", "narrative": "（移动目标未指定。）",
+                        "npc_events": list(self._npc_events)}
+            exits = self.world.get_possible_exits()
+            valid_targets = {e.target for e in exits}
+            if target not in valid_targets:
+                return {"brief": f"（无法移动到「{target}」。）",
+                        "narrative": f"（无法移动到「{target}」。）",
+                        "npc_events": list(self._npc_events)}
+            raw = f"移动到{target}"
+            parse_result = [{"type": "move", "target": target}]
+        elif at == "search":
+            raw = "搜索"
+            parse_result = [{"type": "search"}]
+        else:
+            # Step 0: Pre-parse — disambiguation gate
+            pre_result = self.pre_parse.disambiguate(raw, self._build_world_brief())
+            if pre_result.clarity == "ambiguous":
+                return {
+                    "brief": pre_result.question,
+                    "narrative": pre_result.question,
+                    "pre_parse_ambiguous": True,
+                }
+            # Use resolved_text as effective input when cross-turn integration happened
+            if pre_result.resolved_text:
+                raw = pre_result.resolved_text
 
-        # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
-        try:
-            parse_result = self.turn_monitor.execute_step(
-                "parse", lambda: self._parse(raw), is_critical=True)
-        except TurnFrozenError as e:
-            return self._build_frozen_response(e)
+            # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
+            try:
+                parse_result = self.turn_monitor.execute_step(
+                    "parse", lambda: self._parse(raw), is_critical=True)
+            except TurnFrozenError as e:
+                return self._build_frozen_response(e)
 
         # NPC general conversation: parse returned npc_interact (no matching entity).
         # Generate dialogue via talk_to(), route follow requests, inject into enrich_input.

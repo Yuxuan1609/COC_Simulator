@@ -295,7 +295,8 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
 
 
 def run_turn(game: dict, user_input: str,
-             weapon_lib=None, enemy_lib=None, injector=None) -> dict:
+             weapon_lib=None, enemy_lib=None, injector=None,
+             action_type: str = "", action_target: str = "") -> dict:
     """Execute one turn. Returns {"brief": str, "narrative": str, "full": str}."""
     keeper = game["keeper"]
     from prompts import set_current_round
@@ -312,7 +313,12 @@ def run_turn(game: dict, user_input: str,
         if cmd_result:
             return cmd_result
 
-    turn_input = TurnInput(raw_text=user_input, player=world.player)
+    turn_input = TurnInput(
+        raw_text=user_input,
+        player=world.player,
+        action_type=action_type,
+        action_target=action_target,
+    )
     result = keeper.process_turn(turn_input, author=author)
 
     brief = result["brief"]

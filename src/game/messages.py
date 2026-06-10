@@ -86,10 +86,13 @@ class StructuralEdit:
 
 
 @dataclass
+@dataclass
 class TurnInput:
     """Entry point input."""
-    raw_text: str
+    raw_text: str = ""
     player: Any | None = None  # Investigator | None
+    action_type: str = ""       # "move" | "search" | "" — non-empty means skip LLM parse
+    action_target: str = ""     # valid only when action_type="move"
 
 
 @dataclass
