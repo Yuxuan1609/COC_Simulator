@@ -188,6 +188,16 @@
       </div>
     </div>
 
+    {# Quick action bar — move directions + search, bypass LLM parse #}
+    <div id="quick-actions" class="px-4 py-2 border-t border-gray-800/60 bg-[#0f0f0f]/80 flex flex-wrap items-center gap-1.5 shrink-0">
+      <span id="qa-exits" class="flex flex-wrap items-center gap-1">
+        <!-- populated by updateSceneCard() -->
+      </span>
+      <button onclick="sendTurnAction('search')" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-aged-gold rounded border border-gray-700 hover:border-aged-gold/50 transition-colors">
+        搜索当前场景
+      </button>
+    </div>
+
     {# Input bar -- #}
     <div id="input-bar" class="px-4 py-3 border-t border-gray-800/60 bg-[#0f0f0f]/80 flex gap-2 shrink-0">
       <input type="text" id="user-input" placeholder="输入你的行动..." autocomplete="off"
@@ -294,10 +304,24 @@
     if (exits.length > 0) {
       exitsWrap.classList.remove('hidden');
       exitsEl.innerHTML = exits.map(function(e) {
-        return '<span class="text-[10px] px-1.5 py-0.5 bg-gray-800 rounded text-gray-400 border border-gray-700">' + (e.target || '?') + '<span class="text-gray-600"> · ' + (e.method || '?') + '</span></span>';
+        var t = (e.target || '').replace(/'/g, "\\'");
+        return '<button onclick="sendTurnAction(\'move\', \'' + t + '\')" '
+          + 'class="text-[10px] px-1.5 py-0.5 bg-gray-800 hover:bg-aged-brown rounded text-gray-400 hover:text-parchment border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">'
+          + (e.target || '?') + '<span class="text-gray-600 ml-0.5">· ' + (e.method || '?') + '</span></button>';
       }).join('');
     } else {
       exitsWrap.classList.add('hidden');
+    }
+
+    // Quick-action exit buttons
+    var qaExits = document.getElementById('qa-exits');
+    if (qaExits && exits.length > 0) {
+      qaExits.innerHTML = exits.map(function(e) {
+        var t = (e.target || '').replace(/'/g, "\\'");
+        return '<button onclick="sendTurnAction(\'move\', \'' + t + '\')" '
+          + 'class="px-2 py-0.5 text-[10px] bg-gray-800 hover:bg-aged-brown text-gray-400 hover:text-parchment rounded border border-gray-700 hover:border-aged-gold/50 transition-colors">'
+          + '→ ' + (e.target || '?') + '</button>';
+      }).join('');
     }
 
     // NPCs
@@ -406,6 +430,7 @@
         turnHtml += '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' + data.initial_narrative + '</div>';
       }
       document.getElementById('turn-output').innerHTML = turnHtml || '<div class="turn-empty text-sm text-gray-500 italic">游戏已就绪</div>';
+      if (data.player_snapshot) updateSceneCard(data.player_snapshot);
       connectWS();
       console.log('[initGame] game screen shown');
     } catch(e) { console.error('[initGame] error:', e); errEl.textContent = '网络错误: ' + e.message; }
@@ -660,6 +685,45 @@
         document.getElementById('turn-output').innerHTML =
           '<div class="turn-card pb-3 border-b border-gray-800/40">' + html + '</div>';
         addToHistory(text, html);
+      }
+      try {
+        const psResp = await fetch('/api/game/player-status?format=json');
+        if (psResp.ok) updateCharHUD(await psResp.json());
+      } catch(e) {}
+    } catch(e) {
+      document.getElementById('turn-output').innerHTML =
+        '<div class="turn-error px-3 py-2 text-sm text-red-400 border-l-2 border-red-500 bg-[#1a0a0a]/80">网络错误: ' + e.message + '</div>';
+    }
+    document.getElementById('step-indicator').innerHTML = '';
+    input.disabled = false;
+    input.focus();
+  }
+
+  async function sendTurnAction(actionType, actionTarget) {
+    const input = document.getElementById('user-input');
+    input.disabled = true;
+    document.getElementById('step-indicator').innerHTML = '<span class="text-gray-500">思考中...</span>';
+    var displayText = '';
+    try {
+      const fd = new FormData();
+      fd.append('action_type', actionType);
+      fd.append('user_input', '');
+      if (actionTarget) {
+        fd.append('action_target', actionTarget);
+        displayText = '移动到 ' + actionTarget;
+      } else {
+        displayText = '搜索当前场景';
+      }
+      const resp = await fetch('/api/game/turn', { method: 'POST', body: fd });
+      const ct = resp.headers.get('content-type') || '';
+      if (!resp.ok) throw new Error('Server error: ' + resp.status);
+      if (ct.includes('application/json')) {
+        handleTurnResponse(displayText, await resp.json());
+      } else {
+        const html = await resp.text();
+        document.getElementById('turn-output').innerHTML =
+          '<div class="turn-card pb-3 border-b border-gray-800/40">' + html + '</div>';
+        addToHistory(displayText, html);
       }
       try {
         const psResp = await fetch('/api/game/player-status?format=json');
