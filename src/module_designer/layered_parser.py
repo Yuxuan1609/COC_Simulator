@@ -1351,6 +1351,7 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
 - stat_change 的 stat_name 必须来自标准属性列表
 - @item_gain 用于纯文本物品，不做库匹配
 - 无法归入 @函数的自然语言保留原样
+- **遇到符合函数说明的情况必须使用@markup函数，不要用自然语言替代**
 - 仅输出 JSON，不要任何解释性文字
 
 标准化 type，将 side_effects/result/graded_result 转为 @函数(参数) 标记。

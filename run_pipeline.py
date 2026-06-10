@@ -362,6 +362,7 @@ class LLMLogger:
         self.output_dir = output_dir
         self._counter = 0
         self._calls: list[dict] = []
+        self._warnings: list[str] = []
 
     def _next_name(self) -> str:
         self._counter += 1
@@ -397,6 +398,12 @@ class LLMLogger:
                 max_retries=config.max_retries,
             )
             elapsed = time.time() - t0
+
+            if not isinstance(result, dict):
+                logger._warnings.append(
+                    f"[{name}] LLM 返回了 {type(result).__name__} 而非 dict，原始内容: {str(result)[:200]}"
+                )
+                print(f"  [警告] [{name}] 返回类型异常: {type(result).__name__}")
 
             # 保存 response
             with open(call_dir / "response.json", "w", encoding="utf-8") as f:
@@ -795,8 +802,11 @@ def _do_step2bc(runner: InteractiveRunner, verbose: bool = True):
         runner.l1_data = f_l1.result()
         runner.l3_data = f_l3.result()
 
-    runner.events = step2b_data.get("events", [])
-    runner.auto_triggers = step2b_data.get("auto_triggers", [])
+    runner.events = step2b_data.get("events", []) if isinstance(step2b_data, dict) else []
+    runner.auto_triggers = step2b_data.get("auto_triggers", []) if isinstance(step2b_data, dict) else []
+    if not isinstance(step2b_data, dict):
+        print(f"  [警告] Step 2b 返回了 {type(step2b_data).__name__} 而非 dict，使用空列表保底\n"
+              f"  原始内容: {str(step2b_data)[:300]}")
 
     # 保存
     step_dir = runner._step_dir("step_2bc")
@@ -1279,8 +1289,12 @@ def run_auto(config: PipelineConfig):
             summary = step_fn(runner)
             runner._completed_steps.add(step_name)
         except Exception as e:
-            print(f"\n  [错误] {step_name} 执行失败: {e}")
             import traceback
+            print(f"\n  [错误] {step_name} 执行失败: {e}")
+            print(f"  [调试] 异常类型: {type(e).__name__}")
+            print(f"  [调试] 当前 runner 状态:")
+            print(f"    scenes={len(runner.scenes)}, chars={len(runner.characters)}, interactions={len(runner.interactions)}")
+            print(f"    step1a keys={list(runner.step1a.keys()) if runner.step1a else 'EMPTY'}")
             traceback.print_exc()
             break
 
