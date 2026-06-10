@@ -193,7 +193,7 @@
       <span id="qa-exits" class="flex flex-wrap items-center gap-1">
         <!-- populated by updateSceneCard() -->
       </span>
-      <button onclick="sendTurnAction('search')" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-aged-gold rounded border border-gray-700 hover:border-aged-gold/50 transition-colors">
+      <button id="btn-search" onclick="sendTurnAction('search')" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-aged-gold rounded border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">
         搜索当前场景
       </button>
     </div>
@@ -202,7 +202,7 @@
     <div id="input-bar" class="px-4 py-3 border-t border-gray-800/60 bg-[#0f0f0f]/80 flex gap-2 shrink-0">
       <input type="text" id="user-input" placeholder="输入你的行动..." autocomplete="off"
              class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none">
-      <button onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30 flex items-center gap-1">
+      <button id="btn-action" onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30 flex items-center gap-1">
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
         行动
       </button>
@@ -319,7 +319,7 @@
       qaExits.innerHTML = exits.map(function(e) {
         var t = (e.target || '').replace(/'/g, "\\'");
         return '<button onclick="sendTurnAction(\'move\', \'' + t + '\')" '
-          + 'class="px-2 py-0.5 text-[10px] bg-gray-800 hover:bg-aged-brown text-gray-400 hover:text-parchment rounded border border-gray-700 hover:border-aged-gold/50 transition-colors">'
+          + 'class="px-2 py-0.5 text-[10px] bg-gray-800 hover:bg-aged-brown text-gray-400 hover:text-parchment rounded border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">'
           + '→ ' + (e.target || '?') + '</button>';
       }).join('');
     }
@@ -667,6 +667,12 @@
     if (!text) return;
     input.value = '';
     input.disabled = true;
+    // Lock quick-action buttons to prevent duplicate submissions during processing
+    const qa = document.getElementById('quick-actions');
+    const qaBtns = qa ? qa.querySelectorAll('button') : [];
+    qaBtns.forEach(function(b) { b.disabled = true; });
+    const btnAction = document.getElementById('btn-action');
+    if (btnAction) btnAction.disabled = true;
     document.getElementById('step-indicator').innerHTML = '<span class="text-gray-500">思考中...</span>';
     try {
       const fd = new FormData(); fd.append('user_input', text);
@@ -696,12 +702,20 @@
     }
     document.getElementById('step-indicator').innerHTML = '';
     input.disabled = false;
+    qaBtns.forEach(function(b) { b.disabled = false; });
+    if (btnAction) btnAction.disabled = false;
     input.focus();
   }
 
   async function sendTurnAction(actionType, actionTarget) {
     const input = document.getElementById('user-input');
     input.disabled = true;
+    // Lock quick-action buttons to prevent duplicate submissions
+    const qa = document.getElementById('quick-actions');
+    const qaBtns = qa ? qa.querySelectorAll('button') : [];
+    qaBtns.forEach(function(b) { b.disabled = true; });
+    const btnAction = document.getElementById('btn-action');
+    if (btnAction) btnAction.disabled = true;
     document.getElementById('step-indicator').innerHTML = '<span class="text-gray-500">思考中...</span>';
     var displayText = '';
     try {
@@ -735,6 +749,8 @@
     }
     document.getElementById('step-indicator').innerHTML = '';
     input.disabled = false;
+    qaBtns.forEach(function(b) { b.disabled = false; });
+    if (btnAction) btnAction.disabled = false;
     input.focus();
   }
 
