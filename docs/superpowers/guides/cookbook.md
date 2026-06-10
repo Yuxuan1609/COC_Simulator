@@ -140,19 +140,54 @@ CLI 和 Jupyter 交互入口，调用 `init_game()` + `run_turn()` 循环。
 
 ## 6. NPC 管理
 
-### `src/game/npc_manager.py` (~310 行)
+### `src/game/npc_manager.py` (~411 行)
 
 | 类/方法 | 功能 |
 |----------|------|
-| `NPC` (dataclass) | NPC 实例：name/role/personality/appearance/what_they_can_do/can_follow/scene/attitude/following/bound_interactions/bound_auto_triggers |
-| `NPCManager()` | NPC 全量管理 |
+| `NPC` (dataclass) | NPC 实例：name/role/personality_notes/appearance/what_they_can_do/can_follow/follow_requirements/can_interact/interact_requirements/scene/attitude/following/memory/state/bound_interactions/bound_auto_triggers |
+| `NPCManager()` | NPC 全量管理（对话/态度/跟随/状态/序列化） |
 | `.init_from_profiles(profiles)` | 从 L2 npc_profiles 批量初始化 |
-| `.get_in_scene(scene)` → list | 获取场景中所有 NPC |
-| `.talk_to(name, user_input, llm_call)` → str | **对话系统**：LLM 生成 NPC 回复，注入 NPC 档案/态度/记忆上下文 |
-| `.process_npc_turn(...)` → dict | **已弃用**——内部 judge/enrich/curate 循环已由主管道接管。保留仅作为独立 API |
+| `.get_in_scene(scene)` → list | 获取场景中所有 NPC（排除 dead/left） |
+| `.get_in_scene_snapshot(scene)` → list[dict] | 场景 NPC 轻量快照（name/state/attitude/following） |
+| `.talk_to(name, input, llm_call, world)` → str | **对话系统**：state gate → can_interact gate → interact_requirements gate → LLM（注入档案/态度/记忆）→ 返回对话文本 |
+| `.process_npc_turn(...)` → dict | **独立 API**—不走主循环。自含 talk_to→parse→judge→enrich→curate。主循环不使用此方法 |
+| `._check_follow_conditions(npc, world)` → (bool, str) | 跟随条件检查：can_follow → 状态门(dead/left) → follow_requirements(硬性||软性) |
 | `.set_following(name, bool)` | 同伴跟随切换 |
-| `.sync_followers(scene)` | 移动时将跟随 NPC 同步到新场景 |
-| `.to_dict()` / `.from_dict()` | 序列化/反序列化 |
+| `.set_attitude(name, str)` | 态度设置（hostile/wary/neutral/friendly/trusting） |
+| `.set_state(name, str)` | 状态设置（alive/dead/left 等） |
+| `.set_scene(name, str)` | 手动移动 NPC |
+| `.sync_followers(scene)` | 所有 following=True 的 NPC 自动移动到目标场景 |
+| `.to_dict()` / `.from_dict()` | 序列化/反序列化（can_interact 运行时值可被 interact_unlock entity 改变，存于 save） |
+
+### NPC 接入主循环路径（keeper.py）
+
+NPC 系统通过以下步骤接入 `Keeper.process_turn()`：
+
+| 步骤 | 位置 | 机制 |
+|------|------|------|
+| **实体注入** | `keeper.py:1063` `_inject_npc_at()` | 每回合开始，遍历当前场景 NPC 的 `bound_interactions`/`bound_auto_triggers` → 注入到 scene node。跳过已完成/已注入 entity。 |
+| **Parse 识别** | `keeper.py:1138` `_parse()` | Parse prompt 将 NPC entity 标记为 `[NPC_INTERACT]`/`[NPC_AT]`。自动触发 AT 按 `[AUTO_TRIGGER]/[NPC_AT]` 无条件匹配。 |
+| **npc_interact 路由** | `keeper.py:194-242` | Parse 返回 `type="npc_interact"` → `talk_to()` 生成对话 → 对话文本注入 `enrich_input` 为 `"npc_dialogue"` 类型 → 跟随关键词检测 → `_check_follow_conditions()`。纯对话（无其他 entity 匹配）直接短接返回。 |
+| **跟随实体注入** | `keeper.py:1117-1136` `_apply_pending()` | 回合末尾：对当前场景跟随 NPC 注入 `EVT_NPC_FOLLOW_{name}` 交互实体，含跟随条件 reason 文本。 |
+| **输出** | `game_loop.py:413-418` | `npcs_visible`（in_scene + following 列表）+ `npc_events`（本回合 NPC 事件）随 turn 结果返回前端。 |
+
+### NPC 门禁体系
+
+```
+talk_to() 入口
+  ├─ state gate: dead → "（已无法交谈）", left → "（不在此处）"
+  ├─ can_interact: false → "（似乎不愿与你交谈）" + interact_requirements 事件名提示
+  ├─ interact_requirements: 硬性(||前 entity ID) → parse_hard_requirement(), 软性(||后) → 自然语言提示
+  └─ 通过 → LLM 对话
+
+_check_follow_conditions()
+  ├─ can_follow: false → "（不愿意跟随）" + follow_requirements 事件名提示
+  ├─ state: dead/left → "（无法跟随）"
+  ├─ follow_requirements: 硬性(||前) → parse_hard_requirement(), 软性 → 传达
+  └─ 通过 → set_following(True)
+```
+
+`follow_requirements` / `interact_requirements` 的硬性部分使用 `_build_req_text()` 将 entity ID 替换为实体名称（如 `"I3 AND I5"` → `"需要先完成「交涉」和「获取钥匙」"`），软性部分原样返回。
 
 ---
 

@@ -191,8 +191,9 @@ class Keeper:
         except TurnFrozenError as e:
             return self._build_frozen_response(e)
 
-        # Handle npc_interact — general conversation (no matching entity).
-        # ...
+        # NPC general conversation: parse returned npc_interact (no matching entity).
+        # Generate dialogue via talk_to(), route follow requests, inject into enrich_input.
+        # Pure-dialogue turns short-circuit return; mixed turns continue through normal pipeline.
         npc_interact_entries = [e for e in parse_result if e.get("type") == "npc_interact"]
         non_npc_entries = [e for e in parse_result if e.get("type") != "npc_interact"]
         _FOLLOW_KEYWORDS = ("跟我", "跟着", "跟随", "一起走", "加入我", "跟我来", "跟我走",
@@ -214,7 +215,7 @@ class Keeper:
                     continue
                 dialogue = self.world.npcs.talk_to(
                     npc_name, raw,
-                    lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw),
+                    lambda prompt, **kw: call_deepseek(prompt, **kw),
                     world=self.world,
                 )
                 self._npc_events.append(f"{npc_name}：{dialogue}")

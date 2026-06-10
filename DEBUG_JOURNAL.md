@@ -434,3 +434,11 @@
   - **NPC 纯对话** — 短接整个 pipeline，不经过 narrator。设计正确（对话文本无需 enrich），但缺乏 L1 沉浸
   - **Standoff** — 每个 standoff group 消费一个回合输入，应改为可中断同回合子回合
   - **TimeAgent** — 不是子回合，是 enrich 阶段内的并行 LLM 调用
+
+## 67. NPC talk_to 对话静默失败 — lambda 重复 json_mode 参数
+
+- **症状**：parse 成功返回 `npc_interact`，NPC 名正确、场景正确，但 NPC 始终返回 fallback "沉默不语"。LLM 实际未调用。
+- **根因**：`keeper.py:217` 传入 `lambda prompt, **kw: call_deepseek(prompt, json_mode=False, **kw)`，`talk_to()` 内部又传 `json_mode=False` → 展开为 `call_deepseek(prompt, json_mode=False, system=..., json_mode=False)` → `TypeError: got multiple values` → `except Exception` 静默吞掉 → fallback
+- **解决**：lambda 改为 `lambda prompt, **kw: call_deepseek(prompt, **kw)`，让 `talk_to()` 全权控制参数
+- **教训**：wrapper lambda 不应写死被包装函数已有的关键字参数，用 `**kw` 透传即可。与 #22（logging wrapper `model=""` 陷阱）同等模式
+- **关联**：`src/game/agents/keeper.py:215-218`、`src/game/npc_manager.py:233`

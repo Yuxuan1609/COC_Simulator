@@ -531,6 +531,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     {{"type": "auto_trigger", "id": "AT1"}},
     {{"type": "interaction", "id": "I3"}},
     {{"type": "event", "id": "E22"}},
+    {{"type": "npc_interact", "npc_name": "京山 人吉"}},
     {{"type": "move", "target": "7号车厢"}},
     {{"type": "search"}},
     {{"type": "other", "text": "唱了一首歌"}}
