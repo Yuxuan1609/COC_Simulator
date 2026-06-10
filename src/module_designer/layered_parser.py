@@ -1408,10 +1408,12 @@ def build_step4_prompt(
     phase1_constraints: dict,
     skill_names: list[str],
     stat_names: list[str],
+    npc_profiles: dict = None,
 ) -> str:
     skills_list = "\n".join(f"- {s}" for s in skill_names)
     stats_list = "\n".join(f"- {s}" for s in stat_names)
     desc_list = "\n".join(f"- {name}: {desc}" for name, desc in l2_descriptions.items())
+    npc_names_list = "\n".join(f"- {n}" for n in (npc_profiles or {}).keys()) if npc_profiles else "（无）"
 
     # Slim entities to 6 fields only
     slim_interactions = json.dumps(
@@ -1437,6 +1439,9 @@ def build_step4_prompt(
 
 ## 标准属性列表（stat_change 的 stat_name 必须从此列表中选择）
 {stats_list}
+
+## NPC 名称列表（@npc_state_change / @npc_follow 的 npc_name 必须精确使用下表中的名称）
+{npc_names_list}
 
 ## 场景描述（参考上下文）
 {desc_list}
@@ -1466,10 +1471,12 @@ def parse_step4(
     skill_names: list[str],
     stat_names: list[str],
     llm_call,
+    npc_profiles: dict = None,
 ) -> dict:
     prompt = build_step4_prompt(
         interactions, auto_triggers, l2_descriptions,
         scene_intents, chapters,
         phase1_constraints, skill_names, stat_names,
+        npc_profiles=npc_profiles,
     )
     return llm_call(prompt, system=STEP4_SYSTEM)

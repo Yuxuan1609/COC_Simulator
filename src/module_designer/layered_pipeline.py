@@ -831,6 +831,7 @@ def run_pipeline(
             step35_interactions, step35_at, l2_descriptions,
             l3_data.get("scene_intents", {}), chapters,
             phase1_clean, skill_names, stat_names, llm_json,
+            npc_profiles=npc_profiles,
         )
 
     phase2_result = _with_fallback(

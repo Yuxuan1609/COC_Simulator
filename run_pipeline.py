@@ -1040,6 +1040,7 @@ def _do_phase2_finalize(runner: InteractiveRunner, verbose: bool = True):
         step35_interactions, step35_at, l2_descriptions,
         runner.l3_data.get("scene_intents", {}), runner.chapters,
         runner.phase1_clean, skill_names, stat_names,
+        npc_profiles=runner.npc_profiles,
     )
     step4 = runner.llm_json(prompt, system=STEP4_SYSTEM, call_name="phase2_standardize")
 
