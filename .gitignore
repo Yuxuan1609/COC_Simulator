@@ -6,6 +6,7 @@ logs/
 src/config_llm.py
 data/saves/*.json
 .claude/worktrees/
+.worktrees/
 data/debug/
 CLAUDE.md
 素材/
