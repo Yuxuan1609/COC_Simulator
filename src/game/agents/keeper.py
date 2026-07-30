@@ -532,14 +532,13 @@ class Keeper:
                 inst for inst in scene_enemies
                 if inst.status not in ("dead", "defeated")
             ]
-            if combat_candidates:
-                avoidable_by_ref: dict[str, list[str]] = {}
-                hostile_iids: list[str] = []
-                for inst in combat_candidates:
-                    if "avoidable" in inst.flags:
-                        avoidable_by_ref.setdefault(inst.enemy_ref, []).append(inst.instance_id)
-                    else:
-                        hostile_iids.append(inst.instance_id)
+            avoidable_by_ref: dict[str, list[str]] = {}
+            hostile_iids: list[str] = []
+            for inst in combat_candidates:
+                if "avoidable" in inst.flags:
+                    avoidable_by_ref.setdefault(inst.enemy_ref, []).append(inst.instance_id)
+                else:
+                    hostile_iids.append(inst.instance_id)
 
             if avoidable_by_ref:
                 first_ref = next(iter(avoidable_by_ref))
@@ -790,12 +789,18 @@ class Keeper:
                             intent=request.intent, reasoning=request.reasoning,
                         )
                         if response.supplement_path:
+                            # Flush outer turn's pending effects BEFORE recursion —
+                            # inner process_turn() clears pending state on entry.
+                            self._apply_pending()
                             return self.process_turn(turn_input, author, _depth + 1)
                     elif isinstance(response, ModulePatch):
                         if response.entities:
                             self._integrate_patch(response)
                             self._warnings.append(
                                 f"模组已动态扩展：{response.justification[:60]}")
+                            # Flush outer turn's pending effects BEFORE recursion —
+                            # inner process_turn() clears pending state on entry.
+                            self._apply_pending()
                             return self.process_turn(turn_input, author, _depth + 1)
                         else:
                             # Author rejected — inject player-visible narrative hint
@@ -852,9 +857,21 @@ class Keeper:
                 if self.world.bosses.has_spawned(boss_id):
                     continue
                 if self._check_boss_requirements(boss_entity, turn_input.raw_text):
-                    combat_init_result = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                    boss_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
                     self.world.bosses.set_active(boss_id)
                     self.world.bosses.mark_spawned(boss_id)
+                    boss_enemy = boss_init.enemies[0] if boss_init.enemies else None
+                    if boss_enemy and self.world.enemies:
+                        self.world.enemies.register(boss_enemy)
+                        self.world.enemies.add_to_combat(boss_enemy.instance_id)
+                        self._last_player_input = raw  # stored for combat completion replay
+                        if combat_init_result and combat_init_result.enemies:
+                            # Merge into existing combat — same as "at"/"interaction" path
+                            combat_init_result.enemies.append(boss_enemy)
+                        else:
+                            combat_init_result = boss_init
+                    else:
+                        combat_init_result = boss_init
                     break  # only handle one boss per turn; curate + return below
 
         # Step 5: Curate
@@ -1038,8 +1055,7 @@ class Keeper:
         if not req_str:
             return True
         if "||" in req_str:
-            hard_part = req_str.split("||", 1)[0].strip()
-            soft_part = req_str.split("||", 1)[1].strip() if len(req_str.split("||", 1)) > 1 else ""
+            hard_part, _, soft_part = (p.strip() for p in req_str.partition("||"))
             # Check hard condition first
             if hard_part:
                 from scenario_core import parse_hard_requirement
@@ -1051,7 +1067,9 @@ class Keeper:
                     soft_part, player_action, boss_entity.get("name", boss_entity.get("boss_ref", "unknown")))
             # No soft condition, or no player action to evaluate against → pass
             return True
-        return True
+        # Pure hard requirement (no || separator)
+        from scenario_core import parse_hard_requirement
+        return parse_hard_requirement(req_str.strip(), self.world.runtime_state)
 
     def _evaluate_boss_soft_condition(self, soft_condition: str, player_action: str, boss_name: str) -> bool:
         """Use LLM to evaluate whether the soft trigger condition is currently met."""
