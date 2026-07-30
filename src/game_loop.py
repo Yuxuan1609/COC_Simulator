@@ -329,11 +329,6 @@ def run_turn(game: dict, user_input: str,
 
     # Combat entry: caller handles combat (interactive CLI or auto frontend)
     combat_init = result.get("combat_init")
-    combat_is_boss = bool(world.bosses and world.bosses.active_boss_id) if combat_init else False
-    combat_narrative = ""   # filled by caller after combat
-    combat_result_outcome = None
-    combat_death = False
-    combat_boss_loss = False
 
     # Extract skill check results from outcomes for player display
     skill_results = []
@@ -409,8 +404,6 @@ def run_turn(game: dict, user_input: str,
     npc_events_out = result.get("npc_events", [])
 
     full_text = narrative_brief or ""
-    if combat_narrative:
-        full_text += f"\n\n---\n⚔ 战斗回合\n{combat_narrative}"
     if npc_events_out:
         full_text += f"\n[NPC] {'；'.join(npc_events_out)}"
     full_text += f"\n\n\n{narrative}"
@@ -465,14 +458,6 @@ def run_turn(game: dict, user_input: str,
     ]
     time_data = world.clock.to_dict()
 
-    combat_data = None
-    if combat_result_outcome:
-        combat_data = {
-            "outcome": combat_result_outcome,
-            "narrative": combat_narrative,
-            "is_boss": combat_is_boss,
-        }
-
     skill_checks_out = []
     for s in skill_results:
         raw = s.get("raw_check", "")
@@ -497,7 +482,7 @@ def run_turn(game: dict, user_input: str,
         time=time_data,
         npcs=scene_npcs,
         enemies=world.enemies.get_active_in_scene_snapshot(scene_name) if world.enemies else [],
-        combat=combat_data,
+        combat=None,
         skill_checks=skill_checks_out,
         investigator=world.player,
     )
@@ -508,26 +493,17 @@ def run_turn(game: dict, user_input: str,
         "full": full_text,
         "player_snapshot": player_snapshot,
         "skill_results": skill_results,
-        "combat": {
-            "outcome": combat_result_outcome,
-            "narrative": combat_narrative,
-            "is_boss": combat_is_boss,
-        } if combat_result_outcome else None,
-        "combat_death": combat_death,
-        "combat_boss_loss": combat_boss_loss,
+        "combat": None,   # combat result is filled by caller after combat resolves
         "combat_init": combat_init,   # caller handles combat execution
         "standoff_prompt": standoff,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "ending": ending,
         "scene_update": scene_update,
-        "game_over": ending.get("game_over", False) if ending else False or combat_death,
+        "game_over": bool(ending and ending.get("game_over")),
         "time_agent": result.get("time_agent"),
         "npcs_visible": npcs_visible,
         "npc_events": npc_events_out,
     }
-    if combat_init:
-        print(f"[run_turn] returning combat_init with {len(combat_init.enemies)} enemies")
-    return result
 
 
 # ── Save / Load ──

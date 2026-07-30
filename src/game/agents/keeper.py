@@ -483,10 +483,6 @@ class Keeper:
             enemy_ctx = self.world.enemies.get_combat_context(
                 self.world.current_location, self.world.graph
             )
-            n_instances = len(self.world.enemies._instances)
-            print(f"[Combat Entry] scene={self.world.current_location} total_instances={n_instances} has_context={bool(enemy_ctx)}")
-            if enemy_ctx:
-                print(f"  {enemy_ctx[:200]}")
         if enemy_ctx:
             outcomes_summary = "\n".join(
                 f"[{o.entity_type}] {o.message}" for o in all_outcomes
@@ -515,7 +511,6 @@ class Keeper:
                     enemy_instance_ids=result.get("enemy_instance_ids", []),
                     reasoning=result.get("reasoning", ""),
                 )
-                print(f"[Combat Entry] LLM decided: enter={combat_entry.enter_combat} ids={combat_entry.enemy_instance_ids} reason={combat_entry.reasoning[:80]}")
             except Exception:
                 combat_entry = None
 
@@ -681,24 +676,7 @@ class Keeper:
 
         # Step 3.5: Collect enrich + TA results
         # Scan for endings BEFORE enrich overwrites outcome messages
-        from scenario_core import has_ending as _has_ending
-        ending_result = None
-        for o in all_outcomes:
-            en, ed = _has_ending(o.message)
-            if en:
-                full_narrative = ed or ""
-                if author and hasattr(author, 'l3_data') and author.l3_data:
-                    ec = author.l3_data.get("ending_conditions", [])
-                    for ec_item in ec:
-                        eid = ec_item.get("id", "")
-                        ename = ec_item.get("name", eid)
-                        if eid == en or ename == en:
-                            full_narrative = ec_item.get("narrative", ed)
-                            break
-                ending_result = {
-                    "name": en, "narrative": full_narrative, "game_over": True,
-                }
-                break
+        ending_result = self._scan_ending(all_outcomes, author)
 
         if enrichment:
             emphasis = enrichment.get("emphasis_hint", "")
@@ -745,14 +723,6 @@ class Keeper:
                         entity_id="TIME_PRESS",
                         entity_type="time_pressure",
                     ))
-                    enrich_input.entities.append({
-                        "entity_type": "time_pressure",
-                        "id": "TIME_PRESS",
-                        "name": tp.get('name', '时间压力'),
-                        "result": tp_result.get('signal', ''),
-                        "success": True,
-                        "skill_tier": "",
-                    })
             except Exception:
                 pass  # Comms is best-effort
 
@@ -824,21 +794,7 @@ class Keeper:
 
         # Ending detection — already scanned pre-enrich; if not found, scan post-enrich messages as fallback
         if not ending_result:
-            from scenario_core import has_ending as _has_ending
-            for o in all_outcomes:
-                en, ed = _has_ending(o.message)
-                if en:
-                    full_narrative = ed or ""
-                    if author and hasattr(author, 'l3_data') and author.l3_data:
-                        ec = author.l3_data.get("ending_conditions", [])
-                        for ec_item in ec:
-                            if ec_item.get("id") == en or ec_item.get("name", ec_item.get("id")) == en:
-                                full_narrative = ec_item.get("narrative", ed)
-                                break
-                    ending_result = {
-                        "name": en, "narrative": full_narrative, "game_over": True,
-                    }
-                    break
+            ending_result = self._scan_ending(all_outcomes, author)
 
         # Inject LLM error warnings as player-visible outcomes
         for w in self._warnings:
@@ -929,6 +885,23 @@ class Keeper:
             "game_frozen": True,
             "frozen_message": str(exc),
         }
+
+    def _scan_ending(self, outcomes, author) -> dict | None:
+        """Scan outcomes for ##END_ markers; enrich narrative from L3 ending_conditions."""
+        from scenario_core import has_ending
+        for o in outcomes:
+            en, ed = has_ending(o.message)
+            if not en:
+                continue
+            full_narrative = ed or ""
+            if author and hasattr(author, 'l3_data') and author.l3_data:
+                for ec_item in author.l3_data.get("ending_conditions", []):
+                    eid = ec_item.get("id", "")
+                    if eid == en or ec_item.get("name", eid) == en:
+                        full_narrative = ec_item.get("narrative", ed)
+                        break
+            return {"name": en, "narrative": full_narrative, "game_over": True}
+        return None
 
     def complete_combat_turn(self, original_input: str, combat_result: dict) -> dict:
         """After combat resolves, replay enrich→curate with combat result injected.
@@ -1317,7 +1290,7 @@ class Keeper:
         if int_names:
             parts.append(f"可用互动: {', '.join(int_names[:8])}")
         if npc_names:
-            parts.append(f"N PC: {', '.join(npc_names[:5])}")
+            parts.append(f"NPC: {', '.join(npc_names[:5])}")
         if exits:
             parts.append(f"出口: {', '.join(exits[:5])}")
         return "; ".join(parts)

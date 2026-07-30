@@ -86,7 +86,6 @@ class StructuralEdit:
 
 
 @dataclass
-@dataclass
 class TurnInput:
     """Entry point input."""
     raw_text: str = ""
