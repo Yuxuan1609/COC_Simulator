@@ -16,6 +16,7 @@ from ..messages import (
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
     CombatEntryCheck, StandoffMatch, CombatInit,
     TimeCommsPacket, EnrichInput,
+    TurnStatus, TurnResult, PendingInteraction, EndingInfo, TurnDiagnostics,
 )
 from ..judge import Judge
 from ..curator import Curator
@@ -130,7 +131,7 @@ class Keeper:
         self._last_player_input: str = ""  # original input that triggered combat
         self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
 
-    def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> dict:
+    def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
         """Execute full turn: parse → judge → enrich → curate."""
         raw = turn_input.raw_text
         at = turn_input.action_type
@@ -157,9 +158,9 @@ class Keeper:
                             if not scene_weps:
                                 del self.world.scene_weapons[scene]
                 names = "、".join(w["weapon_ref"] for w in offer_list)
-                return {"brief": f"你拾起了{names}。", "weapon_pickup": True}
+                return TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。")
             names = "、".join(w["weapon_ref"] for w in offer_list)
-            return {"brief": f"你忽略了{names}。", "weapon_pickup": False}
+            return TurnResult(status=TurnStatus.COMPLETED, text=f"你忽略了{names}。")
 
         if _depth >= MAX_ESCALATION_DEPTH:
             # Guard against infinite recursion — re-execute deterministically
@@ -174,17 +175,19 @@ class Keeper:
         self._inject_npc_at()
 
         # ── Pre-parse shortcut: move/search bypass LLM parse entirely ──
+        pre_result = None
         if at == "move":
             target = (turn_input.action_target or "").strip()
             if not target:
-                return {"brief": "（移动目标未指定。）", "narrative": "（移动目标未指定。）",
-                        "npc_events": list(self._npc_events)}
+                return TurnResult(status=TurnStatus.COMPLETED,
+                                  text="（移动目标未指定。）",
+                                  npc_events=list(self._npc_events))
             exits = self.world.get_possible_exits()
             valid_targets = {e.target for e in exits}
             if target not in valid_targets:
-                return {"brief": f"（无法移动到「{target}」。）",
-                        "narrative": f"（无法移动到「{target}」。）",
-                        "npc_events": list(self._npc_events)}
+                return TurnResult(status=TurnStatus.COMPLETED,
+                                  text=f"（无法移动到「{target}」。）",
+                                  npc_events=list(self._npc_events))
             raw = f"移动到{target}"
             parse_result = [{"type": "move", "target": target}]
         elif at == "search":
@@ -194,11 +197,14 @@ class Keeper:
             # Step 0: Pre-parse — disambiguation gate
             pre_result = self.pre_parse.disambiguate(raw, self._build_world_brief())
             if pre_result.clarity == "ambiguous":
-                return {
-                    "brief": pre_result.question,
-                    "narrative": pre_result.question,
-                    "pre_parse_ambiguous": True,
-                }
+                return TurnResult(
+                    status=TurnStatus.SUSPENDED,
+                    text=pre_result.question,
+                    pending_interaction=PendingInteraction(
+                        kind="clarify", question=pre_result.question,
+                        interaction_id="clarify"),
+                    diagnostics=TurnDiagnostics(pre_parse=pre_result),
+                )
             # Use resolved_text as effective input when cross-turn integration happened
             if pre_result.resolved_text:
                 raw = pre_result.resolved_text
@@ -257,8 +263,9 @@ class Keeper:
             # If ONLY npc_interact, short-circuit — dialogue is the narrative.
             if not non_npc_entries:
                 dialogue_text = self._npc_events[-1] if self._npc_events else ""
-                return {"brief": dialogue_text, "narrative": dialogue_text,
-                        "npc_events": list(self._npc_events)}
+                return TurnResult(status=TurnStatus.COMPLETED,
+                                  text=dialogue_text,
+                                  npc_events=list(self._npc_events))
             parse_result = non_npc_entries
 
         # Launch IntentDetector early if there are "other" entries
@@ -544,6 +551,7 @@ class Keeper:
                     "all_enemy_iids": [inst.instance_id for inst in combat_candidates],
                     "reasoning": combat_entry.reasoning,
                 }
+                self._standoff_pending = standoff_prompt  # 播种，供 continue_standoff 消费
                 standoff_msg = f"你还有最后一次机会避免与{first_ref}的战斗——你要怎么做？"
                 all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="standoff"),
@@ -675,7 +683,7 @@ class Keeper:
             ta_result = parallel_results.get("time_agent")
 
         # Step 3.5: Collect enrich + TA results
-        # Scan for endings BEFORE enrich overwrites outcome messages
+        # Scan for endings BEFORE curate/narrate
         ending_result = self._scan_ending(all_outcomes, author)
 
         enriched_summary = ""
@@ -856,29 +864,37 @@ class Keeper:
 
         self._last_outcomes = list(all_outcomes)  # store for combat resolution replay
 
-        return {"brief": brief,
-                "ending": ending_result,
-                "combat_entry": combat_entry,
-                "standoff_prompt": standoff_prompt,
-                "combat_init": combat_init_result,
-                "time_agent": ta_result,
-                "enrich": enrichment,
-                "npc_events": list(self._npc_events)}
+        standoff_pending = None
+        if standoff_prompt:
+            standoff_pending = PendingInteraction(
+                kind="standoff",
+                question=f"你还有最后一次机会避免与{standoff_prompt['current_group']}的战斗——你要怎么做？",
+                interaction_id="standoff",
+            )
 
-    def _build_frozen_response(self, exc: TurnFrozenError) -> dict:
-        return {
-            "brief": "",
-            "narrative": "",
-            "ending": None,
-            "combat_entry": None,
-            "standoff_prompt": None,
-            "combat_init": None,
-            "time_agent": None,
-            "enrich": None,
-            "npc_events": list(self._npc_events),
-            "game_frozen": True,
-            "frozen_message": str(exc),
-        }
+        return TurnResult(
+            status=TurnStatus.COMPLETED,
+            brief=brief,
+            pending_interaction=standoff_pending,
+            combat_init=combat_init_result,
+            ending=EndingInfo(**ending_result) if ending_result else None,
+            npc_events=list(self._npc_events),
+            warnings=list(self._warnings),
+            diagnostics=TurnDiagnostics(
+                combat_entry=combat_entry,
+                time_agent=ta_result,
+                enrich_raw=enrichment,
+                pre_parse=pre_result,
+            ),
+        )
+
+    def _build_frozen_response(self, exc: TurnFrozenError) -> TurnResult:
+        return TurnResult(
+            status=TurnStatus.FROZEN,
+            text=str(exc),
+            frozen_message=str(exc),
+            npc_events=list(self._npc_events),
+        )
 
     def _scan_ending(self, outcomes, author) -> dict | None:
         """Scan outcomes for ##END_ markers; enrich narrative from L3 ending_conditions."""
@@ -1247,7 +1263,7 @@ class Keeper:
                     }
         return None
 
-    def _process_deterministic_only(self, turn_input: TurnInput) -> dict:
+    def _process_deterministic_only(self, turn_input: TurnInput) -> TurnResult:
         """Fallback: deterministic-only pass when escalation recursion exceeds limit."""
         self.turn_number += 1
         raw = turn_input.raw_text
@@ -1266,8 +1282,7 @@ class Keeper:
         ambient = [a.message for a in at_results]
         self._apply_pending()
         brief = self.curator.assemble(all_outcomes, ambient, "")
-        return {"brief": brief,
-                "ending": None}
+        return TurnResult(status=TurnStatus.COMPLETED, brief=brief)
 
     def _build_world_brief(self) -> str:
         """Ultra-light scene overview for pre-parse disambiguator (≤200 tokens)."""

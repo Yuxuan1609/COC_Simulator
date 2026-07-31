@@ -12,7 +12,7 @@ import pytest
 from types import SimpleNamespace
 
 from scenario_core import DirectedGraph, ScenarioWorld
-from game.messages import TurnInput, ModulePatch, PreParseResult
+from game.messages import TurnInput, ModulePatch, PreParseResult, TurnStatus
 from game.agents.keeper import Keeper
 from library.enemies import EnemyLibrary, LibraryEnemy
 from library.bosses import BossLibrary
@@ -103,8 +103,8 @@ class TestCombatEntryEmptyCandidates:
                                       "reasoning": "敌人逼近"})
 
         result = keeper.process_turn(TurnInput(raw_text="环顾四周"), author=None)
-        assert isinstance(result, dict)
-        assert result.get("combat_init") is None
+        assert result.status == TurnStatus.COMPLETED
+        assert result.combat_init is None
 
 
 # ── P0-3: boss pure-hard requirement never checked ───────────────────
@@ -159,7 +159,7 @@ class TestBossEventPath:
 
         result = keeper.process_turn(TurnInput(raw_text="四下张望"), author=None)
 
-        combat_init = result.get("combat_init")
+        combat_init = result.combat_init
         assert combat_init is not None, "combat_init should be produced"
         refs = sorted(getattr(e, "enemy_ref", "") for e in combat_init.enemies)
         assert refs == ["测试Boss", "深潜者"], (

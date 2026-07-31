@@ -113,3 +113,101 @@ class TestEnrichedSummary:
     def test_curator_default_empty_summary(self):
         brief = self._make_curator("").assemble([], [], "")
         assert brief.enriched_summary == ""
+
+
+class TestProcessTurnReturnsContract:
+    """process_turn 各返回路径产出合法 TurnResult。"""
+    import json as _json
+
+    def _scene(self, interactions=None, exits=None):
+        return {
+            "interactions": interactions or [], "auto_triggers": [],
+            "from_here": exits or [], "to_here": [], "encounters": [],
+            "scene_weapons": [], "extra": {}, "description": "",
+        }
+
+    def _stub_llm(self, keeper, monkeypatch, parse_results=None):
+        from game.messages import PreParseResult
+        calls = list(parse_results or [[{"type": "other", "text": "站着不动"}]])
+        keeper.pre_parse.disambiguate = lambda *a, **k: PreParseResult(
+            clarity="clear", interpretation="", question="", resolved_text="")
+        keeper._parse = lambda raw: calls.pop(0) if len(calls) > 1 else calls[0]
+        keeper._enrich = lambda e, r: {"results": "", "reasoning": "", "emphasis_hint": ""}
+        keeper._run_time_agent = lambda a, r: {"time_delta": 0, "narrative_hint": ""}
+        monkeypatch.setattr("game.agents.keeper.call_deepseek",
+                            lambda *a, **k: self._json.dumps(
+                                {"enter_combat": False, "enemy_instance_ids": [],
+                                 "reasoning": ""}, ensure_ascii=False))
+
+    def test_ambiguous_returns_suspended(self, monkeypatch):
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput, PreParseResult
+        from game.agents.keeper import Keeper
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": self._scene()}, events=[]), start_node="room_a")
+        keeper = Keeper(world)
+        keeper.pre_parse.disambiguate = lambda *a, **k: PreParseResult(
+            clarity="ambiguous", interpretation="模糊", question="你想检查哪里？",
+            resolved_text="")
+        result = keeper.process_turn(TurnInput(raw_text="看看"), author=None)
+        assert result.status == TurnStatus.SUSPENDED
+        assert result.pending_interaction.kind == "clarify"
+        assert result.pending_interaction.question == "你想检查哪里？"
+
+    def test_normal_turn_returns_completed_with_brief(self, monkeypatch):
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput
+        from game.agents.keeper import Keeper
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": self._scene()}, events=[]), start_node="room_a")
+        keeper = Keeper(world)
+        self._stub_llm(keeper, monkeypatch)
+        result = keeper.process_turn(TurnInput(raw_text="四处看看"), author=None)
+        assert result.status == TurnStatus.COMPLETED
+        assert result.brief is not None
+        assert hasattr(result.brief, "action_outcomes")
+
+    def test_move_shortcut_invalid_target_returns_completed_text(self, monkeypatch):
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput
+        from game.agents.keeper import Keeper
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": self._scene()}, events=[]), start_node="room_a")
+        keeper = Keeper(world)
+        result = keeper.process_turn(
+            TurnInput(raw_text="", action_type="move", action_target="不存在的场景"),
+            author=None)
+        assert result.status == TurnStatus.COMPLETED
+        assert result.brief is None
+        assert "无法移动" in result.text
+
+    def test_standoff_seeds_pending_and_interaction(self, monkeypatch, tmp_path):
+        """standoff 提问：COMPLETED + pending_interaction，且播种 _standoff_pending。"""
+        import json
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput
+        from game.agents.keeper import Keeper
+        from library.enemies import EnemyLibrary, LibraryEnemy
+        lib = EnemyLibrary()
+        lib._enemies["深潜者"] = LibraryEnemy.from_dict({
+            "name": "深潜者", "type": "怪物",
+            "attributes": {"CON": 50, "SIZ": 50}, "armor": "",
+            "attacks": [], "special_abilities": [], "san_loss": "0",
+            "description": "", "combat_behavior": "",
+        })
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": self._scene()}, events=[]),
+            start_node="room_a", enemy_library=lib)
+        inst = world.enemies.spawn("深潜者", "room_a", 1)
+        inst.flags = ["avoidable"]
+        keeper = Keeper(world)
+        self._stub_llm(keeper, monkeypatch)
+        monkeypatch.setattr("game.agents.keeper.call_deepseek",
+                            lambda *a, **k: json.dumps(
+                                {"enter_combat": True, "enemy_instance_ids": [],
+                                 "reasoning": "遭遇"}, ensure_ascii=False))
+        result = keeper.process_turn(TurnInput(raw_text="继续前进"), author=None)
+        assert result.status == TurnStatus.COMPLETED
+        assert result.pending_interaction is not None
+        assert result.pending_interaction.kind == "standoff"
+        assert keeper._standoff_pending is not None, "必须播种 _standoff_pending"
