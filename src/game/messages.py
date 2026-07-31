@@ -1,6 +1,7 @@
 """Message types for inter-agent communication."""
 from __future__ import annotations
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -225,3 +226,74 @@ class EnrichInput:
     """
     entities: list[dict] = field(default_factory=list)  # judged entity records
     actions: list[dict] = field(default_factory=list)    # TimeAgent action summaries
+
+
+class TurnStatus(Enum):
+    COMPLETED = "completed"
+    SUSPENDED = "suspended"
+    FROZEN = "frozen"
+
+
+@dataclass
+class PendingInteraction:
+    """回合挂起的待答问题。"""
+    kind: str              # "weapon_offer" | "standoff" | "clarify"
+    question: str          # 玩家可见问题文本
+    interaction_id: str = ""  # resolver 路由键
+
+
+@dataclass
+class EndingInfo:
+    name: str
+    narrative: str
+    game_over: bool = True
+
+
+@dataclass
+class TurnDiagnostics:
+    """低频/调试数据统一入口。"""
+    combat_entry: CombatEntryCheck | None = None
+    time_agent: dict | None = None
+    enrich_raw: dict | None = None
+    pre_parse: PreParseResult | None = None
+
+
+@dataclass
+class TurnResult:
+    """Keeper.process_turn 的内部契约返回。"""
+    status: TurnStatus
+    brief: NarratorBrief | None = None       # COMPLETED 且走完 pipeline 时必有
+    text: str = ""                           # SUSPENDED→question；FROZEN→提示；简单路径文本
+    pending_interaction: PendingInteraction | None = None
+    combat_init: CombatInit | None = None
+    ending: EndingInfo | None = None
+    npc_events: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    frozen_message: str = ""
+    diagnostics: TurnDiagnostics = field(default_factory=TurnDiagnostics)
+
+    def __post_init__(self):
+        if self.status == TurnStatus.SUSPENDED:
+            if not self.pending_interaction:
+                raise ValueError("SUSPENDED requires pending_interaction")
+            if self.brief is not None:
+                raise ValueError("SUSPENDED must not carry brief (turn blocked)")
+        if self.brief is None and not self.text:
+            raise ValueError("TurnResult requires text when brief is None")
+
+
+@dataclass
+class PlayerTurnResult:
+    """run_turn 的玩家面契约返回。"""
+    status: TurnStatus
+    brief: str = ""
+    narrative: str = ""
+    pending_interaction: PendingInteraction | None = None
+    player_snapshot: PlayerFacingSnapshot | None = None
+    skill_results: list[dict] = field(default_factory=list)
+    combat: dict | None = None               # 调用方战斗结算后回填
+    combat_init: CombatInit | None = None
+    ending: EndingInfo | None = None
+    game_over: bool = False
+    timestamp: str = ""
+    diagnostics: dict = field(default_factory=dict)  # time_agent / npc_events / npcs_visible
