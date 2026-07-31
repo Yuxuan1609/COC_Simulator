@@ -13,6 +13,9 @@ sys.path.insert(0, "src")
 
 from game_loop import init_game, run_turn, setup_logging
 from game.messages import TurnStatus
+from library import WeaponLibrary, EnemyLibrary, ContentInjector
+from investigator import Investigator, load_investigator
+from investigator.rules import roll_stats, calc_derived, create_skill_list
 
 _log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 _log_dir = setup_logging()

@@ -236,3 +236,18 @@
 - **现状**：`Investigator.check_skill()` 返回 `(ok: bool, msg: str, tier: str)`，调用方用位置解包——参数顺序易错。且已经定义了 `SkillCheckResult` dataclass 但未在此处使用。
 - **方案**：`check_skill()` 返回 `SkillCheckResult` dataclass。
 - **涉及文件**：`src/investigator/models.py`、所有 `check_skill()` 调用方
+
+---
+
+## 工作方向约定与后续队列（2026-07-31）
+
+**方向约定**：当前只关注 CLI client（`run_game.py` 交互式命令行入口）；前端（`frontend/` FastAPI + game.html）暂时不管——前端相关 bug/重构不排期，除非阻塞 CLI。
+
+**队列顺序约定**：修复类任务优先；**重构排倒数第二**；存读档 🔴 bug 排最后。
+
+1. **run_game.py 预存 import 缺失（🔴 CLI 跑不起来）**：模块级 `NameError: WeaponLibrary`（`WeaponLibrary`/`EnemyLibrary`/`ContentInjector` 等未 import，疑似 9d30bf7 引入）。修复：补回 import。
+2. **test_escalation_real 从未真实调 LLM**：无 `load_dotenv`，`DEEPSEEK_API_KEY` 不在 pytest 环境，快速 auth 失败被 keeper 兜底吞掉——A/C/D/E 的"基线失败"其实是 API 失败产物。修复：conftest 或文件头加 `load_dotenv`，之后重新评估 4 个 case 的真实状态。
+3. **test_turn_monitor 基线失败**：陈旧断言（期待 freeze 时调 `save_state`，该行为已移除）。
+4. **SUSPENDED/FROZEN 回合不进 TurnLogger**：run_turn 早退路径绕过 `_turn_logger.log`，被阻塞回合无痕迹（`src/game_loop.py` SUSPENDED early return / FROZEN 分支）。
+5. **重构（倒数第二）**：中断机制（resolver 注册表）、战斗完成契约统一（B5）、process_turn 拆分（C1）、keeper 发 `weapon_offer` PendingInteraction（契约不对称，功能正常）。
+6. **存读档 3 个 🔴 bug（最后）**：EnemyManager.from_dict 无 library 静默吞异常致 enemies 变 None；两条读档路径不一致（run_game 替换 world 但 judge/curator 持旧引用）；`_npc_injected_at_ids` 不入档致重复注入。
