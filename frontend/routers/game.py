@@ -323,12 +323,14 @@ async def process_turn(
     if turn and turn.status == TurnStatus.FROZEN:
         frozen_message = turn.narrative or "系统异常"
         return {
+            "status": "frozen",
             "brief": "",
             "narrative": "",
             "narrative_html": (
                 '<div class="msg-frozen px-4 py-3 text-red-400 border-2 border-red-600 '
                 'bg-[#1a0a0a] rounded">' + (frozen_message.replace("\n", "<br>")) + '</div>'
             ),
+            "pending_interaction": None,
             "combat": None,
             "skill_results": [],
             "game_frozen": True,
@@ -711,8 +713,8 @@ async def init_game_api(
     try:
         from game_loop import run_turn
         initial = run_turn(g, "[游戏开始]", _weapon_lib, _enemy_lib, _injector)
-        initial_brief = initial.get("brief", "") if initial else ""
-        initial_narrative = initial.get("narrative", "") if initial else ""
+        initial_brief = initial.brief if initial else ""
+        initial_narrative = initial.narrative if initial else ""
     except Exception:
         pass
 
