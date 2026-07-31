@@ -336,53 +336,31 @@ def _setup_mock_mode(case_dir, parse_seq):
 # ═══════════════════════════════════════════════════════════════
 
 def _run_turns(game, inputs, case_dir):
-    """Run a sequence of turns through run_turn(). Detects standoff and routes to continue_standoff."""
-    from game_loop import run_turn, continue_standoff
+    """Run a sequence of turns through run_turn(). Standoff answers are dispatched inside run_turn."""
+    from game_loop import run_turn
     results = []
-    i = 0
-    while i < len(inputs):
+    for i, user_input in enumerate(inputs):
         t0 = time.perf_counter()
-        turn_result = run_turn(game, inputs[i])
+        turn_result = run_turn(game, user_input)
         elapsed = time.perf_counter() - t0
 
+        combat = turn_result.combat
         entry = {
-            "turn": i + 1, "input": inputs[i], "elapsed": round(elapsed, 1),
-            "brief": str(turn_result.get("brief", ""))[:300],
-            "ending": turn_result.get("ending"),
-            "combat_outcome": turn_result.get("combat", {}).get("outcome") if turn_result.get("combat") else None,
-            "combat": turn_result.get("combat"),
-            "has_standoff": turn_result.get("standoff_prompt") is not None,
-            "skill_results": turn_result.get("skill_results"),
-            "time_agent": turn_result.get("time_agent"),
+            "turn": i + 1, "input": user_input, "elapsed": round(elapsed, 1),
+            "brief": str(turn_result.brief or "")[:300],
+            "ending": turn_result.ending.name if turn_result.ending else None,
+            "combat_outcome": combat.get("outcome") if combat else None,
+            "combat": combat,
+            "has_standoff": (
+                turn_result.pending_interaction is not None
+                and turn_result.pending_interaction.kind == "standoff"),
+            "skill_results": turn_result.skill_results,
+            "time_agent": turn_result.diagnostics.get("time_agent"),
         }
-
-        standoff_prompt = turn_result.get("standoff_prompt")
-        if standoff_prompt and i + 1 < len(inputs):
-            i += 1
-            standoff_input = inputs[i]
-            t0 = time.perf_counter()
-            standoff_result = continue_standoff(game["keeper"], standoff_input)
-            elapsed_s = time.perf_counter() - t0
-
-            entry["standoff_input"] = standoff_input
-            entry["standoff_result"] = {
-                "avoided": standoff_result.get("avoided"),
-                "message": str(standoff_result.get("message", ""))[:200],
-                "skill_detail": standoff_result.get("skill_detail"),
-            }
-            entry["elapsed"] = round(entry["elapsed"] + elapsed_s, 1)
-
-            if standoff_result.get("combat_init"):
-                entry["combat_outcome"] = standoff_result.get("combat_outcome")
-                entry["combat"] = {
-                    "outcome": standoff_result.get("combat_outcome"),
-                    "narrative": standoff_result.get("combat_narrative", ""),
-                }
 
         with open(os.path.join(case_dir, f"turn_{i + 1:02d}.json"), "w", encoding="utf-8") as f:
             json.dump(entry, f, ensure_ascii=False, indent=2)
         results.append(entry)
-        i += 1
     return results
 
 
@@ -554,7 +532,7 @@ def case_ending(game, case_dir, mock=False):
     it3_done = world.is_entity_completed("IT3")
     ending_name = ""
     if results and results[-1].get("ending"):
-        ending_name = str(results[-1]["ending"].get("name", ""))
+        ending_name = str(results[-1]["ending"])
     return {"verdict": "PASS" if (has_ending or it3_done) else "SOFT_PASS",
             "ending_triggered": has_ending,
             "ending_name": ending_name,

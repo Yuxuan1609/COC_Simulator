@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from llm import call_deepseek
 from config_llm import LLM_FLASH_MODEL, RE_INTENT_DETECTOR
 from game_loop import init_game, run_turn, setup_logging
+from game.messages import PlayerTurnResult, TurnStatus
 from game.turn_logger import TurnLogger
 from investigator import load_investigator
 from llm_player_prompts import (
@@ -244,23 +245,22 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             result = run_turn(game, action)
         except Exception as e:
             print(f"  [WARN] run_turn failed: {e}")
-            result = {"brief": str(e), "narrative": "", "skill_results": [],
-                      "ending": None, "combat": None, "npc_events": []}
+            result = PlayerTurnResult(status=TurnStatus.COMPLETED, brief=str(e))
 
         dt = time.perf_counter() - t_turn
 
-        brief = result.get("brief", "")
-        narrative = result.get("narrative", "")
-        skill_results = result.get("skill_results", [])
-        ending = result.get("ending")
-        combat = result.get("combat")
-        npc_events = result.get("npc_events", [])
+        brief = result.brief
+        narrative = result.narrative
+        skill_results = result.skill_results
+        ending = result.ending
+        combat = result.combat
+        npc_events = result.diagnostics.get("npc_events", [])
 
         short_history.append(
             f"T{turn+1}: {action} → {str(brief)[:80]}"
         )
         last_narrative = {"brief": brief, "narrative": narrative}
-        last_snapshot = result.get("player_snapshot")
+        last_snapshot = result.player_snapshot
 
         clock = game["keeper"].world.clock
         time_state = {
@@ -275,19 +275,19 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             "skill_results": skill_results,
             "combat": combat,
             "npc_events": npc_events,
-            "npcs_visible": result.get("npcs_visible", {"in_scene": [], "following": []}),
-            "ending": ending.get("name") if ending else None,
+            "npcs_visible": result.diagnostics.get("npcs_visible", {"in_scene": [], "following": []}),
+            "ending": ending.name if ending else None,
             "elapsed_s": round(dt, 1),
             "time_state": time_state,
-            "time_agent": result.get("time_agent"),
+            "time_agent": result.diagnostics.get("time_agent"),
         })
 
         print(f"  T{turn+1:02d} [{dt:.1f}s]: {action[:50]}")
         if reasoning:
             print(f"    -> {reasoning[:60]}")
 
-        if ending and ending.get("game_over"):
-            print(f"  Game Over: {ending.get('name', '?')}")
+        if ending and ending.game_over:
+            print(f"  Game Over: {ending.name}")
             break
 
         if (turn + 1) % compress_interval == 0:
