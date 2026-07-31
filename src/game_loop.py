@@ -9,7 +9,8 @@ import json
 
 from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
-from game.messages import TurnInput, CombatInit, CombatResult, PlayerFacingSnapshot, SkillCheckResult
+from game.messages import (TurnInput, CombatInit, CombatResult, PlayerFacingSnapshot, SkillCheckResult,
+                           TurnStatus, TurnResult, PendingInteraction)
 from game.turn_logger import TurnLogger
 from config import WR0_ENABLED
 
@@ -587,12 +588,11 @@ def _check_autosave(game: dict) -> None:
         pass
 
 
-def continue_standoff(keeper, player_input: str) -> dict:
-    """Process a standoff avoidance attempt. Returns updated state with optional combat_init."""
+def continue_standoff(keeper, player_input: str) -> TurnResult:
+    """Process a standoff avoidance attempt. Returns TurnResult with optional combat_init."""
     s = keeper._standoff_pending
     if not s:
-        return {"standoff_resolved": True, "avoided": False,
-                "message": "无待处理的对峙。", "combat_init": None}
+        return TurnResult(status=TurnStatus.COMPLETED, text="无待处理的对峙。")
 
     result = keeper.resolve_standoff(s, player_input)
 
@@ -637,15 +637,12 @@ def continue_standoff(keeper, player_input: str) -> dict:
                 player_extra="",
             )
 
-    result["combat_init"] = combat_init
-
     # Run combat if resolved into combat (short-circuited — one-turn auto-win)
+    completed = None
     if combat_init and combat_init.enemies:
         from game.combat import CombatSystem
         cs = CombatSystem()
         cr = cs.run_combat(combat_init)
-        result["combat_narrative"] = cr.narrative or f"经过对峙，战斗结束。"
-        result["combat_outcome"] = cr.outcome
         # HP/SAN 回写
         if combat_init.player:
             combat_init.player.derived.HP = max(0, cr.player_hp)
@@ -653,8 +650,8 @@ def continue_standoff(keeper, player_input: str) -> dict:
         keeper.world.enemy_manager.exit_combat({"outcome": cr.outcome})
         # Combat completion: re-enrich with combat result (same turn)
         combat_result = {"outcome": cr.outcome, "narrative": cr.narrative or "", "is_boss": bool(keeper.world.bosses and keeper.world.bosses.active_boss_id)}
-        completed = keeper.complete_combat_turn(keeper._last_player_input, combat_result) if keeper._last_player_input else {}
-        result["combat_completed"] = completed
+        if keeper._last_player_input:
+            completed = keeper.complete_combat_turn(keeper._last_player_input, combat_result)
         # Mark boss as completed on win
         if cr.outcome == "win":
             boss_id = keeper.world.bosses.active_boss_id
@@ -662,7 +659,21 @@ def continue_standoff(keeper, player_input: str) -> dict:
                 keeper.world.get_runtime_state(boss_id).completed = True
                 keeper.world.bosses.set_active(None)
 
-    return result
+    brief = completed.brief if isinstance(completed, TurnResult) else None
+    text = result.get("message", "")
+    next_pending = None
+    if result.get("next_standoff"):
+        next_pending = PendingInteraction(
+            kind="standoff", question=result["next_standoff"],
+            interaction_id="standoff")
+    return TurnResult(
+        status=TurnStatus.COMPLETED,
+        brief=brief,
+        text=text,
+        pending_interaction=next_pending,
+        combat_init=combat_init,
+        npc_events=list(keeper._npc_events),
+    )
 
 
 def format_turn_dynamic(

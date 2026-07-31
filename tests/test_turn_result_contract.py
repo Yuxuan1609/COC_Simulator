@@ -225,3 +225,64 @@ class TestProcessTurnReturnsContract:
         result = keeper.process_turn(TurnInput(raw_text="四处看看"), author=None)
         assert result.status == TurnStatus.COMPLETED
         assert keeper._standoff_pending is None
+
+
+class TestStandoffContinuation:
+    def test_continue_standoff_returns_turn_result(self, monkeypatch, tmp_path):
+        """process_turn 产生 standoff 后，continue_standoff 消费并返回 TurnResult。"""
+        import json
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput, PreParseResult
+        from game.agents.keeper import Keeper
+        from game_loop import continue_standoff
+        from library.enemies import EnemyLibrary, LibraryEnemy
+        from investigator import Investigator
+
+        lib = EnemyLibrary()
+        lib._enemies["深潜者"] = LibraryEnemy.from_dict({
+            "name": "深潜者", "type": "怪物",
+            "attributes": {"CON": 200, "SIZ": 200}, "armor": "",
+            "attacks": [], "special_abilities": [], "san_loss": "0",
+            "description": "", "combat_behavior": "",
+        })
+        scene = {
+            "interactions": [], "auto_triggers": [], "from_here": [],
+            "to_here": [], "encounters": [], "scene_weapons": [],
+            "extra": {}, "description": "",
+        }
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": scene}, events=[]),
+            start_node="room_a", enemy_library=lib)
+        player = Investigator(name="测试员", age=25, gender="男")
+        player.derived.HP = 3
+        player.derived.HP_MAX = 3
+        world.set_player(player)
+        inst = world.enemies.spawn("深潜者", "room_a", 1)
+        inst.flags = ["avoidable"]
+
+        keeper = Keeper(world)
+        keeper.pre_parse.disambiguate = lambda *a, **k: PreParseResult(
+            clarity="clear", interpretation="", question="", resolved_text="")
+        keeper._parse = lambda raw: [{"type": "other", "text": raw}]
+        keeper._enrich = lambda e, r: {"results": "", "reasoning": "", "emphasis_hint": ""}
+        keeper._run_time_agent = lambda a, r: {"time_delta": 0, "narrative_hint": ""}
+        monkeypatch.setattr("game.agents.keeper.call_deepseek",
+                            lambda *a, **k: json.dumps(
+                                {"enter_combat": True, "enemy_instance_ids": [],
+                                 "reasoning": "遭遇"}, ensure_ascii=False))
+        monkeypatch.setattr("llm.call_deepseek",
+                            lambda *a, **k: json.dumps(
+                                {"summary": "战斗结束"}, ensure_ascii=False))
+        turn = keeper.process_turn(TurnInput(raw_text="前进"), author=None)
+        assert turn.pending_interaction is not None
+        assert turn.pending_interaction.kind == "standoff"
+
+        monkeypatch.setattr(
+            "game.agents.keeper.call_deepseek",
+            lambda *a, **k: json.dumps(
+                {"matched": False, "skill_name": "", "reason": ""},
+                ensure_ascii=False))
+        result = continue_standoff(keeper, "我举起双手")
+        assert isinstance(result, TurnResult)
+        assert result.status == TurnStatus.COMPLETED
+        assert result.combat_init is not None or result.text

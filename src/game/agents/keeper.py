@@ -914,12 +914,12 @@ class Keeper:
             return {"name": en, "narrative": full_narrative, "game_over": True}
         return None
 
-    def complete_combat_turn(self, original_input: str, combat_result: dict) -> dict:
+    def complete_combat_turn(self, original_input: str, combat_result: dict) -> TurnResult | None:
         """After combat resolves, replay enrich→curate with combat result injected.
         Uses stored outcomes from the original process_turn that triggered combat.
-        Returns brief that caller passes to narrator."""
+        Returns TurnResult whose brief the caller passes to narrator."""
         if not self._last_outcomes:
-            return {}
+            return None
         outcomes = list(self._last_outcomes)
         self._last_outcomes = []
 
@@ -948,7 +948,11 @@ class Keeper:
 
         ambient = [o.message for o in outcomes if o.entity_type == "auto_trigger"]
         brief = self.curator.assemble(outcomes, ambient, emphasis, enriched_summary)
-        return {"brief": brief, "enrich": enrichment}
+        return TurnResult(
+            status=TurnStatus.COMPLETED,
+            brief=brief,
+            diagnostics=TurnDiagnostics(enrich_raw=enrichment),
+        )
 
     def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
         """Resolve a standoff: semantic match -> D100 -> trait enhancement -> result."""
