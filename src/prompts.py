@@ -615,6 +615,10 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 
     inv_info = _build_investigator_info(snap) if snap else ""
 
+    enriched_block = ""
+    if getattr(brief, "enriched_summary", ""):
+        enriched_block = f"【合并叙事（enrich 产出，叙事主素材）】\n{brief.enriched_summary}\n\n"
+
     prompt = f"""{l1_ctx}
 
 {inv_info}
@@ -625,7 +629,7 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 
 【可通行方向】{', '.join(f"{e['target']}({e['method']})" for e in brief.scene_snapshot.exits)}
 
-【实体行动结果】
+{enriched_block}【实体行动结果】
 {entity_outcomes or '（无）'}
 {'' if not flavor_outcomes else f'【即兴行为】\n{flavor_outcomes}'}
 【环境变化】

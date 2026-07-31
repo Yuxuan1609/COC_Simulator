@@ -18,13 +18,15 @@ class Curator:
         self,
         outcomes: list[ActionOutcome],
         ambient_changes: list[str],
-        emphasis: str = ""
+        emphasis: str = "",
+        enriched_summary: str = "",
     ) -> NarratorBrief:
         return NarratorBrief(
             action_outcomes=outcomes,
             ambient_changes=ambient_changes,
             scene_snapshot=self._build_snapshot(),
             suggested_emphasis=emphasis,
+            enriched_summary=enriched_summary,
         )
 
     def _build_snapshot(self) -> SceneSnapshot:

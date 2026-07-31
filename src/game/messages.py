@@ -66,6 +66,7 @@ class NarratorBrief:
     ambient_changes: list[str]       # AT results perceptible to player
     scene_snapshot: SceneSnapshot
     suggested_emphasis: str          # what to highlight + tone direction
+    enriched_summary: str = ""       # enrich 合并叙事（呈现层），空则回退 outcomes
 
 
 @dataclass

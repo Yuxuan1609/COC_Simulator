@@ -88,3 +88,28 @@ class TestPlayerTurnResult:
         r = PlayerTurnResult(status=TurnStatus.COMPLETED, brief="b",
                              narrative="n", ending=e, game_over=True)
         assert r.ending.name == "结局A"
+
+
+class TestEnrichedSummary:
+    def _make_curator(self, description="黑暗的房间"):
+        from game.curator import Curator
+        from unittest.mock import MagicMock
+        world = MagicMock()
+        node = MagicMock()
+        node.description = description
+        node.interactions = []
+        world._current_node.return_value = node
+        world.current_location = "房间"
+        world.get_possible_exits.return_value = []
+        world.completed_interactions = {}
+        world.npcs = None
+        return Curator(world)
+
+    def test_curator_passes_enriched_summary(self):
+        brief = self._make_curator().assemble(
+            [], [], emphasis="", enriched_summary="合并叙事文本")
+        assert brief.enriched_summary == "合并叙事文本"
+
+    def test_curator_default_empty_summary(self):
+        brief = self._make_curator("").assemble([], [], "")
+        assert brief.enriched_summary == ""

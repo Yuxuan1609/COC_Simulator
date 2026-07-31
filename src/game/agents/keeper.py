@@ -678,18 +678,12 @@ class Keeper:
         # Scan for endings BEFORE enrich overwrites outcome messages
         ending_result = self._scan_ending(all_outcomes, author)
 
+        enriched_summary = ""
         if enrichment:
             emphasis = enrichment.get("emphasis_hint", "")
             results = enrichment.get("results", "")
-            if isinstance(results, str) and results and all_outcomes:
-                updated = False
-                for o in all_outcomes:
-                    if o.success and o.entity_type != "auto_trigger":
-                        o.message = results
-                        updated = True
-                        break
-                if not updated:
-                    all_outcomes[0].message = results
+            if isinstance(results, str):
+                enriched_summary = results
         if ta_result:
             if ta_result.get("time_delta", 0) > 0:
                 self.world.clock.advance_time(ta_result["time_delta"])
@@ -835,7 +829,7 @@ class Keeper:
         try:
             brief = self.turn_monitor.execute_step(
                 "curate",
-                lambda: self.curator.assemble(all_outcomes, ambient, emphasis),
+                lambda: self.curator.assemble(all_outcomes, ambient, emphasis, enriched_summary),
                 is_critical=True,
             )
         except TurnFrozenError as e:
@@ -933,14 +927,10 @@ class Keeper:
 
         emphasis = enrichment.get("emphasis_hint", "") if enrichment else ""
         result_text = enrichment.get("results", "") if enrichment else ""
-        if isinstance(result_text, str) and result_text and outcomes:
-            for o in outcomes:
-                if o.success and o.entity_type != "auto_trigger":
-                    o.message = result_text
-                    break
+        enriched_summary = result_text if isinstance(result_text, str) else ""
 
         ambient = [o.message for o in outcomes if o.entity_type == "auto_trigger"]
-        brief = self.curator.assemble(outcomes, ambient, emphasis)
+        brief = self.curator.assemble(outcomes, ambient, emphasis, enriched_summary)
         return {"brief": brief, "enrich": enrichment}
 
     def resolve_standoff(self, standoff_state: dict, player_input: str) -> dict:
