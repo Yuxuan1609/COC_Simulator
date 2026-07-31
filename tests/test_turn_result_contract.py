@@ -228,13 +228,12 @@ class TestProcessTurnReturnsContract:
 
 
 class TestStandoffContinuation:
-    def test_continue_standoff_returns_turn_result(self, monkeypatch, tmp_path):
-        """process_turn 产生 standoff 后，continue_standoff 消费并返回 TurnResult。"""
+    def _build_standoff_keeper(self, monkeypatch):
+        """世界+keeper：room_a 有一只 avoidable 深潜者，process_turn 已产生 standoff。"""
         import json
         from scenario_core import DirectedGraph, ScenarioWorld
         from game.messages import TurnInput, PreParseResult
         from game.agents.keeper import Keeper
-        from game_loop import continue_standoff
         from library.enemies import EnemyLibrary, LibraryEnemy
         from investigator import Investigator
 
@@ -266,23 +265,45 @@ class TestStandoffContinuation:
         keeper._parse = lambda raw: [{"type": "other", "text": raw}]
         keeper._enrich = lambda e, r: {"results": "", "reasoning": "", "emphasis_hint": ""}
         keeper._run_time_agent = lambda a, r: {"time_delta": 0, "narrative_hint": ""}
+        monkeypatch.setattr("llm.call_deepseek",
+                            lambda *a, **k: json.dumps(
+                                {"summary": "战斗结束"}, ensure_ascii=False))
         monkeypatch.setattr("game.agents.keeper.call_deepseek",
                             lambda *a, **k: json.dumps(
                                 {"enter_combat": True, "enemy_instance_ids": [],
                                  "reasoning": "遭遇"}, ensure_ascii=False))
-        monkeypatch.setattr("llm.call_deepseek",
-                            lambda *a, **k: json.dumps(
-                                {"summary": "战斗结束"}, ensure_ascii=False))
         turn = keeper.process_turn(TurnInput(raw_text="前进"), author=None)
         assert turn.pending_interaction is not None
         assert turn.pending_interaction.kind == "standoff"
-
         monkeypatch.setattr(
             "game.agents.keeper.call_deepseek",
             lambda *a, **k: json.dumps(
                 {"matched": False, "skill_name": "", "reason": ""},
                 ensure_ascii=False))
+        return keeper
+
+    def test_continue_standoff_returns_turn_result(self, monkeypatch):
+        """standoff 未匹配 → 内联战斗 → TurnResult：brief 携带战斗结果，combat_init 为 None。"""
+        from game_loop import continue_standoff
+        keeper = self._build_standoff_keeper(monkeypatch)
         result = continue_standoff(keeper, "我举起双手")
         assert isinstance(result, TurnResult)
         assert result.status == TurnStatus.COMPLETED
-        assert result.combat_init is not None or result.text
+        assert result.combat_init is None, "内联战斗已执行，不得再返回 combat_init"
+        assert result.brief is not None or result.text
+        if result.brief is not None:
+            assert any("战斗" in o.message for o in result.brief.action_outcomes)
+        else:
+            assert "战斗结束" in result.text
+
+    def test_combat_narrative_fallback_when_replay_skipped(self, monkeypatch):
+        """complete_combat_turn 无法重放（_last_outcomes 空）时，战斗叙事仍须到达 text。"""
+        from game_loop import continue_standoff
+        keeper = self._build_standoff_keeper(monkeypatch)
+        keeper._last_outcomes = []
+        result = continue_standoff(keeper, "我举起双手")
+        assert isinstance(result, TurnResult)
+        assert result.status == TurnStatus.COMPLETED
+        assert result.combat_init is None
+        assert result.brief is None
+        assert "战斗结束" in result.text

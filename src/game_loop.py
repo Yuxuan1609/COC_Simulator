@@ -589,7 +589,7 @@ def _check_autosave(game: dict) -> None:
 
 
 def continue_standoff(keeper, player_input: str) -> TurnResult:
-    """Process a standoff avoidance attempt. Returns TurnResult with optional combat_init."""
+    """Process a standoff avoidance attempt. Combat runs inline; combat_init is None in the result."""
     s = keeper._standoff_pending
     if not s:
         return TurnResult(status=TurnStatus.COMPLETED, text="无待处理的对峙。")
@@ -639,19 +639,25 @@ def continue_standoff(keeper, player_input: str) -> TurnResult:
 
     # Run combat if resolved into combat (short-circuited — one-turn auto-win)
     completed = None
+    combat_ran = False
+    combat_narrative = ""
     if combat_init and combat_init.enemies:
         from game.combat import CombatSystem
         cs = CombatSystem()
         cr = cs.run_combat(combat_init)
+        combat_ran = True
+        combat_narrative = cr.narrative or ""
         # HP/SAN 回写
         if combat_init.player:
             combat_init.player.derived.HP = max(0, cr.player_hp)
             combat_init.player.derived.SAN = max(0, cr.player_san)
         keeper.world.enemy_manager.exit_combat({"outcome": cr.outcome})
         # Combat completion: re-enrich with combat result (same turn)
-        combat_result = {"outcome": cr.outcome, "narrative": cr.narrative or "", "is_boss": bool(keeper.world.bosses and keeper.world.bosses.active_boss_id)}
-        if keeper._last_player_input:
-            completed = keeper.complete_combat_turn(keeper._last_player_input, combat_result)
+        combat_result = {"outcome": cr.outcome, "narrative": combat_narrative, "is_boss": bool(keeper.world.bosses and keeper.world.bosses.active_boss_id)}
+        if not keeper._last_player_input:
+            # standoff path never sets it; use the standoff answer as replay context
+            keeper._last_player_input = player_input
+        completed = keeper.complete_combat_turn(keeper._last_player_input, combat_result)
         # Mark boss as completed on win
         if cr.outcome == "win":
             boss_id = keeper.world.bosses.active_boss_id
@@ -659,8 +665,10 @@ def continue_standoff(keeper, player_input: str) -> TurnResult:
                 keeper.world.get_runtime_state(boss_id).completed = True
                 keeper.world.bosses.set_active(None)
 
-    brief = completed.brief if isinstance(completed, TurnResult) else None
+    brief = completed.brief if completed else None
     text = result.get("message", "")
+    if combat_ran and brief is None and combat_narrative:
+        text = f"{text}\n{combat_narrative}" if text else combat_narrative
     next_pending = None
     if result.get("next_standoff"):
         next_pending = PendingInteraction(
@@ -671,7 +679,7 @@ def continue_standoff(keeper, player_input: str) -> TurnResult:
         brief=brief,
         text=text,
         pending_interaction=next_pending,
-        combat_init=combat_init,
+        combat_init=None if combat_ran else combat_init,
         npc_events=list(keeper._npc_events),
     )
 
