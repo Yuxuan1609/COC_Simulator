@@ -211,3 +211,17 @@ class TestProcessTurnReturnsContract:
         assert result.pending_interaction is not None
         assert result.pending_interaction.kind == "standoff"
         assert keeper._standoff_pending is not None, "必须播种 _standoff_pending"
+
+    def test_standoff_pending_cleared_at_turn_entry(self, monkeypatch):
+        """回合入口必须清理 _standoff_pending，避免陈旧状态泄漏到后续回合。"""
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput
+        from game.agents.keeper import Keeper
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": self._scene()}, events=[]), start_node="room_a")
+        keeper = Keeper(world)
+        self._stub_llm(keeper, monkeypatch)
+        keeper._standoff_pending = {"fake": True}
+        result = keeper.process_turn(TurnInput(raw_text="四处看看"), author=None)
+        assert result.status == TurnStatus.COMPLETED
+        assert keeper._standoff_pending is None

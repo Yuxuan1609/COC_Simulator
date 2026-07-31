@@ -170,6 +170,7 @@ class Keeper:
         self._npc_events.clear()
         self._pending_side_effects.clear()
         self._pending_move = None
+        self._standoff_pending = None
 
         # Inject NPC ATs + interactions before normal parse
         self._inject_npc_at()
@@ -891,8 +892,8 @@ class Keeper:
     def _build_frozen_response(self, exc: TurnFrozenError) -> TurnResult:
         return TurnResult(
             status=TurnStatus.FROZEN,
-            text=str(exc),
-            frozen_message=str(exc),
+            text=str(exc) or "（回合已冻结）",
+            frozen_message=str(exc) or "（回合已冻结）",
             npc_events=list(self._npc_events),
         )
 
