@@ -11,18 +11,21 @@ Usage:
 import sys, os, json
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Real-LLM test: load API key from .env (pytest does not inherit it otherwise)
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_ROOT = os.path.join(
-    os.path.dirname(__file__), "..", "data", "debug", "test_escalation_real", TIMESTAMP
+    os.path.dirname(__file__), "..", "..", "data", "debug", "test_escalation_real", TIMESTAMP
 )
 
 from scenario_core import DirectedGraph, ScenarioWorld, NodeRuntimeState
+
+import pytest
+pytestmark = pytest.mark.real_llm
 from game.messages import ActionIntent, ActionOutcome, TurnInput
 from game.agents.keeper import Keeper
 from game.agents.author import Author
