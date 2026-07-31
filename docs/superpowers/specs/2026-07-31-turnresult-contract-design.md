@@ -72,15 +72,19 @@ class TurnResult:
 |---------|--------|
 | 正常走完（8-key dict） | `COMPLETED` + brief(NarratorBrief) + 其余字段 |
 | 武器 offer 应答 | 过渡期返回 `COMPLETED`+text（后续迁往 resolver） |
-| 武器 offer 提问 / standoff 提问 | `SUSPENDED` + PendingInteraction(kind=..., question=...) |
-| pre-parse ambiguous 反问 | `SUSPENDED` + PendingInteraction(kind="clarify") |
+| 武器 offer 提问 / standoff 提问 | `COMPLETED` + pending_interaction——**回合正常走完并产生叙事，同时留下待答问题**（见下方语义修正） |
+| pre-parse ambiguous 反问 | `SUSPENDED` + PendingInteraction(kind="clarify")——回合被阻塞，只有问题 |
+
+> **语义修正（2026-07-31 实施前）**：原稿将 offer/standoff 提问映射为 SUSPENDED，但实际 UX 是"搜索回合正常结束并展示叙事，同时附带'是否拾取'追问"——映射为 SUSPENDED（回合未走完）会丢掉该回合叙事。因此：SUSPENDED 仅表示"回合被阻塞、仅有问题"（clarify）；`COMPLETED + pending_interaction` 表示"回合完成、留有追问"（offer/standoff）。 |
 | NPC 纯对话 / 快捷路径错误 | `COMPLETED` + text（brief=None） |
 | 递归上限确定性兜底 | `COMPLETED` + brief |
 | TurnFrozenError | `FROZEN` + frozen_message |
 
 契约不变量（`__post_init__` 轻量断言）：
-- SUSPENDED 必须有 pending_interaction
+- SUSPENDED 必须有 pending_interaction 且 brief=None（text 携带问题）
 - brief=None 时 text 必须非空
+
+> **已知关联 Bug（实施时一并修复）**：`process_turn` 生成 standoff_prompt 时**从未播种 `keeper._standoff_pending`**（只有 `resolve_standoff` 内部会赋值），导致 `continue_standoff` 首次调用永远得到"无待处理的对峙"——standoff 在 harness 中也走不通。契约迁移时在 standoff 创建点补播种。
 
 ### 2. 外层契约（`run_turn` 返回，玩家面）
 
