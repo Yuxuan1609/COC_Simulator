@@ -68,7 +68,7 @@ ambiguous→SUSPENDED、正常回合、非法移动、standoff 播种与清理�
 
 **文件**：`tests/e2e/test_scenarios.py`，全部打 `@pytest.mark.real_llm`，conftest 默认 deselect。
 
-**场景清单**（Q3 已确认 1-6 + 9；7/8 视预算实现时评估）：
+**场景清单**（Q3 已确认核心 1-6 + FROZEN；standoff 拆为 S4/S5 两条独立场景。S9 结局、NPC 对话为可选补充，实施时视预算决定是否纳入，不纳入则从清单移除）：
 
 | # | 场景 | 硬断言 | 软/宽断言 |
 |---|------|--------|----------|
