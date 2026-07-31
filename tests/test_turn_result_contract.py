@@ -255,6 +255,42 @@ class TestRunTurnContract:
         assert result.pending_interaction.kind == "clarify"
         assert result.narrative == "你想检查哪里？"
 
+    def test_run_turn_dispatches_pending_standoff(self, monkeypatch):
+        """keeper._standoff_pending 存在时，run_turn 路由到 continue_standoff。"""
+        from types import SimpleNamespace
+        import game_loop
+        from game_loop import run_turn
+
+        calls = {}
+        def fake_continue(keeper, player_input):
+            calls["routed"] = player_input
+            return TurnResult(status=TurnStatus.COMPLETED, text="对峙化解。")
+        monkeypatch.setattr(game_loop, "continue_standoff", fake_continue)
+
+        fake_keeper = SimpleNamespace(
+            turn_number=2,
+            _weapon_offer=None,
+            _standoff_pending={"group": "深潜者"},
+            process_turn=lambda ti, author=None: (_ for _ in ()).throw(
+                AssertionError("不应走到 process_turn")),
+        )
+        fake_keeper.world = SimpleNamespace(
+            player=None,
+            npcs=None,
+            enemies=None,
+            current_location="room_a",
+            get_current_description=lambda: "",
+            get_possible_exits=lambda: [],
+            clock=SimpleNamespace(to_dict=lambda: {}),
+        )
+        game = {"keeper": fake_keeper,
+                "narrator": SimpleNamespace(l1_data=None),
+                "author": None}
+        result = run_turn(game, "我举起双手")
+        assert calls.get("routed") == "我举起双手"
+        assert result.status == TurnStatus.COMPLETED
+        assert "对峙化解" in (result.narrative or result.brief)
+
 
 class TestStandoffContinuation:
     def _build_standoff_keeper(self, monkeypatch):

@@ -302,39 +302,41 @@ def run_case(case, case_dir, init_kwargs: dict = None):
             # ── 从 PlayerFacingSnapshot 读取调查员武器/物品 ──
             held_weapons = []
             held_items = []
-            if isinstance(turn_result, dict):
-                brief = str(turn_result.get("brief", ""))
-                snapshot = turn_result.get("player_snapshot")
-                if snapshot:
-                    inv = getattr(snapshot, "investigator", None) if hasattr(snapshot, "investigator") else snapshot.get("investigator") if isinstance(snapshot, dict) else None
-                    if inv:
-                        held_weapons = [w.name if hasattr(w, "name") else str(w) for w in getattr(inv, "weapons", [])]
-                        im = getattr(inv, "item_manager", None)
-                        if im:
-                            for it in getattr(im, "list_all", lambda: [])():
-                                if hasattr(it, "name"):
-                                    held_items.append(f"{it.name} x{getattr(it, 'quantity', 1)}")
-                                elif isinstance(it, dict):
-                                    held_items.append(f"{it.get('name', '?')} x{it.get('quantity', 1)}")
+            brief = str(turn_result.brief)
+            snapshot = turn_result.player_snapshot
+            if snapshot:
+                inv = getattr(snapshot, "investigator", None) if hasattr(snapshot, "investigator") else snapshot.get("investigator") if isinstance(snapshot, dict) else None
+                if inv:
+                    held_weapons = [w.name if hasattr(w, "name") else str(w) for w in getattr(inv, "weapons", [])]
+                    im = getattr(inv, "item_manager", None)
+                    if im:
+                        for it in getattr(im, "list_all", lambda: [])():
+                            if hasattr(it, "name"):
+                                held_items.append(f"{it.name} x{getattr(it, 'quantity', 1)}")
+                            elif isinstance(it, dict):
+                                held_items.append(f"{it.get('name', '?')} x{it.get('quantity', 1)}")
 
-                turn_data.update({
-                    "brief": brief[:300],
-                    "has_ending": turn_result.get("ending") is not None,
-                    "has_combat": turn_result.get("combat") is not None,
-                    "has_standoff": turn_result.get("standoff_prompt") is not None,
-                    "skill_results": turn_result.get("skill_results"),
-                    "held_weapons": held_weapons,
-                    "held_items": held_items,
-                })
+            turn_data.update({
+                "brief": brief[:300],
+                "has_ending": turn_result.ending is not None,
+                "has_combat": turn_result.combat is not None,
+                "has_standoff": (
+                    turn_result.pending_interaction is not None
+                    and turn_result.pending_interaction.kind == "standoff"
+                ),
+                "skill_results": turn_result.skill_results,
+                "held_weapons": held_weapons,
+                "held_items": held_items,
+            })
             results.append(turn_data)
 
             # Per-turn log
             turn_log = {
                 "turn": turn_num + 1,
                 "input": user_input,
-                "brief": str(turn_result.get("brief", ""))[:500] if isinstance(turn_result, dict) else str(turn_result),
-                "ending": str(turn_result.get("ending")) if isinstance(turn_result, dict) else None,
-                "combat_outcome": turn_result.get("combat", {}).get("outcome") if isinstance(turn_result, dict) and turn_result.get("combat") else None,
+                "brief": str(turn_result.brief)[:500],
+                "ending": turn_result.ending.name if turn_result.ending else None,
+                "combat_outcome": turn_result.combat.get("outcome") if turn_result.combat else None,
                 "held_weapons": held_weapons,
                 "held_items": held_items,
             }
