@@ -13,6 +13,10 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+# Real-LLM test: load API key from .env (pytest does not inherit it otherwise)
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUT_ROOT = os.path.join(
     os.path.dirname(__file__), "..", "data", "debug", "test_escalation_real", TIMESTAMP
@@ -241,7 +245,7 @@ def _setup_llm_logging(log_dir):
     _LLM_CALL_COUNTER[0] = 0
 
     def _logging_wrapper(prompt, json_mode=True, model="", system="", reasoning_effort="",
-                         fallback_schema=None):
+                         fallback_schema=None, **extra):
         label = _classify_call(system)
         call_num = _LLM_CALL_COUNTER[0] + 1
         _LLM_CALL_COUNTER[0] = call_num
@@ -251,7 +255,8 @@ def _setup_llm_logging(log_dir):
         if system:
             _log_text(log_dir, f"{label}_system.txt", system)
 
-        kwargs = {"prompt": prompt, "json_mode": json_mode, "fallback_schema": fallback_schema}
+        kwargs = {"prompt": prompt, "json_mode": json_mode,
+                  "fallback_schema": fallback_schema, **extra}
         if model:
             kwargs["model"] = model
         if system:
