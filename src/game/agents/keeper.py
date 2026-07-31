@@ -873,10 +873,19 @@ class Keeper:
                 interaction_id="standoff",
             )
 
+        offer_pending = None
+        if not standoff_pending and self._weapon_offer:
+            offer_names = "、".join(w["weapon_ref"] for w in self._weapon_offer)
+            offer_pending = PendingInteraction(
+                kind="weapon_offer",
+                question=f"是否拾取{offer_names}？（是/否）",
+                interaction_id="weapon_offer",
+            )
+
         return TurnResult(
             status=TurnStatus.COMPLETED,
             brief=brief,
-            pending_interaction=standoff_pending,
+            pending_interaction=standoff_pending or offer_pending,
             combat_init=combat_init_result,
             ending=EndingInfo(**ending_result) if ending_result else None,
             npc_events=list(self._npc_events),

@@ -212,6 +212,27 @@ class TestProcessTurnReturnsContract:
         assert result.pending_interaction.kind == "standoff"
         assert keeper._standoff_pending is not None, "必须播种 _standoff_pending"
 
+    def test_weapon_offer_emits_pending_interaction(self, monkeypatch):
+        """搜索发现武器：COMPLETED + pending_interaction(kind="weapon_offer")。"""
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from game.messages import TurnInput
+        from game.agents.keeper import Keeper
+        from game.side_effects import SceneWeapon
+        from investigator import Investigator
+        world = ScenarioWorld(DirectedGraph(
+            scenes={"room_a": self._scene()}, events=[]), start_node="room_a")
+        world.set_player(Investigator(name="测试员", age=25, gender="男"))
+        world.scene_weapons["room_a"] = [
+            SceneWeapon(weapon_ref="手枪", scene="room_a", quantity=1)]
+        keeper = Keeper(world)
+        self._stub_llm(keeper, monkeypatch,
+                       parse_results=[[{"type": "search", "text": "搜索四周"}]])
+        result = keeper.process_turn(TurnInput(raw_text="搜索四周"), author=None)
+        assert result.status == TurnStatus.COMPLETED
+        assert result.pending_interaction is not None
+        assert result.pending_interaction.kind == "weapon_offer"
+        assert "手枪" in result.pending_interaction.question
+
     def test_standoff_pending_cleared_at_turn_entry(self, monkeypatch):
         """回合入口必须清理 _standoff_pending，避免陈旧状态泄漏到后续回合。"""
         from scenario_core import DirectedGraph, ScenarioWorld
