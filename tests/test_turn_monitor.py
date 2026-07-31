@@ -79,7 +79,10 @@ class TestTurnMonitorExecuteStep:
 
         assert tm._steps[0].status == "failed"
         assert tm._steps[0].retries == 2
-        world.save_state.assert_called_once()
+        assert "curate" in tm._freeze_message
+        assert "critical error" in tm._freeze_message
+        # freeze 不再自动存档（72e95a2 起），玩家按提示 /load 恢复
+        world.save_state.assert_not_called()
 
     def test_non_critical_returns_none(self):
         sensor = MagicMock()
