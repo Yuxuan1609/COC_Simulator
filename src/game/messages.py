@@ -229,6 +229,7 @@ class EnrichInput:
 
 
 class TurnStatus(Enum):
+    """回合终局状态。"""
     COMPLETED = "completed"
     SUSPENDED = "suspended"
     FROZEN = "frozen"
@@ -244,6 +245,7 @@ class PendingInteraction:
 
 @dataclass
 class EndingInfo:
+    """结局信息。"""
     name: str
     narrative: str
     game_over: bool = True

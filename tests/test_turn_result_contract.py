@@ -50,6 +50,25 @@ class TestTurnResultInvariants:
         r = TurnResult(status=TurnStatus.FROZEN,
                        text="系统异常", frozen_message="系统异常")
         assert r.status == TurnStatus.FROZEN
+        assert r.text == "系统异常"
+        assert r.frozen_message == "系统异常"
+
+    def test_suspended_must_not_carry_brief(self):
+        from game.messages import NarratorBrief, SceneSnapshot
+        brief = NarratorBrief(
+            action_outcomes=[], ambient_changes=[],
+            scene_snapshot=SceneSnapshot(
+                location="房间", description="", exits=[],
+                perceptible_interactions=[], visible_npcs=[]),
+            suggested_emphasis="")
+        with pytest.raises(ValueError):
+            TurnResult(
+                status=TurnStatus.SUSPENDED,
+                text="问题？",
+                brief=brief,
+                pending_interaction=PendingInteraction(
+                    kind="clarify", question="问题？", interaction_id="clarify"),
+            )
 
     def test_diagnostics_defaults(self):
         r = TurnResult(status=TurnStatus.COMPLETED, text="ok")
