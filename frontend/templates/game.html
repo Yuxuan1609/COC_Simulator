@@ -622,6 +622,13 @@
       }
     }
 
+    // Pending interaction question (weapon offer / standoff follow-up) — must be visible
+    if (data.pending_interaction && data.pending_interaction.question) {
+      if (!data.narrative || data.narrative.indexOf(data.pending_interaction.question) === -1) {
+        turnParts.push('<div class="pending-question px-3 py-2 text-sm text-aged-gold border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r">' + escapeHtml(data.pending_interaction.question) + '</div>');
+      }
+    }
+
     // Fallback if nothing
     if (turnParts.length === 0 && data.narrative_html) {
       turnParts.push(data.narrative_html);

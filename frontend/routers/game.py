@@ -317,30 +317,34 @@ async def process_turn(
     _push_progress("narrate", "done")
     _push_progress("complete", "")
 
-    if turn and turn.get("game_frozen"):
+    from dataclasses import asdict
+    from game.messages import TurnStatus
+
+    if turn and turn.status == TurnStatus.FROZEN:
+        frozen_message = turn.narrative or "系统异常"
         return {
             "brief": "",
             "narrative": "",
             "narrative_html": (
                 '<div class="msg-frozen px-4 py-3 text-red-400 border-2 border-red-600 '
-                'bg-[#1a0a0a] rounded">' + (turn.get("frozen_message", "系统异常").replace("\n", "<br>")) + '</div>'
+                'bg-[#1a0a0a] rounded">' + (frozen_message.replace("\n", "<br>")) + '</div>'
             ),
             "combat": None,
             "skill_results": [],
             "game_frozen": True,
-            "frozen_message": turn.get("frozen_message", ""),
+            "frozen_message": frozen_message,
             "game_over": False,
             "ending": None,
             "timestamp": "",
             "player_snapshot": None,
         }
 
-    narrative = turn.get("narrative", "") if turn else ""
-    brief = turn.get("brief", "") if turn else ""
+    narrative = turn.narrative if turn else ""
+    brief = turn.brief if turn else ""
 
     # Combat: if combat_init present, return it to frontend for interactive handling
-    combat_init = turn.get("combat_init") if turn else None
-    combat = turn.get("combat") if turn else None
+    combat_init = turn.combat_init if turn else None
+    combat = turn.combat if turn else None
     combat_init_data = None
     if combat_init and combat_init.enemies and not combat:
         combat_init_data = {
@@ -353,11 +357,13 @@ async def process_turn(
             "player_extra": getattr(combat_init, 'player_extra', ''),
         }
 
-    skill_results = turn.get("skill_results", []) if turn else []
-    game_over = turn.get("game_over", False) if turn else False
-    ending = turn.get("ending") if turn else None
-    timestamp = turn.get("timestamp", "") if turn else ""
-    player_snapshot = turn.get("player_snapshot") if turn else None
+    skill_results = turn.skill_results if turn else []
+    game_over = turn.game_over if turn else False
+    ending = asdict(turn.ending) if turn and turn.ending else None
+    timestamp = turn.timestamp if turn else ""
+    player_snapshot = turn.player_snapshot if turn else None
+    pending_data = asdict(turn.pending_interaction) if turn and turn.pending_interaction else None
+    status = turn.status.value if turn else "completed"
 
     # Serialize PlayerFacingSnapshot to dict
     if player_snapshot and hasattr(player_snapshot, '__dataclass_fields__'):
@@ -391,9 +397,11 @@ async def process_turn(
         )
 
     return {
+        "status": status,
         "brief": brief,
         "narrative": narrative,
         "narrative_html": narrative_html,
+        "pending_interaction": pending_data,
         "combat": combat,
         "combat_init": combat_init_data,
         "skill_results": skill_results,
@@ -875,20 +883,20 @@ async def combat_round(request: Request):
                 "narrative": combat_narrative or "",
                 "is_boss": result.get("is_boss", False),
             }
-            completed = keep.complete_combat_turn(keep._last_player_input, combat_result) if keep._last_player_input else {}
+            completed = keep.complete_combat_turn(keep._last_player_input, combat_result) if keep._last_player_input else None
             completed_brief = ""
             completed_narrative = ""
-            if completed.get("brief"):
+            if completed and completed.brief:
                 try:
                     snap = world.build_snapshot()
                     completed_brief, completed_narrative, _ = narr.narrate(
-                        completed["brief"], snap=snap, user_input=keep._last_player_input)
+                        completed.brief, snap=snap, user_input=keep._last_player_input)
                     from game.turn_logger import TurnLogger
                     from game_loop import _turn_logger as tl
                     if tl:
                         tl.log(
                             player_input=keep._last_player_input,
-                            enrich_result=completed.get("enrich"),
+                            enrich_result=completed.diagnostics.enrich_raw,
                             narrator_brief=completed_brief,
                             narrator_narrative=completed_narrative,
                         )
@@ -924,17 +932,6 @@ async def combat_round(request: Request):
         "game_over": result.get("game_over", False),
         "round": result.get("round", 1),
     }
-
-    # On combat finish, mark boss as completed and clean up enemy manager
-    if result.get("finished") and result.get("outcome") == "win":
-        g = get_game()
-        if g:
-            world = g["keeper"].world
-            boss_id = world.bosses.active_boss_id if world.bosses else None
-            if boss_id:
-                world.get_runtime_state(boss_id).completed = True
-                world.bosses.set_active(None)
-            world.enemies.exit_combat({"outcome": "win"})
 
 
 @router.get("/api/game/npcs", response_class=HTMLResponse)
