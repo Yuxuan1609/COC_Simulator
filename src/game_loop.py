@@ -332,6 +332,13 @@ def run_turn(game: dict, user_input: str,
 
     # SUSPENDED: turn blocked on a question — return early, no narrator/snapshot
     if result.status == TurnStatus.SUSPENDED:
+        if _turn_logger:
+            _turn_logger.log(
+                player_input=user_input,
+                enrich_result=None,
+                narrator_brief="",
+                narrator_narrative=result.text,
+            )
         return PlayerTurnResult(
             status=result.status,
             narrative=result.text,
@@ -373,6 +380,13 @@ def run_turn(game: dict, user_input: str,
     if result.status == TurnStatus.FROZEN:
         narrative_brief = result.frozen_message
         narrative = result.frozen_message
+        if _turn_logger:
+            _turn_logger.log(
+                player_input=user_input,
+                enrich_result=result.diagnostics.enrich_raw,
+                narrator_brief=narrative_brief,
+                narrator_narrative=narrative,
+            )
     elif brief is not None and hasattr(brief, 'scene_snapshot'):
         try:
             snap = world.build_snapshot()

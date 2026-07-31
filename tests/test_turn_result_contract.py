@@ -312,6 +312,70 @@ class TestRunTurnContract:
         assert result.status == TurnStatus.COMPLETED
         assert "对峙化解" in (result.narrative or result.brief)
 
+    def _make_fake_game(self, turn_result):
+        from types import SimpleNamespace
+        fake_keeper = SimpleNamespace(
+            turn_number=1,
+            _weapon_offer=None,
+            _standoff_pending=None,
+            process_turn=lambda ti, author=None: turn_result,
+        )
+        fake_keeper.world = SimpleNamespace(
+            player=None,
+            npcs=None,
+            enemies=None,
+            current_location="room_a",
+            get_current_description=lambda: "",
+            get_possible_exits=lambda: [],
+            clock=SimpleNamespace(to_dict=lambda: {}),
+        )
+        return {"keeper": fake_keeper,
+                "narrator": SimpleNamespace(l1_data=None),
+                "author": None}
+
+    def test_suspended_turn_is_logged(self, monkeypatch, tmp_path):
+        """SUSPENDED 早退回合必须写入 TurnLogger。"""
+        import json as _json
+        from game.turn_logger import TurnLogger
+        from game_loop import run_turn, set_turn_logger
+        set_turn_logger(TurnLogger(log_dir=str(tmp_path)))
+        try:
+            game = self._make_fake_game(TurnResult(
+                status=TurnStatus.SUSPENDED,
+                text="你想检查哪里？",
+                pending_interaction=PendingInteraction(
+                    kind="clarify", question="你想检查哪里？",
+                    interaction_id="clarify"),
+            ))
+            run_turn(game, "看看")
+            files = list(tmp_path.glob("turn_*.json"))
+            assert files, "SUSPENDED 回合必须写入 TurnLogger"
+            entry = _json.loads(files[0].read_text(encoding="utf-8"))
+            assert entry["player_input"] == "看看"
+            assert "你想检查哪里" in entry["narrator"]["narrative"]
+        finally:
+            set_turn_logger(None)
+
+    def test_frozen_turn_is_logged(self, monkeypatch, tmp_path):
+        """FROZEN 回合必须写入 TurnLogger。"""
+        import json as _json
+        from game.turn_logger import TurnLogger
+        from game_loop import run_turn, set_turn_logger
+        set_turn_logger(TurnLogger(log_dir=str(tmp_path)))
+        try:
+            game = self._make_fake_game(TurnResult(
+                status=TurnStatus.FROZEN,
+                text="系统异常（curate 段失败）",
+                frozen_message="系统异常（curate 段失败）",
+            ))
+            run_turn(game, "搜索")
+            files = list(tmp_path.glob("turn_*.json"))
+            assert files, "FROZEN 回合必须写入 TurnLogger"
+            entry = _json.loads(files[0].read_text(encoding="utf-8"))
+            assert "系统异常" in entry["narrator"]["narrative"]
+        finally:
+            set_turn_logger(None)
+
 
 class TestStandoffContinuation:
     def _build_standoff_keeper(self, monkeypatch):
