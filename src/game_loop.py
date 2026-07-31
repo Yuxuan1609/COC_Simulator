@@ -10,7 +10,7 @@ import json
 from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
 from game.messages import (TurnInput, CombatInit, CombatResult, PlayerFacingSnapshot, SkillCheckResult,
-                           TurnStatus, TurnResult, PendingInteraction)
+                           TurnStatus, TurnResult, PendingInteraction, PlayerTurnResult)
 from game.turn_logger import TurnLogger
 from config import WR0_ENABLED
 
@@ -42,7 +42,7 @@ def setup_logging() -> str:
 
 # ── Debug command handler ──
 
-def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None) -> dict | None:
+def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None) -> PlayerTurnResult | None:
     """Handle /spawn and /inject debug commands. Returns None if not a debug command."""
     parts = user_input.strip().split()
     if not parts:
@@ -51,61 +51,65 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
 
     if cmd == "/spawn":
         if len(parts) < 3:
-            return {"brief": "/spawn 用法：/spawn enemy <name> 或 /spawn weapon <name>",
-                    "narrative": "用法错误", "full": "用法错误"}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                    brief="/spawn 用法：/spawn enemy <name> 或 /spawn weapon <name>",
+                    narrative="用法错误")
         sub = parts[1].lower()
         name = " ".join(parts[2:])
         if sub == "enemy":
             if not enemy_lib:
-                return {"brief": "敌人库未加载", "narrative": "错误", "full": "错误"}
+                return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="敌人库未加载", narrative="错误")
             enemy = enemy_lib.get(name)
             if not enemy:
                 available = [e.name for e in enemy_lib.list_all()]
-                return {"brief": f"未知敌人「{name}」。可用：{', '.join(available)}",
-                        "narrative": f"敌人库中没有「{name}」", "full": f"未知敌人：{name}"}
+                return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                        brief=f"未知敌人「{name}」。可用：{', '.join(available)}",
+                        narrative=f"敌人库中没有「{name}」")
             if injector:
                 encounter = injector.runtime_spawn_enemy(name, world.current_location, world)
                 if encounter:
-                    return {"brief": f"[生成敌人] {name} x{encounter['quantity']} 在 {world.current_location}",
-                            "narrative": f"KP从库中释放了{name}！",
-                            "full": f"spawn enemy: {name}"}
-            return {"brief": f"[生成敌人] {name} x1 在 {world.current_location}",
-                    "narrative": f"KP从库中释放了{name}！",
-                    "full": f"spawn enemy: {name}"}
+                    return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                            brief=f"[生成敌人] {name} x{encounter['quantity']} 在 {world.current_location}",
+                            narrative=f"KP从库中释放了{name}！")
+            return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                    brief=f"[生成敌人] {name} x1 在 {world.current_location}",
+                    narrative=f"KP从库中释放了{name}！")
         elif sub == "weapon":
             if not weapon_lib:
-                return {"brief": "武器库未加载", "narrative": "错误", "full": "错误"}
+                return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="武器库未加载", narrative="错误")
             weapon = weapon_lib.get(name)
             if not weapon:
                 available = [w.name for w in weapon_lib.list_all()]
-                return {"brief": f"未知武器「{name}」。可用：{', '.join(available)}",
-                        "narrative": f"武器库中没有「{name}」", "full": f"未知武器：{name}"}
+                return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                        brief=f"未知武器「{name}」。可用：{', '.join(available)}",
+                        narrative=f"武器库中没有「{name}」")
             world.memory.note_item(name)
-            return {"brief": f"[授予武器] {name}",
-                    "narrative": f"你获得了{name}。",
-                    "full": f"spawn weapon: {name}"}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                    brief=f"[授予武器] {name}",
+                    narrative=f"你获得了{name}。")
         else:
-            return {"brief": f"未知子命令「{sub}」。用法：/spawn enemy <name> 或 /spawn weapon <name>",
-                    "narrative": "用法错误", "full": "用法错误"}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                    brief=f"未知子命令「{sub}」。用法：/spawn enemy <name> 或 /spawn weapon <name>",
+                    narrative="用法错误")
 
     if cmd == "/inject":
         if len(parts) < 2:
             if injector:
                 s = injector.status
-                return {"brief": f"离线注入：{'开' if s['offline_enabled'] else '关'} | 运行时注入：{'开' if s['runtime_enabled'] else '关'} | 武器：{s['weapons_loaded']} | 敌人：{s['enemies_loaded']}",
-                        "narrative": f"注入状态：武器{s['weapons_loaded']}件，敌人{s['enemies_loaded']}个",
-                        "full": str(s)}
-            return {"brief": "注入器未初始化", "narrative": "错误", "full": "错误"}
+                return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                        brief=f"离线注入：{'开' if s['offline_enabled'] else '关'} | 运行时注入：{'开' if s['runtime_enabled'] else '关'} | 武器：{s['weapons_loaded']} | 敌人：{s['enemies_loaded']}",
+                        narrative=f"注入状态：武器{s['weapons_loaded']}件，敌人{s['enemies_loaded']}个")
+            return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="注入器未初始化", narrative="错误")
         sub = parts[1].lower()
         if sub == "toggle" and injector:
             injector.runtime_enabled = not injector.runtime_enabled
             state = "开启" if injector.runtime_enabled else "关闭"
-            return {"brief": f"运行时注入已{state}", "narrative": f"运行时注入已{state}",
-                    "full": f"inject toggle: {state}"}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED,
+                    brief=f"运行时注入已{state}", narrative=f"运行时注入已{state}")
         elif sub == "status" and injector:
             s = injector.status
-            return {"brief": str(s), "narrative": str(s), "full": str(s)}
-        return {"brief": "用法：/inject [toggle|status]", "narrative": "用法错误", "full": "用法错误"}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED, brief=str(s), narrative=str(s))
+        return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="用法：/inject [toggle|status]", narrative="用法错误")
 
     if cmd == "/health":
         if keeper and hasattr(keeper, 'turn_monitor') and keeper.turn_monitor:
@@ -125,7 +129,7 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
                                + (f" (retry x{s['retries']})" if s['retries'] else ""))
             frozen_str = "FROZEN" if turn["frozen"] else "OK"
             lines.append(f"Turn Status: {frozen_str}")
-            return {"brief": "\n".join(lines), "narrative": "\n".join(lines), "full": "\n".join(lines)}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="\n".join(lines), narrative="\n".join(lines))
         from monitor.health import PipelineHealth
         from llm import get_sensor
         sensor = get_sensor()
@@ -138,8 +142,8 @@ def _handle_spawn_command(user_input: str, world, weapon_lib=None, enemy_lib=Non
             for agent, stats in snap.get("agents", {}).items():
                 lines.append(f"  {agent}: {stats['calls']} calls, {stats['failures']} fail, "
                            f"{stats['avg_ms']}ms avg, {stats['slow_rate']:.0%} slow")
-            return {"brief": "\n".join(lines), "narrative": "\n".join(lines), "full": "\n".join(lines)}
-        return {"brief": "Monitor not initialized.", "narrative": "监控未初始化", "full": "监控未初始化"}
+            return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="\n".join(lines), narrative="\n".join(lines))
+        return PlayerTurnResult(status=TurnStatus.COMPLETED, brief="Monitor not initialized.", narrative="监控未初始化")
 
     return None
 
@@ -297,8 +301,8 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
 
 def run_turn(game: dict, user_input: str,
              weapon_lib=None, enemy_lib=None, injector=None,
-             action_type: str = "", action_target: str = "") -> dict:
-    """Execute one turn. Returns {"brief": str, "narrative": str, "full": str}."""
+             action_type: str = "", action_target: str = "") -> PlayerTurnResult:
+    """Execute one turn. Returns a PlayerTurnResult."""
     keeper = game["keeper"]
     from prompts import set_current_round
     set_current_round(keeper.turn_number)
@@ -314,26 +318,45 @@ def run_turn(game: dict, user_input: str,
         if cmd_result:
             return cmd_result
 
-    turn_input = TurnInput(
-        raw_text=user_input,
-        player=world.player,
-        action_type=action_type,
-        action_target=action_target,
-    )
-    result = keeper.process_turn(turn_input, author=author)
-
-    brief = result["brief"]
-    if hasattr(brief, 'action_outcomes'):
-        display_brief = "\n".join(o.message for o in brief.action_outcomes)
+    # Pending standoff: route input to resolver instead of normal turn
+    if getattr(keeper, "_standoff_pending", None):
+        result = continue_standoff(keeper, user_input)
     else:
-        display_brief = str(brief) if brief else ""
+        turn_input = TurnInput(
+            raw_text=user_input,
+            player=world.player,
+            action_type=action_type,
+            action_target=action_target,
+        )
+        result = keeper.process_turn(turn_input, author=author)
+
+    # SUSPENDED: turn blocked on a question — return early, no narrator/snapshot
+    if result.status == TurnStatus.SUSPENDED:
+        return PlayerTurnResult(
+            status=result.status,
+            narrative=result.text,
+            pending_interaction=result.pending_interaction,
+            timestamp=datetime.now().strftime("%H:%M:%S"),
+            diagnostics={
+                "time_agent": result.diagnostics.time_agent,
+                "npc_events": result.npc_events,
+                "npcs_visible": {"in_scene": [], "following": []},
+            },
+        )
+
+    brief = result.brief
+    if brief is not None and hasattr(brief, "action_outcomes"):
+        display_brief = brief.enriched_summary or "\n".join(
+            o.message for o in brief.action_outcomes)
+    else:
+        display_brief = result.text
 
     # Combat entry: caller handles combat (interactive CLI or auto frontend)
-    combat_init = result.get("combat_init")
+    combat_init = result.combat_init
 
     # Extract skill check results from outcomes for player display
     skill_results = []
-    if hasattr(brief, 'action_outcomes'):
+    if brief is not None and hasattr(brief, 'action_outcomes'):
         for o in brief.action_outcomes:
             if o.skill_tier and o.entity_id:
                 entry = {
@@ -347,7 +370,10 @@ def run_turn(game: dict, user_input: str,
                     entry["enhancement"] = o.enhancement
                 skill_results.append(entry)
 
-    if hasattr(brief, 'scene_snapshot'):
+    if result.status == TurnStatus.FROZEN:
+        narrative_brief = result.frozen_message
+        narrative = result.frozen_message
+    elif brief is not None and hasattr(brief, 'scene_snapshot'):
         try:
             snap = world.build_snapshot()
             narrative_brief, narrative, scene_update = narrator.narrate(
@@ -370,48 +396,35 @@ def run_turn(game: dict, user_input: str,
             if _turn_logger:
                 _turn_logger.log(
                     player_input=user_input,
-                    enrich_result=result.get("enrich"),
+                    enrich_result=result.diagnostics.enrich_raw,
                     narrator_brief=narrative_brief,
                     narrator_narrative=narrative,
                 )
-        except Exception as e:
+        except Exception:
             narrative_brief = display_brief or "（处理中）"
             narrative = "（叙事生成暂时不可用，但你的行动结果仍然有效。请继续输入下一步行动。）"
-            scene_update = ""
     else:
         # Keeper returned early with plain-text brief/narrative (boss trigger, weapon pickup, combat, etc.)
-        narrative_brief = display_brief or result.get("narrative", "") or "（处理中）"
-        narrative = result.get("narrative", "") or ""
-        scene_update = ""
+        narrative_brief = display_brief or "（处理中）"
+        narrative = result.text or ""
         if _turn_logger:
             _turn_logger.log(
                 player_input=user_input,
-                enrich_result=result.get("enrich"),
+                enrich_result=result.diagnostics.enrich_raw,
                 narrator_brief=narrative_brief,
                 narrator_narrative=narrative,
             )
 
     # Surface pending weapon offer to player (narrator may omit the pickup prompt)
-    if keeper._weapon_offer:
-        wo = keeper._weapon_offer
-        names = "、".join(w["weapon_ref"] for w in wo)
-        wp_text = f"（你发现了{names}。是否拾取？（是/否））"
-        narrative = (narrative or "") + ("\n\n" if narrative else "") + wp_text
-        if not narrative_brief:
-            narrative_brief = wp_text
-
-    ending = result.get("ending")  # {name, narrative, game_over} or None
-    standoff = result.get("standoff_prompt")
-    npc_events_out = result.get("npc_events", [])
-
-    full_text = narrative_brief or ""
-    if npc_events_out:
-        full_text += f"\n[NPC] {'；'.join(npc_events_out)}"
-    full_text += f"\n\n\n{narrative}"
+    if result.pending_interaction and result.pending_interaction.kind == "weapon_offer":
+        wp_text = result.pending_interaction.question
+        if wp_text not in (narrative or ""):
+            narrative = (narrative or "") + ("\n\n" if narrative else "") + wp_text
+            if not narrative_brief:
+                narrative_brief = wp_text
 
     # NPC visible output
     npcs_visible = {"in_scene": [], "following": []}
-    npc_events_out = result.get("npc_events", [])
     if world.npcs:
         in_scene = world.npcs.get_in_scene(world.current_location)
         npcs_visible["in_scene"] = [n.name for n in in_scene if n.state not in ("dead", "left")]
@@ -421,7 +434,7 @@ def run_turn(game: dict, user_input: str,
     import re as _re
     scene_name = world.current_location
     scene_description = ""
-    if hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
+    if brief is not None and hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
         scene_description = brief.scene_snapshot.description
     # Prefer L1 immersive description over raw L2 node description
     narrator = game["narrator"]
@@ -436,7 +449,7 @@ def run_turn(game: dict, user_input: str,
 
     # Build NPC list from Curator snapshot + enrich with L1 appearance data
     scene_npcs = []
-    if hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
+    if brief is not None and hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
         scene_npcs = [
             {"name": n.get("name", ""), "brief": n.get("brief", ""), "demeanor": n.get("demeanor", "")}
             for n in brief.scene_snapshot.visible_npcs
@@ -488,23 +501,24 @@ def run_turn(game: dict, user_input: str,
         investigator=world.player,
     )
 
-    return {
-        "brief": narrative_brief,
-        "narrative": narrative,
-        "full": full_text,
-        "player_snapshot": player_snapshot,
-        "skill_results": skill_results,
-        "combat": None,   # combat result is filled by caller after combat resolves
-        "combat_init": combat_init,   # caller handles combat execution
-        "standoff_prompt": standoff,
-        "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "ending": ending,
-        "scene_update": scene_update,
-        "game_over": bool(ending and ending.get("game_over")),
-        "time_agent": result.get("time_agent"),
-        "npcs_visible": npcs_visible,
-        "npc_events": npc_events_out,
-    }
+    return PlayerTurnResult(
+        status=result.status,
+        brief=narrative_brief,
+        narrative=narrative,
+        pending_interaction=result.pending_interaction,
+        player_snapshot=player_snapshot,
+        skill_results=skill_results,
+        combat=None,   # combat result is filled by caller after combat resolves
+        combat_init=combat_init,
+        ending=result.ending,
+        game_over=bool(result.ending and result.ending.game_over),
+        timestamp=datetime.now().strftime("%H:%M:%S"),
+        diagnostics={
+            "time_agent": result.diagnostics.time_agent,
+            "npc_events": result.npc_events,
+            "npcs_visible": npcs_visible,
+        },
+    )
 
 
 # ── Save / Load ──

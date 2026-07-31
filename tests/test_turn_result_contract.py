@@ -227,6 +227,35 @@ class TestProcessTurnReturnsContract:
         assert keeper._standoff_pending is None
 
 
+class TestRunTurnContract:
+    def test_run_turn_returns_player_turn_result(self, monkeypatch):
+        """run_turn 产出 PlayerTurnResult；SUSPENDED 透传 pending_interaction。"""
+        from types import SimpleNamespace
+        from game_loop import run_turn
+
+        fake_keeper = SimpleNamespace(
+            turn_number=1,
+            _weapon_offer=None,
+            _standoff_pending=None,
+            process_turn=lambda ti, author=None: TurnResult(
+                status=TurnStatus.SUSPENDED,
+                text="你想检查哪里？",
+                pending_interaction=PendingInteraction(
+                    kind="clarify", question="你想检查哪里？",
+                    interaction_id="clarify"),
+            ),
+        )
+        fake_world = SimpleNamespace(player=None)
+        fake_keeper.world = fake_world
+        game = {"keeper": fake_keeper, "narrator": SimpleNamespace(),
+                "author": None}
+        result = run_turn(game, "看看")
+        assert isinstance(result, PlayerTurnResult)
+        assert result.status == TurnStatus.SUSPENDED
+        assert result.pending_interaction.kind == "clarify"
+        assert result.narrative == "你想检查哪里？"
+
+
 class TestStandoffContinuation:
     def _build_standoff_keeper(self, monkeypatch):
         """世界+keeper：room_a 有一只 avoidable 深潜者，process_turn 已产生 standoff。"""
