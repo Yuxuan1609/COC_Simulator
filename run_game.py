@@ -12,6 +12,7 @@ from datetime import datetime
 sys.path.insert(0, "src")
 
 from game_loop import init_game, run_turn, setup_logging
+from game.messages import TurnStatus
 
 _log_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 _log_dir = setup_logging()
@@ -75,11 +76,11 @@ def run_game(character_path: str = None):
     print(_scene_text(world))
 
     # 开场
-    initial = run_turn(game, "（游戏开始）")
-    ts = initial.get("timestamp", "")
+    initial = run_turn(game, "（游戏开始）", weapon_lib, enemy_lib, injector)
+    ts = initial.timestamp
     if ts:
         print(f"[{ts}]")
-    _print_turn_output(initial.get("player_snapshot"), initial["brief"], initial["narrative"])
+    _print_turn_output(initial.player_snapshot, initial.brief, initial.narrative)
 
     # 主循环
     while True:
@@ -153,37 +154,47 @@ def run_game(character_path: str = None):
             continue
 
         # 正常回合
-        result = run_turn(game, cmd)
+        result = run_turn(game, cmd, weapon_lib, enemy_lib, injector)
 
         # 战斗：进入交互式子循环
-        combat_init = result.get("combat_init")
+        combat_init = result.combat_init
         if combat_init and combat_init.enemies:
             combat_result = _run_interactive_combat(game, combat_init)
-            result["combat"] = combat_result
+            result.combat = combat_result
             if combat_result and combat_result.get("outcome"):
                 narrative_text = combat_result.get("narrative", "")
                 outcome = combat_result.get("outcome", "?")
                 labels = {"win": "你战胜了敌人。", "loss": "你被击败了…", "draw": "战斗陷入僵局。", "flee": "你成功逃离了战斗。"}
                 summary = narrative_text or labels.get(outcome, f"战斗结束({outcome})。")
-                result["narrative"] = (result.get("narrative", "") or "") + f"\n\n---\n⚔ {summary}"
-                result["brief"] = (result.get("brief", "") or "") + f" [战斗: {outcome}]"
+                result.narrative = (result.narrative or "") + f"\n\n---\n⚔ {summary}"
+                result.brief = (result.brief or "") + f" [战斗: {outcome}]"
                 # 被普通敌人击败 → 游戏结束
                 if combat_result.get("game_over"):
-                    result["game_over"] = True
+                    result.game_over = True
                     print(f"\n💀 你被击败了…游戏结束。")
                     break
 
-        ending = result.get("ending")
+        ending = result.ending
         if ending:
-            print(f"\n【结局触发】{ending['name']}：{ending['narrative']}")
+            print(f"\n【结局触发】{ending.name}：{ending.narrative}")
 
-        ts = result.get("timestamp", "")
+        ts = result.timestamp
         if ts:
             print(f"[{ts}]")
 
-        _print_turn_output(result.get("player_snapshot"), result["brief"], result["narrative"])
+        _print_turn_output(result.player_snapshot, result.brief, result.narrative)
 
-        if ending:
+        # 挂起问题（chain standoff / clarify）若未含在叙事中则补打印
+        if result.pending_interaction:
+            question = result.pending_interaction.question
+            if question and question not in (result.narrative or ""):
+                print(f"\n❓ {question}")
+
+        # SUSPENDED：回合被问题阻塞，继续循环（下一输入由 run_turn 内部分发）
+        if result.status == TurnStatus.SUSPENDED:
+            continue
+
+        if result.game_over or ending:
             print("[info] 游戏结束。")
             break
 
