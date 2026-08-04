@@ -251,3 +251,40 @@
 4. ~~SUSPENDED/FROZEN 回合不进 TurnLogger~~ ✅（ecba8aa 已修）
 5. **重构（倒数第二）**：中断机制（resolver 注册表）、战斗完成契约统一（B5）、process_turn 拆分（C1）。~~keeper 发 weapon_offer PendingInteraction~~ ✅（de8fefd 已修）
 6. **存读档 3 个 🔴 bug（最后）**：EnemyManager.from_dict 无 library 静默吞异常致 enemies 变 None；两条读档路径不一致（run_game 替换 world 但 judge/curator 持旧引用）；`_npc_injected_at_ids` 不入档致重复注入。
+
+---
+
+## 工作汇总（2026-08-04）
+
+### 已完成
+
+**① TurnResult 契约迁移**（a2e503b→baeb786，13 commits，详见 `docs/superpowers/specs/2026-07-31-turnresult-contract-design.md`）
+- process_turn（7 种 dict）/run_turn（14 键 dict）→ 双层 dataclass 契约（TurnResult/PlayerTurnResult + TurnStatus 枚举 + PendingInteraction）
+- SUSPENDED 仅用于 clarify（回合阻塞）；offer/standoff = COMPLETED + pending_interaction
+- enrich 合并叙事与 outcome 事实分离（NarratorBrief.enriched_summary）
+- 顺带修复：`_standoff_pending` 从未播种（standoff 曾生产不可达）、standoff 战斗叙事丢失、/api/game/init 吞异常致开场白为空、前端死代码隐藏 exit_combat 双重调用
+
+**② 修复批**（1872419/de8fefd/1e6edfd/ecba8aa/d2e4fdd）
+- run_game.py import 恢复（CLI 可运行）、weapon_offer 契约对称、turn_monitor 断言、SUSPENDED/FROZEN 记 TurnLogger、escalation 基建修复（见上队列 2）
+
+**③ 分层 E2E 测试体系**（spec：`docs/superpowers/specs/2026-07-31-e2e-test-system-design.md`）
+- 步骤 1（2bb6c20）：确定性 E2E 7 场景（offer/clarify/战斗/移动/结局/NPC/多回合序列），`tests/e2e/`，零 API，默认套件一部分
+- 步骤 2（af3048c）：真实 LLM 固定输入 S1-S9，combat_entry/standoff_match 单点 stub + 其余真实，`real_llm` marker 默认排除，实测 9/9（172s）
+- 步骤 3（9ccb274/8bff62c）：testbed 专用测试模块 + 场景化 llm_player 机制（goal 注入/播种 hook/谓词判定/runner + LLM judge 三层判定）+ pilot 场景 standoff_avoid（实跑 8 回合 standoff 有机触发，judge PASS 带证据）
+- 顺带修复 2 个真缺陷：combat_entry prompt 语义被 LLM 反向理解致 standoff 触发不可达（prompts.py:931）；llm_player 硬编码 start_node 改为读 l3 start_scene
+
+**测试现状**：默认套件 68 passed / 14 deselected（real_llm）；real_llm 套件 = escalation 5 + scenarios 9（on-demand，`pytest -m real_llm`）；场景 runner 独立 CLI（`tests/e2e/run_scenario.py`）
+
+### 待办（按优先级）
+
+1. **场景提示词打磨**：S-A pilot 精化 + S-B npc_befriend（京山人吉@常暗之厢 or testbed 乘务员）+ S-C boss_fight（吞噬之口@7号车厢）的 goal/judging 文本——与用户协作
+2. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
+3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
+4. **存读档 3 个 🔴 bug（最后）**：见上队列 6
+
+### 已知观察（非阻塞）
+
+- judge 缺机器事实约束时可能捏造证据（已用谓词结果注入缓解）；rubric 覆盖谓词外事件时仍有空间——打磨 rubric 时注意
+- `test_combat_smoke.py` 疑似骰子依赖 flaky（一次 >5min 长循环），未深究
+- `weapon_picked_up` 谓词以首回合为基线，首回合拾取为盲区（README 已注明）
+- frontend/ 本轮已随契约迁移更新（pending_interaction 展示、开场白修复），但按约定前端不排期深入测试
