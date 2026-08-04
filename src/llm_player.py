@@ -19,7 +19,7 @@ from investigator import load_investigator
 from llm_player_prompts import (
     PLAYER_SYSTEM, PLAYER_USER_TEMPLATE,
     MEMORY_COMPRESS_SYSTEM, MEMORY_COMPRESS_TEMPLATE,
-    TEST_MODE_STRESS, TEST_MODE_EXPLORATION, TEST_MODE_ROLEPLAY,
+    TEST_MODE_STRESS, TEST_MODE_EXPLORATION, TEST_MODE_ROLEPLAY, TEST_MODE_GOAL,
 )
 
 
@@ -79,6 +79,8 @@ def build_player_prompt(
         mode_section = TEST_MODE_STRESS.format(player_strategy=strategy)
     elif test_mode == "roleplay":
         mode_section = TEST_MODE_ROLEPLAY
+    elif test_mode == "goal":
+        mode_section = TEST_MODE_GOAL.format(goal=profile.get("goal", ""))
     else:
         mode_section = TEST_MODE_EXPLORATION
 
@@ -110,8 +112,29 @@ def compress_memory(short_history: list[str]) -> str:
         return "（记忆压缩失败）"
 
 
+def _eval_success_checks(names: list[str], entries: list[dict]) -> bool:
+    """按声明式谓词名评估是否全部满足（谓词注册表在 tests/e2e/scenario_predicates.py）。"""
+    if not names:
+        return False
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "scenario_predicates",
+            PROJECT_ROOT / "tests" / "e2e" / "scenario_predicates.py",
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        preds = mod.PREDICATES
+    except Exception:
+        return False
+    if any(n not in preds for n in names):
+        return False
+    return all(preds[n](entries) for n in names)
+
+
 def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: str = None,
-                   max_turns: int = None, max_duration_s: int = None):
+                   max_turns: int = None, max_duration_s: int = None,
+                   post_init_hook=None, log_dir: str = None):
     profile = load_profile(profile_path)
     pc = profile["player_config"]
     if module_name is None:
@@ -125,11 +148,13 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     l2_name = "l2_keeper_test.json" if (module_dir / "l2_keeper_test.json").exists() else "l2_keeper.json"
     l1_name = "l1_player.json"
     l3_name = "l3_designer.json"
+    with open(module_dir / l3_name, "r", encoding="utf-8") as f:
+        start_node = json.load(f).get("start_scene", "6号车厢")
     game = init_game(
         l2_path=str(module_dir / l2_name),
         l1_path=str(module_dir / l1_name),
         l3_path=str(module_dir / l3_name),
-        start_node="6号车厢",
+        start_node=start_node,
     )
 
     # Ensure a player is always set (default investigator if none provided)
@@ -161,8 +186,13 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         if char_path.exists():
             game["keeper"].world.set_player(load_investigator(str(char_path)))
 
+    # 场景 runner 的命令式播种入口（spawn 敌人 / 设置技能等模块数据表达不了的种子）
+    if post_init_hook is not None:
+        post_init_hook(game)
+
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = str(PROJECT_ROOT / "logs" / "llm_player" / ts)
+    if log_dir is None:
+        log_dir = str(PROJECT_ROOT / "logs" / "llm_player" / ts)
     import os as _os
     _os.makedirs(log_dir, exist_ok=True)
     from llm import set_llm_log_dir
@@ -190,11 +220,14 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     long_memory = ""
     compress_interval = pc["memory_compress_interval"]
     summary_log: list[dict] = []
+    success_checks = list(profile.get("success_checks", []))
+    goal_achieved = False
+    player_model = pc.get("model") or LLM_FLASH_MODEL
 
     player_name = game["keeper"].world.player.name
 
     print(f"LLM Player — {module_name}")
-    print(f"  Player: {player_name}, Model: {LLM_FLASH_MODEL}")
+    print(f"  Player: {player_name}, Model: {player_model}")
     print(f"  Strategy: {profile.get('player_strategy', [])}")
     print(f"  Max turns: {max_turns}, Max duration: {max_duration_s}s")
     print(f"  Log: {log_dir}")
@@ -227,7 +260,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         try:
             response = call_deepseek(
                 user, json_mode=True, system=system,
-                model=LLM_FLASH_MODEL, reasoning_effort=RE_INTENT_DETECTOR,
+                model=player_model, reasoning_effort=RE_INTENT_DETECTOR,
                 fallback_schema={"action": "环顾四周", "reasoning": "fallback"},
                 max_retries=3, timeout=300,
             )
@@ -269,6 +302,15 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             "time_of_day": clock.time_of_day,
             "game_time_minutes": clock.game_time,
         }
+        # 场景谓词所需的世界快照字段（供 success_checks / runner predicates 判定）
+        world = game["keeper"].world
+        try:
+            p_snap = world.build_snapshot().get("player", {})
+            weapons_now = [str(w) for w in p_snap.get("weapons", [])]
+            hp_now = p_snap.get("hp")
+            player_alive = (hp_now is None) or (int(hp_now) > 0)
+        except Exception:
+            weapons_now, player_alive = [], True
         summary_log.append({
             "turn": turn + 1, "input": action, "reasoning": reasoning,
             "brief": brief, "narrative": narrative,
@@ -276,6 +318,10 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             "combat": combat,
             "npc_events": npc_events,
             "npcs_visible": result.diagnostics.get("npcs_visible", {"in_scene": [], "following": []}),
+            "pending": result.pending_interaction.kind if result.pending_interaction else None,
+            "location": world.current_location,
+            "weapons": weapons_now,
+            "player_alive": player_alive,
             "ending": ending.name if ending else None,
             "elapsed_s": round(dt, 1),
             "time_state": time_state,
@@ -290,6 +336,12 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             print(f"  Game Over: {ending.name}")
             break
 
+        # goal 模式：success_checks 全部满足则提前终止
+        if success_checks and _eval_success_checks(success_checks, summary_log):
+            goal_achieved = True
+            print(f"  Goal achieved at turn {turn+1} ({success_checks})")
+            break
+
         if (turn + 1) % compress_interval == 0:
             before_compress = list(short_history)
             long_memory = compress_memory(short_history)
@@ -301,17 +353,21 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         turn += 1
 
     total_elapsed = time.perf_counter() - t0
+    summary = {
+        "module": module_name, "player": player_name,
+        "turns": len(summary_log), "total_elapsed_s": round(total_elapsed, 1),
+        "game_over": summary_log[-1].get("ending") if summary_log else None,
+        "goal_achieved": goal_achieved,
+        "profile": profile,
+        "turns_detail": summary_log,
+    }
     with open(os.path.join(log_dir, "_summary.json"), "w", encoding="utf-8") as f:
-        json.dump({
-            "module": module_name, "player": player_name,
-            "turns": len(summary_log), "total_elapsed_s": round(total_elapsed, 1),
-            "game_over": summary_log[-1].get("ending") if summary_log else None,
-            "profile": profile,
-            "turns_detail": summary_log,
-        }, f, ensure_ascii=False, indent=2)
+        json.dump(summary, f, ensure_ascii=False, indent=2)
 
     print(f"\nDone. {len(summary_log)} turns, {total_elapsed:.0f}s")
     print(f"Log: {log_dir}")
+
+    return {"log_dir": log_dir, "summary": summary, "goal_achieved": goal_achieved}
 
 
 if __name__ == "__main__":

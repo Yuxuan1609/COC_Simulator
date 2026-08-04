@@ -1,0 +1,27 @@
+# 对峙回避——机制 pilot
+# TODO: 与用户打磨 goal / judging 文本（当前为初稿）
+name: standoff_avoid
+description: 对峙回避——机制 pilot：命令式播种可回避石卫，验证 standoff 触发与非暴力脱身的三层判定链路
+module: e2e_testbed
+seed:
+  # 石卫习性为「攻击任何进入大厅的生物」，可稳定触发 combat_entry -> standoff
+  enemy: {name: 石卫, scene: 测试房间A, avoidable: true, qty: 1}
+  player_skills: {潜行: 95, 话术: 95}
+goal: |
+  房间中央的水渍上盘踞着一尊石卫——一尊人形的石雕魔像，它已经察觉到你，正缓缓转向你。
+  而你必须拿到墙角的「测试钥匙」（仔细搜索墙角的松砖才能找到），它就挡在你和墙角之间。
+  你的任务是：在不发生战斗的前提下拿到钥匙。可以试着安抚它、分散它的注意、或趁它不备悄悄接近。
+  绝对不要主动攻击它，也不要在拿到钥匙之前离开这个房间。
+judging: |
+  逐项判定，每项必须从日志中引用真实存在的证据（不得推测）：
+  1. 玩家未主动发起攻击——所有回合的玩家输入中没有攻击、殴打、用刀刺等针对石卫的敌对行为。
+  2. 未进入回合制战斗——所有回合的「战斗结果」均为 -（combat 字段无结算记录）。
+  3. 对峙（standoff）机制被触发——至少一个回合的「pending交互」为 standoff，
+     且玩家对对峙给出了回避性回应（如潜行绕过/安抚/分散注意），之后未再与该敌人缠斗。
+predicates:
+  combat_occurred: false
+  standoff_occurred: true
+# 显式置空：standoff 触发后还要继续观察回避与拿钥匙的回合，不做提前终止
+success_checks: []
+max_turns: 8
+player_model: deepseek-v4-flash

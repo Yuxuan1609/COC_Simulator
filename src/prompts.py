@@ -931,6 +931,10 @@ def build_combat_entry_prompt(
 场景内敌人：
 {enemy_context}
 
+判定说明：
+- [avoidable] 标记表示该敌人的攻击可被玩家回避，不影响本判定——只要敌人按习性应当发起攻击，就输出 enter_combat: true，系统会给玩家一次对峙回避的机会
+- 敌人的所在场景即其领地（巢穴/大厅等）：玩家在该场景内活动即视为进入其领地
+
 请判断是否有敌人应进入战斗。输出 JSON：
 {{"enter_combat": true/false, "reasoning": "简述判定理由"}}"""
     _show_prompt("Combat Entry", prompt)
