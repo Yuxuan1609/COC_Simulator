@@ -277,6 +277,7 @@
 
 ### 待办（按优先级）
 
+0. **前端（2026-08-04 拍板：留在现栈 + 优化/部分重构）**：不换框架（FastAPI+Jinja+htmx+Tailwind 保留；NiceGUI/Reflex/React 均否决）。重构方向：抽 JS 出 game.html（1206 行内联）为 static/js 模块、htmx 接管面板类更新、Alpine.js 补局部交互。等用户手动测试反馈后排期
 1. **场景提示词打磨**：S-A pilot 精化 + S-B npc_befriend（京山人吉@常暗之厢 or testbed 乘务员）+ S-C boss_fight（吞噬之口@7号车厢）的 goal/judging 文本——与用户协作
 2. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
 3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
