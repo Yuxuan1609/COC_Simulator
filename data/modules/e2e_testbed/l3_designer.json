@@ -1,0 +1,72 @@
+{
+  "start_scene": "测试房间A",
+  "module_meta": {
+    "title": "E2E 测试平台",
+    "author": "testbed",
+    "era": "现代",
+    "theme": "机制测试",
+    "expected_duration": "10分钟",
+    "player_count": 1
+  },
+  "world_rules": [
+    {
+      "id": "WR_T1",
+      "name": "测试箱庭",
+      "rule": "这是一个为自动化测试而存在的封闭箱庭空间，只有测试房间A与测试房间B两个房间，不存在其他出口。",
+      "scope": "整个模组空间。",
+      "is_absolute": "绝对。玩家无法离开这两个房间构成的空间。"
+    }
+  ],
+  "scene_intents": {
+    "测试房间A": {
+      "purpose": "起始场景，提供搜索交互、场景武器、NPC 对话与氛围 auto_trigger 的基础验证点。",
+      "key_threat": "无直接威胁；可被场景种子命令式播种敌人。",
+      "notes": "测试用，信息密度刻意压低。"
+    },
+    "测试房间B": {
+      "purpose": "Boss 房间，验证 boss_encounter 装载与触发通路。",
+      "key_threat": "吞噬之口（测试遭遇）。",
+      "notes": "默认空旷，仅承载 Boss 遭遇。"
+    }
+  },
+  "ending_conditions": [
+    {
+      "id": "END_TEST",
+      "name": "测试结局",
+      "condition": "玩家在测试房间A对墙低语「结束测试」，触发 IT_END 交互。",
+      "narrative": "墙上的符号逐一亮起又熄灭，意识被温柔抽离——测试结局触发成功，游戏结束。"
+    }
+  ],
+  "tone_constraints": {
+    "genre": "克苏鲁恐怖（测试箱庭）",
+    "forbidden": [
+      "出现两个房间之外的新场景",
+      "轻松诙谐的现代梗"
+    ],
+    "recommended": [
+      "压抑而安静的未知感",
+      "符号、盐腥味、缓慢呼吸声等可复用的氛围元素"
+    ],
+    "narrative_style": "简洁、压抑的克苏鲁式氛围描写，服务于机制验证而非复杂叙事。"
+  },
+  "characters": [
+    {
+      "id": "NPC_T1",
+      "name": "测试乘务员",
+      "behavior": "神情恍惚的乘务员，掌握「测试钥匙」藏在松砖下的情报。行为逻辑：被动应答，被问到钥匙或出路时透露情报；信任建立后可跟随。叙事作用：验证 NPC 对话、情报授予与跟随机制。"
+    }
+  ],
+  "driving_force": "测试箱庭本身即是驱动力：一个为验证系统机制而被临时编织出的梦境碎片，玩家在其中的每个动作都在为测试提供数据。",
+  "narrative_lines": [
+    {
+      "name": "测试箱庭的探索",
+      "outline": "起：玩家在测试房间A醒来，氛围 auto_trigger 铺陈环境。承：搜索房间发现测试钥匙、拾取小刀、与乘务员交谈。转：推开石门进入测试房间B，直面 Boss 遭遇。合：对墙低语「结束测试」触发测试结局。关键转折点：无——本模组服务于机制验证。",
+      "key_scenes": [
+        "测试房间A",
+        "测试房间B"
+      ],
+      "type": "main"
+    }
+  ],
+  "time_pressure": null
+}

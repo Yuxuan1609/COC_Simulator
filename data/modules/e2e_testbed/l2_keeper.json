@@ -1,0 +1,162 @@
+{
+  "scenes": {
+    "测试房间A": {
+      "interactions": [
+        {
+          "id": "IT_SEARCH",
+          "scene": "测试房间A",
+          "type": "侦查",
+          "name": "仔细搜索房间",
+          "requirement": "",
+          "trigger": "玩家仔细搜索测试房间A时",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你翻找了一阵，只摸到一手灰尘，什么也没发现。",
+            "on_regular": "你在墙角的松砖下摸到了一把锈迹斑斑的「测试钥匙」，钥匙柄上刻着看不懂的符号。",
+            "on_hard": "你迅速发现了墙角松砖下的「测试钥匙」，并注意到砖面上的刻痕似乎是某种计数符号。",
+            "on_extreme": "你不仅找到了「测试钥匙」，还从刻痕中读出一段警告：不要吃下房间里任何发光的东西。"
+          },
+          "difficulty": "regular",
+          "time_condition": []
+        },
+        {
+          "id": "IT_END",
+          "scene": "测试房间A",
+          "type": "无",
+          "name": "对墙低语触发测试结局",
+          "requirement": "",
+          "trigger": "玩家对着刻有符号的墙壁低声说出「结束测试」时",
+          "result": "##END_END_TEST:测试结局触发## 墙壁上的符号逐一亮起，又逐一熄灭。你感到意识被温柔地抽离——测试结束了。",
+          "side_effects": [],
+          "difficulty": "",
+          "time_condition": []
+        }
+      ],
+      "auto_triggers": [
+        {
+          "id": "AT_ATMO",
+          "type": "无",
+          "name": "测试房间A氛围",
+          "requirement": "",
+          "trigger": "玩家在游戏开始时或首次进入测试房间A时",
+          "result": "这是一间为测试而生的石室。空气里有淡淡的盐腥味，墙上的符号在烛光中若隐若现，仿佛随时会改变形状。",
+          "side_effects": [],
+          "graded_result": null,
+          "difficulty": "None",
+          "scene": "测试房间A",
+          "time_condition": []
+        }
+      ],
+      "encounters": [],
+      "scene_weapons": [
+        {
+          "weapon_ref": "小刀",
+          "scene": "测试房间A",
+          "quantity": 1
+        }
+      ],
+      "from_here": [
+        {
+          "target": "测试房间B",
+          "method": "推开石门步行进入",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "测试房间B",
+          "method": "推开石门步行返回",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "一间不大的石室，墙角堆着几块松动的砖，一支蜡烛固定在墙龛里，火光映出墙上密密的符号。空气中有一丝若有若无的盐腥味。房间一角的地板上落着一把小刀，一扇石门通向测试房间B。"
+    },
+    "测试房间B": {
+      "interactions": [],
+      "auto_triggers": [],
+      "encounters": [],
+      "scene_weapons": [],
+      "from_here": [
+        {
+          "target": "测试房间A",
+          "method": "推开石门步行返回",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "测试房间A",
+          "method": "推开石门步行进入",
+          "requirement": ""
+        }
+      ],
+      "extra": {},
+      "description": "石门之后是一个更高的穹顶石厅，地面湿漉漉的，中央有一圈暗色的水渍，仿佛有什么巨大的东西曾在这里盘踞。深处的黑暗里似乎有缓慢的呼吸声。"
+    }
+  },
+  "events": [],
+  "boss_encounters": [
+    {
+      "id": "BOSS_T1",
+      "type": "boss_encounter",
+      "engage_type": "at",
+      "boss_ref": "吞噬之口",
+      "scene": "测试房间B",
+      "requirements": "",
+      "description": "测试用 Boss 遭遇"
+    }
+  ],
+  "npc_profiles": {
+    "测试乘务员": {
+      "name": "测试乘务员",
+      "role": "神情恍惚的乘务员，掌握「测试钥匙」的情报",
+      "appearance": "他穿着不合时节的乘务员制服，靠坐在墙边，眼神涣散，手里反复摩挲着一张没有目的地的车票。",
+      "what_they_can_do": "知道「测试钥匙」藏在测试房间A墙角的松砖下，被问起时会透露这个情报；情绪稳定后可以跟随玩家一起行动。",
+      "personality_notes": "语气飘忽，答话慢半拍，反复念叨「这趟车不到站」。对玩家的态度中立偏戒备，但无害。",
+      "interaction_triggers": [
+        "玩家主动与乘务员搭话",
+        "玩家询问钥匙或出路时，乘务员会透露松砖下的「测试钥匙」"
+      ],
+      "initial_state": "alive",
+      "initial_attitude": "neutral",
+      "initial_following": false,
+      "can_interact": true,
+      "can_follow": true,
+      "follow_requirements": "",
+      "interact_requirements": "",
+      "scene": "测试房间A",
+      "all_scenes": [
+        "测试房间A"
+      ],
+      "bound_interactions": [],
+      "bound_auto_triggers": []
+    }
+  },
+  "dependency_graph": {
+    "nodes": {
+      "IT_SEARCH": {
+        "entity_id": "IT_SEARCH",
+        "entity_type": "interaction",
+        "name": "仔细搜索房间"
+      },
+      "IT_END": {
+        "entity_id": "IT_END",
+        "entity_type": "interaction",
+        "name": "对墙低语触发测试结局"
+      },
+      "AT_ATMO": {
+        "entity_id": "AT_ATMO",
+        "entity_type": "auto_trigger",
+        "name": "测试房间A氛围"
+      },
+      "BOSS_T1": {
+        "entity_id": "BOSS_T1",
+        "entity_type": "boss_encounter",
+        "name": "测试用 Boss 遭遇"
+      }
+    },
+    "edges": []
+  }
+}
