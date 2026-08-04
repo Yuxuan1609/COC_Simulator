@@ -72,10 +72,53 @@ async def health():
     return {"status": "ok"}
 
 
+def _open_app_window(url: str) -> None:
+    try:
+        import webview
+    except ImportError:
+        webview = None
+
+    if webview is not None:
+        webview.create_window(
+            "TRPG 调查员助手", url,
+            width=1280, height=800, min_size=(960, 600),
+            text_select=True,
+        )
+        webview.start()
+        return
+
+    import shutil
+    import subprocess
+    import webbrowser
+
+    candidates = [
+        shutil.which("msedge"),
+        shutil.which("chrome"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", ""), r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(os.environ.get("ProgramFiles", ""), r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(os.environ.get("ProgramFiles", ""), r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", ""), r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(os.environ.get("LocalAppData", ""), r"Google\Chrome\Application\chrome.exe"),
+    ]
+    for exe in candidates:
+        if exe and os.path.isfile(exe):
+            subprocess.Popen([exe, f"--app={url}"])
+            break
+    else:
+        webbrowser.open(url)
+
+    print(f"服务运行中：{url}（按 Ctrl+C 停止）")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+
+
 if __name__ == "__main__":
     import threading
+    import time
     import uvicorn
-    import webview
     port = int(os.environ.get("PORT", 8080))
     url = f"http://localhost:{port}"
 
@@ -85,12 +128,6 @@ if __name__ == "__main__":
     t = threading.Thread(target=start_server, daemon=True)
     t.start()
 
-    import time
     time.sleep(0.5)
 
-    window = webview.create_window(
-        "TRPG 调查员助手", url,
-        width=1280, height=800, min_size=(960, 600),
-        text_select=True,
-    )
-    webview.start()
+    _open_app_window(url)
