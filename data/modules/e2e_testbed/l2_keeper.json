@@ -75,7 +75,23 @@
     },
     "测试房间B": {
       "interactions": [],
-      "auto_triggers": [],
+      "auto_triggers": [
+        {
+          "id": "AT_SPAWN_WANDERER",
+          "type": "无",
+          "name": "巡游者出现",
+          "requirement": "",
+          "trigger": "玩家首次进入测试房间B时",
+          "result": "水渍中央的黑暗里鼓起一个半透明的胶质团块，贴着地面缓缓向你游来，发出轻微的黏着声。它行动迟缓，似乎可以绕开。",
+          "side_effects": [
+            "@spawn_enemy(enemy_ref=\"测试巡游者\", scene=\"测试房间B\", quantity=1)"
+          ],
+          "graded_result": null,
+          "difficulty": "None",
+          "scene": "测试房间B",
+          "time_condition": []
+        }
+      ],
       "encounters": [],
       "scene_weapons": [],
       "from_here": [
@@ -102,10 +118,10 @@
       "id": "BOSS_T1",
       "type": "boss_encounter",
       "engage_type": "at",
-      "boss_ref": "吞噬之口",
+      "boss_ref": "测试魔像",
       "scene": "测试房间B",
       "requirements": "",
-      "description": "测试用 Boss 遭遇"
+      "description": "测试用 Boss 遭遇（两阶段：稳态 → 崩解）"
     }
   ],
   "npc_profiles": {
@@ -150,6 +166,11 @@
         "entity_id": "AT_ATMO",
         "entity_type": "auto_trigger",
         "name": "测试房间A氛围"
+      },
+      "AT_SPAWN_WANDERER": {
+        "entity_id": "AT_SPAWN_WANDERER",
+        "entity_type": "auto_trigger",
+        "name": "巡游者出现"
       },
       "BOSS_T1": {
         "entity_id": "BOSS_T1",

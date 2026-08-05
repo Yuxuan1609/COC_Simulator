@@ -28,6 +28,11 @@ weapon_lib = WeaponLibrary()
 weapon_lib.load_core()
 enemy_lib = EnemyLibrary()
 enemy_lib.load_core()
+_enemy_ext_dir = _os.path.join("data", "library", "extensions", "enemies")
+if _os.path.isdir(_enemy_ext_dir):
+    import glob as _glob
+    for _f in sorted(_glob.glob(_os.path.join(_enemy_ext_dir, "*.json"))):
+        enemy_lib.load_extension(_f)
 injector = ContentInjector(weapon_lib, enemy_lib)
 print(f"[info] 武器库：{len(weapon_lib)} 件 | 敌人库：{len(enemy_lib)} 个 | "
       f"注入器：{'就绪' if injector else '未初始化'}")

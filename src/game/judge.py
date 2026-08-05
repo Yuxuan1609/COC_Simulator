@@ -162,6 +162,7 @@ class Judge:
         skill_passed = True
         skill_message = ""
         skill_detail = ""
+        enh = None
 
         if self.world.player and entity.type and entity.type not in ("无", "None", ""):
             skill_name = entity.type
@@ -183,13 +184,15 @@ class Judge:
 
             # Rule enhancement: trait-based tier correction via LLM sub-agent
             from prompts import apply_trait_enhancement
-            new_tier, _ = apply_trait_enhancement(
+            new_tier, enh = apply_trait_enhancement(
                 self.world.player, skill_name, skill_result,
                 entity_name=entity.name,
                 graded_tiers=entity.graded_result,
                 player_input=player_input,
             )
             if new_tier and new_tier != skill_tier:
+                enh = enh or {}
+                enh["original_tier"] = skill_tier
                 skill_tier = new_tier
                 skill_passed = (skill_tier != "failure")
 
@@ -260,6 +263,7 @@ class Judge:
                 entity_id=entity.id, entity_type=entity.entity_type,
                 skill_tier=skill_tier,
                 skill_detail=skill_detail,
+                enhancement=enh,
                 side_effects=penalty_side_effects + list(result_markup_effects),
             )
 
@@ -290,6 +294,7 @@ class Judge:
             side_effects=side_effects,
             skill_tier=skill_tier,
             skill_detail=skill_detail,
+            enhancement=enh,
         )
 
     @staticmethod

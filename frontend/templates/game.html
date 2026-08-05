@@ -259,6 +259,34 @@
   </div>
 </div>
 
+{# Enemy detail modal — debug mode only #}
+<div id="enemy-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onclick="if(event.target===this)closeEnemyDetail()">
+  <div class="bg-[#1a1410] border border-aged-gold/40 rounded-lg p-5 max-w-md mx-4 max-h-[80vh] overflow-y-auto">
+    <div class="flex justify-between items-center mb-3">
+      <div id="enemy-detail-title" class="text-red-400 text-sm font-bold"></div>
+      <button onclick="closeEnemyDetail()" class="text-gray-500 hover:text-gray-300 text-xs border border-gray-700 rounded px-2 py-0.5">关闭</button>
+    </div>
+    <div id="enemy-detail-body" class="text-xs text-gray-400 space-y-2 leading-relaxed"></div>
+  </div>
+</div>
+
+<div id="debug-badge" class="hidden fixed top-2 right-2 z-40 text-[10px] font-mono text-yellow-400/80 border border-yellow-600/40 rounded px-1.5 py-0.5 bg-black/60">DEBUG</div>
+
+<script>
+  // == Debug mode ==
+  var DEBUG = (function() {
+    var q = new URLSearchParams(location.search).get('debug');
+    if (q === '1') { localStorage.setItem('trpg_debug', '1'); return true; }
+    if (q === '0') { localStorage.removeItem('trpg_debug'); return false; }
+    return localStorage.getItem('trpg_debug') === '1';
+  })();
+  if (DEBUG) {
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('debug-badge').classList.remove('hidden');
+    });
+  }
+</script>
+
 <script>
   // == Scene Info Panel ==
   let sceneCardExpanded = false;
@@ -329,10 +357,16 @@
     var npcsEl = document.getElementById('scene-card-npcs');
     var npcs = snap.npcs || [];
     if (npcs.length > 0) {
+      var attCls = {hostile: 'text-red-400 border-red-600/40', wary: 'text-yellow-400 border-yellow-600/40', friendly: 'text-green-400 border-green-600/40', neutral: 'text-gray-400 border-gray-600/40'};
+      var attLabel = {hostile: '敌对', wary: '戒备', friendly: '友善', neutral: '中立'};
       npcsWrap.classList.remove('hidden');
       npcsEl.innerHTML = npcs.map(function(n) {
+        var att = n.attitude || '';
+        var badge = att ? '<span class="inline-block px-1 rounded border text-[9px] ml-1 ' + (attCls[att] || attCls.neutral) + '">' + (attLabel[att] || att) + '</span>' : '';
+        var following = n.following ? '<span class="inline-block px-1 rounded border border-coc-green/40 text-coc-green text-[9px] ml-1">跟随中</span>' : '';
+        var talkBtn = '<button onclick="talkToNpc(\'' + (n.name || '').replace(/'/g, "\\'") + '\')" class="ml-1 px-1.5 py-0 text-[9px] bg-gray-800 hover:bg-aged-brown text-gray-400 hover:text-parchment rounded border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">交谈</button>';
         return '<div class="text-[10px] text-gray-400">' +
-          '<span class="text-aged-gold font-bold">' + (n.name || '?') + '</span>' +
+          '<span class="text-aged-gold font-bold">' + (n.name || '?') + '</span>' + badge + following + talkBtn +
           (n.demeanor ? ' <span class="text-gray-500">(' + n.demeanor + ')</span>' : '') +
           (n.brief ? '<div class="text-gray-500 mt-0.5 leading-relaxed">' + n.brief + '</div>' : '') +
           '</div>';
@@ -345,19 +379,77 @@
     var enemiesWrap = document.getElementById('scene-card-enemies-wrap');
     var enemiesEl = document.getElementById('scene-card-enemies');
     var enemies = snap.enemies || [];
+    lastSceneEnemies = enemies;
     if (enemies.length > 0) {
       enemiesWrap.classList.remove('hidden');
-      enemiesEl.innerHTML = enemies.map(function(e) {
+      enemiesEl.innerHTML = enemies.map(function(e, idx) {
         var qty = (e.quantity || 1) > 1 ? ' ×' + e.quantity : '';
-        return '<div class="text-[10px] text-gray-400">' +
-          '<span class="text-red-400 font-bold">' + (e.enemy_ref || '?') + qty + '</span>' +
+        var clickable = DEBUG ? ' cursor-pointer hover:bg-gray-800/60 rounded px-0.5 -mx-0.5' : '';
+        var onclick = DEBUG ? ' onclick="openEnemyDetail(' + idx + ')"' : '';
+        var bossTag = e.boss_mechanics ? ' <span class="text-[9px] text-red-500 border border-red-600/40 rounded px-1">BOSS</span>' : '';
+        return '<div class="text-[10px] text-gray-400' + clickable + '"' + onclick + '>' +
+          '<span class="text-red-400 font-bold">' + (e.enemy_ref || '?') + qty + '</span>' + bossTag +
           (e.status ? ' <span class="text-gray-500">[' + e.status + ']</span>' : '') +
+          (DEBUG && e.hp !== undefined ? ' <span class="text-gray-600">HP ' + e.hp + '</span>' : '') +
           '</div>';
       }).join('');
     } else {
       enemiesWrap.classList.add('hidden');
     }
 
+  }
+
+  // == NPC talk shortcut ==
+  function talkToNpc(name) {
+    var input = document.getElementById('user-input');
+    if (!input || input.disabled) return;
+    input.value = '与' + name + '交谈';
+    sendTurn();
+  }
+
+  // == Enemy detail modal (debug) ==
+  var lastSceneEnemies = [];
+  function openEnemyDetail(idx) {
+    var e = lastSceneEnemies[idx];
+    if (!e) return;
+    var d = e.detail || {};
+    document.getElementById('enemy-detail-title').textContent =
+      (e.enemy_ref || '?') + ((e.quantity || 1) > 1 ? ' ×' + e.quantity : '');
+    var rows = [];
+    function row(k, v) { if (v) rows.push('<div><span class="text-gray-500">' + k + '：</span><span class="text-gray-300">' + v + '</span></div>'); }
+    row('状态', e.status);
+    row('HP', e.hp);
+    row('标记', (e.flags || []).join(', '));
+    row('类型', d.type);
+    row('护甲', d.armor);
+    row('SAN 损失', d.san_loss);
+    row('多重攻击', d.multi_attack > 1 ? d.multi_attack + ' 次/轮' : '');
+    if (d.attacks && d.attacks.length) {
+      rows.push('<div class="text-gray-500 mt-1">攻击：</div>' + d.attacks.map(function(a) {
+        var dmg = a.damage || {};
+        var dmgStr = dmg.dice_n ? dmg.dice_n + 'D' + dmg.dice_d + (dmg.bonus ? '+' + dmg.bonus : '') + (dmg.use_db ? '+DB' : '') : '特殊';
+        return '<div class="pl-3 text-gray-300">· ' + a.name + '（' + dmgStr + (a.skill_value ? '，' + a.skill_name + ' ' + a.skill_value + '%' : '') + '）</div>';
+      }).join(''));
+    }
+    if (d.special_abilities && d.special_abilities.length) {
+      rows.push('<div class="text-gray-500 mt-1">特殊能力：</div>' + d.special_abilities.map(function(s) {
+        return '<div class="pl-3"><span class="text-gray-300">' + s.name + '</span> <span class="text-gray-500">' + s.desc + '</span></div>';
+      }).join(''));
+    }
+    if (d.phases && d.phases.length) {
+      rows.push('<div class="text-gray-500 mt-1">阶段：</div>' + d.phases.map(function(p) {
+        return '<div class="pl-3"><span class="text-yellow-400">' + (p.name || '?') + '</span> <span class="text-gray-500">[' + (p.trigger || '') + ']</span><div class="text-gray-500 pl-2">' + (p.description || '') + '</div></div>';
+      }).join(''));
+    }
+    if (e.boss_mechanics) {
+      rows.push('<div class="text-gray-500 mt-1">Boss 机制：</div><div class="pl-3 text-red-300/80">' + e.boss_mechanics + '</div>');
+    }
+    row('描述', d.description);
+    document.getElementById('enemy-detail-body').innerHTML = rows.join('') || '<div class="text-gray-600">无详细数据</div>';
+    document.getElementById('enemy-detail-modal').classList.remove('hidden');
+  }
+  function closeEnemyDetail() {
+    document.getElementById('enemy-detail-modal').classList.add('hidden');
   }
 
   // == Character panel toggle ==
@@ -531,6 +623,44 @@
     return html.join('');
   }
 
+  // == Structured skill check chips ==
+  function renderSkillChips(checks) {
+    return checks.map(function(sc) {
+      var eid = sc.entity_id || '?';
+      var tier = sc.tier || 'regular';
+      var success = sc.success !== false;
+      var enh = sc.enhancement;
+      var tierHtml = '<span class="' + tierColor(tier) + '">[' + tier + ']</span>';
+      if (enh && enh.original_tier && enh.original_tier !== tier) {
+        tierHtml = '<span class="text-gray-500">[' + enh.original_tier + ']</span><span class="text-yellow-400">→</span>' + tierHtml;
+      }
+      var diceInfo = sc.raw_roll ? ('D100=' + sc.raw_roll + '/' + sc.target) : '';
+      var critCls = '';
+      var critTag = '';
+      if (sc.raw_roll && sc.raw_roll <= 5) { critCls = ' ring-1 ring-yellow-300'; critTag = '<span class="text-yellow-300 font-bold">大成功</span>'; }
+      else if (sc.raw_roll && sc.raw_roll >= 96) { critCls = ' ring-1 ring-red-500'; critTag = '<span class="text-red-400 font-bold">大失败</span>'; }
+      var enhText = '';
+      var tooltip = '';
+      if (enh) {
+        enhText = enh.detail_override ? ' ' + enh.detail_override : '';
+        tooltip = enh.reason || enh.detail_override || '';
+      }
+      return '<span' + (tooltip ? ' title="' + escapeHtml(tooltip) + '"' : '') + ' class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border ' +
+        (success ? 'border-coc-green/40 bg-coc-green/10 text-coc-green' : 'border-coc-red/40 bg-coc-red/10 text-coc-red') + critCls + '">' +
+        '<span class="font-bold">' + (success ? 'OK' : 'FAIL') + '</span>' +
+        '<span class="text-gray-400">' + eid + '</span>' +
+        tierHtml +
+        (diceInfo ? '<span class="text-gray-500">' + diceInfo + '</span>' : '') +
+        critTag +
+        (enhText ? '<span class="text-yellow-400">' + escapeHtml(enhText) + '</span>' : '') +
+        '</span>';
+    }).join('');
+  }
+
+  function tierColor(tier) {
+    return tier === 'extreme' ? 'text-yellow-300' : tier === 'hard' ? 'text-coc-green' : tier === 'regular' ? 'text-gray-300' : 'text-red-400';
+  }
+
   // == Handle turn response ==
   function handleTurnResponse(userText, data) {
     if (data.game_frozen) {
@@ -570,9 +700,20 @@
 
     // Use turn_dynamic_text if available (new format from format_turn_dynamic)
     if (data.turn_dynamic_text) {
-      var dynamicHtml = renderTurnDynamic(data.turn_dynamic_text);
+      var dynText = data.turn_dynamic_text;
+      var structuredChecks = (snap && snap.skill_checks) || [];
+      if (structuredChecks.length > 0) {
+        // Prefer structured data over text-parsed skill block
+        dynText = dynText.split('\n\n').filter(function(b) {
+          return !b.trim().startsWith('[技能检定]');
+        }).join('\n\n');
+      }
+      var dynamicHtml = renderTurnDynamic(dynText);
       if (dynamicHtml) {
         turnParts.push(dynamicHtml);
+      }
+      if (structuredChecks.length > 0) {
+        turnParts.push('<div class="turn-skills flex flex-wrap gap-1.5 px-1">' + renderSkillChips(structuredChecks) + '</div>');
       }
     } else {
       // Legacy fallback: build from individual fields
@@ -591,25 +732,7 @@
       // Skill checks from snapshot
       var skillChecks = (snap && snap.skill_checks) || data.skill_results || [];
       if (skillChecks.length > 0) {
-        var skillsHtml = skillChecks.map(function(sc) {
-          var eid = sc.entity_id || '?';
-          var tier = sc.tier || 'regular';
-          var success = sc.success !== false;
-          var tierColor = tier === 'extreme' ? 'text-yellow-300' : tier === 'hard' ? 'text-coc-green' : tier === 'regular' ? 'text-gray-300' : 'text-red-400';
-          var diceInfo = sc.raw_roll ? ('D100=' + sc.raw_roll + '/' + sc.target) : '';
-          var enh = sc.enhancement;
-          var enhText = '';
-          if (enh) enhText = ' ' + (enh.detail_override || (enh.tier ? '→' + enh.tier : ''));
-          return '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border ' +
-            (success ? 'border-coc-green/40 bg-coc-green/10 text-coc-green' : 'border-coc-red/40 bg-coc-red/10 text-coc-red') + '">' +
-            '<span class="font-bold">' + (success ? 'OK' : 'FAIL') + '</span>' +
-            '<span class="text-gray-400">' + eid + '</span>' +
-            '<span class="' + tierColor + '">[' + tier + ']</span>' +
-            (diceInfo ? '<span class="text-gray-500">' + diceInfo + '</span>' : '') +
-            (enhText ? '<span class="text-yellow-400">' + enhText + '</span>' : '') +
-            '</span>';
-        }).join('');
-        turnParts.push('<div class="turn-skills flex flex-wrap gap-1.5 px-1">' + skillsHtml + '</div>');
+        turnParts.push('<div class="turn-skills flex flex-wrap gap-1.5 px-1">' + renderSkillChips(skillChecks) + '</div>');
       }
 
       // Brief
@@ -887,9 +1010,20 @@
       aliveEnemies.push(e);
       var eHpPct = e.hp_max > 0 ? (e.hp / e.hp_max * 100) : 0;
       var eHpColor = eHpPct > 50 ? 'bg-red-500' : eHpPct > 20 ? 'bg-red-600' : 'bg-red-800';
+      var debugInfo = '';
+      if (DEBUG) {
+        var bits = [];
+        if (e.armor) bits.push('护甲:' + e.armor);
+        if (e.san_loss) bits.push('SAN:' + e.san_loss);
+        if (e.multi_attack > 1) bits.push(e.multi_attack + '次/轮');
+        if (e.phases && e.phases.length) bits.push('阶段:' + e.phases.map(function(p){return p.name;}).join('/'));
+        if (bits.length) debugInfo += '<div class="text-[9px] text-gray-600 font-mono">' + bits.join(' | ') + '</div>';
+        if (e.boss_mechanics) debugInfo += '<div class="text-[9px] text-red-300/70 leading-snug">' + e.boss_mechanics + '</div>';
+      }
       enemiesHtml += '<div class="text-xs">' +
-        '<div class="flex justify-between text-gray-400"><span>' + (e.enemy_ref || '?') + '</span><span>' + e.hp + '/' + e.hp_max + '</span></div>' +
+        '<div class="flex justify-between text-gray-400"><span>' + (e.enemy_ref || '?') + (e.boss_mechanics ? ' <span class="text-[9px] text-red-500 border border-red-600/40 rounded px-0.5">BOSS</span>' : '') + '</span><span>' + e.hp + '/' + e.hp_max + '</span></div>' +
         '<div class="h-1 bg-gray-800 rounded overflow-hidden"><div class="h-full ' + eHpColor + ' rounded transition-all duration-500" style="width:' + eHpPct + '%"></div></div>' +
+        debugInfo +
         '</div>';
     });
     if (!enemiesHtml) enemiesHtml = '<div class="text-xs text-gray-500">无存活敌人</div>';

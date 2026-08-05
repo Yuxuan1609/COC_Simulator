@@ -82,6 +82,7 @@ class EnemyManager:
         inst.special_rules = getattr(lib_enemy, 'special_rules', '')
         inst.phases = list(getattr(lib_enemy, 'phases', []))
         inst.boss_mechanics = getattr(lib_enemy, 'boss_mechanics', '')
+        inst.flags = list(getattr(lib_enemy, 'flags', []))
         self._instances[instance_id] = inst
         return inst
 
@@ -122,6 +123,8 @@ class EnemyManager:
                 "status": i.status,
                 "flags": i.flags,
                 "quantity": i.quantity,
+                "hp": i.hp,
+                "boss_mechanics": getattr(i, "boss_mechanics", "") or "",
             }
             for i in self._instances.values()
             if i.scene == scene and i.status not in ("dead", "defeated")

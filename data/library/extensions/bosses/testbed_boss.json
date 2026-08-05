@@ -1,0 +1,68 @@
+{
+  "测试魔像": {
+    "type": "神话造物",
+    "attributes": {
+      "STR": 120,
+      "CON": 140,
+      "SIZ": 130,
+      "DEX": 30,
+      "POW": 80
+    },
+    "armor": "4点石质外壳（每阶段转换时短暂失效）",
+    "attacks": [
+      {
+        "name": "重拳猛击",
+        "damage": {
+          "dice_n": 1,
+          "dice_d": 10,
+          "bonus": 0,
+          "use_db": true
+        },
+        "skill_name": "格斗",
+        "skill_value": 55,
+        "weight": 2,
+        "notes": ""
+      },
+      {
+        "name": "横扫",
+        "damage": {
+          "dice_n": 1,
+          "dice_d": 6,
+          "bonus": 0,
+          "use_db": true
+        },
+        "skill_name": "格斗",
+        "skill_value": 45,
+        "weight": 1,
+        "notes": ""
+      }
+    ],
+    "special_abilities": [
+      {
+        "name": "阶段护盾",
+        "desc": "阶段转换当回合受到的伤害减半。"
+      }
+    ],
+    "san_loss": "1/1D6",
+    "description": "由刻满符号的石块拼合而成的人形造物，胸腔内有一团缓慢明灭的暗光。为测试 Boss 阶段机制而生。",
+    "boss_mechanics": "测试魔像拥有两个阶段：血量高于一半时为「稳态」，行动迟缓但护甲完整；血量低于一半后进入「崩解」，外壳碎裂（护甲失效）、每轮攻击两次。验证 Boss 阶段切换与前端阶段展示。",
+    "flags": [
+      "boss"
+    ],
+    "multi_attack": 1,
+    "damage_multipliers": {},
+    "dodge_bonus": 0,
+    "phases": [
+      {
+        "trigger": "hp_below_pct:0.5",
+        "name": "崩解",
+        "overrides": {
+          "multi_attack": 2,
+          "armor": "无"
+        },
+        "description": "石质外壳碎裂剥落，胸腔暗光狂闪——测试魔像进入崩解阶段，每轮攻击两次，但失去护甲。"
+      }
+    ],
+    "special_rules": ""
+  }
+}

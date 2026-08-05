@@ -5,6 +5,7 @@ Keeper (KP) / Narrator (叙事者) / Author (作者)
 from __future__ import annotations
 from typing import Any
 from datetime import datetime
+from pathlib import Path
 import json
 
 from scenario_core import DirectedGraph, ScenarioWorld
@@ -208,6 +209,10 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     from library import EnemyLibrary
     enemy_lib = EnemyLibrary()
     enemy_lib.load_core()
+    _enemy_ext_dir = Path("data/library/extensions/enemies")
+    if _enemy_ext_dir.is_dir():
+        for _f in sorted(_enemy_ext_dir.glob("*.json")):
+            enemy_lib.load_extension(str(_f))
 
     # Load weapon library
     from library.weapons import WeaponLibrary
@@ -216,7 +221,10 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
 
     # Load boss library
     from library.bosses import BossLibrary
-    boss_library = BossLibrary("data/library/core/bosses.json")
+    boss_library = BossLibrary(
+        "data/library/core/bosses.json",
+        extensions_dir="data/library/extensions/bosses",
+    )
     boss_encounters = l2.get("boss_encounters", [])
 
     # Prepare NPC profiles (scene assignment now from Step 1a in pipeline)
@@ -461,16 +469,40 @@ def run_turn(game: dict, user_input: str,
     if not scene_description:
         scene_description = world.get_current_description()
 
-    # Build NPC list from Curator snapshot + enrich with L1 appearance data
+    # Build NPC list: deterministic base from NPC manager, enriched by Curator/L1
     scene_npcs = []
+    live = {}
+    if getattr(world, "npcs", None):
+        try:
+            live = {n.name: n for n in world.npcs.get_in_scene(scene_name)}
+            live.update({n.name: n for n in world.npcs.get_following()})
+        except Exception:
+            live = {}
+    for name, n in live.items():
+        if getattr(n, "state", "") in ("dead", "left"):
+            continue
+        scene_npcs.append({
+            "name": name,
+            "brief": "",
+            "demeanor": "",
+            "attitude": getattr(n, "attitude", "") or "",
+            "state": getattr(n, "state", "") or "",
+            "following": bool(getattr(n, "following", False)),
+            "can_follow": bool(getattr(n, "can_follow", False)),
+        })
+    # Enrich with Curator visible_npcs (brief/demeanor)
     if brief is not None and hasattr(brief, 'scene_snapshot') and brief.scene_snapshot:
-        scene_npcs = [
-            {"name": n.get("name", ""), "brief": n.get("brief", ""), "demeanor": n.get("demeanor", "")}
-            for n in brief.scene_snapshot.visible_npcs
-        ]
+        cur_map = {n.get("name", ""): n for n in brief.scene_snapshot.visible_npcs}
+        for npc in scene_npcs:
+            cur = cur_map.get(npc["name"])
+            if cur:
+                if cur.get("brief"):
+                    npc["brief"] = cur["brief"]
+                if cur.get("demeanor"):
+                    npc["demeanor"] = cur["demeanor"]
     # Enrich with L1 NPC appearance (better brief/demeanor)
     if l1_scene and isinstance(l1_scene, dict):
-        l1_npcs = l1_scene.get("npcs", [])
+        l1_npcs = l1_scene.get("npc_appearances") or l1_scene.get("npcs", [])
         if l1_npcs:
             l1_map = {n.get("name", ""): n for n in l1_npcs if isinstance(n, dict)}
             for npc in scene_npcs:

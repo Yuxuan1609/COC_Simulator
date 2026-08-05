@@ -24,9 +24,9 @@
       "notes": "测试用，信息密度刻意压低。"
     },
     "测试房间B": {
-      "purpose": "Boss 房间，验证 boss_encounter 装载与触发通路。",
-      "key_threat": "吞噬之口（测试遭遇）。",
-      "notes": "默认空旷，仅承载 Boss 遭遇。"
+      "purpose": "Boss 房间，验证 boss_encounter 装载与触发通路；首次进入时由 AT_SPAWN_WANDERER 生成可回避的测试巡游者（standoff 通路验证点）。",
+      "key_threat": "测试魔像（两阶段 Boss 遭遇）；测试巡游者（avoidable，可绕行）。",
+      "notes": "默认空旷，仅承载遭遇类验证。"
     }
   },
   "ending_conditions": [

@@ -1,0 +1,54 @@
+{
+  "items": [
+    {
+      "name": "测试巡游者",
+      "type": "神话生物",
+      "attributes": {
+        "STR": 40,
+        "CON": 30,
+        "SIZ": 30,
+        "DEX": 35,
+        "POW": 30
+      },
+      "armor": "无",
+      "attacks": [
+        {
+          "name": "触须抽打",
+          "damage": {
+            "dice_n": 1,
+            "dice_d": 4,
+            "bonus": 0,
+            "use_db": false
+          },
+          "skill_name": "格斗",
+          "skill_value": 35,
+          "weight": 1,
+          "notes": ""
+        }
+      ],
+      "special_abilities": [
+        {
+          "name": "测试用弱怪",
+          "desc": "为前端与机制测试设计的低威胁敌人，行动迟缓，可以轻易绕行。"
+        }
+      ],
+      "san_loss": "0/1",
+      "combat_behavior": "[avoidable] | 行动迟缓，只在被逼近时反击。受伤后进入亢奋状态。",
+      "phases": [
+        {
+          "trigger": "hp_below_pct:0.5",
+          "name": "亢奋",
+          "overrides": {
+            "multi_attack": 2
+          },
+          "description": "测试巡游者受伤后进入亢奋状态，每轮攻击两次"
+        }
+      ],
+      "multi_attack": 1,
+      "damage_multipliers": {},
+      "dodge_bonus": 0,
+      "special_rules": "",
+      "description": "半透明的胶质小型生物，贴着地面缓慢游动，发出轻微的黏着声。为测试而生。"
+    }
+  ]
+}

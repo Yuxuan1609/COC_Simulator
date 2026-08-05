@@ -45,6 +45,9 @@ def _serialize_enemies_for_frontend(enemies: list) -> list[dict]:
             "special_rules": getattr(e, 'special_rules', ''),
             "armor": getattr(e, 'armor', ''),
             "multi_attack": getattr(e, 'multi_attack', 1),
+            "phases": getattr(e, 'phases', []),
+            "san_loss": getattr(e, 'san_loss', ''),
+            "flags": list(getattr(e, 'flags', []) or []),
         }
         for e in enemies
     ]
@@ -115,6 +118,10 @@ def _init_libraries(weapon_path="", enemy_path="", boss_path=""):
         _enemy_lib.load_core(str(PROJECT_ROOT / enemy_path))
     else:
         _enemy_lib.load_core()
+    _enemy_ext_dir = PROJECT_ROOT / "data" / "library" / "extensions" / "enemies"
+    if _enemy_ext_dir.is_dir():
+        for _f in sorted(_enemy_ext_dir.glob("*.json")):
+            _enemy_lib.load_extension(str(_f))
     _injector = ContentInjector(_weapon_lib, _enemy_lib)
 
 
@@ -371,6 +378,33 @@ async def process_turn(
     if player_snapshot and hasattr(player_snapshot, '__dataclass_fields__'):
         from dataclasses import asdict
         player_snapshot = asdict(player_snapshot)
+
+    # Join enemy library fields into snapshot enemies (for debug detail view)
+    if player_snapshot and player_snapshot.get("enemies") and _enemy_lib is not None:
+        for e in player_snapshot["enemies"]:
+            lib_e = _enemy_lib.get(e.get("enemy_ref", ""))
+            if lib_e:
+                e["detail"] = {
+                    "type": getattr(lib_e, "type", ""),
+                    "armor": getattr(lib_e, "armor", ""),
+                    "attacks": [
+                        {
+                            "name": getattr(a, "name", ""),
+                            "damage": getattr(a, "damage", {}),
+                            "skill_name": getattr(a, "skill_name", ""),
+                            "skill_value": getattr(a, "skill_value", 0),
+                        }
+                        for a in getattr(lib_e, "attacks", [])
+                    ],
+                    "special_abilities": [
+                        {"name": getattr(s, "name", ""), "desc": getattr(s, "desc", "")}
+                        for s in getattr(lib_e, "special_abilities", [])
+                    ],
+                    "san_loss": getattr(lib_e, "san_loss", ""),
+                    "multi_attack": getattr(lib_e, "multi_attack", 1),
+                    "phases": getattr(lib_e, "phases", []),
+                    "description": getattr(lib_e, "description", ""),
+                }
 
     # Format dynamic turn text from snapshot
     turn_dynamic_text = ""
@@ -934,25 +968,6 @@ async def combat_round(request: Request):
         "game_over": result.get("game_over", False),
         "round": result.get("round", 1),
     }
-
-
-@router.get("/api/game/npcs", response_class=HTMLResponse)
-async def npc_list():
-    game = get_game()
-    world = game["keeper"].world
-    npcs = world.npcs or []
-    if not npcs or not hasattr(npcs, 'get_in_scene'):
-        return HTMLResponse('<span class="text-xs text-gray-500">无 NPC</span>')
-    visible = npcs.get_in_scene(world.current_location)
-    if not visible:
-        return HTMLResponse('<span class="text-xs text-gray-500">当前场景无 NPC</span>')
-    cards = ""
-    for n in visible:
-        att = n.attitude or "neutral"
-        att_cls = {"hostile": "text-red-400", "wary": "text-yellow-400", "friendly": "text-green-400"}.get(att, "text-gray-400")
-        cards += (f'<div class="text-xs flex gap-2 py-1"><span class="text-gray-300">{n.name}</span>'
-                  f'<span class="{att_cls}">[{att}]</span></div>')
-    return HTMLResponse(cards)
 
 
 def _resolve_start_scene(l2_path: str, l3_path: str) -> str:

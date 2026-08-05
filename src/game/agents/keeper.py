@@ -372,6 +372,8 @@ class Keeper:
                     if new_tier and new_tier != tier:
                         skill_detail += f"\n  [特质修正] {tier} → {new_tier}：{enh.get('reason', '') if enh else ''}"
                         log_skill_result(skill_detail)
+                        if enh is not None:
+                            enh["original_tier"] = tier
                         tier = new_tier
                         ok = (tier != "failure")
                     trait_enh = enh
