@@ -30,7 +30,7 @@ def setup_logging() -> str:
     from prompts import set_prompt_log_dir
     from llm import set_llm_log_dir
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = f"logs/prompt_log_{timestamp}"
+    log_dir = str(Path(__file__).resolve().parent.parent / "logs" / f"prompt_log_{timestamp}")
     import os
     os.makedirs(log_dir, exist_ok=True)
     set_prompt_log_dir(log_dir)
