@@ -196,6 +196,9 @@
       <button id="btn-search" onclick="sendTurnAction('search')" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-aged-gold rounded border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">
         搜索当前场景
       </button>
+      <button id="btn-debug" onclick="toggleDebug()" title="调试模式：点击敌人查看详细数据（HP/护甲/攻击/阶段/Boss机制）" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-500 rounded border border-gray-700 transition-colors cursor-pointer">
+        DBG
+      </button>
     </div>
 
     {# Input bar -- #}
@@ -280,11 +283,20 @@
     if (q === '0') { localStorage.removeItem('trpg_debug'); return false; }
     return localStorage.getItem('trpg_debug') === '1';
   })();
-  if (DEBUG) {
-    document.addEventListener('DOMContentLoaded', function() {
-      document.getElementById('debug-badge').classList.remove('hidden');
-    });
+  function toggleDebug() {
+    if (DEBUG) { localStorage.removeItem('trpg_debug'); }
+    else { localStorage.setItem('trpg_debug', '1'); }
+    location.reload();
   }
+  document.addEventListener('DOMContentLoaded', function() {
+    if (!DEBUG) return;
+    document.getElementById('debug-badge').classList.remove('hidden');
+    var btn = document.getElementById('btn-debug');
+    if (btn) {
+      btn.classList.remove('text-gray-500', 'border-gray-700');
+      btn.classList.add('text-yellow-400', 'border-yellow-500/60', 'bg-yellow-500/10');
+    }
+  });
 </script>
 
 <script>
