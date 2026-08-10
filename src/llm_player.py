@@ -132,9 +132,84 @@ def _eval_success_checks(names: list[str], entries: list[dict]) -> bool:
     return all(preds[n](entries) for n in names)
 
 
+_TIER_RANK = {"": 0, "fumble": 0, "failure": 0, "regular": 1, "hard": 2, "extreme": 3}
+
+
+def _collect_mech_line(game, result, turn_no: int, action: str, dt: float,
+                       prev_loc: str, prev_boss_active) -> str:
+    """采集单回合机制事件，格式对齐 tests/e2e/scenarios/audit_guide.md 第三节。"""
+    keeper = game["keeper"]
+    world = keeper.world
+    parts = [f'T{turn_no:02d} [{dt:.1f}s] in="{action[:30]}"']
+
+    if result.status == TurnStatus.FROZEN:
+        parts.append(f"frozen={str(result.narrative or '')[:40]}")
+        return " | ".join(parts)
+
+    outcomes = getattr(keeper, "_last_outcomes", []) or []
+    intents = [getattr(o.intent, "action", "") for o in outcomes if getattr(o, "intent", None)]
+    intent = next((i for i in intents if i and i != "other"), intents[0] if intents else "")
+    if intent:
+        parts.append(f"intent={intent}")
+
+    ents, ats, spawns = [], [], []
+    for o in outcomes:
+        et = getattr(o, "entity_type", "")
+        eid = getattr(o, "entity_id", "")
+        for se in getattr(o, "side_effects", []) or []:
+            if type(se).__name__ == "SpawnEnemy":
+                spawns.append(f"{se.enemy_ref}×{se.quantity}")
+        if not eid or eid in ("OTHER", "STANDOFF", "COMBAT", "COMBAT_RESULT", "WEAPON_OFFER"):
+            continue
+        if et == "auto_trigger":
+            ats.append(eid)
+        elif et in ("interaction", "event"):
+            tier = getattr(o, "skill_tier", "") or ""
+            enh = getattr(o, "enhancement", None)
+            if isinstance(enh, dict):
+                orig = enh.get("original_tier")
+                if orig and orig != tier:
+                    arrow = "↑" if _TIER_RANK.get(tier, 0) > _TIER_RANK.get(orig, 0) else "↓"
+                    tier = f"{tier}(原{orig}{arrow})"
+            ents.append(f"{eid}:{tier}" if tier else eid)
+    if ents:
+        parts.append("entities=" + ",".join(ents))
+    if ats:
+        parts.append("at=" + ",".join(ats))
+    if spawns:
+        parts.append("spawn=" + ",".join(spawns))
+
+    loc = world.current_location
+    if prev_loc and loc != prev_loc:
+        parts.append(f"move={prev_loc}→{loc}")
+
+    bosses = getattr(world, "bosses", None)
+    active = bosses.active_boss_id if bosses else None
+    if active and not prev_boss_active:
+        parts.append(f"boss=engage({active})")
+
+    if result.combat_init:
+        names = ",".join(getattr(e, "enemy_ref", "?") for e in result.combat_init.enemies)
+        parts.append(f"combat=start({names})")
+    if result.combat:
+        parts.append(f"combat=end({result.combat.get('outcome', '?')})")
+
+    if result.pending_interaction:
+        parts.append(f"pending={result.pending_interaction.kind}")
+
+    npc_events = result.diagnostics.get("npc_events", []) if isinstance(result.diagnostics, dict) else []
+    if npc_events:
+        parts.append("npc=" + ",".join(str(e)[:20] for e in npc_events[:3]))
+
+    if result.ending:
+        parts.append(f"ending={result.ending.name}")
+
+    return " | ".join(parts)
+
+
 def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: str = None,
                    max_turns: int = None, max_duration_s: int = None,
-                   post_init_hook=None, log_dir: str = None):
+                   post_init_hook=None, log_dir: str = None, verbose: bool = False):
     profile = load_profile(profile_path)
     pc = profile["player_config"]
     if module_name is None:
@@ -235,6 +310,8 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
 
     t0 = time.perf_counter()
     turn = 0
+    prev_loc = game["keeper"].world.current_location
+    prev_boss_active = None
     last_narrative = {"brief": "", "narrative": ""}
     last_snapshot = None
 
@@ -282,6 +359,12 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
 
         dt = time.perf_counter() - t_turn
 
+        mech_line = _collect_mech_line(game, result, turn + 1, action, dt,
+                                       prev_loc, prev_boss_active)
+        prev_loc = game["keeper"].world.current_location
+        bosses = game["keeper"].world.bosses
+        prev_boss_active = bosses.active_boss_id if bosses else None
+
         brief = result.brief
         narrative = result.narrative
         skill_results = result.skill_results
@@ -326,11 +409,15 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
             "elapsed_s": round(dt, 1),
             "time_state": time_state,
             "time_agent": result.diagnostics.get("time_agent"),
+            "mech": mech_line,
         })
 
-        print(f"  T{turn+1:02d} [{dt:.1f}s]: {action[:50]}")
-        if reasoning:
-            print(f"    -> {reasoning[:60]}")
+        if verbose:
+            print(f"  {mech_line}")
+        else:
+            print(f"  T{turn+1:02d} [{dt:.1f}s]: {action[:50]}")
+            if reasoning:
+                print(f"    -> {reasoning[:60]}")
 
         if ending and ending.game_over:
             print(f"  Game Over: {ending.name}")

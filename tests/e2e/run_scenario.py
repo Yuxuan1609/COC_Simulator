@@ -172,29 +172,27 @@ def run_judge(scn: dict, summary: dict, log_dir: str,
 
     rubric = scn.get("judging", "")
     digest = _build_digest(summary)
+    # 机制事件时间线（机器采集事实层，防捏造）
+    timeline = "\n".join(
+        t.get("mech", "") for t in summary.get("turns_detail", []) if t.get("mech")
+    ) or "（无时间线数据）"
     # 机器谓词结果作为参照事实注入，供 judge 交叉核对、防止凭空捏造证据
     pred_facts = "\n".join(
         f"- {name}: {r['actual']}" for name, r in (pred_results or {}).items()
     ) or "（无）"
 
-    system = """你是 TRPG 自动化测试的场景判定审计员（judge）。
-给定一个测试场景的判定标准（rubric）和一份跑团日志摘要（玩家输入 + 系统输出 + 关键状态字段），
-逐条核对 rubric 中的每个判定项，从日志中寻找证据。
+    guide_path = Path(__file__).resolve().parent / "scenarios" / "audit_guide.md"
+    guide = guide_path.read_text(encoding="utf-8") if guide_path.exists() else ""
 
-日志字段约定：
-- 「pending交互」列显示 standoff 才表示对峙被触发；为 - 表示该回合无 pending 交互
-- 「战斗结果」列为 - 表示该回合无战斗结算
-- 附带的【机器谓词结果】是确定的事实，判定必须与其一致
+    system = f"""{guide}
 
-返回 JSON：
-{
-  "items": [{"item": "判定项描述", "pass": true/false, "evidence": "日志中的依据（引用回合与内容）"}],
-  "overall": "PASS" 或 "FAIL",
-  "reason": "总体理由（50字以内）"
-}
-- 每个判定项必须给出具体证据（回合号 + 引用字段内容），证据必须真实存在于日志中，不得推测或编造
-- 判定项要求的事件（如对峙触发）在日志中未出现时，一律判 fail
-- overall：所有判定项 pass 才为 PASS
+---
+
+以上为《审计操作手册》，你必须严格遵循其中的名词表、时间线格式、判定程序、误判警示与证据规范。
+补充强调：
+- 【机制事件时间线】与【机器谓词结果】是机器采集的确定事实，判定必须与它们一致
+- 每个判定项必须给出具体证据（T编号 + 引用），证据必须真实存在于提供的材料中
+- overall：所有 target=engine 的判定项 pass 才为 PASS；仅 target=player 失败不阻塞 PASS，但须在 reason 注明
 直接输出 JSON。"""
 
     user = f"""【场景】{scn.get('name', '?')}——{scn.get('description', '')}
@@ -207,6 +205,9 @@ def run_judge(scn: dict, summary: dict, log_dir: str,
 
 【机器谓词结果】（确定事实）
 {pred_facts}
+
+【机制事件时间线】（机器采集事实层）
+{timeline}
 
 【跑团日志摘要】
 模组：{summary.get('module', '?')} | 回合数：{summary.get('turns', 0)} | \
@@ -233,8 +234,9 @@ def run_judge(scn: dict, summary: dict, log_dir: str,
                 f"--- Response ---\n{resp_str}\n")
 
     items = data.get("items", [])
-    # 机器复核：逐项全 pass 才 PASS，不盲信 LLM 的 overall
-    overall = "PASS" if items and all(it.get("pass") for it in items) else "FAIL"
+    # 机器复核：target=engine 的判定项全 pass 才 PASS，不盲信 LLM 的 overall
+    engine_items = [it for it in items if it.get("target", "engine") == "engine"]
+    overall = "PASS" if engine_items and all(it.get("pass") for it in engine_items) else "FAIL"
     return {"items": items, "overall": overall,
             "llm_overall": data.get("overall"), "reason": data.get("reason", "")}
 
@@ -244,6 +246,8 @@ def run_judge(scn: dict, summary: dict, log_dir: str,
 def main() -> int:
     parser = argparse.ArgumentParser(description="场景化 E2E runner")
     parser.add_argument("scenario", help="场景 YAML 路径")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="每回合打印机制事件时间线（默认只打印输入摘要）")
     args = parser.parse_args()
 
     scn = load_scenario(args.scenario)
@@ -267,9 +271,15 @@ def main() -> int:
         profile_path=str(profile_path),
         post_init_hook=make_seed_fn(scn.get("seed")),
         log_dir=log_dir,
+        verbose=args.verbose,
     )
     summary = result["summary"]
     turns = summary.get("turns_detail", [])
+
+    # 机制事件时间线落盘（审计事实层）
+    timeline_lines = [t.get("mech", "") for t in turns if t.get("mech")]
+    with open(Path(log_dir) / "timeline.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(timeline_lines) + "\n")
 
     # 三层判定
     inv_problems = check_invariants(turns)
@@ -312,7 +322,8 @@ def main() -> int:
           f" (llm_overall={judge.get('llm_overall')}) — {judge.get('reason', '')}")
     for it in judge.get("items", []):
         mark = "OK" if it.get("pass") else "XX"
-        print(f"      [{mark}] {it.get('item', '?')}")
+        tgt = it.get("target", "engine")
+        print(f"      [{mark}] {it.get('item', '?')}" + (f"  ({tgt})" if tgt != "engine" else ""))
         print(f"           证据: {str(it.get('evidence', ''))[:100]}")
     print(f"\nTurns: {summary.get('turns')} | goal_achieved: {summary.get('goal_achieved')}")
     print(f"Log: {log_dir}")
