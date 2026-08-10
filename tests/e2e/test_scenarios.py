@@ -389,3 +389,102 @@ class TestS9Ending:
             assert "霍桑" in r.ending.narrative
         finally:
             stop()
+
+
+class TestS10TraitEnhancement:
+    @retry_once
+    def test_trait_enhancement_direction(self):
+        """S10（试点）：特质增强数据通路——搜索检定后 enhancement 结构自洽：
+        若 tier 被修正则 original_tier 必须存在且与最终 tier 不同；修正方向合法。
+        action_type=search 跳过 parse；check_skill 真实骰子；特质增强真实 LLM。
+        增强是否触发由 LLM 决定（宽断言只锁数据结构，不锁触发率）。"""
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s10_trait_enhancement")
+        stop = setup_llm_logging(log_dir)
+        try:
+            world = make_world({"room_a": make_scene()}, "room_a")
+            inv = _player(world, skills={"侦查": 60})
+            inv.personal_description = (
+                "前登山向导，观察力敏锐，习惯在黑暗与复杂地形中察觉细微动静。")
+            game = _real_game(world, _l1("room_a"))
+
+            r = run_turn(game, "搜索", action_type="search")
+            assert_player_turn_contract(r)
+            assert r.status == TurnStatus.COMPLETED, f"status={r.status}"
+
+            snap = r.player_snapshot
+            checks = [s for s in (snap.skill_checks if snap else [])
+                      if getattr(s, "entity_id", "") == "SEARCH"]
+            assert checks, "搜索回合必须产生 SEARCH 检定记录"
+            sc = checks[0]
+            assert sc.raw_roll > 0 and sc.target > 0, \
+                f"快照检定必须带解析后的骰点/目标值: {sc}"
+            assert sc.tier in ("critical", "extreme", "hard", "regular",
+                               "failure", "fumble"), f"非法 tier: {sc.tier}"
+
+            enh = sc.enhancement
+            if enh and enh.get("original_tier"):
+                assert enh["original_tier"] != sc.tier, \
+                    "tier 被修正时 original_tier 必须与最终 tier 不同"
+                assert enh.get("tier") == sc.tier, \
+                    f"enhancement.tier 必须等于最终 tier: {enh.get('tier')} vs {sc.tier}"
+                assert enh.get("reason"), "特质修正必须给出理由"
+                print(f"[S10] 增强触发: {enh['original_tier']} → {sc.tier}")
+            else:
+                print(f"[S10] 增强未改 tier（roll={sc.raw_roll}/{sc.target} "
+                      f"tier={sc.tier}），数据结构断言通过")
+        finally:
+            stop()
+
+
+class TestS11AutoTriggerFire:
+    @retry_once
+    def test_at_fires_on_scene_entry_real_llm(self):
+        """S11（试点）：AT 点火真实 LLM 面——进入 room_b 后 2 回合内
+        「首次进入」型 AT 应被 parse 语义命中并 spawn 敌人。"""
+        from game_loop import run_turn
+        from library.enemies import EnemyLibrary, LibraryEnemy
+        log_dir = _scenario_log_dir("s11_at_fire")
+        stop = setup_llm_logging(log_dir)
+        try:
+            lib = EnemyLibrary()
+            lib._enemies["测试巡游者"] = LibraryEnemy.from_dict({
+                "name": "测试巡游者", "type": "怪物",
+                "attributes": {"CON": 30, "SIZ": 30}, "armor": "",
+                "attacks": [], "special_abilities": [], "san_loss": "0",
+                "description": "缓慢游动的胶质生物", "combat_behavior": "",
+            })
+            at = {
+                "id": "AT_SPAWN", "entity_type": "auto_trigger", "type": "无",
+                "name": "巡游者出现", "requirement": "",
+                "trigger": "玩家首次进入room_b时",
+                "result": "水渍中鼓起一个胶质团块，缓缓向你游来。",
+                "side_effects": ['@spawn_enemy(enemy_ref="测试巡游者", scene="room_b", quantity=1)'],
+                "graded_result": None, "difficulty": "None",
+                "scene": "room_b", "time_condition": [],
+            }
+            world = make_world({
+                "room_a": make_scene(exits=[{"target": "room_b", "method": "步行",
+                                             "requirement": ""}]),
+                "room_b": make_scene(auto_triggers=[at]),
+            }, "room_a", enemy_library=lib)
+            _player(world)
+            game = _real_game(world, _l1("room_a", "room_b"))
+
+            r1 = run_turn(game, "前往room_b", action_type="move",
+                          action_target="room_b")
+            assert_player_turn_contract(r1)
+            assert world.current_location == "room_b"
+
+            fired = False
+            for probe in ("环顾四周，观察这个房间", "仔细查看地面的水渍"):
+                r = run_turn(game, probe)
+                assert_player_turn_contract(r)
+                if world.enemies.get_active_in_scene("room_b"):
+                    fired = True
+                    break
+            assert fired, \
+                "宽断言：进入 room_b 后 2 回合内 AT_SPAWN 应点火并生成测试巡游者（未命中则 retry）"
+        finally:
+            stop()
