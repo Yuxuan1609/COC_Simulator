@@ -1150,11 +1150,14 @@ class Keeper:
             def _direct_weapon(wref):
                 self._weapon_offer = [{"weapon_ref": wref, "scene": ""}]
                 self._weapon_offer_msg = f"（获得了{wref}，是否接受？（是/否））"
-            apply_side_effects(
+            effect_msgs = apply_side_effects(
                 self.world, list(self._pending_side_effects),
                 npc_events=self._npc_events,
                 direct_weapon_callback=_direct_weapon,
             )
+            for m in effect_msgs or []:
+                if "失败" in m:
+                    self._warnings.append(m)
         # ── Inject NPC follow entity for NPCs that just started following ──
         for npc in self.world.npcs._npcs.values():
             if not npc.following or npc.scene != self.world.current_location:

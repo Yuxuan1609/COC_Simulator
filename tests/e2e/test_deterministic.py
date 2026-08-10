@@ -235,3 +235,229 @@ class TestMultiTurnStateSequence:
         assert world.clock.game_time > t0, "时钟必须推进"
         assert keeper._standoff_pending is None
         assert keeper._weapon_offer is None
+
+
+def _enemy_lib_with(name="测试巡游者"):
+    from library.enemies import EnemyLibrary
+    lib = EnemyLibrary()
+    lib._enemies[name] = __import__("library.enemies", fromlist=["LibraryEnemy"]).LibraryEnemy.from_dict({
+        "name": name, "type": "怪物",
+        "attributes": {"CON": 30, "SIZ": 30}, "armor": "",
+        "attacks": [], "special_abilities": [], "san_loss": "0",
+        "description": "", "combat_behavior": "",
+    })
+    return lib
+
+
+class TestAutoTriggerSpawn:  # D8: A2/C6
+    def test_at_fires_spawn_enemy_visible(self, monkeypatch):
+        """AT 被 parse 命中 → @spawn_enemy 副作用 → 敌人实例出现在场景快照。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        lib = _enemy_lib_with()
+        at = {
+            "id": "AT_SPAWN", "entity_type": "auto_trigger", "type": "无",
+            "name": "巡游者出现", "requirement": "",
+            "trigger": "玩家首次进入时",
+            "result": "黑暗中有什么东西蠕动着靠近。",
+            "side_effects": ['@spawn_enemy(enemy_ref="测试巡游者", scene="room_a", quantity=1)'],
+            "graded_result": None, "difficulty": "None",
+            "scene": "room_a", "time_condition": [],
+        }
+        world = make_world({"room_a": make_scene(auto_triggers=[at])}, "room_a",
+                           enemy_library=lib)
+        _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "auto_trigger", "id": "AT_SPAWN"}]])
+        game = make_game(keeper)
+
+        r = run_turn(game, "环顾四周")
+        assert_player_turn_contract(r)
+        active = world.enemies.get_active_in_scene("room_a")
+        assert len(active) == 1, f"AT 副作用必须生成敌人，实际 {len(active)}"
+        assert active[0].enemy_ref == "测试巡游者"
+        snap = world.enemies.get_active_in_scene_snapshot("room_a")
+        assert snap and snap[0]["enemy_ref"] == "测试巡游者"
+
+    def test_at_spawn_unknown_ref_degrades(self, monkeypatch):
+        """@spawn_enemy 引用库中不存在的敌人 → 回合不炸，警告进叙事。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        lib = _enemy_lib_with()
+        at = {
+            "id": "AT_BAD", "entity_type": "auto_trigger", "type": "无",
+            "name": "错误生成", "requirement": "", "trigger": "进入时",
+            "result": "（生成失败）",
+            "side_effects": ['@spawn_enemy(enemy_ref="不存在的怪", scene="room_a", quantity=1)'],
+            "graded_result": None, "difficulty": "None",
+            "scene": "room_a", "time_condition": [],
+        }
+        world = make_world({"room_a": make_scene(auto_triggers=[at])}, "room_a",
+                           enemy_library=lib)
+        _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "auto_trigger", "id": "AT_BAD"}]])
+        game = make_game(keeper)
+
+        r = run_turn(game, "环顾四周")
+        assert_player_turn_contract(r)
+        assert not world.enemies.get_active_in_scene("room_a")
+        assert any("不存在" in w for w in keeper._warnings), \
+            f"未知 enemy_ref 必须降级为 warning，实际 warnings={keeper._warnings}"
+
+
+class TestFailureEscalation:  # D9: A5
+    def _fail_world(self):
+        interaction = {
+            "id": "IT_LOCK", "entity_type": "interaction",
+            "name": "撬锁", "scene": "room_a",
+            "type": "锁匠", "requirement": "", "trigger": "尝试撬锁",
+            "result": "##GRADED##",
+            "graded_result": {"on_failure": "锁纹丝不动。",
+                              "on_regular": "锁开了。",
+                              "on_hard": "锁开了。", "on_extreme": "锁开了。"},
+            "side_effects": [], "difficulty": "regular", "time_condition": [],
+        }
+        world = make_world({"room_a": make_scene(interactions=[interaction])}, "room_a")
+        inv = _player(world)
+        inv.check_skill = lambda skill, diff: (False, f"{skill}检定：D100=98/10", "failure")
+        return world
+
+    def test_failure_escalates_difficulty_and_counts_retries(self, monkeypatch):
+        """首次失败→难度升一档；重试计数递增；重复失败不炸回合。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = self._fail_world()
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "interaction", "id": "IT_LOCK"}]])
+        game = make_game(keeper)
+
+        state = world.get_runtime_state("IT_LOCK")
+        r1 = run_turn(game, "撬锁")
+        assert_player_turn_contract(r1)
+        assert state.retries == 1
+        assert state.escalated_difficulty == "hard", \
+            f"首次失败后难度应 regular→hard，实际 {state.escalated_difficulty}"
+
+        r2 = run_turn(game, "再试一次撬锁")
+        assert_player_turn_contract(r2)
+        assert state.retries == 2
+        assert state.escalated_difficulty == "hard", "难度升级后不得回落"
+
+
+class TestBossPrespawnEngage:  # D10: B3
+    def _boss_world(self, tmp_path):
+        import json as _json
+        from library.bosses import BossLibrary
+        boss_data = {"测试魔像": {
+            "type": "神话造物",
+            "attributes": {"STR": 120, "CON": 140, "SIZ": 130, "DEX": 30, "POW": 80},
+            "armor": "4点石壳", "attacks": [], "special_abilities": [],
+            "san_loss": "1/1D6", "description": "测试用",
+            "boss_mechanics": "两阶段测试",
+            "flags": ["boss"], "multi_attack": 1,
+            "phases": [{"trigger": "hp_below_pct:0.5", "name": "崩解",
+                        "overrides": {"multi_attack": 2},
+                        "description": "外壳碎裂"}],
+        }}
+        p = tmp_path / "bosses.json"
+        p.write_text(_json.dumps(boss_data, ensure_ascii=False), encoding="utf-8")
+        bl = BossLibrary(str(p))
+        enc = {"id": "BOSS_T1", "type": "boss_encounter", "engage_type": "at",
+               "boss_ref": "测试魔像", "scene": "room_a",
+               "requirements": "", "description": "测试遭遇"}
+        lib = _enemy_lib_with()
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           enemy_library=lib, boss_library=bl,
+                           boss_encounters=[enc])
+        return world, enc
+
+    def test_prespawn_visible_and_engage_reuses_instance(self, monkeypatch, tmp_path):
+        """预生成实例场景可见；engage 复用同一实例不重复造人。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world, enc = self._boss_world(tmp_path)
+        _player(world)
+        inst = world.bosses.spawn_instance(enc)
+        world.enemies.register(inst)
+
+        snap = world.enemies.get_active_in_scene_snapshot("room_a")
+        assert any(e["enemy_ref"] == "测试魔像" for e in snap), \
+            "预生成 Boss 必须在场景快照可见"
+        assert inst.phases and inst.phases[0]["name"] == "崩解"
+
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+        r = run_turn(game, "环顾四周")
+        assert_player_turn_contract(r)
+        assert r.combat_init is not None, "at 型 Boss 在场景回合必须 engage"
+        ci_ids = [e.instance_id for e in r.combat_init.enemies]
+        assert ci_ids == [inst.instance_id], \
+            f"engage 必须复用预生成实例 {inst.instance_id}，实际 {ci_ids}"
+        assert len(world.enemies._instances) == 1, "不得产生重复 Boss 实例"
+        assert world.bosses.has_spawned("BOSS_T1")
+
+    def test_phase_triggers_below_hp_threshold(self, tmp_path):
+        """HP 低于阈值 → _check_phase 返回阶段名；未低于则不触发。"""
+        from types import SimpleNamespace
+        from game.combat import CombatSystem
+
+        world, enc = self._boss_world(tmp_path)
+        inst = world.bosses.spawn_instance(enc)
+        cs = CombatSystem()
+        state = SimpleNamespace(round=1)
+
+        inst.hp_max = 27
+        inst.hp = 27
+        assert cs._check_phase(state, inst) is None, "满血不得触发阶段"
+        inst.hp = 10  # 10/27 ≈ 0.37 < 0.5
+        assert cs._check_phase(state, inst) == "崩解"
+
+
+class TestMemoryCompression:  # D11: C4
+    def test_compress_trigger_and_preserve(self):
+        """raw_history 超阈值 → should_compress；压缩后摘要生成且近期记录保留。"""
+        from scenario_core import MemoryManager
+
+        mm = MemoryManager(max_raw=2)
+        for i in range(3):
+            mm.add_record(f"输入{i}", "other", None, f"结果{i}", location="room_a")
+        assert mm.should_compress(), "3 条记录 > max_raw=2 必须触发压缩建议"
+
+        called = {}
+        def fake_llm(prompt):
+            called["prompt"] = prompt
+            return "压缩摘要：玩家连续调查。"
+        mm.compress(fake_llm)
+        assert mm.summary == "压缩摘要：玩家连续调查。"
+        assert len(mm.raw_history) <= 2, "压缩后原始记录必须裁减"
+        assert "输入0" in called["prompt"], "被压缩的旧记录必须送入 LLM"
+
+
+class TestTimeAdvance:  # D12: C1
+    def test_time_delta_crosses_day_and_sets_context(self, monkeypatch):
+        """大估时跨天 → day 递增；narrative_hint 写入 time_context。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch, time_delta=1500)
+        keeper._run_time_agent = lambda a, r: {
+            "time_delta": 1500, "narrative_hint": "一天一夜过去了。"}
+        game = make_game(keeper)
+
+        d0 = world.clock.day
+        r = run_turn(game, "长途跋涉")
+        assert_player_turn_contract(r)
+        assert world.clock.day == d0 + 1, "1500 分钟必须跨天"
+        assert world.clock.time_context == "一天一夜过去了。"
