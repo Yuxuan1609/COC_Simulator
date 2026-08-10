@@ -28,6 +28,7 @@ _progress_queues: dict[str, queue.Queue] = {}
 # ── Combat session storage (in-memory, per-process) ──
 # Each entry: {"state": CombatState, "combat_init": CombatInit}
 _combat_sessions: dict[str, dict] = {}
+_auto_win: bool = False
 
 
 def _serialize_enemies_for_frontend(enemies: list) -> list[dict]:
@@ -197,8 +198,14 @@ def _handle_slash_command(cmd: str) -> str:
         rs = world.runtime_state or {}
         if rs:
             for k, v in rs.items():
-                c = "text-green-400" if v.get("completed") else "text-gray-500"
-                lines.append(f'<div class="text-xs {c}">{k}: {v}</div>')
+                completed = v.get("completed") if isinstance(v, dict) else getattr(v, "completed", False)
+                c = "text-green-400" if completed else "text-gray-500"
+                if isinstance(v, dict):
+                    desc = str(v)
+                else:
+                    desc = (f"completed={getattr(v, 'completed', False)} tier={getattr(v, 'result_tier', '')}"
+                            f" retries={getattr(v, 'retries', 0)} esc={getattr(v, 'escalated_difficulty', '')}")
+                lines.append(f'<div class="text-xs {c}">{k}: {desc}</div>')
         else:
             lines.append('<div class="text-xs text-gray-500">无状态</div>')
     elif cmd == "/events":
@@ -821,6 +828,17 @@ async def game_state():
     }
 
 
+@router.post("/api/game/autowin")
+async def set_auto_win(request: Request):
+    """Toggle auto-win combat short-circuit (testing aid)."""
+    global _auto_win
+    import json
+    body = await request.body()
+    data = json.loads(body.decode("utf-8")) if body else {}
+    _auto_win = bool(data.get("enabled", False))
+    return {"auto_win": _auto_win}
+
+
 @router.post("/api/combat/start")
 async def combat_start(request: Request):
     """Initialize a combat session from a CombatInit object.
@@ -856,6 +874,57 @@ async def combat_start(request: Request):
         player_targets=combat_init_data.get("player_targets", []),
         player_extra=combat_init_data.get("player_extra", ""),
     )
+
+    # Auto-win short-circuit: skip the combat system entirely (testing aid)
+    if _auto_win:
+        world = game["keeper"].world
+        keep = game["keeper"]
+        narr = game["narrator"]
+        is_boss = any(getattr(e, "boss_mechanics", "") for e in enemies)
+        if world.enemies:
+            for e in enemies:
+                live = world.enemies.get_by_id(e.instance_id)
+                if live:
+                    live.hp = 0
+        boss_id = world.bosses.active_boss_id if world.bosses else None
+        if boss_id:
+            world.get_runtime_state(boss_id).completed = True
+            world.bosses.set_active(None)
+        if world.enemies:
+            world.enemies.exit_combat({"outcome": "win"})
+        completed_brief = ""
+        completed_narrative = ""
+        combat_result = {
+            "outcome": "win",
+            "narrative": "战斗在转瞬间分出了胜负。（自动胜利）",
+            "is_boss": is_boss,
+        }
+        completed = keep.complete_combat_turn(keep._last_player_input, combat_result) if keep._last_player_input else None
+        if completed and completed.brief:
+            try:
+                snap = world.build_snapshot()
+                completed_brief, completed_narrative, _ = narr.narrate(
+                    completed.brief, snap=snap, user_input=keep._last_player_input)
+                from game_loop import _turn_logger as tl
+                if tl:
+                    tl.log(
+                        player_input=keep._last_player_input,
+                        enrich_result=completed.diagnostics.enrich_raw,
+                        narrator_brief=completed_brief,
+                        narrator_narrative=completed_narrative,
+                    )
+            except Exception:
+                pass
+        keep._last_player_input = ""
+        return {
+            "auto_win": True,
+            "finished": True,
+            "outcome": "win",
+            "is_boss": is_boss,
+            "combat_completed": bool(completed_brief),
+            "combat_completed_brief": completed_brief,
+            "combat_completed_narrative": completed_narrative,
+        }
 
     cs = CombatSystem()
     state = cs._init_combat(combat_init)

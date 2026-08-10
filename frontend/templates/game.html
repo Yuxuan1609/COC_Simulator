@@ -204,6 +204,9 @@
       <button id="btn-debug" onclick="toggleDebug()" title="调试模式：点击敌人查看详细数据（HP/护甲/攻击/阶段/Boss机制）" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-500 rounded border border-gray-700 transition-colors cursor-pointer">
         DBG
       </button>
+      <button id="btn-autowin" onclick="toggleAutoWin()" title="自动胜利：战斗直接判胜，跳过回合制战斗（测试用）" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-500 rounded border border-gray-700 transition-colors cursor-pointer">
+        AUTO
+      </button>
     </div>
 
     {# Input bar -- #}
@@ -293,6 +296,30 @@
     else { localStorage.setItem('trpg_debug', '1'); }
     location.reload();
   }
+  // == Auto-win toggle ==
+  var AUTO_WIN = localStorage.getItem('trpg_autowin') === '1';
+  function toggleAutoWin() {
+    AUTO_WIN = !AUTO_WIN;
+    if (AUTO_WIN) { localStorage.setItem('trpg_autowin', '1'); }
+    else { localStorage.removeItem('trpg_autowin'); }
+    syncAutoWin();
+  }
+  function syncAutoWin() {
+    fetch('/api/game/autowin', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: AUTO_WIN })
+    }).catch(function() {});
+    var btn = document.getElementById('btn-autowin');
+    if (btn) {
+      if (AUTO_WIN) {
+        btn.classList.remove('text-gray-500', 'border-gray-700');
+        btn.classList.add('text-coc-green', 'border-coc-green/60', 'bg-coc-green/10');
+      } else {
+        btn.classList.add('text-gray-500', 'border-gray-700');
+        btn.classList.remove('text-coc-green', 'border-coc-green/60', 'bg-coc-green/10');
+      }
+    }
+  }
   document.addEventListener('DOMContentLoaded', function() {
     if (!DEBUG) return;
     document.getElementById('debug-badge').classList.remove('hidden');
@@ -302,6 +329,7 @@
       btn.classList.add('text-yellow-400', 'border-yellow-500/60', 'bg-yellow-500/10');
     }
   });
+  document.addEventListener('DOMContentLoaded', syncAutoWin);
 </script>
 
 <script>
@@ -995,6 +1023,24 @@
       if (data.error) {
         alert('战斗初始化失败: ' + data.error);
         exitCombatMode();
+        return;
+      }
+      if (data.auto_win) {
+        // Auto-win short-circuit: show completion narrative, skip combat panel
+        exitCombatMode();
+        var outputArea = document.getElementById('turn-output');
+        var winHtml = '<div class="turn-combat px-3 py-2 border-l-2 border-coc-green/60 bg-[#0a1a0a]/60 rounded-r">' +
+          '<span class="text-sm font-bold text-coc-green">战斗 胜利（自动）</span></div>';
+        if (data.combat_completed_narrative) {
+          winHtml += '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +
+            escapeHtml(data.combat_completed_narrative).replace(/\n/g, '<br>') + '</div>';
+        }
+        outputArea.insertAdjacentHTML('beforeend', winHtml);
+        addToHistory('[自动胜利]', winHtml);
+        try {
+          fetch('/api/game/player-status?format=json').then(function(r){return r.json();}).then(updateCharHUD);
+          fetch('/api/game/state').then(function(r){return r.json();});
+        } catch(e) {}
         return;
       }
       combatSession.sessionId = data.session_id;
