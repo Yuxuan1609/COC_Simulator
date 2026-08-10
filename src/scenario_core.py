@@ -1273,13 +1273,18 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
         elif isinstance(effect, SpawnEnemy):
             target_scene = effect.scene or world.current_location
             if world.enemy_manager:
-                instance = world.enemy_manager.spawn(
-                    effect.enemy_ref, target_scene, effect.quantity
-                )
-                msgs.append(
-                    f"[生成敌人] {effect.enemy_ref} x{effect.quantity} "
-                    f"在 {target_scene} ({instance.instance_id})"
-                )
+                try:
+                    instance = world.enemy_manager.spawn(
+                        effect.enemy_ref, target_scene, effect.quantity
+                    )
+                    msgs.append(
+                        f"[生成敌人] {effect.enemy_ref} x{effect.quantity} "
+                        f"在 {target_scene} ({instance.instance_id})"
+                    )
+                except KeyError:
+                    msgs.append(
+                        f"[生成敌人] 失败：敌人库中不存在「{effect.enemy_ref}」（已跳过）"
+                    )
             else:
                 msgs.append(
                     f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}"

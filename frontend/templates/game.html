@@ -82,6 +82,11 @@
           <div class="text-[10px] text-gray-500 font-bold mb-1">敌对生物</div>
           <div id="scene-card-enemies" class="space-y-2"></div>
         </div>
+        {# 潜在威胁（debug） -- #}
+        <div id="scene-card-threats-wrap" class="hidden">
+          <div class="text-[10px] text-yellow-600/80 font-bold mb-1">潜在威胁</div>
+          <div id="scene-card-threats" class="space-y-1"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -407,6 +412,22 @@
       }).join('');
     } else {
       enemiesWrap.classList.add('hidden');
+    }
+
+    // Potential threats (debug only)
+    var threatsWrap = document.getElementById('scene-card-threats-wrap');
+    var threatsEl = document.getElementById('scene-card-threats');
+    var threats = snap.potential_threats || [];
+    if (DEBUG && threats.length > 0) {
+      threatsWrap.classList.remove('hidden');
+      threatsEl.innerHTML = threats.map(function(t) {
+        var icon = t.kind === 'boss' ? '👑' : '👁';
+        var cls = t.kind === 'boss' ? 'text-red-400' : 'text-yellow-400';
+        return '<div class="text-[10px] ' + cls + '">' + icon + ' ' + escapeHtml(t.ref || '?') +
+          (t.note ? ' <span class="text-gray-600">' + escapeHtml(t.note) + '</span>' : '') + '</div>';
+      }).join('');
+    } else {
+      threatsWrap.classList.add('hidden');
     }
 
   }

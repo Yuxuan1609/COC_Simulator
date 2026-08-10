@@ -406,6 +406,48 @@ async def process_turn(
                     "description": getattr(lib_e, "description", ""),
                 }
 
+    # Potential threats for debug view: unengaged boss encounters + AT-lurking enemy spawns
+    if player_snapshot is not None:
+        try:
+            game = get_game()
+            world = game["keeper"].world if game else None
+            loc = world.current_location if world else ""
+            threats = []
+            bosses = getattr(world, "bosses", None)
+            if bosses:
+                for enc in bosses._encounters:
+                    bid = enc.get("id", enc.get("boss_ref", ""))
+                    if enc.get("scene") != loc:
+                        continue
+                    if bosses.has_spawned(bid) or world.is_entity_completed(bid):
+                        continue
+                    threats.append({
+                        "kind": "boss",
+                        "ref": enc.get("boss_ref", ""),
+                        "note": f"Boss 遭遇（{enc.get('engage_type', '?')}）",
+                    })
+            node = world.graph.nodes.get(loc) if world else None
+            if node:
+                import re as _re
+                present = {e.get("enemy_ref") for e in (player_snapshot.get("enemies") or [])}
+                for at in getattr(node, "auto_triggers", []):
+                    if world.is_entity_completed(getattr(at, "id", "")):
+                        continue
+                    for se in getattr(at, "side_effects", []) or []:
+                        if not isinstance(se, str):
+                            continue
+                        m = _re.search(r'@spawn_enemy\([^)]*enemy_ref\s*=\s*"([^"]+)"', se)
+                        if m and m.group(1) not in present:
+                            threats.append({
+                                "kind": "enemy",
+                                "ref": m.group(1),
+                                "note": f"埋伏于 {getattr(at, 'name', getattr(at, 'id', '?'))}",
+                            })
+                            present.add(m.group(1))
+            player_snapshot["potential_threats"] = threats
+        except Exception:
+            pass
+
     # Format dynamic turn text from snapshot
     turn_dynamic_text = ""
     try:

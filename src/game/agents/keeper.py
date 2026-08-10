@@ -612,7 +612,11 @@ class Keeper:
                     if self.world.bosses.has_spawned(boss_id):
                         continue
                     if self._check_boss_requirements(boss_entity, turn_input.raw_text):
-                        boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                        try:
+                            boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                        except KeyError as e:
+                            self._warnings.append(f"Boss 遭遇 {boss_id} 装载失败：{e}")
+                            continue
                         self.world.bosses.set_active(boss_id)
                         self.world.bosses.mark_spawned(boss_id)
                         boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
