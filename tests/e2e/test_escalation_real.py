@@ -426,7 +426,10 @@ def test_case_d(log_dir=""):
     author = _make_author()
 
     try:
-        turn = TurnInput(raw_text="take out phone and shine flashlight into the dark beyond the iron door")
+        # 输入设计：明显违背核心驱动力（keep moving forward / escape）的摆烂行为，
+        # 按作者人设（对极度违背剧情线的行为予以驳回）应稳定触发 REJECTED。
+        # 注：原输入「手机闪光灯探照黑暗」属合理探索，现行人设下会被合理接受，已不适用于拒绝用例。
+        turn = TurnInput(raw_text="我躺在地板上装死，拒绝继续探索，把手机扔掉，等这一切自己结束")
         result = keeper.process_turn(turn, author=author)
 
         node = world.graph.nodes["test_room"]
@@ -443,7 +446,7 @@ def test_case_d(log_dir=""):
 
         _case_log(log_dir, {
             "case": "D - other + Author Reject",
-            "input": "take out phone and shine flashlight into the dark beyond the iron door",
+            "input": "我躺在地板上装死，拒绝继续探索，把手机扔掉，等这一切自己结束",
             "verdict": "PASS",
             "messages": [m[:100] for m in all_messages],
         })

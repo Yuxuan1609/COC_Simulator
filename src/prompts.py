@@ -950,7 +950,7 @@ def build_standoff_match_prompt(player_input: str) -> str:
 
 可用技能：{skill_list}
 
-判断玩家意图对应的技能检定（如果有）：
+判断玩家意图对应的技能检定（如果有），以 JSON 格式输出：
 {{"matched": true/false, "skill_name": "技能名", "reason": "简述为什么匹配"}}
 
 规则：
@@ -1020,7 +1020,7 @@ def build_consume_item_fuzzy_prompt(
 背包物品：
 {held_items}
 
-请判断背包中是否有物品与"{target}"语义相同：
+请判断背包中是否有物品与"{target}"语义相同，以 JSON 格式输出：
 {{"matched": true/false, "item_name": "背包中的实际物品名", "reason": "匹配理由"}}
 
 规则：

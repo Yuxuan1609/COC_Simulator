@@ -1,0 +1,32 @@
+# 箱庭全链路通关——完备性主干：搜索→钥匙→NPC→standoff→Boss(AUTO)→结局
+name: full_clear
+description: 箱庭全链路通关——一次运行串起搜索交互、武器拾取、NPC 结交、对峙回避、Boss 遭遇（AUTO 胜利）与测试结局，验证子系统间协作
+module: e2e_testbed
+auto_win: true
+goal: |
+  这是你的完整任务清单，按你认为合理的顺序完成：
+  1. 仔细搜索测试房间A，找到藏起来的「测试钥匙」，并拾取房间里可用的小刀；
+  2. 与神情恍惚的测试乘务员交谈，安抚他，赢得他的信任（不必强求他跟随）；
+  3. 推开石门进入测试房间B——里面有一只行动迟缓的胶质生物（可以尝试绕开它，不必硬拼），
+     以及一尊巨大的测试魔像（必须击败它）；
+  4. 完成以上所有事后，回到测试房间A，对着刻有符号的墙壁低声说出「结束测试」。
+  保持冷静，合理安排行动顺序。
+judging: |
+  逐项判定，每项必须从日志中引用真实存在的证据（不得推测）：
+  1. 搜索交互完成——IT_SEARCH 被触发且检定完成（任意 tier），时间线有 entities=IT_SEARCH 记录。
+  2. 武器拾取闭环——weapon_offer pending 出现且玩家应答后小刀入包（武器列表非空）。
+  3. NPC 实质交互——玩家与乘务员有真实对话回合，系统给出回应。
+  4. 对峙或战斗通路合法——测试巡游者的处理走 standoff 回避成功或被击败（任一合法路径），
+     无状态错乱（如 pending 悬空三回合以上）。
+  5. Boss 遭遇与胜利记账——boss=engage 后出现胜利结算，魔像不再构成威胁。
+  6. 结局触发——对墙低语后 END_TEST 触发，game_over 出现，且结局回合在上述事件之后。
+  顺序约束：结局（项6）必须最后发生；其余项顺序不限。
+predicates:
+  weapon_picked_up: true
+  combat_occurred: true
+  game_over: true
+  player_alive: true
+success_checks: []
+max_turns: 18
+max_duration_s: 1500
+player_model: deepseek-v4-flash

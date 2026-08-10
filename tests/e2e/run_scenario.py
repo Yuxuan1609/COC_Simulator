@@ -267,6 +267,9 @@ def main() -> int:
     print(f"Log: {log_dir}\n")
 
     from llm_player import run_llm_player
+    if scn.get("auto_win"):
+        import os as _os
+        _os.environ["TRPG_AUTO_WIN"] = "1"  # 战斗短接（测试辅助，B2 另测）
     result = run_llm_player(
         profile_path=str(profile_path),
         post_init_hook=make_seed_fn(scn.get("seed")),

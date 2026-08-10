@@ -1,0 +1,23 @@
+# Boss 遭遇（AUTO 胜利版）——B3：预生成可见 → engage → 自动胜利 → Boss 记账
+name: boss_fight
+description: Boss 遭遇——进入测试房间B 直面测试魔像，验证预生成实例、engage 开战、AUTO 胜利结算与 Boss 完成记账（战斗本体走短接，B2 另测）
+module: e2e_testbed
+auto_win: true
+goal: |
+  你听说石门后的测试房间B 里蛰伏着一尊巨大的测试魔像——刻满符号的石质造物。
+  你的任务是：推开石门进入测试房间B，直面它，并在战斗中击败它。
+  不要逃避这场战斗。击败魔像之后，确认它不再构成威胁。
+judging: |
+  逐项判定，每项必须从日志中引用真实存在的证据（不得推测）：
+  1. Boss 预生成实例在进入房间前已存在——进入测试房间B 的回合，
+     场景敌人中已可见测试魔像（敌对生物区块/时间线 spawn 记录）。
+  2. Boss engage 机制触发——时间线出现 boss=engage(测试魔像) 或等价记录，
+     且发生在玩家进入房间 B 之后。
+  3. 战斗以胜利结算且 Boss 被正确记账——战斗结果为 win（自动胜利短接），
+     之后 Boss 不再出现在场景敌人中，BOSS_T1 被标记完成。
+predicates:
+  combat_occurred: true
+  player_alive: true
+success_checks: []
+max_turns: 8
+player_model: deepseek-v4-flash

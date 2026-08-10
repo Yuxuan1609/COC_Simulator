@@ -7,6 +7,7 @@ from typing import Any
 from datetime import datetime
 from pathlib import Path
 import json
+import os
 
 from scenario_core import DirectedGraph, ScenarioWorld
 from game.agents import Keeper, Narrator, Author
@@ -378,6 +379,37 @@ def run_turn(game: dict, user_input: str,
 
     # Combat entry: caller handles combat (interactive CLI or auto frontend)
     combat_init = result.combat_init
+    auto_win_combat = None
+
+    # AUTO_WIN_COMBAT（测试辅助短接）：战斗直接判胜，不走回合制战斗系统。
+    # 场景层 runner 通过 TRPG_AUTO_WIN=1 启用；战斗与后续逻辑差异大，单独测试。
+    if combat_init and combat_init.enemies and os.environ.get("TRPG_AUTO_WIN") == "1":
+        for e in combat_init.enemies:
+            live = world.enemies.get_by_id(e.instance_id) if world.enemies else None
+            if live:
+                live.hp = 0
+        if world.enemies:
+            world.enemies.exit_combat({"outcome": "win"})
+        boss_id = world.bosses.active_boss_id if world.bosses else None
+        if not keeper._last_player_input:
+            keeper._last_player_input = user_input
+        completed = keeper.complete_combat_turn(
+            keeper._last_player_input,
+            {"outcome": "win", "narrative": "战斗在转瞬间分出了胜负。（自动胜利）",
+             "is_boss": bool(boss_id)})
+        if boss_id:
+            world.get_runtime_state(boss_id).completed = True
+            world.bosses.set_active(None)
+        if completed is not None and completed.brief is not None:
+            result.brief = completed.brief
+            brief = result.brief
+            display_brief = brief.enriched_summary or "\n".join(
+                o.message for o in brief.action_outcomes)
+        auto_win_combat = {"outcome": "win",
+                           "narrative": "战斗在转瞬间分出了胜负。（自动胜利）",
+                           "is_boss": bool(boss_id)}
+        result.combat_init = None
+        combat_init = None
 
     # Extract skill check results from outcomes for player display
     skill_results = []
@@ -564,7 +596,7 @@ def run_turn(game: dict, user_input: str,
         pending_interaction=result.pending_interaction,
         player_snapshot=player_snapshot,
         skill_results=skill_results,
-        combat=None,   # combat result is filled by caller after combat resolves
+        combat=auto_win_combat,
         combat_init=combat_init,
         ending=result.ending,
         game_over=bool(result.ending and result.ending.game_over),
