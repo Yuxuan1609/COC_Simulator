@@ -168,7 +168,7 @@ def _build_digest(summary: dict) -> str:
 def run_judge(scn: dict, summary: dict, log_dir: str,
               pred_results: dict | None = None) -> dict:
     from llm import call_deepseek
-    from config_llm import LLM_DEFAULT_MODEL
+    from config_llm import LLM_FLASH_MODEL
 
     rubric = scn.get("judging", "")
     digest = _build_digest(summary)
@@ -219,7 +219,8 @@ def run_judge(scn: dict, summary: dict, log_dir: str,
     try:
         response = call_deepseek(
             user, json_mode=True, system=system,
-            model=LLM_DEFAULT_MODEL,
+            model=LLM_FLASH_MODEL,
+            reasoning_effort="max",
             fallback_schema={"items": [], "overall": "FAIL", "reason": "judge 调用异常"},
             max_retries=3, timeout=300,
         )
