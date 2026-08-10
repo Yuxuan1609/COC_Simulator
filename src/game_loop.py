@@ -276,6 +276,16 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     else:
         print("[World AT] No 'world' node found in graph")
 
+    # Eagerly instantiate "at"-type boss encounters: boss exists in scene from the start
+    if world.bosses and world.enemies:
+        for enc in world.bosses.check_by_engage_type("at"):
+            try:
+                inst = world.bosses.spawn_instance(enc)
+                world.enemies.register(inst)
+                print(f"[Boss] pre-spawned {inst.enemy_ref} in {inst.scene} ({inst.instance_id})")
+            except KeyError as e:
+                print(f"[Boss] pre-spawn failed: {e}")
+
     # Load time costs reference
     try:
         import json as _json, os as _os

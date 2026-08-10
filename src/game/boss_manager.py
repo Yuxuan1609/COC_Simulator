@@ -8,7 +8,8 @@ class BossManager:
         self._library = boss_library
         self._encounters = boss_encounters
         self._active_boss_id: str | None = None
-        self._spawned_boss_ids: set[str] = set()  # 已生成的 Boss entity ID，防止重复生成
+        self._spawned_boss_ids: set[str] = set()  # 已开战的 Boss entity ID，防止重复开战
+        self._instance_ids: dict[str, str] = {}  # boss_id → 预生成的 EnemyInstance.instance_id
 
     def has_spawned(self, boss_id: str) -> bool:
         return boss_id in self._spawned_boss_ids
@@ -27,7 +28,7 @@ class BossManager:
             results.append(enc)
         return results
 
-    def build_combat_init(self, boss_entity: dict, player, scene: str) -> CombatInit:
+    def _create_instance(self, boss_entity: dict, scene: str):
         from game.enemy_manager import EnemyInstance
         import uuid
 
@@ -61,6 +62,24 @@ class BossManager:
             special_rules=getattr(lib_boss, 'special_rules', ''),
             phases=list(getattr(lib_boss, 'phases', [])),
         )
+        boss_id = boss_entity.get("id", boss_ref)
+        self._instance_ids[boss_id] = enemy.instance_id
+        return enemy
+
+    def spawn_instance(self, boss_entity: dict) :
+        """Eagerly create the boss EnemyInstance for an encounter (init-time pre-spawn)."""
+        return self._create_instance(boss_entity, boss_entity.get("scene", ""))
+
+    def build_combat_init(self, boss_entity: dict, player, scene: str, enemy_manager=None) -> CombatInit:
+        boss_id = boss_entity.get("id", boss_entity.get("boss_ref", "unknown"))
+        enemy = None
+        if enemy_manager is not None:
+            iid = self._instance_ids.get(boss_id)
+            inst = enemy_manager.get_by_id(iid) if iid else None
+            if inst is not None and inst.status not in ("dead", "defeated"):
+                enemy = inst
+        if enemy is None:
+            enemy = self._create_instance(boss_entity, scene)
 
         return CombatInit(
             enemies=[enemy],
@@ -109,6 +128,7 @@ class BossManager:
             "active_boss_id": self._active_boss_id,
             "encounters": self._encounters,
             "spawned_boss_ids": list(self._spawned_boss_ids),
+            "instance_ids": dict(self._instance_ids),
         }
 
     @classmethod
@@ -116,4 +136,5 @@ class BossManager:
         mgr = cls(boss_library, data.get("encounters", []))
         mgr._active_boss_id = data.get("active_boss_id")
         mgr._spawned_boss_ids = set(data.get("spawned_boss_ids", []))
+        mgr._instance_ids = dict(data.get("instance_ids", {}))
         return mgr

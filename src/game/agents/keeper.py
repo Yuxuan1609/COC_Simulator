@@ -613,7 +613,9 @@ class Keeper:
                         continue
                     if self._check_boss_requirements(boss_entity, turn_input.raw_text):
                         try:
-                            boss_combat_init = self.world.bosses.build_combat_init(boss_entity, self.world.player, self.world.current_location)
+                            boss_combat_init = self.world.bosses.build_combat_init(
+                                boss_entity, self.world.player, self.world.current_location,
+                                enemy_manager=self.world.enemies)
                         except KeyError as e:
                             self._warnings.append(f"Boss 遭遇 {boss_id} 装载失败：{e}")
                             continue
@@ -636,7 +638,9 @@ class Keeper:
             boss_enemy = boss_combat_init.enemies[0] if boss_combat_init.enemies else None
             if boss_enemy:
                 if combat_init_result and combat_init_result.enemies:
-                    combat_init_result.enemies.append(boss_enemy)
+                    existing_iids = {e.instance_id for e in combat_init_result.enemies}
+                    if boss_enemy.instance_id not in existing_iids:
+                        combat_init_result.enemies.append(boss_enemy)
                     self.world.enemies.register(boss_enemy)
                     self.world.enemies.add_to_combat(boss_enemy.instance_id)
                     self._last_player_input = raw  # stored for combat completion replay

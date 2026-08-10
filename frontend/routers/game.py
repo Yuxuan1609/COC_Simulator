@@ -421,6 +421,8 @@ async def process_turn(
                         continue
                     if bosses.has_spawned(bid) or world.is_entity_completed(bid):
                         continue
+                    if bid in getattr(bosses, "_instance_ids", {}):
+                        continue  # 已预生成实例，直接显示在敌对生物区块
                     threats.append({
                         "kind": "boss",
                         "ref": enc.get("boss_ref", ""),
