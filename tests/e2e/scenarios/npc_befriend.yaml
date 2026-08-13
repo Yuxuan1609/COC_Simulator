@@ -20,6 +20,7 @@ predicates:
   npc_following: true
   combat_occurred: false
   player_alive: true
-success_checks: [npc_following]
+# 显式置空：跟随激活后还要继续观察跨场景移动，不做提前终止
+success_checks: []
 max_turns: 10
 player_model: deepseek-v4-flash

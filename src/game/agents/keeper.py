@@ -601,7 +601,10 @@ class Keeper:
                 self._last_player_input = raw  # stored for combat completion replay
 
         # Boss "at" / "interaction" check: scene-bound bosses — must run BEFORE Step 3 enrich
+        # 注意：开战记账（set_active/mark_spawned/add_to_combat）延后到最终返回前执行——
+        # Step 4 的 Author 递归会丢弃本帧结果，提前记账会导致 Boss 战被永久吞掉。
         boss_combat_init = None
+        boss_engaged_id = None
         if self.world.bosses:
             for engage in ("at", "interaction"):
                 candidates = self.world.bosses.check_by_engage_type(engage, scene=self.world.current_location)
@@ -619,8 +622,7 @@ class Keeper:
                         except KeyError as e:
                             self._warnings.append(f"Boss 遭遇 {boss_id} 装载失败：{e}")
                             continue
-                        self.world.bosses.set_active(boss_id)
-                        self.world.bosses.mark_spawned(boss_id)
+                        boss_engaged_id = boss_id
                         boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
                         boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
                         enrich_input.entities.append({
@@ -641,13 +643,9 @@ class Keeper:
                     existing_iids = {e.instance_id for e in combat_init_result.enemies}
                     if boss_enemy.instance_id not in existing_iids:
                         combat_init_result.enemies.append(boss_enemy)
-                    self.world.enemies.register(boss_enemy)
-                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
                     self._last_player_input = raw  # stored for combat completion replay
                 else:
                     combat_init_result = boss_combat_init
-                    self.world.enemies.register(boss_enemy)
-                    self.world.enemies.add_to_combat(boss_enemy.instance_id)
                     self._last_player_input = raw  # stored for combat completion replay
 
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into enrich_input
@@ -891,6 +889,16 @@ class Keeper:
                 question=f"是否拾取{offer_names}？（是/否）",
                 interaction_id="weapon_offer",
             )
+
+        # Boss 开战记账（延后至此：只有 combat_init 真正随结果返回才记账，
+        # 保证 Step 4 Author 递归丢弃外层结果时 Boss 战不被吞）
+        if boss_combat_init and boss_engaged_id and combat_init_result:
+            boss_enemy = boss_combat_init.enemies[0] if boss_combat_init.enemies else None
+            if boss_enemy:
+                self.world.enemies.register(boss_enemy)
+                self.world.enemies.add_to_combat(boss_enemy.instance_id)
+                self.world.bosses.set_active(boss_engaged_id)
+                self.world.bosses.mark_spawned(boss_engaged_id)
 
         return TurnResult(
             status=TurnStatus.COMPLETED,

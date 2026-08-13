@@ -384,6 +384,8 @@ def run_turn(game: dict, user_input: str,
     # AUTO_WIN_COMBAT（测试辅助短接）：战斗直接判胜，不走回合制战斗系统。
     # 场景层 runner 通过 TRPG_AUTO_WIN=1 启用；战斗与后续逻辑差异大，单独测试。
     if combat_init and combat_init.enemies and os.environ.get("TRPG_AUTO_WIN") == "1":
+        defeated_names = "、".join(getattr(e, "enemy_ref", "?") for e in combat_init.enemies)
+        auto_narrative = f"战斗在转瞬间分出了胜负——{defeated_names}被击败。（自动胜利）"
         for e in combat_init.enemies:
             live = world.enemies.get_by_id(e.instance_id) if world.enemies else None
             if live:
@@ -395,7 +397,7 @@ def run_turn(game: dict, user_input: str,
             keeper._last_player_input = user_input
         completed = keeper.complete_combat_turn(
             keeper._last_player_input,
-            {"outcome": "win", "narrative": "战斗在转瞬间分出了胜负。（自动胜利）",
+            {"outcome": "win", "narrative": auto_narrative,
              "is_boss": bool(boss_id)})
         if boss_id:
             world.get_runtime_state(boss_id).completed = True
@@ -406,7 +408,7 @@ def run_turn(game: dict, user_input: str,
             display_brief = brief.enriched_summary or "\n".join(
                 o.message for o in brief.action_outcomes)
         auto_win_combat = {"outcome": "win",
-                           "narrative": "战斗在转瞬间分出了胜负。（自动胜利）",
+                           "narrative": auto_narrative,
                            "is_boss": bool(boss_id)}
         result.combat_init = None
         combat_init = None
@@ -739,11 +741,32 @@ def continue_standoff(keeper, player_input: str) -> TurnResult:
                 player_extra="",
             )
 
-    # Run combat if resolved into combat (short-circuited — one-turn auto-win)
+    # Run combat if resolved into combat
+    # TRPG_AUTO_WIN=1：跳过真实战斗直接判胜（测试辅助短接，战斗本体见 B2 专项）
     completed = None
     combat_ran = False
     combat_narrative = ""
-    if combat_init and combat_init.enemies:
+    if combat_init and combat_init.enemies and os.environ.get("TRPG_AUTO_WIN") == "1":
+        defeated_names = "、".join(getattr(e, "enemy_ref", "?") for e in combat_init.enemies)
+        auto_narrative = f"战斗在转瞬间分出了胜负——{defeated_names}被击败。（自动胜利）"
+        for e in combat_init.enemies:
+            live = keeper.world.enemy_manager.get_by_id(e.instance_id) if keeper.world.enemy_manager else None
+            if live:
+                live.hp = 0
+        keeper.world.enemy_manager.exit_combat({"outcome": "win"})
+        if not keeper._last_player_input:
+            keeper._last_player_input = player_input
+        completed = keeper.complete_combat_turn(
+            keeper._last_player_input,
+            {"outcome": "win", "narrative": auto_narrative,
+             "is_boss": bool(keeper.world.bosses and keeper.world.bosses.active_boss_id)})
+        boss_id = keeper.world.bosses.active_boss_id if keeper.world.bosses else None
+        if boss_id:
+            keeper.world.get_runtime_state(boss_id).completed = True
+            keeper.world.bosses.set_active(None)
+        combat_ran = True
+        combat_narrative = auto_narrative
+    elif combat_init and combat_init.enemies:
         from game.combat import CombatSystem
         cs = CombatSystem()
         cr = cs.run_combat(combat_init)

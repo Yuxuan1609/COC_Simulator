@@ -136,7 +136,7 @@ _TIER_RANK = {"": 0, "fumble": 0, "failure": 0, "regular": 1, "hard": 2, "extrem
 
 
 def _collect_mech_line(game, result, turn_no: int, action: str, dt: float,
-                       prev_loc: str, prev_boss_active) -> str:
+                       prev_loc: str, prev_boss_state: tuple) -> str:
     """采集单回合机制事件，格式对齐 tests/e2e/scenarios/audit_guide.md 第三节。"""
     keeper = game["keeper"]
     world = keeper.world
@@ -182,11 +182,26 @@ def _collect_mech_line(game, result, turn_no: int, action: str, dt: float,
     loc = world.current_location
     if prev_loc and loc != prev_loc:
         parts.append(f"move={prev_loc}→{loc}")
+        if world.enemies:
+            here = [i.enemy_ref for i in world.enemies.get_active_in_scene(loc)]
+            if here:
+                parts.append("enemies_here=" + ",".join(here))
 
     bosses = getattr(world, "bosses", None)
-    active = bosses.active_boss_id if bosses else None
-    if active and not prev_boss_active:
-        parts.append(f"boss=engage({active})")
+    if bosses:
+        now_spawned = set(getattr(bosses, "_spawned_boss_ids", set()) or set())
+        for bid in sorted(now_spawned - prev_boss_state[0]):
+            parts.append(f"boss=engage({bid})")
+        now_dead = set()
+        for bid in now_spawned:
+            iid = getattr(bosses, "_instance_ids", {}).get(bid)
+            inst = world.enemies.get_by_id(iid) if (iid and world.enemies) else None
+            if inst is not None and inst.status in ("dead", "defeated"):
+                now_dead.add(bid)
+        for bid in sorted(now_dead - prev_boss_state[1]):
+            parts.append(f"boss=defeated({bid})")
+        prev_boss_state[0].clear(); prev_boss_state[0].update(now_spawned)
+        prev_boss_state[1].clear(); prev_boss_state[1].update(now_dead)
 
     if result.combat_init:
         names = ",".join(getattr(e, "enemy_ref", "?") for e in result.combat_init.enemies)
@@ -311,7 +326,7 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     t0 = time.perf_counter()
     turn = 0
     prev_loc = game["keeper"].world.current_location
-    prev_boss_active = None
+    prev_boss_state = (set(), set())  # (spawned_ids, dead_ids)
     last_narrative = {"brief": "", "narrative": ""}
     last_snapshot = None
 
@@ -360,10 +375,8 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
         dt = time.perf_counter() - t_turn
 
         mech_line = _collect_mech_line(game, result, turn + 1, action, dt,
-                                       prev_loc, prev_boss_active)
+                                       prev_loc, prev_boss_state)
         prev_loc = game["keeper"].world.current_location
-        bosses = game["keeper"].world.bosses
-        prev_boss_active = bosses.active_boss_id if bosses else None
 
         brief = result.brief
         narrative = result.narrative
