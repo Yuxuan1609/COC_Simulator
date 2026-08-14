@@ -158,10 +158,10 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_build_world_snapshot` | `()` | 构建世界快照 dict | 1327 |
 | `_infer_time_category` | `(entity)` | 实体时间类别推断 | 1339 |
 | `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 1346 |
-| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文 | 1353 |
-| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph | 1369 |
-| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1446 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 | 1500 |
+| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 1448 |
+| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 1465 |
+| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1554 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch") | 1608 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 
@@ -685,7 +685,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合 | 552 |
 | `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事 | 601 |
 | `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 661 |
-| `build_author_prompt` | `(request, l3_data, persona)` patch/structural 判定 | 741 |
+| `build_author_prompt` | `(request, l3_data, persona)` patch/structural 判定（prompt 含【世界编年史】块） | 741 |
 | `build_combat_entry_prompt` | 战斗入口判定 | 919 |
 | `build_standoff_match_prompt` | 对峙技能匹配 | 944 |
 | `build_combat_narrative_prompt` | 战斗叙事 | 967 |

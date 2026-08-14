@@ -815,6 +815,10 @@ def build_author_prompt(request, l3_data, persona: str = "") -> str:
         scene_parts.append(_describe_value(runtime, indent=2))
     scene_ctx = "\n".join(scene_parts)
 
+    # ── Chronicle (world facts + events + patches) ──
+    chronicle_text = sc.get("chronicle", "")
+    chronicle_ctx = f"【世界编年史】\n{chronicle_text}" if chronicle_text else ""
+
     # ── Player intent ──
     intent_ctx = f"""【玩家意图】
   玩家想做什么: {request.intent}
@@ -836,6 +840,8 @@ def build_author_prompt(request, l3_data, persona: str = "") -> str:
     prompt = f"""{l3_ctx}
 
 {scene_ctx}
+
+{chronicle_ctx}
 
 {intent_ctx}
 

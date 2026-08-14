@@ -1459,6 +1459,7 @@ class Keeper:
                 if s.completed
             },
             "wr0_enabled": self.world.wr0_enabled,
+            "chronicle": self.world.chronicle.render_for_author(self.world),
         }
 
     def _integrate_supplement(self, structural_edit: StructuralEdit, author, intent: str = "", reasoning: str = "") -> StructuralEdit:
@@ -1532,6 +1533,18 @@ class Keeper:
 
             structural_edit.supplement_path = result.get("output_dir", "")
             structural_edit.l3_updates = result["l3"]
+
+            entity_ids = [ev["id"] for ev in l2.get("events", [])]
+            for scene_data in l2.get("scenes", {}).values():
+                entity_ids.extend(e.get("id", "") for e in scene_data.get("interactions", []))
+                entity_ids.extend(e.get("id", "") for e in scene_data.get("auto_triggers", []))
+            self.world.chronicle.record_patch(
+                turn=self.turn_number,
+                level="structural",
+                entity_ids=entity_ids,
+                new_scenes=list(l2.get("scenes", {}).keys()),
+                justification=structural_edit.justification,
+            )
         except Exception as e:
             self._warnings.append(f"补充管线失败（{e}），继续正常流程。")
             structural_edit.supplement_path = ""
@@ -1611,3 +1624,10 @@ class Keeper:
         for scene_name, desc in patch.scene_descriptions.items():
             if scene_name in self.world.graph.nodes:
                 self.world.graph.nodes[scene_name].description = desc
+        self.world.chronicle.record_patch(
+            turn=self.turn_number,
+            level="patch",
+            entity_ids=[e.get("id", "") for e in patch.entities],
+            new_scenes=[],
+            justification=patch.justification,
+        )

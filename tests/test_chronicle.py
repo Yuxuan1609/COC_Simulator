@@ -106,3 +106,28 @@ def test_world_chronicle_in_save():
     assert back.chronicle.patches == w.chronicle.patches
     assert back.chronicle.events == w.chronicle.events
     assert back.chronicle.entity_results == w.chronicle.entity_results
+
+
+def test_author_prompt_contains_chronicle():
+    """Author prompt 必须含编年史块（facts + events + patches）。"""
+    from prompts import build_author_prompt
+    from scenario_core import WorldChronicle
+
+    w = _make_world()
+    c = WorldChronicle()
+    c.record_turn(1, "撬开地板", _make_result(), w)
+    c.record_patch(turn=1, level="patch", entity_ids=["SI1"],
+                   new_scenes=[], justification="补缺")
+    rendered = c.render_for_author(w)
+
+    class _Req:
+        intent = "看看地板下有什么"
+        reasoning = "模组未覆盖"
+        other_texts = ["撬开地板"]
+        scene_context = {"location": "room_a", "description": "",
+                         "available_scenes": ["room_a"], "npc_states": {},
+                         "runtime_summary": {}, "wr0_enabled": False,
+                         "chronicle": rendered}
+    prompt = build_author_prompt(_Req(), {"world_rules": [], "driving_force": "找出真相"})
+    assert "【世界编年史】" in prompt
+    assert "IT_SEARCH" in prompt and "SI1" in prompt
