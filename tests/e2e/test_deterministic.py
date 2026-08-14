@@ -506,6 +506,106 @@ class TestBossPrespawnEngage:  # D10: B3
         assert cs._check_phase(state, inst) == "崩解"
 
 
+class TestStandoffBossMutex:  # F3: standoff×boss 同回合互斥
+    def _mixed_world(self, tmp_path):
+        import json as _json
+        from library.bosses import BossLibrary
+        boss_data = {"测试魔像": {
+            "type": "神话造物",
+            "attributes": {"STR": 120, "CON": 140, "SIZ": 130, "DEX": 30, "POW": 80},
+            "armor": "4点石壳", "attacks": [], "special_abilities": [],
+            "san_loss": "1/1D6", "description": "测试用",
+            "boss_mechanics": "两阶段测试",
+            "flags": ["boss"], "multi_attack": 1, "phases": [],
+        }}
+        p = tmp_path / "bosses.json"
+        p.write_text(_json.dumps(boss_data, ensure_ascii=False), encoding="utf-8")
+        bl = BossLibrary(str(p))
+        enc = {"id": "BOSS_T1", "type": "boss_encounter", "engage_type": "at",
+               "boss_ref": "测试魔像", "scene": "room_a",
+               "requirements": "", "description": "测试遭遇"}
+        from library.enemies import EnemyLibrary, LibraryEnemy
+        lib = EnemyLibrary()
+        lib._enemies["测试巡游者"] = LibraryEnemy.from_dict({
+            "name": "测试巡游者", "type": "怪物",
+            "attributes": {"CON": 30, "SIZ": 30}, "armor": "",
+            "attacks": [], "special_abilities": [], "san_loss": "0",
+            "description": "", "combat_behavior": "[avoidable] 行动迟缓",
+        })
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           enemy_library=lib, boss_library=bl,
+                           boss_encounters=[enc])
+        return world, enc
+
+    def test_boss_engage_devours_standoff(self, monkeypatch, tmp_path):
+        """Boss 强制战命中时：standoff 不播种，avoidable 敌人并入 Boss 战。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world, enc = self._mixed_world(tmp_path)
+        _player(world)
+        boss_inst = world.bosses.spawn_instance(enc)
+        world.enemies.register(boss_inst)
+        world.enemies.spawn("测试巡游者", "room_a", 1)
+
+        keeper = Keeper(world)
+        stub_keeper_llm(
+            keeper, monkeypatch,
+            parse_results=[[{"type": "other", "text": "环顾四周"}]],
+            combat_entry={"enter_combat": True, "enemy_instance_ids": [],
+                          "reasoning": "遭遇"})
+        game = make_game(keeper)
+
+        r = run_turn(game, "环顾四周")
+        assert_player_turn_contract(r)
+        assert r.combat_init is not None, "Boss engage 必须产出 combat_init"
+        ci_refs = sorted(getattr(e, "enemy_ref", "") for e in r.combat_init.enemies)
+        assert ci_refs == ["测试巡游者", "测试魔像"], \
+            f"avoidable 敌人必须并入 Boss 战，实际 {ci_refs}"
+        assert keeper._standoff_pending is None, "Boss 开战时不得残留 standoff 播种"
+        if r.pending_interaction is not None:
+            assert r.pending_interaction.kind != "standoff", \
+                "Boss 开战时不得发出 standoff pending"
+        assert "最后一次机会" not in r.brief, \
+            f"Boss 开战时不得出现对峙话术: {r.brief[:200]}"
+        assert boss_inst.status == "engaged"
+        wanderer = [i for i in world.enemies._instances.values()
+                    if i.enemy_ref == "测试巡游者"][0]
+        assert wanderer.status == "engaged", \
+            f"卷入战斗的 avoidable 敌人必须 engaged，实际 {wanderer.status}"
+
+    def test_standoff_without_boss_unchanged(self, monkeypatch, tmp_path):
+        """无 Boss 时 avoidable 对峙照常播种（互斥不破坏原通路）。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+        from library.enemies import EnemyLibrary, LibraryEnemy
+
+        lib = EnemyLibrary()
+        lib._enemies["测试巡游者"] = LibraryEnemy.from_dict({
+            "name": "测试巡游者", "type": "怪物",
+            "attributes": {"CON": 30, "SIZ": 30}, "armor": "",
+            "attacks": [], "special_abilities": [], "san_loss": "0",
+            "description": "", "combat_behavior": "[avoidable] 行动迟缓",
+        })
+        world = make_world({"room_a": make_scene()}, "room_a", enemy_library=lib)
+        _player(world)
+        world.enemies.spawn("测试巡游者", "room_a", 1)
+
+        keeper = Keeper(world)
+        stub_keeper_llm(
+            keeper, monkeypatch,
+            parse_results=[[{"type": "other", "text": "环顾四周"}]],
+            combat_entry={"enter_combat": True, "enemy_instance_ids": [],
+                          "reasoning": "遭遇"})
+        game = make_game(keeper)
+
+        r = run_turn(game, "环顾四周")
+        assert_player_turn_contract(r)
+        assert keeper._standoff_pending is not None, "无 Boss 时 standoff 必须照常播种"
+        assert r.pending_interaction is not None
+        assert r.pending_interaction.kind == "standoff"
+
+
 class TestEscalationGate:
     def test_mixed_entity_and_other_suppresses_escalation(self, monkeypatch):
         """实体+other 混合输入：升级被硬性门控抑制——实体结果正常交付、

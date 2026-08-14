@@ -287,19 +287,19 @@
 - **R2 修复**：weapon_offer 门严格只认「是/否」本身（标点容忍），其他输入作废 offer 走正常回合——修复"别怕，我是来帮你的"含"是"被当拾取确认
 - **R1 修复**：直接拾取通路——明说「捡/拾/拿+武器名」（场景仅一件可不点名）直接入包；含否定词/已持有时不触发；offer 应答与直接拾取共用 `_grant_scene_weapons`
 - `weapon_picked_up` 谓词修复：双通道（系统输出"你拾起了" OR 数量增长），消除首回合拾取盲区
+- **F3 修复**：standoff×boss 同回合互斥（方案 B）——Boss 强制战命中时撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战；at 与 event 两条 engage 通路共用 `_devour_standoff_for_boss`；审计手册补互斥条目防 judge 误报
 - **S-D full_clear 全绿**：14 回合，搜索→直接拾取→NPC→绕开巡游者→Boss(AUTO)→低语结局，三层判定全 PASS
-- 确定性套件新增 TestWeaponPickupRules 7 测试；审计手册补武器拾取双路径条目；rubric 承认直接拾取/绕行合法路径
+- 确定性套件新增 TestWeaponPickupRules 7 测试 + TestStandoffBossMutex 2 测试；审计手册补武器拾取双路径条目；rubric 承认直接拾取/绕行合法路径
 
-**测试现状**：默认套件 84 passed / 16 deselected（real_llm：S1-S11 + escalation 5）；场景层 S-A/S-B/S-C/S-D 全 PASS
+**测试现状**：默认套件 86 passed / 16 deselected（real_llm：S1-S11 + escalation 5）；场景层 S-A/S-B/S-C/S-D 全 PASS
 
 ### 待办（按优先级）
 
 0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期
-1. **F3 standoff×boss 同回合**：Boss 已 engage/击败后 standoff pending 仍悬空（S-C 首跑实证），需互斥
-2. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
-3. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
-4. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
-5. **存读档 3 个 🔴 bug（最后）**：见上队列 6
+1. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
+2. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
+3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
+4. **存读档 3 个 🔴 bug（最后）**：见上队列 6
 
 ### 已知观察（非阻塞）
 

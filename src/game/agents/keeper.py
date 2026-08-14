@@ -655,6 +655,11 @@ class Keeper:
                     combat_init_result = boss_combat_init
                     self._last_player_input = raw  # stored for combat completion replay
 
+        # F3：Boss 强制战吞掉对峙——"退路已断"时回避承诺不成立
+        if boss_combat_init and standoff_prompt:
+            standoff_prompt = self._devour_standoff_for_boss(
+                standoff_prompt, combat_init_result, all_outcomes, enrich_input)
+
         # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into enrich_input
 
         # Inject pending combat result (from frontend combat path, same turn)
@@ -847,6 +852,13 @@ class Keeper:
                     else:
                         combat_init_result = boss_init
                     break  # only handle one boss per turn; curate + return below
+
+        # F3（event 通路）：event 型 Boss 开战同样吞掉本回合对峙。
+        # 此时 enrich 已消费 enrich_input，仍需清 all_outcomes（curate 用）与
+        # standoff_prompt（PendingInteraction 用），并把 avoidable 敌人拖入战斗。
+        if standoff_prompt and combat_init_result is not None:
+            standoff_prompt = self._devour_standoff_for_boss(
+                standoff_prompt, combat_init_result, all_outcomes, None)
 
         # Step 5: Curate
         ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
@@ -1233,6 +1245,31 @@ class Keeper:
                     if not scene_weps:
                         del self.world.scene_weapons[scene]
         return "、".join(w["weapon_ref"] for w in offer_list)
+
+    def _devour_standoff_for_boss(self, standoff_prompt, combat_init_result,
+                                  all_outcomes, enrich_input):
+        """F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，
+        avoidable 敌人一并卷入 Boss 战。返回 None（清空 standoff_prompt）。"""
+        self._standoff_pending = None
+        all_outcomes[:] = [o for o in all_outcomes
+                           if o.entity_id != "STANDOFF"]
+        if enrich_input is not None:
+            enrich_input.entities[:] = [e for e in enrich_input.entities
+                                        if e.get("id") != "STANDOFF"]
+        if self.world.enemies and combat_init_result is not None:
+            in_combat = {e.instance_id for e in combat_init_result.enemies}
+            dragged = [
+                inst for inst in self.world.enemies.get_active_in_scene(
+                    self.world.current_location)
+                if inst.status not in ("dead", "defeated")
+                and "avoidable" in inst.flags
+                and inst.instance_id not in in_combat
+            ]
+            if dragged:
+                self.world.enemies.enter_combat(
+                    [i.instance_id for i in dragged])
+                combat_init_result.enemies.extend(dragged)
+        return None
 
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
