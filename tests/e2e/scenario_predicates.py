@@ -28,11 +28,16 @@ def standoff_occurred(entries: list[dict]) -> bool:
 
 @predicate
 def weapon_picked_up(entries: list[dict]) -> bool:
-    """玩家武器数量相对首回合记录值有增长（首回合为基线，存在回合内拾取盲区）。"""
-    if len(entries) < 2:
-        return False
-    baseline = len(entries[0].get("weapons") or [])
-    return any(len(e.get("weapons") or []) > baseline for e in entries[1:])
+    """玩家拾取了武器：a) 系统输出"你拾起了"（offer/直接拾取通路均输出）；
+    b) 武器数量相对首回合记录值增长（兜底，首回合内拾取时该通道有盲区）。"""
+    for e in entries:
+        text = f"{e.get('brief') or ''}{e.get('narrative') or ''}"
+        if "你拾起了" in text:
+            return True
+    if len(entries) >= 2:
+        baseline = len(entries[0].get("weapons") or [])
+        return any(len(e.get("weapons") or []) > baseline for e in entries[1:])
+    return False
 
 
 @predicate

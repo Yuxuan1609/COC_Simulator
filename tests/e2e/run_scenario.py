@@ -124,18 +124,21 @@ def check_invariants(turns: list[dict]) -> list[str]:
     return problems
 
 
-# ── 第 2 层：predicates（机器谓词）──
+# ── 第 2 层：predicates（机器谓词，分两层）──
+# predicates    = engine_facts：引擎机制事实，硬卡 verdict
+# outcome_goals = 玩家侧目标达成，只报告不阻塞（玩家 LLM 策略失败不归咎引擎）
 
 def check_predicates(scn: dict, turns: list[dict]) -> dict:
     results = {}
-    for name, expected in (scn.get("predicates") or {}).items():
-        if name not in PREDICATES:
-            results[name] = {"expected": expected, "actual": None,
-                             "pass": False, "error": f"未知谓词 {name}"}
-            continue
-        actual = PREDICATES[name](turns)
-        results[name] = {"expected": expected, "actual": actual,
-                         "pass": actual == expected}
+    for field, kind in (("predicates", "engine"), ("outcome_goals", "outcome")):
+        for name, expected in (scn.get(field) or {}).items():
+            if name not in PREDICATES:
+                results[name] = {"expected": expected, "actual": None, "kind": kind,
+                                 "pass": False, "error": f"未知谓词 {name}"}
+                continue
+            actual = PREDICATES[name](turns)
+            results[name] = {"expected": expected, "actual": actual, "kind": kind,
+                             "pass": actual == expected}
     return results
 
 
@@ -291,7 +294,9 @@ def main() -> int:
     judge = run_judge(scn, summary, log_dir, pred_results=pred_results)
 
     inv_ok = not inv_problems
-    pred_ok = all(r["pass"] for r in pred_results.values())
+    engine_preds = {k: r for k, r in pred_results.items() if r["kind"] == "engine"}
+    outcome_preds = {k: r for k, r in pred_results.items() if r["kind"] == "outcome"}
+    pred_ok = all(r["pass"] for r in engine_preds.values())
     judge_ok = judge["overall"] == "PASS"
     verdict = "PASS" if (inv_ok and pred_ok and judge_ok) else "FAIL"
 
@@ -302,7 +307,8 @@ def main() -> int:
         "turns": summary.get("turns"),
         "layers": {
             "invariants": {"pass": inv_ok, "problems": inv_problems},
-            "predicates": {"pass": pred_ok, "results": pred_results},
+            "predicates": {"pass": pred_ok, "results": pred_results,
+                           "note": "kind=engine 硬卡；kind=outcome 只报告"},
             "judging": judge,
         },
         "log_dir": log_dir,
@@ -317,11 +323,17 @@ def main() -> int:
     print(f"[1] invariants : {'PASS' if inv_ok else 'FAIL'}")
     for p in inv_problems:
         print(f"      - {p}")
-    print(f"[2] predicates : {'PASS' if pred_ok else 'FAIL'}")
-    for pname, r in pred_results.items():
+    print(f"[2] predicates : {'PASS' if pred_ok else 'FAIL'}（engine 硬卡）")
+    for pname, r in engine_preds.items():
         mark = "OK" if r["pass"] else "XX"
         print(f"      [{mark}] {pname}: expected={r['expected']} actual={r['actual']}"
               + (f" ({r['error']})" if r.get("error") else ""))
+    if outcome_preds:
+        print(f"      ── outcome_goals（玩家侧，只报告）──")
+        for pname, r in outcome_preds.items():
+            mark = "OK" if r["pass"] else "--"
+            print(f"      [{mark}] {pname}: expected={r['expected']} actual={r['actual']}"
+                  + (f" ({r['error']})" if r.get("error") else ""))
     print(f"[3] judging    : {'PASS' if judge_ok else 'FAIL'}"
           f" (llm_overall={judge.get('llm_overall')}) — {judge.get('reason', '')}")
     for it in judge.get("items", []):

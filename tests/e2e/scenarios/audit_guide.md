@@ -24,6 +24,7 @@
 | 检定 tier | D100 结果分档：failure / regular / hard / extreme；另有 fumble（大失败 ≥96）与 critical（大成功 ≤5） | 与骰点和技能值一致 |
 | 特质增强 | 调查员特质可能修正 tier（如 regular→hard），时间线记为 `hard(原regular↑)` | 只在有特质描述时发生；大成功/大失败不被修正 |
 | pending 交互 | 回合结束时悬而未决的问句：clarify（ keeper 没听懂）/ weapon_offer（拾取确认）/ standoff（回避战斗机会） | 出现后有后续回合回答；同一问题不无限重复 |
+| 武器拾取 | 两条合法路径：a) weapon_offer pending → 玩家只回「是」或「否」（其他输入视为放弃并作废 offer）；b) 直接拾取——玩家明说「捡/拾/拿+武器名」（如"捡起小刀"），系统直接入包并输出"你拾起了X"。已持有的武器不再入拾取池 | 入包后武器列表出现该武器，场景中移除 |
 | standoff | 对 avoidable 敌人的回避机会：语义匹配→D100→特质增强→回避成功或进战斗。多组敌人时链式逐个进行 | 回避成功敌人变 neutral；失败进战斗 |
 | boss engage | at 型 Boss 在玩家处于其场景时开战；Boss 实例在模组初始化时已预生成在场景中 | 进入 Boss 场景后的首个完整回合 engage |
 | 阶段（phases） | 敌人/Boss HP 低于阈值时切换阶段（如 稳态→崩解），可能改变攻击次数/护甲 | 战斗日志出现阶段切换描述 |

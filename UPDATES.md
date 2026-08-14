@@ -275,17 +275,35 @@
 
 **测试现状**：默认套件 68 passed / 14 deselected（real_llm）；real_llm 套件 = escalation 5 + scenarios 9（on-demand，`pytest -m real_llm`）；场景 runner 独立 CLI（`tests/e2e/run_scenario.py`）
 
+---
+
+## 工作汇总（2026-08-14）
+
+### 已完成
+
+**④ 场景层完备化 + 谓词分层 + R1/R2 拾取修复**
+- Phase 0-4 落地：审计手册（f002c4c）→ 机制时间线+三档输出（c030a25）→ 骨架层 D8-D12（4919380）→ 实连层试点 S10/S11（b188834）→ 全量实连 14/16 + prompt 缺 json 字样 400 静默降级修复（4f36cda）→ Author 升级硬性门控防递归丢帧（dcce6e8/2a225b6）
+- 谓词分层：`predicates`（engine 事实硬卡 verdict）/ `outcome_goals`（玩家侧目标只报告）；full_clear 的 game_over 归入 outcome_goals
+- **R2 修复**：weapon_offer 门严格只认「是/否」本身（标点容忍），其他输入作废 offer 走正常回合——修复"别怕，我是来帮你的"含"是"被当拾取确认
+- **R1 修复**：直接拾取通路——明说「捡/拾/拿+武器名」（场景仅一件可不点名）直接入包；含否定词/已持有时不触发；offer 应答与直接拾取共用 `_grant_scene_weapons`
+- `weapon_picked_up` 谓词修复：双通道（系统输出"你拾起了" OR 数量增长），消除首回合拾取盲区
+- **S-D full_clear 全绿**：14 回合，搜索→直接拾取→NPC→绕开巡游者→Boss(AUTO)→低语结局，三层判定全 PASS
+- 确定性套件新增 TestWeaponPickupRules 7 测试；审计手册补武器拾取双路径条目；rubric 承认直接拾取/绕行合法路径
+
+**测试现状**：默认套件 84 passed / 16 deselected（real_llm：S1-S11 + escalation 5）；场景层 S-A/S-B/S-C/S-D 全 PASS
+
 ### 待办（按优先级）
 
-0. **前端（2026-08-04 拍板：留在现栈 + 优化/部分重构）**：不换框架（FastAPI+Jinja+htmx+Tailwind 保留；NiceGUI/Reflex/React 均否决）。重构方向：抽 JS 出 game.html（1206 行内联）为 static/js 模块、htmx 接管面板类更新、Alpine.js 补局部交互。等用户手动测试反馈后排期
-1. **场景提示词打磨**：S-A pilot 精化 + S-B npc_befriend（京山人吉@常暗之厢 or testbed 乘务员）+ S-C boss_fight（吞噬之口@7号车厢）的 goal/judging 文本——与用户协作
-2. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
-3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
-4. **存读档 3 个 🔴 bug（最后）**：见上队列 6
+0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期
+1. **F3 standoff×boss 同回合**：Boss 已 engage/击败后 standoff pending 仍悬空（S-C 首跑实证），需互斥
+2. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
+3. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
+4. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
+5. **存读档 3 个 🔴 bug（最后）**：见上队列 6
 
 ### 已知观察（非阻塞）
 
 - judge 缺机器事实约束时可能捏造证据（已用谓词结果注入缓解）；rubric 覆盖谓词外事件时仍有空间——打磨 rubric 时注意
 - `test_combat_smoke.py` 疑似骰子依赖 flaky（一次 >5min 长循环），未深究
-- `weapon_picked_up` 谓词以首回合为基线，首回合拾取为盲区（README 已注明）
+- 玩家 LLM 波动性：outcome_goals 类目标偶有不达（如低语结局拖延至 max_turns），不阻塞 verdict，重跑即可
 - frontend/ 本轮已随契约迁移更新（pending_interaction 展示、开场白修复），但按约定前端不排期深入测试

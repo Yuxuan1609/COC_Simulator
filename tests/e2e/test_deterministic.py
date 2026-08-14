@@ -49,6 +49,90 @@ class TestOfferAnswerLoop:
         assert keeper._weapon_offer is None, "offer 应答后必须清空"
 
 
+class TestWeaponPickupRules:
+    """R1 直接拾取通路 + R2 offer 门严格是/否匹配。"""
+
+    def _setup(self, monkeypatch):
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+        from game.side_effects import SceneWeapon
+        from library.weapons import WeaponLibrary, LibraryWeapon
+
+        wlib = WeaponLibrary()
+        wlib._weapons["手枪"] = LibraryWeapon(name="手枪", skill_name="射击(手枪)")
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           weapon_library=wlib)
+        inv = _player(world)
+        world.scene_weapons["room_a"] = [
+            SceneWeapon(weapon_ref="手枪", scene="room_a", quantity=1)]
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "other", "text": "随便"}]])
+        game = make_game(keeper)
+        return run_turn, world, inv, keeper, game
+
+    def test_offer_gate_fuzzy_yes_rejected(self, monkeypatch):
+        """R2：含"是"的非回答输入不触发拾取，offer 作废，回合正常推进。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        keeper._weapon_offer = [{"weapon_ref": "手枪", "scene": "room_a"}]
+        r = run_turn(game, "别怕，我是来帮你的")
+        assert_player_turn_contract(r)
+        assert not any(w.name == "手枪" for w in inv.weapons), "模糊输入不得触发拾取"
+        assert keeper._weapon_offer is None, "非回答输入必须作废 offer"
+        assert world.scene_weapons.get("room_a"), "作废≠拾取：武器必须留在场景"
+        assert "你拾起了" not in r.narrative and "你忽略了" not in r.narrative
+
+    def test_offer_gate_exact_yes_grants(self, monkeypatch):
+        """「是。」（容忍标点）→ 拾取。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        keeper._weapon_offer = [{"weapon_ref": "手枪", "scene": "room_a"}]
+        r = run_turn(game, "是。")
+        assert_player_turn_contract(r)
+        assert any(w.name == "手枪" for w in inv.weapons)
+        assert not world.scene_weapons.get("room_a")
+
+    def test_offer_gate_exact_no_declines(self, monkeypatch):
+        """「否」→ 拒绝，武器留场景，offer 清空。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        keeper._weapon_offer = [{"weapon_ref": "手枪", "scene": "room_a"}]
+        r = run_turn(game, "否")
+        assert_player_turn_contract(r)
+        assert not any(w.name == "手枪" for w in inv.weapons)
+        assert world.scene_weapons.get("room_a"), "拒绝后武器必须留在场景"
+        assert keeper._weapon_offer is None
+
+    def test_direct_pickup_by_name(self, monkeypatch):
+        """R1：无 offer 时明说「捡+武器名」直接入包。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        r = run_turn(game, "我捡起手枪")
+        assert_player_turn_contract(r)
+        assert any(w.name == "手枪" for w in inv.weapons), "直接拾取必须入包"
+        assert not world.scene_weapons.get("room_a"), "场景武器必须移除"
+
+    def test_direct_pickup_unnamed_single_weapon(self, monkeypatch):
+        """场景仅一件可拾武器时，未点名也直接拾取。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        r = run_turn(game, "把地上的武器捡起来")
+        assert_player_turn_contract(r)
+        assert any(w.name == "手枪" for w in inv.weapons)
+
+    def test_direct_pickup_negative_ignored(self, monkeypatch):
+        """含否定词的拾取表述不触发直接拾取。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        r = run_turn(game, "我才不捡那把手枪")
+        assert_player_turn_contract(r)
+        assert not any(w.name == "手枪" for w in inv.weapons)
+        assert world.scene_weapons.get("room_a")
+
+    def test_direct_pickup_owned_not_duplicated(self, monkeypatch):
+        """已持有的武器不入拾取池，不重复入包。"""
+        run_turn, world, inv, keeper, game = self._setup(monkeypatch)
+        run_turn(game, "我捡起手枪")
+        r2 = run_turn(game, "再捡起手枪")
+        assert_player_turn_contract(r2)
+        assert sum(1 for w in inv.weapons if w.name == "手枪") == 1
+
+
 class TestClarifyAnswerLoop:
     def test_ambiguous_then_clarified(self, monkeypatch):
         """模糊输入 → SUSPENDED → 澄清输入 → 回合正常推进。"""

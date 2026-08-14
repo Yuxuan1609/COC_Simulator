@@ -136,37 +136,37 @@ class Keeper:
         raw = turn_input.raw_text
         at = turn_input.action_type
 
-        # Pending weapon offer check: yes/no, does NOT consume a turn
+        # Pending weapon offer check: 只认「是」「否」本身（R2：模糊含"是"不吞回合）
+        offer_expired = False
         if self._weapon_offer:
-            answer = raw.strip().lower()
-            pickup = any(kw in answer for kw in ("是", "yes", "y", "拾取", "捡", "拿"))
-            offer_list = self._weapon_offer
-            self._weapon_offer = None
-            if pickup and self.world.weapon_library:
-                for wo in offer_list:
-                    lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
-                    if lib_wep:
-                        inv_wep = _build_investigator_weapon(lib_wep, name_override=wo["weapon_ref"])
-                        self.world.player.add_weapon(inv_wep)
-                        scene = wo.get("scene", "")
-                        if scene:
-                            scene_weps = self.world.scene_weapons.get(scene, [])
-                            for sw in list(scene_weps):
-                                if sw.weapon_ref == wo["weapon_ref"]:
-                                    scene_weps.remove(sw)
-                                    break
-                            if not scene_weps:
-                                del self.world.scene_weapons[scene]
+            answer = re.sub(r"[\s，。！？!?,.\、…~～'\"“”]", "", raw)
+            if answer in ("是", "否"):
+                offer_list = self._weapon_offer
+                self._weapon_offer = None
+                if answer == "是" and self.world.weapon_library:
+                    names = self._grant_scene_weapons(offer_list)
+                    return TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。")
                 names = "、".join(w["weapon_ref"] for w in offer_list)
-                return TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。")
-            names = "、".join(w["weapon_ref"] for w in offer_list)
-            return TurnResult(status=TurnStatus.COMPLETED, text=f"你忽略了{names}。")
+                return TurnResult(status=TurnStatus.COMPLETED, text=f"你忽略了{names}。")
+            # 非「是/否」输入：作废 offer，按正常回合继续处理
+            self._weapon_offer = None
+            offer_expired = True
+
+        # 直接拾取通路（R1）：明说「捡/拾/拿 + 武器名」直接入包，无需 offer
+        direct_w = self._detect_direct_pickup(raw)
+        if direct_w:
+            names = self._grant_scene_weapons(
+                [{"weapon_ref": direct_w, "scene": self.world.current_location}])
+            return TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。")
 
         if _depth >= MAX_ESCALATION_DEPTH:
             # Guard against infinite recursion — re-execute deterministically
             return self._process_deterministic_only(turn_input)
         self.turn_number += 1
         self._warnings.clear()
+        if offer_expired:
+            self._warnings.append(
+                "武器拾取提议已过期：输入非「是/否」，按正常回合处理")
         self._npc_events.clear()
         self._pending_side_effects.clear()
         self._pending_move = None
@@ -893,7 +893,7 @@ class Keeper:
             offer_names = "、".join(w["weapon_ref"] for w in self._weapon_offer)
             offer_pending = PendingInteraction(
                 kind="weapon_offer",
-                question=f"是否拾取{offer_names}？（是/否）",
+                question=f"是否拾取{offer_names}？请只回复「是」或「否」；直接说「捡起{offer_names}」也可以。",
                 interaction_id="weapon_offer",
             )
 
@@ -1164,7 +1164,7 @@ class Keeper:
             from scenario_core import apply_side_effects
             def _direct_weapon(wref):
                 self._weapon_offer = [{"weapon_ref": wref, "scene": ""}]
-                self._weapon_offer_msg = f"（获得了{wref}，是否接受？（是/否））"
+                self._weapon_offer_msg = f"（获得了{wref}，是否接受？请只回复「是」或「否」）"
             effect_msgs = apply_side_effects(
                 self.world, list(self._pending_side_effects),
                 npc_events=self._npc_events,
@@ -1193,6 +1193,46 @@ class Keeper:
                     "result": f"{npc.name}加入了你的队伍，你可以随时与其交谈",
                     "difficulty": "None",
                 }))
+
+    _PICKUP_RE = re.compile(r"(捡|拾|拿起|拿上|拿走|取|拔|抓|收)")
+    _NEGATIVE_RE = re.compile(r"(不|别|勿|甭)")
+
+    def _detect_direct_pickup(self, raw: str) -> str | None:
+        """直接拾取意图（R1）：拾取动词 + 场景武器名；场景仅一件可拾武器时可不点名。
+        含否定词（不/别/勿）时不触发。返回 weapon_ref 或 None。"""
+        if not self._PICKUP_RE.search(raw) or self._NEGATIVE_RE.search(raw):
+            return None
+        if not self.world.weapon_library or not self.world.player:
+            return None
+        owned = {w.name for w in self.world.player.weapons}
+        scene = self.world.current_location
+        pool = list(dict.fromkeys(
+            sw.weapon_ref for sw in self.world.scene_weapons.get(scene, [])
+            if sw.weapon_ref not in owned))
+        if not pool:
+            return None
+        for w in pool:
+            if w in raw:
+                return w
+        return pool[0] if len(pool) == 1 else None
+
+    def _grant_scene_weapons(self, offer_list: list[dict]) -> str:
+        """发放武器入包并从场景移除，返回武器名串（「、」连接）。"""
+        for wo in offer_list:
+            lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
+            if lib_wep:
+                inv_wep = _build_investigator_weapon(lib_wep, name_override=wo["weapon_ref"])
+                self.world.player.add_weapon(inv_wep)
+                scene = wo.get("scene", "")
+                if scene:
+                    scene_weps = self.world.scene_weapons.get(scene, [])
+                    for sw in list(scene_weps):
+                        if sw.weapon_ref == wo["weapon_ref"]:
+                            scene_weps.remove(sw)
+                            break
+                    if not scene_weps:
+                        del self.world.scene_weapons[scene]
+        return "、".join(w["weapon_ref"] for w in offer_list)
 
     def _parse(self, raw: str) -> list[dict]:
         prompt = build_keeper_parse_prompt(self.world, raw)
