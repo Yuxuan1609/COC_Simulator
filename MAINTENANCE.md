@@ -123,7 +123,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (1518 行) — Keeper 回合编配
+## src/game/agents/keeper.py (1633 行) — Keeper 回合编配
 
 ### 模块级函数
 
@@ -346,7 +346,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/scenario_core.py (1640 行) — 数据模型 + 世界状态
+## src/scenario_core.py (1643 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -672,7 +672,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
 | `evaluate_combat_round_narrative` | `(round_log, enemies_desc, player_name, scene)` | 战斗叙事（走 build_combat_narrative_prompt） | 502 |
 
-## src/prompts.py (1131 行) — Prompt 构建（所有 build_* 只构建不调用）
+## src/prompts.py (1137 行) — Prompt 构建（所有 build_* 只构建不调用）
 
 | 函数 | 签名/作用 | 行号 |
 |------|-----------|------|

@@ -293,10 +293,17 @@
 
 **测试现状**：默认套件 86 passed / 16 deselected（real_llm：S1-S11 + escalation 5）；场景层 S-A/S-B/S-C/S-D 全 PASS
 
+**⑤ U2 WorldChronicle 世界状态摘要层**（eb28df9→4d46768，spec：`docs/superpowers/specs/2026-08-14-world-chronicle-design.md`，plan：`docs/superpowers/plans/2026-08-14-world-chronicle.md`）
+- WorldChronicle 挂 ScenarioWorld：facts 实时采集/events 窗口 15 带玩家原话/entity_results 截断 100/patches 清单/序列化入档
+- game_loop 每回合 record_turn（含移动轨迹，FROZEN 不记）；Author prompt 注入【世界编年史】块（scene_ctx 后 intent_ctx 前）
+- patch/supplement 成功集成后 record_patch（reject 不记）；LLM 蒸馏仅留 compress_events 接口（本期不接线）
+- keeper parse/enrich/narrator 明确不接 Chronicle（控制范围，本期唯一消费者 Author）
+
 ### 待办（按优先级）
 
 0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期
 0.5. **U9 技能系统重修（spec 已修订，待实施）**：`docs/superpowers/specs/2026-06-10-skill-system-redesign.md`（2026-08-14 补丁版——三层防护串联/归一单点下沉 get_skill/属性检定通路/旧卡强制重建/LUCK 输入声明式/调参入 config 次要）。实施步骤 10 步见 spec 第 8 节
+0.6. **U9 前置 minor（U2 遗留）**：_integrate_patch 记录的 entity_ids 用原始 dict 的 id（缺 id 时与实际集成的 NEW_xxx 回退不一致）；combat=end/boss/spawn 事件本期无投影（后续与测试侧 _collect_mech_line 切源一起补）
 1. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
 2. ~~巡检层 verdict 化~~（用户拍板暂缓）
 3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
@@ -307,4 +314,5 @@
 - judge 缺机器事实约束时可能捏造证据（已用谓词结果注入缓解）；rubric 覆盖谓词外事件时仍有空间——打磨 rubric 时注意
 - `test_combat_smoke.py` 疑似骰子依赖 flaky（一次 >5min 长循环），未深究
 - 玩家 LLM 波动性：outcome_goals 类目标偶有不达（如低语结局拖延至 max_turns），不阻塞 verdict，重跑即可
+- escalation case E 波动新机制（2026-08-14 实连观测）：parse 当前倾向给"想走进镜子"类输入附带 AT_AMBIENT auto_trigger，触发 2a225b6 硬性门控（帧内有 covered 动作不升级 Author）→ 3 连跑均被挡；case C 同机制但重跑可过。非 U2 编年史引入（parse prompt 未变），是否放宽 ambient AT 门控待拍板
 - frontend/ 本轮已随契约迁移更新（pending_interaction 展示、开场白修复），但按约定前端不排期深入测试
