@@ -355,9 +355,10 @@ class Investigator:
             detail = f"{stat_name}: {old_val} -> {new_val}"
 
             # Recalculate derived stats if needed
-            if upper in ("CON", "SIZ"):
-                self.derived.HP = math.floor((stats.CON + stats.SIZ) / 10)
-                detail += f", HP={self.derived.HP}"
+            if upper == "CON":
+                self.derived.HP_MAX = max(1, stats.CON // 3)
+                self.derived.HP = min(self.derived.HP, self.derived.HP_MAX)
+                detail += f", HP={self.derived.HP}/{self.derived.HP_MAX}"
             if upper == "POW":
                 self.derived.MP = math.floor(stats.POW / 5)
                 detail += f", MP={self.derived.MP}"

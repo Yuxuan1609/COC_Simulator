@@ -85,6 +85,8 @@ def test_check_skill_legacy_name_normalized():
 
 
 def test_check_skill_attr_channel():
+    import random
+    random.seed(0)  # DEX=99 时 roll≥96 大失败，定种子防 flake
     from investigator.models import Investigator, Stats
     inv = Investigator(name="t")
     inv.stats = Stats(STR=60, CON=60, DEX=99, APP=60, INT=60, POW=60, EDU=60, LUCK=60)
@@ -115,8 +117,21 @@ def test_spend_luck_and_pending_bonus():
 
 
 def test_check_skill_pseudo_dodge():
+    import random
+    random.seed(0)  # DODGE=99 时 roll≥96 大失败，定种子防 flake
     from investigator.models import Investigator
     inv = Investigator(name="t")
     inv.derived.DODGE = 99
     ok, msg, tier = inv.check_skill("闪避")
     assert ok and "未掌握" not in msg
+
+
+def test_modify_stat_con_recalcs_hp():
+    from investigator.models import Investigator, Stats
+    inv = Investigator(name="t")
+    inv.stats = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=50)
+    inv.derived.HP = inv.derived.HP_MAX = 20
+    inv.modify_stat("CON", -30)  # 跌到 30 → HP_MAX=10，HP 压到 10
+    assert inv.derived.HP_MAX == 10 and inv.derived.HP <= 10
+    inv.modify_stat("LUCK", -5)
+    assert inv.stats.LUCK == 45
