@@ -745,3 +745,48 @@ class TestChronicleWiring:  # U2: game_loop 每回合写编年史
         e = world.chronicle.events[0]
         assert e["turn"] == 1 and "前往room_b" in e["input"]
         assert e.get("move") == "room_a→room_b", "移动轨迹必须入编年史"
+
+
+class TestLuckDeclare:  # U9: LUCK 输入声明式消耗
+    def test_burn_luck_applies_bonus(self, monkeypatch):
+        """输入"烧5点幸运"→ LUCK -5，pending_luck_bonus 被当回合检定消费。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+        from investigator.models import Skill
+
+        interaction = {
+            "id": "IT_LOCK", "entity_type": "interaction",
+            "name": "撬锁", "scene": "room_a",
+            "type": "锁匠", "requirement": "", "trigger": "尝试撬锁",
+            "result": "开了。", "side_effects": [], "difficulty": "regular",
+            "time_condition": [],
+        }
+        world = make_world({"room_a": make_scene(interactions=[interaction])}, "room_a")
+        inv = _player(world)
+        inv.stats.LUCK = 50
+        # 「锁匠」归一为「偷窃」；须掌握该技能，检定才会真正掷骰消费 pending 加值
+        inv.skills.append(Skill(name="偷窃", base_value=50))
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "interaction", "id": "IT_LOCK"}]])
+        game = make_game(keeper)
+
+        run_turn(game, "烧5点幸运，然后撬锁")
+        assert inv.stats.LUCK == 45, f"LUCK 必须扣 5，实际 {inv.stats.LUCK}"
+        assert inv.pending_luck_bonus == 0, "加值必须已被检定消费"
+
+    def test_burn_luck_insufficient_rejected(self, monkeypatch):
+        """LUCK 余额不足 → 不扣减，记 warning。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = _player(world)
+        inv.stats.LUCK = 3
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+
+        run_turn(game, "烧10点幸运")
+        assert inv.stats.LUCK == 3, "余额不足不得扣减"
+        assert any("幸运" in w for w in keeper._warnings)

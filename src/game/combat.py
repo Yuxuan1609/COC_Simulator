@@ -12,7 +12,8 @@ from prompts import _show_prompt
 
 # ── Module-level helpers ──
 
-def _roll_damage(damage_spec, STR: int = 50, SIZ: int = 50) -> int:
+def _roll_damage(damage_spec, STR: int = 50, SIZ: int = 50,
+                 db_override: str | None = None) -> int:
     """Roll damage from structured spec or legacy string formula.
 
     新格式 (dict):
@@ -20,6 +21,9 @@ def _roll_damage(damage_spec, STR: int = 50, SIZ: int = 50) -> int:
         伤害 = Σ(dice_n × D dice_d) + bonus + DB(if use_db)
 
     旧格式 (str):  "1D6+DB", "1D10+2", "4D6/2D6/1D6" 等，自动解析。
+
+    db_override: 非 None 时优先用作 DB（如玩家取 derived.DB），
+                 否则按 calc_db(STR, SIZ) 现算。
     """
     from investigator.rules import calc_db
 
@@ -46,7 +50,7 @@ def _roll_damage(damage_spec, STR: int = 50, SIZ: int = 50) -> int:
 
     # damage bonus
     if damage_spec.get("use_db", False):
-        db = calc_db(STR, SIZ)
+        db = db_override if db_override is not None else calc_db(STR, SIZ)
         if db.startswith("+"):
             db = db[1:]
         if db.startswith("-"):
@@ -874,7 +878,9 @@ class CombatSystem:
                     enemy_attrs = enemy.attributes if hasattr(enemy, 'attributes') else {}
                     en_str = enemy_attrs.get("STR", 50)
                     en_siz = enemy_attrs.get("SIZ", 50)
-                    damage = _roll_damage(match["damage"], en_str, en_siz)
+                    damage = _roll_damage(
+                        match["damage"], en_str, en_siz,
+                        db_override=getattr(player.derived, "DB", None))
                     armor = getattr(enemy, 'armor', '') or ''
                     armor_val = 0
                     if armor:

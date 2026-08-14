@@ -175,6 +175,17 @@ class Keeper:
         # Inject NPC ATs + interactions before normal parse
         self._inject_npc_at()
 
+        # U9：LUCK 声明式消耗——「烧/用 N 点幸运」→ spend_luck + pending_luck_bonus
+        # 原子绑定：仅扣减成功时才置加值，失败只记 warning
+        _luck_m = re.search(r"(?:烧|燃烧|用|消耗)\s*(\d{1,2})\s*点?\s*(?:幸运|运气|LUCK|luck)",
+                            raw)
+        if _luck_m and self.world.player:
+            _n = int(_luck_m.group(1))
+            _ok, _msg = self.world.player.spend_luck(_n)
+            if _ok:
+                self.world.player.pending_luck_bonus = _n
+            self._warnings.append(f"LUCK 消耗：{_msg}")
+
         # ── Pre-parse shortcut: move/search bypass LLM parse entirely ──
         pre_result = None
         if at == "move":
@@ -1054,7 +1065,8 @@ class Keeper:
 
         # Step 4: Apply result
         if ok:
-            if skill_name in ("魅惑", "说服", "话术", "恐吓"):
+            from utils import normalize_skill_name as _nsn
+            if _nsn(skill_name)[1] in ("魅惑", "说服"):
                 for iid in instance_ids:
                     if self.world.enemies:
                         self.world.enemies.set_status(iid, "neutral")

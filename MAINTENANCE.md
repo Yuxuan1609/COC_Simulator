@@ -137,14 +137,14 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor | 99 |
-| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：weapon_offer 应答（严格只认「是/否」，其他输入作废 offer 走正常回合）→ 直接拾取通路（捡/拾/拿+武器名直接入包）→ 深度保护 → NPC AT 注入 → pre-parse 消歧/动作捷径 → LLM parse → NPC 对话分流 → 后续 parse/judge/enrich/combat/TimeAgent/Author → curate → memory | 134 |
+| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：weapon_offer 应答（严格只认「是/否」，其他输入作废 offer 走正常回合）→ 直接拾取通路（捡/拾/拿+武器名直接入包）→ 深度保护 → NPC AT 注入 → LUCK 声明式消耗识别（「烧/用 N 点幸运」→ spend_luck，成功才置 pending_luck_bonus，原子绑定）→ pre-parse 消歧/动作捷径 → LLM parse → NPC 对话分流 → 后续 parse/judge/enrich/combat/TimeAgent/Author → curate → memory | 134 |
 | `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 1212 |
 | `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用） | 1249 |
 | `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 1219 |
 | `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 911 |
 | `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 919 |
 | `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate | 936 |
-| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正 | 976 |
+| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 976 |
 | `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 1052 |
 | `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 1077 |
 | `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 1104 |
@@ -193,7 +193,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
-| `_roll_damage` | 从 dict/legacy 公式掷伤害骰 | 15 |
+| `_roll_damage` | 从 dict/legacy 公式掷伤害骰；`db_override` 非 None 时优先用作 DB（玩家侧传 derived.DB，:883 调用点），敌人路径仍 calc_db(STR, SIZ) | 15 |
 | `_parse_legacy_damage` | 旧式伤害公式解析 | 65 |
 | `_apply_armor` | 护甲减免 | 92 |
 | `_apply_damage_multiplier` | 伤害类型倍率 | 99 |
