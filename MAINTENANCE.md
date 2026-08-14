@@ -24,7 +24,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
        └─ src/config.py / src/config_llm.py  配置
        └─ src/utils.py      文件解析 / token 估算 / 掷骰
   ├─ src/game/              Keeper 回合系统 (agents/ + combat + judge + npc/enemy/boss manager + clock)
-  ├─ src/scenario_core.py   数据模型 + 世界状态 (DirectedGraph / ScenarioWorld / MemoryManager)
+  ├─ src/scenario_core.py   数据模型 + 世界状态 (DirectedGraph / ScenarioWorld / MemoryManager / WorldChronicle)
   ├─ src/investigator/      调查员系统 (COC 7th 车卡/检定)
   ├─ src/library/           武器/敌人/Boss 资源库 + 注入器 + 判定引擎
   ├─ src/monitor/           LLM 传感器 + 降级策略 + 回合监控 (管线健康)
@@ -346,7 +346,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/scenario_core.py (1477 行) — 数据模型 + 世界状态
+## src/scenario_core.py (1640 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -417,6 +417,17 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 |------|------|------|------|
 | `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1378–1438 |
 | `to_dict` / `from_dict` | — | 序列化 | 1460 / 1470 |
+
+### WorldChronicle（@1487）— 世界状态摘要层（LLM 饲料，本期消费者=Author）
+
+| 方法 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100） | 1504 |
+| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100） | 1536 |
+| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1546 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】+【已注入内容】+【编年史】 | 1552 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染 | 1607 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list） | 1625 / 1634 |
 
 ---
 

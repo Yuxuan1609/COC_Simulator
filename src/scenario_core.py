@@ -1475,3 +1475,166 @@ class MemoryManager:
         mm.key_items = data.get("key_items", [])
         mm.turn = data.get("turn", 0)
         return mm
+
+
+# ═══════════════════════════════════════════════════════════════
+#  U2 WorldChronicle —— 世界状态摘要层（LLM 饲料，本期消费者=Author）
+# ═══════════════════════════════════════════════════════════════
+
+from collections import deque as _deque
+
+
+class WorldChronicle:
+    """滚动编年史：events(窗口15) + entity_results(截断100) + patches(append-only)。
+    facts 不存储——render 时从 world 实时采集。
+    events_summary 为 LLM 蒸馏预留字段（本期不接线，见 spec §5）。"""
+
+    EVENTS_WINDOW = 15
+    INPUT_MAX = 60
+    TEXT_MAX = 100
+
+    def __init__(self):
+        self.events: _deque = _deque(maxlen=self.EVENTS_WINDOW)
+        self.entity_results: dict[str, str] = {}
+        self.patches: list[dict] = []
+        self.events_summary: str = ""
+
+    # ── 生产者 ──
+
+    def record_turn(self, turn_number: int, raw_input: str, result, world) -> None:
+        """每回合末由 game_loop 调用。result 为 keeper TurnResult。"""
+        entry = {"turn": turn_number, "input": (raw_input or "")[:self.INPUT_MAX]}
+        brief = getattr(result, "brief", None)
+        outcomes = brief.action_outcomes if brief else []
+        if outcomes:
+            entry["intent"] = outcomes[0].intent.action
+            ents = {o.entity_id: (o.skill_tier or ("ok" if o.success else "fail"))
+                    for o in outcomes if o.entity_id}
+            if ents:
+                entry["entities"] = ents
+            for o in outcomes:
+                if o.entity_id and o.entity_type == "interaction" and o.message:
+                    self.entity_results[o.entity_id] = o.message[:self.TEXT_MAX]
+        ats = [o.entity_id for o in outcomes if o.entity_type == "auto_trigger"]
+        if ats:
+            entry["at"] = ats
+        pend = getattr(result, "pending_interaction", None)
+        if pend:
+            entry["pending"] = pend.kind
+        ci = getattr(result, "combat_init", None)
+        if ci and ci.enemies:
+            entry["combat"] = ["start:" + ",".join(
+                getattr(e, "enemy_ref", "?") for e in ci.enemies)]
+        ending = getattr(result, "ending", None)
+        if ending:
+            entry["ending"] = getattr(ending, "name", "") or str(ending)
+        npc_events = getattr(result, "npc_events", None)
+        if npc_events:
+            entry["npc"] = [n[:40] for n in npc_events]
+        self.events.append(entry)
+
+    def record_patch(self, turn: int, level: str, entity_ids: list[str],
+                     new_scenes: list[str], justification: str) -> None:
+        self.patches.append({
+            "turn": turn, "level": level, "entity_ids": list(entity_ids),
+            "new_scenes": list(new_scenes),
+            "justification": (justification or "")[:self.TEXT_MAX],
+        })
+
+    # ── LLM 蒸馏预留（本期不接线，spec §5）──
+
+    def compress_events(self, llm_call) -> None:
+        """将较旧事件蒸馏进 events_summary。接口预留，本期不实现。"""
+        raise NotImplementedError("LLM 蒸馏为预留接口，本期不接线")
+
+    # ── 消费者渲染 ──
+
+    def render_for_author(self, world) -> str:
+        parts = ["【世界真值】"]
+        parts.append(f"  位置: {world.current_location}"
+                     f"（已到访: {'→'.join(world.memory.visited) or '无'}）")
+        parts.append(f"  时间: 第{world.clock.day + 1}天 {world.clock.time_of_day}"
+                     f"（累计{world.clock.game_time}分钟）")
+        p = world.player
+        if p:
+            weapons = "、".join(w.name for w in p.weapons) or "无"
+            parts.append(f"  玩家: HP {p.derived.HP}/{p.derived.HP_MAX} "
+                         f"SAN {p.derived.SAN}/{p.derived.SAN_MAX} "
+                         f"MP {p.derived.MP} LUCK {p.stats.LUCK} | 武器: {weapons}")
+        if world.enemies:
+            for inst in world.enemies._instances.values():
+                parts.append(f"  敌人: {inst.enemy_ref}@{inst.scene} "
+                             f"状态={inst.status} flags={inst.flags}")
+        if world.npcs:
+            following = {n.name for n in world.npcs.get_following()}
+            for name in world.npcs.all_names():
+                npc = world.npcs.get(name)
+                follow_mark = " [跟随中]" if name in following else ""
+                parts.append(f"  NPC: {name}@{npc.scene} "
+                             f"状态={npc.state}{follow_mark}")
+        done = {eid: s for eid, s in world.runtime_state.items() if s.completed}
+        if done:
+            parts.append("  已完成实体:")
+            for eid, s in done.items():
+                result_text = self.entity_results.get(eid, "")
+                line = f"    {eid}: {s.result_tier or 'ok'}"
+                if result_text:
+                    line += f" | {result_text}"
+                parts.append(line)
+        if world.scene_weapons:
+            for scene, weps in world.scene_weapons.items():
+                if weps:
+                    parts.append(f"  场景武器: {scene} 剩余 "
+                                 + "、".join(w.weapon_ref for w in weps))
+        if self.patches:
+            parts.append("【已注入内容】")
+            for pt in self.patches:
+                ids = "、".join(pt["entity_ids"]) or "（无实体）"
+                scenes = "、".join(pt["new_scenes"])
+                line = f"  T{pt['turn']} [{pt['level']}] {ids}"
+                if scenes:
+                    line += f" 新场景:{scenes}"
+                parts.append(line)
+        if self.events_summary:
+            parts.append("【远期摘要】")
+            parts.append(f"  {self.events_summary}")
+        parts.append("【编年史】")
+        for e in self.events:
+            parts.append("  " + self._render_event(e))
+        return "\n".join(parts)
+
+    @staticmethod
+    def _render_event(e: dict) -> str:
+        segs = [f"T{e['turn']}", f'in="{e["input"]}"']
+        for key, label in (("intent", "intent"), ("pending", "pending"),
+                           ("move", "move"), ("standoff", "standoff"),
+                           ("ending", "ending")):
+            if e.get(key):
+                segs.append(f"{label}={e[key]}")
+        if e.get("entities"):
+            segs.append("entities=" + ",".join(
+                f"{k}:{v}" for k, v in e["entities"].items()))
+        for key, label in (("at", "at"), ("spawn", "spawn"), ("boss", "boss"),
+                           ("combat", "combat"), ("npc", "npc")):
+            if e.get(key):
+                segs.append(f"{label}={','.join(str(x) for x in e[key])}")
+        return " | ".join(segs)
+
+    # ── 序列化 ──
+
+    def to_dict(self) -> dict:
+        return {
+            "events": list(self.events),
+            "entity_results": dict(self.entity_results),
+            "patches": list(self.patches),
+            "events_summary": self.events_summary,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "WorldChronicle":
+        c = cls()
+        c.events = _deque(data.get("events", []), maxlen=cls.EVENTS_WINDOW)
+        c.entity_results = dict(data.get("entity_results", {}))
+        c.patches = list(data.get("patches", []))
+        c.events_summary = data.get("events_summary", "")
+        return c
