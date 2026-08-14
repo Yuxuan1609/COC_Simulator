@@ -269,11 +269,18 @@ class Keeper:
                                   npc_events=list(self._npc_events))
             parse_result = non_npc_entries
 
-        # Launch IntentDetector early if there are "other" entries
+        # Launch IntentDetector early if there are "other" entries.
+        # 硬性门控：本帧已有任何被覆盖的动作（实体/移动/搜索/NPC 对话）时不启动升级——
+        # 升级会导致 Author 递归丢弃外帧结果，而已执行内容的标记/状态已写入世界，
+        # 形成"状态进了世界、结果没出帧"的不一致（IT_SEARCH 钥匙丢失事件）。
+        # 纯 other 回合外帧无执行内容，递归无损。
         other_entries = [e for e in parse_result if e.get("type") == "other"]
+        _COVERED_TYPES = ("auto_trigger", "interaction", "event", "move", "search")
+        has_covered = bool(npc_interact_entries) or any(
+            e.get("type") in _COVERED_TYPES for e in parse_result)
         detect_future = None
         executor = None
-        if other_entries and author:
+        if other_entries and author and not has_covered:
             other_text = "; ".join(e.get("text", "") for e in other_entries)
             world_snapshot = self._build_world_snapshot()
             executor = ThreadPoolExecutor(max_workers=1)

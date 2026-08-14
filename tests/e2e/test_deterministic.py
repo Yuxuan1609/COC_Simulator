@@ -422,6 +422,82 @@ class TestBossPrespawnEngage:  # D10: B3
         assert cs._check_phase(state, inst) == "崩解"
 
 
+class TestEscalationGate:
+    def test_mixed_entity_and_other_suppresses_escalation(self, monkeypatch):
+        """实体+other 混合输入：升级被硬性门控抑制——实体结果正常交付、
+        完成标记与叙事一致、Author 不被咨询（防递归丢帧回归）。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        key_interaction = {
+            "id": "IT_KEY", "entity_type": "interaction",
+            "name": "翻开松砖找钥匙", "scene": "room_a",
+            "type": "None", "requirement": "", "trigger": "翻开松砖",
+            "result": "你在松砖下摸到了一把测试钥匙。",
+            "side_effects": [], "difficulty": "None", "time_condition": [],
+        }
+        world = make_world(
+            {"room_a": make_scene(interactions=[key_interaction])}, "room_a")
+        _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch, parse_results=[[
+            {"type": "interaction", "id": "IT_KEY"},
+            {"type": "other", "text": "大喊救命"},
+        ]])
+
+        class _FakeAuthor:
+            time_pressure = None
+            calls = 0
+            def handle_request(self, request, turn_number=0):
+                _FakeAuthor.calls += 1
+                raise AssertionError("混合输入下不应升级 Author")
+
+        game = {"keeper": keeper, "narrator": None, "author": _FakeAuthor()}
+        from helpers import StubNarrator
+        game["narrator"] = StubNarrator()
+
+        r = run_turn(game, "翻开松砖找钥匙，顺便大喊救命")
+        assert_player_turn_contract(r)
+        assert world.is_entity_completed("IT_KEY"), "实体必须执行并完成标记"
+        assert "测试钥匙" in (r.narrative or ""), \
+            f"实体结果必须交付玩家（不得被递归丢弃）: {(r.narrative or '')[:120]}"
+        assert _FakeAuthor.calls == 0, "混合输入下 Author 不得介入"
+        assert len(world.graph.nodes["room_a"].interactions) == 1, \
+            "不得产生动态 patch 实体"
+
+    def test_pure_other_still_escalates(self, monkeypatch):
+        """纯 other 输入：升级通路保持可用（门控不误伤正常 patch）。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "other", "text": "对着空气唱歌"}]])
+
+        class _FakeDetector:
+            called = 0
+            def detect(self, text, snapshot):
+                _FakeDetector.called += 1
+                class R:
+                    needs_author = False
+                    intent = ""
+                    reasoning = ""
+                return R()
+        keeper.intent_detector = _FakeDetector()
+
+        class _FakeAuthor:
+            time_pressure = None
+        game = {"keeper": keeper, "narrator": None, "author": _FakeAuthor()}
+        from helpers import StubNarrator
+        game["narrator"] = StubNarrator()
+
+        r = run_turn(game, "对着空气唱歌")
+        assert_player_turn_contract(r)
+        assert _FakeDetector.called == 1, "纯 other 回合 detector 必须启动"
+
+
 class TestMemoryCompression:  # D11: C4
     def test_compress_trigger_and_preserve(self):
         """raw_history 超阈值 → should_compress；压缩后摘要生成且近期记录保留。"""
