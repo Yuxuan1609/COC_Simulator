@@ -66,3 +66,57 @@ def test_normalize_deprecated_and_unknown():
 def test_skill_names_from_config():
     names = get_coc_skill_names()
     assert len(names) == 20 and "运动" in names
+
+
+def test_stats_no_siz_derived_no_mov():
+    from investigator.models import Stats, DerivedStats
+    s = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=60)
+    assert not hasattr(s, "SIZ")
+    d = DerivedStats()
+    assert not hasattr(d, "MOV")
+
+
+def test_check_skill_legacy_name_normalized():
+    from investigator.models import Investigator, Skill
+    inv = Investigator(name="t")
+    inv.skills.append(Skill(name="说服", base_value=15, value=50))
+    ok, msg, tier = inv.check_skill("话术")  # legacy → 说服
+    assert "话术" in msg and "未掌握" not in msg
+
+
+def test_check_skill_attr_channel():
+    from investigator.models import Investigator, Stats
+    inv = Investigator(name="t")
+    inv.stats = Stats(STR=60, CON=60, DEX=99, APP=60, INT=60, POW=60, EDU=60, LUCK=60)
+    ok, msg, tier = inv.check_skill("敏捷")  # 属性通路，阈值=DEX=99
+    assert ok and "未掌握" not in msg
+
+
+def test_check_skill_unknown_warns_and_passes():
+    from investigator.models import Investigator
+    inv = Investigator(name="t")
+    ok, msg, tier = inv.check_skill("炼金术")
+    assert ok and "未掌握" in msg
+    assert any("炼金术" in w for w in inv.check_warnings)
+
+
+def test_spend_luck_and_pending_bonus():
+    from investigator.models import Investigator, Stats, Skill
+    inv = Investigator(name="t")
+    inv.stats = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=50)
+    ok, msg = inv.spend_luck(10)
+    assert ok and inv.stats.LUCK == 40
+    inv.pending_luck_bonus = 10
+    inv.skills.append(Skill(name="侦查", base_value=25, value=25))
+    ok2, msg2, _ = inv.check_skill("侦查")
+    assert inv.pending_luck_bonus == 0, "幸运加值必须一次性消费"
+    ok3, _ = inv.spend_luck(99)
+    assert not ok3, "余额不足必须拒绝"
+
+
+def test_check_skill_pseudo_dodge():
+    from investigator.models import Investigator
+    inv = Investigator(name="t")
+    inv.derived.DODGE = 99
+    ok, msg, tier = inv.check_skill("闪避")
+    assert ok and "未掌握" not in msg

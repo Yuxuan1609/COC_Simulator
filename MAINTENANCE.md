@@ -433,22 +433,24 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ## src/investigator/ — 调查员系统（COC 7th）
 
-### models.py (413 行)
+### models.py (424 行)
 
 | 类/方法 | 说明 | 行号 |
 |---------|------|------|
-| `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类 | 14–83 |
-| `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 91–141 |
-| `Investigator.__init__` | 构造调查员 | 154 |
-| `skills_dict` / `get_skill` / `get_skill_value` | 技能查询 | 193 / 199 / 205 |
-| `check_skill` | `(skill_name, difficulty="regular")` COC D100 检定 | 211 |
-| `check_skills` | `(skill_names)` 批量检定 | 256 |
-| `build_snapshot` | 玩家状态快照 | 274 |
-| `_recalc_derived` | 重算衍生属性 | 292 |
-| `modify_stat` | `(stat_name, delta)` 支持骰子公式 | 298 |
-| `modify_skill` / `has_item` / `list_items` | — | 375–386 |
-| `add_weapon` / `remove_weapon` | 武器管理 | 390 / 393 |
-| `save` / `load` | JSON 存档 | 400 / 406 |
+| `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3） | 14–81 |
+| `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 89–139 |
+| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label） | 152 |
+| `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 195 / 201 / 210 |
+| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行 | 216 |
+| `_roll_d100` | `(name, target)` 骰点+等级判定；消费 pending_luck_bonus（一次性 -N） | 237 |
+| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 258 |
+| `check_skills` | `(skill_names)` 批量检定 | 267 |
+| `build_snapshot` | 玩家状态快照 | 285 |
+| `_recalc_derived` | 重算衍生属性 | 303 |
+| `modify_stat` | `(stat_name, delta)` 支持骰子公式 | 309 |
+| `modify_skill` / `has_item` / `list_items` | — | 386–397 |
+| `add_weapon` / `remove_weapon` | 武器管理 | 401 / 404 |
+| `save` / `load` | JSON 存档 | 411 / 417 |
 
 ### rules.py (304 行) — 纯函数规则引擎
 

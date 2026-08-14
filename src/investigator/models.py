@@ -12,27 +12,25 @@ from typing import Dict, List, Tuple, Optional
 
 @dataclass
 class Stats:
-    """八项核心属性 + LUCK（COC 7th）"""
+    """八项核心属性（U9：SIZ 并入 CON，删除 MOV）"""
     STR: int = 0   # 力量   (3D6*5)
-    CON: int = 0   # 体质   (3D6*5)
-    SIZ: int = 0   # 体型   (2D6+6)*5
+    CON: int = 0   # 体质   (3D6*5)，并入原 SIZ
     DEX: int = 0   # 敏捷   (3D6*5)
     APP: int = 0   # 外貌   (3D6*5)
     INT: int = 0   # 智力   (2D6+6)*5
     POW: int = 0   # 意志   (3D6*5)
     EDU: int = 0   # 教育   (2D6+6)*5
-    LUCK: int = 0  # 幸运   (3D6*5)
+    LUCK: int = 0  # 幸运   (3D6*5)，自身即技能值，可消耗
 
 
 @dataclass
 class DerivedStats:
     """衍生属性（从核心属性计算得出）"""
     HP: int = 0          # 当前生命值
-    HP_MAX: int = 0      # 最大生命值 = floor((CON+SIZ)/10)
+    HP_MAX: int = 0      # 最大生命值 = CON//3
     MP: int = 0          # 魔法值 = floor(POW/5)
     SAN: int = 0         # 当前理智 = POW (初始)
     SAN_MAX: int = 99    # 最大理智 = 99 - 克苏鲁神话值
-    MOV: int = 8         # 移动力 (7/8/9)
     DB: str = "0"        # 伤害加值
     BUILD: int = 0       # 体格
     DODGE: int = 0       # 闪避 = floor(DEX/2)
@@ -149,7 +147,7 @@ class ItemManager:
 class Investigator:
     """COC 7th 调查员 —— 完全替代旧 Player 类"""
 
-    _ALLOWED_STATS = {"STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "LUCK"}
+    _ALLOWED_STATS = {"STR", "CON", "DEX", "APP", "INT", "POW", "EDU", "LUCK"}
 
     def __init__(
         self,
@@ -187,6 +185,10 @@ class Investigator:
         self.avatar_url = avatar_url
         self.extra = extra
 
+        self.check_warnings: list[str] = []   # 技能归一/未掌握 warning（keeper 每回合收集）
+        self.pending_luck_bonus: int = 0      # LUCK 声明消耗的下一次检定加值（一次性）
+        self.label: str = ""                  # 职业标签名（U9 标签制）
+
     # ── 兼容旧 Player 接口 ──
 
     @property
@@ -197,8 +199,11 @@ class Investigator:
     # ── 查询 ──
 
     def get_skill(self, name: str) -> Optional[Skill]:
+        from utils import normalize_skill_name
+        kind, value = normalize_skill_name(name)
+        lookup = value if kind == "skill" else name
         for s in self.skills:
-            if s.name == name:
+            if s.name == lookup:
                 return s
         return None
 
@@ -208,50 +213,56 @@ class Investigator:
 
     # ── 技能检定（COC 7th D100 规则）──
 
-    def check_skill(self, skill_name: str, difficulty: str = "regular") -> tuple[bool, str]:
-        """
-        COC 7th 技能检定：投掷 D100，结果 ≤ 技能值则为成功。
-
-        difficulty:
-          - "regular": 阈值 = 技能值
-          - "hard":    阈值 = floor(技能值 / 2)
-          - "extreme": 阈值 = floor(技能值 / 5)
-
-        若调查员未拥有该技能，默认判定成功（避免缺少冷门技能卡关）。
-        返回 (是否成功, 结果描述文本, 实际达成等级)。
-        等级: "fumble" | "failure" | "regular" | "hard" | "extreme"
-        """
-        skill = self.get_skill(skill_name)
+    def check_skill(self, skill_name: str, difficulty: str = "regular") -> tuple:
+        """D100 检定。名归一经 normalize_skill_name：
+        skill→技能值；attr→属性值；pseudo(DODGE)→衍生闪避；
+        ignore→直接成功；unknown/未掌握→记 check_warnings 后默认成功。
+        pending_luck_bonus 存在时给骰点 -N（下限 1），一次性消费。"""
+        from utils import normalize_skill_name
+        kind, value = normalize_skill_name(skill_name)
+        if kind == "ignore":
+            return True, f"{skill_name}（已废弃技能，跳过检定）", "regular"
+        if kind == "attr":
+            target = getattr(self.stats, value, 0)
+            return self._roll_d100(skill_name, target)
+        if kind == "pseudo":
+            return self._roll_d100(skill_name, self.derived.DODGE)
+        skill = self.get_skill(skill_name)  # kind=="skill" 时 get_skill 已归一
         if skill is None:
+            self.check_warnings.append(
+                f"未掌握技能[{skill_name}]（归一={kind}:{value}），默认成功放行")
             return True, f"{skill_name}（未掌握，默认判定成功）", "regular"
+        return self._roll_d100(skill_name, skill.value)
 
+    def _roll_d100(self, name: str, target: int) -> tuple:
         roll = random.randint(1, 100)
-
-        # 大失败 (fumble): 96-100
+        if self.pending_luck_bonus:
+            roll = max(1, roll - self.pending_luck_bonus)
+            self.pending_luck_bonus = 0
         if roll >= 96:
-            detail = f"{skill_name}检定：D100={roll}/{skill.value} ≥96 大失败！"
-            return False, detail, "fumble"
-        # 大成功 (critical): 1
+            return False, f"{name}检定：D100={roll}/{target} ≥96 大失败！", "fumble"
         if roll == 1:
-            detail = f"{skill_name}检定：D100=1/{skill.value} 大成功！"
-            return True, detail, "extreme"
-
-        # 按阈值确定等级
-        extreme_threshold = max(1, skill.value // 5)
-        hard_threshold = max(1, skill.value // 2)
-
+            return True, f"{name}检定：D100=1/{target} 大成功！", "extreme"
+        extreme_threshold = max(1, target // 5)
+        hard_threshold = max(1, target // 2)
         if roll <= extreme_threshold:
             tier = "extreme"
         elif roll <= hard_threshold:
             tier = "hard"
-        elif roll <= skill.value:
+        elif roll <= target:
             tier = "regular"
         else:
-            detail = f"{skill_name}检定：D100={roll}/{skill.value} > 失败"
-            return False, detail, "failure"
+            return False, f"{name}检定：D100={roll}/{target} > 失败", "failure"
+        return True, f"{name}检定：D100={roll}/{target} ≤ {target} 成功（{tier}级）", tier
 
-        detail = f"{skill_name}检定：D100={roll}/{skill.value} ≤ {skill.value} 成功（{tier}级）"
-        return True, detail, tier
+    def spend_luck(self, n: int) -> tuple[bool, str]:
+        """消耗 N 点 LUCK（声明式）。余额不足或 N≤0 拒绝。"""
+        if n <= 0:
+            return False, "消耗点数必须为正"
+        if self.stats.LUCK < n:
+            return False, f"幸运不足：当前 {self.stats.LUCK}，需 {n}"
+        self.stats.LUCK -= n
+        return True, f"消耗 {n} 点幸运（剩余 {self.stats.LUCK}）"
 
     def check_skills(self, skill_names: list[str]) -> tuple[bool, str, str]:
         """
