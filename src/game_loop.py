@@ -338,6 +338,7 @@ def run_turn(game: dict, user_input: str,
             return cmd_result
 
     # Pending standoff: route input to resolver instead of normal turn
+    loc_before = getattr(world, "current_location", None)
     if getattr(keeper, "_standoff_pending", None):
         result = continue_standoff(keeper, user_input)
     else:
@@ -348,6 +349,13 @@ def run_turn(game: dict, user_input: str,
             action_target=action_target,
         )
         result = keeper.process_turn(turn_input, author=author)
+
+    # U2 编年史：每回合入史（FROZEN 输入锁定不计）；须在 SUSPENDED 早退之前
+    chronicle = getattr(world, "chronicle", None)
+    if chronicle is not None and result.status != TurnStatus.FROZEN:
+        chronicle.record_turn(keeper.turn_number, user_input, result, world)
+        if loc_before is not None and world.current_location != loc_before and chronicle.events:
+            chronicle.events[-1]["move"] = f"{loc_before}→{world.current_location}"
 
     # SUSPENDED: turn blocked on a question — return early, no narrator/snapshot
     if result.status == TurnStatus.SUSPENDED:

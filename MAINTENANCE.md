@@ -329,7 +329,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game_loop.py (839 行) — 游戏主循环
+## src/game_loop.py (902 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -337,12 +337,12 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `setup_logging` | `() -> str` | 统一初始化日志目录 + TurnLogger + prompt/llm 日志 | 27 |
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 46 |
 | `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载 → ScenarioWorld → world 节点 AT 执行（延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 154 |
-| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → SUSPENDED/FROZEN 短路 → Narrator 叙事 → 场景更新 → 技能检定提取 → PlayerFacingSnapshot 组装（L1 描述/NPC 富化/技能 D100 解析） | 320 |
-| `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 582 |
-| `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 598 |
-| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 624 / 633 / 644 |
-| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接）→ complete_combat_turn | 661 |
-| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 757 |
+| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史（chronicle.record_turn + 移动轨迹，FROZEN 不计，SUSPENDED 也入史）→ SUSPENDED/FROZEN 短路 → Narrator 叙事 → 场景更新 → 技能检定提取 → PlayerFacingSnapshot 组装（L1 描述/NPC 富化/技能 D100 解析） | 321 |
+| `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 624 |
+| `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 640 |
+| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 666 / 675 / 686 |
+| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接）→ complete_combat_turn | 703 |
+| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 820 |
 
 ---
 

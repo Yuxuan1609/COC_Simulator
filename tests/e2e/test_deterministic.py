@@ -721,3 +721,27 @@ class TestTimeAdvance:  # D12: C1
         assert_player_turn_contract(r)
         assert world.clock.day == d0 + 1, "1500 分钟必须跨天"
         assert world.clock.time_context == "一天一夜过去了。"
+
+
+class TestChronicleWiring:  # U2: game_loop 每回合写编年史
+    def test_turn_recorded_with_move(self, monkeypatch):
+        """跑一回合 move → chronicle.events 含该回合，facts 位置已更新。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({
+            "room_a": make_scene(exits=[{"target": "room_b", "method": "步行",
+                                         "requirement": ""}]),
+            "room_b": make_scene(),
+        }, "room_a")
+        _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+
+        loc_before = world.current_location
+        run_turn(game, "前往room_b", action_type="move", action_target="room_b")
+        assert len(world.chronicle.events) == 1, "回合必须入编年史"
+        e = world.chronicle.events[0]
+        assert e["turn"] == 1 and "前往room_b" in e["input"]
+        assert e.get("move") == "room_a→room_b", "移动轨迹必须入编年史"
