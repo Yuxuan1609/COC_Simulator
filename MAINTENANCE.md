@@ -437,7 +437,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 | 类/方法 | 说明 | 行号 |
 |---------|------|------|
-| `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3） | 14–81 |
+| `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3；Skill.category=属性归属拼接如 "INT、EDU"） | 14–81 |
 | `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 89–139 |
 | `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label） | 152 |
 | `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 195 / 201 / 210 |
@@ -469,12 +469,13 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `load_occupation_labels` | `(path=None)` | U9 职业标签加载（occupation_labels.json） | 232 |
 | `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 242 |
 
-### serialization.py (184 行)
+### serialization.py (189 行) — v2.0：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载
 
 | 函数 | 说明 | 行号 |
 |------|------|------|
 | `_occupation_dict_to_obj` | 职业 dict→对象 | 15 |
-| `to_dict` / `to_json` / `from_dict` / `from_json` | Investigator ↔ dict/JSON | 27–180 |
+| `to_dict` / `to_json` | Investigator → dict/JSON（meta.version="2.0"，personal 含 label） | 27–101 |
+| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建 | 105–189 |
 
 ---
 

@@ -39,7 +39,7 @@ def to_dict(inv: Investigator) -> dict:
 
     return {
         "meta": {
-            "version": "1.0",
+            "version": "2.0",
             "created_at": datetime.now().isoformat(),
             "rules_edition": "COC7",
         },
@@ -51,9 +51,10 @@ def to_dict(inv: Investigator) -> dict:
             "description": inv.personal_description,
             "appearance": inv.appearance,
             "extra": getattr(inv, 'extra', ''),
+            "label": getattr(inv, 'label', ''),
         },
         "stats": {
-            "STR": inv.stats.STR, "CON": inv.stats.CON, "SIZ": inv.stats.SIZ,
+            "STR": inv.stats.STR, "CON": inv.stats.CON,
             "DEX": inv.stats.DEX, "APP": inv.stats.APP, "INT": inv.stats.INT,
             "POW": inv.stats.POW, "EDU": inv.stats.EDU, "LUCK": inv.stats.LUCK,
         },
@@ -61,7 +62,7 @@ def to_dict(inv: Investigator) -> dict:
             "HP": inv.derived.HP, "HP_MAX": inv.derived.HP_MAX,
             "MP": inv.derived.MP,
             "SAN": inv.derived.SAN, "SAN_MAX": inv.derived.SAN_MAX,
-            "MOV": inv.derived.MOV, "DB": inv.derived.DB,
+            "DB": inv.derived.DB,
             "BUILD": inv.derived.BUILD, "DODGE": inv.derived.DODGE,
         },
         "skills": [
@@ -102,9 +103,12 @@ def to_json(inv: Investigator, path: str) -> None:
 
 
 def from_dict(data: dict) -> Investigator:
-    """dict → Investigator"""
-    personal = data.get("personal", {})
+    """dict → Investigator。旧 45 技能/含 SIZ 结构的卡拒绝加载（U9 强制重建）。"""
     stats_data = data.get("stats", {})
+    if "SIZ" in stats_data:
+        raise ValueError(
+            "旧版角色卡（含 SIZ 的 45 技能体系）不兼容新技能体系，请重建角色。")
+    personal = data.get("personal", {})
     derived_data = data.get("derived", {})
     skills_data = data.get("skills", [])
     combat_data = data.get("combat", {})
@@ -116,7 +120,7 @@ def from_dict(data: dict) -> Investigator:
 
     stats = Stats(
         STR=stats_data.get("STR", 0), CON=stats_data.get("CON", 0),
-        SIZ=stats_data.get("SIZ", 0), DEX=stats_data.get("DEX", 0),
+        DEX=stats_data.get("DEX", 0),
         APP=stats_data.get("APP", 0), INT=stats_data.get("INT", 0),
         POW=stats_data.get("POW", 0), EDU=stats_data.get("EDU", 0),
         LUCK=stats_data.get("LUCK", 0),
@@ -126,7 +130,7 @@ def from_dict(data: dict) -> Investigator:
         HP=derived_data.get("HP", 0), HP_MAX=derived_data.get("HP_MAX", derived_data.get("HP", 0)),
         MP=derived_data.get("MP", 0),
         SAN=derived_data.get("SAN", 0), SAN_MAX=derived_data.get("SAN_MAX", 99),
-        MOV=derived_data.get("MOV", 8), DB=derived_data.get("DB", "0"),
+        DB=derived_data.get("DB", "0"),
         BUILD=derived_data.get("BUILD", 0), DODGE=derived_data.get("DODGE", 0),
     )
 
@@ -171,6 +175,7 @@ def from_dict(data: dict) -> Investigator:
         avatar_url=data.get("avatar_url", ""),
         extra=personal.get("extra", ""),
     )
+    inv.label = personal.get("label", "")
     im_data = data.get("item_manager", {})
     if im_data:
         inv.item_manager = ItemManager.from_dict(im_data)

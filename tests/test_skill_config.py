@@ -186,3 +186,45 @@ def test_load_occupation_labels():
     labels = load_occupation_labels()
     names = [l["name"] for l in labels]
     assert "侦探" in names and "自定义" in names
+
+
+def test_roundtrip_new_structure():
+    import tempfile
+    from investigator.models import Investigator, Stats, Skill
+    from investigator.rules import calc_derived
+    from investigator.serialization import to_json, from_json
+    inv = Investigator(name="新卡", age=30)
+    inv.stats = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=50)
+    inv.derived = calc_derived(inv.stats)
+    inv.skills.append(Skill(name="侦查", base_value=25, value=50))
+    inv.label = "侦探"
+    with tempfile.TemporaryDirectory() as td:
+        p = os.path.join(td, "c.json")
+        to_json(inv, p)
+        back = from_json(p)
+    assert back.name == "新卡" and back.label == "侦探"
+    assert back.get_skill("侦查").value == 50
+    assert not hasattr(back.stats, "SIZ")
+
+
+def test_old_card_rejected():
+    import pytest
+    from investigator.serialization import from_dict
+    old = {"meta": {"version": "1.0"}, "personal": {"name": "旧卡"},
+           "stats": {"STR": 60, "CON": 60, "SIZ": 65, "DEX": 60, "APP": 50,
+                     "INT": 60, "POW": 55, "EDU": 65, "LUCK": 40},
+           "skills": [{"name": "话术", "base": 5, "value": 40}]}
+    with pytest.raises(ValueError, match="重建"):
+        from_dict(old)
+
+
+def test_allocate_attribute_pools_exact_value():
+    """池语义精确断言（review 补充：>25 太松）。"""
+    from investigator.models import Stats
+    from investigator.rules import create_skill_list, allocate_skill_points
+    stats = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=60)
+    skills = create_skill_list()
+    allocate_skill_points(skills, stats, focus=["侦查"], focus_bonus=10)
+    spot = next(s for s in skills if s.name == "侦查")
+    # INT 池 90/归属6技能=15；EDU 池 90/归属10技能=9；base 25 + 15 + 9 + focus 10 = 59
+    assert spot.value == 59

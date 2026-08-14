@@ -42,7 +42,7 @@ class Skill:
     name: str
     base_value: int
     value: int = 0           # 当前值（初始 = 基础值，分配技能点后增长）
-    category: str = "通用"    # 战斗 / 社交 / 知识 / 感知 / 操作 / 通用
+    category: str = "通用"    # U9：属性归属拼接（如 "INT、EDU"）
     is_occupation: bool = False
 
     def __post_init__(self):
