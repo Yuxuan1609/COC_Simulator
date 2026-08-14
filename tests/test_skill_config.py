@@ -28,6 +28,24 @@ def test_normalize_bracket_specialization():
     assert normalize_skill_name("射击（手枪）") == ("skill", "枪械")
 
 
+def test_normalize_bracket_fallback_to_attr_and_pseudo():
+    assert normalize_skill_name("敏捷（检定）") == ("attr", "DEX")
+
+
+def test_normalize_empty_and_none():
+    assert normalize_skill_name("") == ("unknown", "")
+    assert normalize_skill_name(None) == ("unknown", "")
+
+
+def test_custom_path_does_not_pollute_cache(tmp_path):
+    import json
+    alt = tmp_path / "alt_config.json"
+    alt.write_text(json.dumps({"skills": [{"name": "假技能", "attr": [], "base": 0}]}),
+                   encoding="utf-8")
+    load_skill_config(str(alt))
+    assert "假技能" not in get_coc_skill_names()
+
+
 def test_normalize_attr_alias():
     assert normalize_skill_name("敏捷") == ("attr", "DEX")
     assert normalize_skill_name("意志") == ("attr", "POW")

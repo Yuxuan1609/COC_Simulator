@@ -22,7 +22,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
        └─ src/llm.py        统一 LLM 入口 (call_deepseek) + 传感器埋点
        └─ src/prompts.py    全部 prompt 构建
        └─ src/config.py / src/config_llm.py  配置
-        └─ src/utils.py      文件解析 / token 估算 / 掷骰 / 技能配置与归一
+       └─ src/utils.py      文件解析 / token 估算 / 掷骰 / 技能配置与归一
   ├─ src/game/              Keeper 回合系统 (agents/ + combat + judge + npc/enemy/boss manager + clock)
   ├─ src/scenario_core.py   数据模型 + 世界状态 (DirectedGraph / ScenarioWorld / MemoryManager / WorldChronicle)
   ├─ src/investigator/      调查员系统 (COC 7th 车卡/检定)

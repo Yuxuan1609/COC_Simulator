@@ -152,7 +152,7 @@ def load_skill_config(path: str | None = None) -> dict:
             path = os.path.normpath(path)
         with open(path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
-        if path.endswith("skill_config.json"):
+        if path is None:
             _SKILL_CONFIG_CACHE = cfg
         return cfg
     return _SKILL_CONFIG_CACHE
@@ -171,12 +171,19 @@ def normalize_skill_name(name: str) -> tuple[str, str]:
     new_names = {s["name"] for s in cfg["skills"]}
     legacy = cfg.get("legacy_map", {})
 
+    aliases = cfg.get("attr_aliases", {})
+    pseudo = cfg.get("pseudo_skills", {})
+
     def _lookup(n: str) -> tuple[str, str] | None:
         if n in new_names:
             return ("skill", n)
         if n in legacy:
             mapped = legacy[n]
             return ("ignore", n) if mapped is None else ("skill", mapped)
+        if n in aliases:
+            return ("attr", aliases[n])
+        if n in pseudo:
+            return ("pseudo", pseudo[n])
         return None
 
     hit = _lookup(name)
@@ -187,12 +194,6 @@ def normalize_skill_name(name: str) -> tuple[str, str]:
         hit = _lookup(stripped)
         if hit:
             return hit
-    aliases = cfg.get("attr_aliases", {})
-    if name in aliases:
-        return ("attr", aliases[name])
-    pseudo = cfg.get("pseudo_skills", {})
-    if name in pseudo:
-        return ("pseudo", pseudo[name])
     return ("unknown", name)
 
 
