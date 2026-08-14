@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
-from utils import roll_d6, roll_dice
+from utils import roll_d6
 from investigator.models import Stats, DerivedStats, Skill, Occupation, Weapon
 
 
@@ -15,11 +15,10 @@ from investigator.models import Stats, DerivedStats, Skill, Occupation, Weapon
 # ═══════════════════════════════════════════════════════════════
 
 def roll_stats() -> Stats:
-    """按 COC 7th 标准规则掷骰生成核心属性"""
+    """掷骰生成核心属性（骰面配置见 skill_config.json attributes，U9 起无 SIZ）"""
     return Stats(
         STR=roll_d6(3) * 5,
         CON=roll_d6(3) * 5,
-        SIZ=(roll_d6(2) + 6) * 5,
         DEX=roll_d6(3) * 5,
         APP=roll_d6(3) * 5,
         INT=(roll_d6(2) + 6) * 5,
@@ -33,43 +32,33 @@ def roll_stats() -> Stats:
 #  衍生属性计算
 # ═══════════════════════════════════════════════════════════════
 
-def _calc_db_build(str_siz: int) -> Tuple[str, int]:
-    """根据 STR+SIZ 查表返回 (DB, BUILD)"""
-    if str_siz <= 64:
+def _calc_db_build(key: int) -> Tuple[str, int]:
+    """U9 查表键 = STR + CON//2，返回 (DB, BUILD)"""
+    if key <= 64:
         return "-2", -2
-    elif str_siz <= 84:
+    elif key <= 84:
         return "-1", -1
-    elif str_siz <= 124:
+    elif key <= 124:
         return "0", 0
-    elif str_siz <= 164:
+    elif key <= 164:
         return "+1D4", 1
-    elif str_siz <= 204:
+    elif key <= 204:
         return "+1D6", 2
     else:
         return "+2D6", 3
 
 
 def calc_derived(stats: Stats, age: int = 20, cthulhu_mythos: int = 0) -> DerivedStats:
-    """根据核心属性 + 年龄 + 克苏鲁神话计算衍生属性"""
-    hp = math.floor((stats.CON + stats.SIZ) / 10)
+    """U9 衍生公式：HP=CON//3；DB/BUILD 查表键=STR+CON//2；删 MOV。"""
+    hp = max(1, math.floor(stats.CON / 3))
     mp = math.floor(stats.POW / 5)
     san = stats.POW
     san_max = 99 - cthulhu_mythos
     dodge = math.floor(stats.DEX / 2)
-
-    # MOV
-    if stats.STR < stats.SIZ and stats.DEX < stats.SIZ:
-        mov = 7
-    elif stats.STR > stats.SIZ and stats.DEX > stats.SIZ:
-        mov = 9
-    else:
-        mov = 8
-
-    db, build = _calc_db_build(stats.STR + stats.SIZ)
-
+    db, build = _calc_db_build(stats.STR + stats.CON // 2)
     return DerivedStats(
         HP=hp, HP_MAX=hp, MP=mp, SAN=san, SAN_MAX=san_max,
-        MOV=mov, DB=db, BUILD=build, DODGE=dodge,
+        DB=db, BUILD=build, DODGE=dodge,
     )
 
 
@@ -77,85 +66,46 @@ def calc_derived(stats: Stats, age: int = 20, cthulhu_mythos: int = 0) -> Derive
 #  技能系统
 # ═══════════════════════════════════════════════════════════════
 
-# COC 7th 标准技能基础值表
-SKILL_BASE_VALUES: Dict[str, int] = {
-    "会计": 5, "人类学": 1, "估价": 5, "考古学": 1,
-    "魅惑": 15, "攀爬": 20, "计算机使用": 5, "信用评级": 0,
-    "克苏鲁神话": 0, "乔装": 5, "汽车驾驶": 20,
-    "电气维修": 10, "电子学": 1, "话术": 5, "格斗": 25,
-    "枪械": 20, "急救": 30, "历史": 5, "恐吓": 15,
-    "跳跃": 20, "外语": 1, "母语": 50, "法律": 5,
-    "图书馆使用": 20, "聆听": 20, "锁匠": 1, "机械维修": 10,
-    "医学": 1, "博物学": 10, "导航": 10, "神秘学": 5,
-    "操作重型机械": 1, "说服": 10, "驾驶": 20, "心理学": 10,
-    "精神分析": 1, "骑术": 5, "科学": 1, "妙手": 10,
-    "潜行": 20, "侦查": 25, "生存": 10, "游泳": 20,
-    "投掷": 20, "追踪": 10,
-}
-
-# 技能分类映射
-SKILL_CATEGORIES: Dict[str, str] = {
-    "会计": "知识", "人类学": "知识", "估价": "知识", "考古学": "知识",
-    "魅惑": "社交", "攀爬": "操作", "计算机使用": "知识", "信用评级": "社交",
-    "克苏鲁神话": "知识", "乔装": "社交", "汽车驾驶": "操作",
-    "电气维修": "操作", "电子学": "知识", "话术": "社交", "格斗": "战斗",
-    "枪械": "战斗", "急救": "操作", "历史": "知识", "恐吓": "社交",
-    "跳跃": "操作", "外语": "知识", "母语": "知识", "法律": "知识",
-    "图书馆使用": "知识", "聆听": "感知", "锁匠": "操作", "机械维修": "操作",
-    "医学": "知识", "博物学": "知识", "导航": "知识", "神秘学": "知识",
-    "操作重型机械": "操作", "说服": "社交", "驾驶": "操作", "心理学": "感知",
-    "精神分析": "知识", "骑术": "操作", "科学": "知识", "妙手": "操作",
-    "潜行": "操作", "侦查": "感知", "生存": "操作", "游泳": "操作",
-    "投掷": "战斗", "追踪": "感知",
-}
-
-
-def resolve_base_value(base: int, stats: Optional[Stats] = None) -> int:
-    """解析技能基础值。int 直接返回（特殊值如 'DEX/2' 已在表中直接以数值存储）"""
-    return base
-
-
 def create_skill_list() -> List[Skill]:
-    """从基础值表生成完整技能列表"""
-    skills = []
-    for name, base in SKILL_BASE_VALUES.items():
-        category = SKILL_CATEGORIES.get(name, "通用")
-        skills.append(Skill(
-            name=name,
-            base_value=base,
-            value=base,
-            category=category,
-        ))
-    return skills
+    """从 skill_config.json 生成新 20 项技能列表（克苏鲁神话 base=0 不走池）"""
+    from utils import load_skill_config
+    cfg = load_skill_config()
+    return [
+        Skill(name=s["name"], base_value=s["base"], value=s["base"],
+              category="、".join(s.get("attr", [])))
+        for s in cfg["skills"]
+    ]
 
 
 def allocate_skill_points(
     skills: List[Skill],
-    occupation_skills: List[str],
-    occupation_points: int,
-    interest_points: int,
+    stats: Stats,
+    focus: List[str] | None = None,
+    focus_bonus: int = 0,
 ) -> List[Skill]:
-    """
-    分配技能点（自动平均分配）。
-    - occupation_points: 职业技能点，仅可分配到职业技能
-    - interest_points: 兴趣技能点，可分配到任意技能
-    返回更新后的技能列表（原位修改）。
-    """
-    occ_skills = [s for s in skills if s.name in occupation_skills]
-    int_skills = [s for s in skills if s.name not in occupation_skills]
+    """U9 属性池分配：每属性池=属性值×乘数（config），均分到归属技能；
+    多属性技能从各归属池分别获益叠加；focus 技能额外 +focus_bonus；上限 99。"""
+    from utils import load_skill_config
+    cfg = load_skill_config()
+    attrs_cfg = cfg["attributes"]
+    skill_attrs = {s["name"]: s.get("attr", []) for s in cfg["skills"]}
+    no_pool = {s["name"] for s in cfg["skills"] if s.get("special") == "no_pool"}
 
-    if occ_skills:
-        per_occ = occupation_points // len(occ_skills)
-        remainder = occupation_points % len(occ_skills)
-        for i, sk in enumerate(occ_skills):
-            sk.value = min(99, sk.base_value + per_occ + (1 if i < remainder else 0))
-
-    if int_skills:
-        per_int = interest_points // len(int_skills)
-        remainder = interest_points % len(int_skills)
-        for i, sk in enumerate(int_skills):
-            sk.value = min(99, sk.base_value + per_int + (1 if i < remainder else 0))
-
+    by_name = {s.name: s for s in skills}
+    for attr, ac in attrs_cfg.items():
+        pool = int(getattr(stats, attr, 0) * float(ac.get("multiplier", 0)))
+        members = [n for n, al in skill_attrs.items()
+                   if attr in al and n not in no_pool and n in by_name]
+        if not members or pool <= 0:
+            continue
+        per, rem = divmod(pool, len(members))
+        for i, n in enumerate(members):
+            by_name[n].value += per + (1 if i < rem else 0)
+    for n in (focus or []):
+        if n in by_name:
+            by_name[n].value += focus_bonus
+    for s in skills:
+        s.value = min(99, max(s.value, s.base_value if s.name not in no_pool else 0))
     return skills
 
 
@@ -257,17 +207,6 @@ def create_default_unarmed() -> Weapon:
     )
 
 
-def create_default_dodge_skill(stats: Stats) -> Skill:
-    """创建闪避技能（基础值 = DEX/2）"""
-    dodge_base = math.floor(stats.DEX / 2)
-    return Skill(
-        name="闪避",
-        base_value=dodge_base,
-        value=dodge_base,
-        category="战斗",
-    )
-
-
 # ═══════════════════════════════════════════════════════════════
 #  职业加载
 # ═══════════════════════════════════════════════════════════════
@@ -288,6 +227,16 @@ def load_occupations(path: str) -> List[Occupation]:
         )
         for d in data
     ]
+
+
+def load_occupation_labels(path: str | None = None) -> list:
+    """加载职业标签（U9 标签制）"""
+    import json, os
+    if path is None:
+        path = os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "data", "occupation_labels.json"))
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def calc_db(STR: int, SIZ: int) -> str:

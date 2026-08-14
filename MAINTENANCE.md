@@ -452,22 +452,22 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `add_weapon` / `remove_weapon` | 武器管理 | 402 / 405 |
 | `save` / `load` | JSON 存档 | 412 / 418 |
 
-### rules.py (304 行) — 纯函数规则引擎
+### rules.py (253 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `roll_stats` | `() -> Stats` | COC 7th 掷骰生成属性 | 17 |
-| `_calc_db_build` | `(str_siz)` | DB/BUILD 计算 | 36 |
-| `calc_derived` | `(stats, age=20, cthulhu_mythos=0)` | 衍生属性 | 52 |
-| `resolve_base_value` | `(base, stats)` | 基础值解析 | 113 |
-| `create_skill_list` | `() -> list[Skill]` | 完整技能列表 | 118 |
-| `allocate_skill_points` | `(skills, occupation_skills, occupation_points, interest_points)` | 技能点分配 | 132 |
-| `calc_occupation_points` | `(formula, stats)` | 职业点公式 | 162 |
-| `apply_age_modifiers` | `(stats, age)` | 年龄修正 | 189 |
-| `get_credit_level` | `(value)` | 信用等级 | 237 |
-| `create_default_unarmed` / `create_default_dodge_skill` | — | 默认技能 | 250 / 260 |
-| `load_occupations` | `(path)` | 职业 JSON 加载 | 275 |
-| `calc_db` | `(STR, SIZ)` | DB 字符串 | 293 |
+| `roll_stats` | `() -> Stats` | 掷骰生成属性（无 SIZ） | 17 |
+| `_calc_db_build` | `(key)` | DB/BUILD 查表，键=STR+CON//2 | 35 |
+| `calc_derived` | `(stats, age=20, cthulhu_mythos=0)` | 衍生属性：HP=CON//3，删 MOV | 51 |
+| `create_skill_list` | `() -> list[Skill]` | 从 skill_config.json 生成 20 项技能 | 69 |
+| `allocate_skill_points` | `(skills, stats, focus=None, focus_bonus=0)` | U9 属性池分配（池=属性×乘数，均分归属技能，no_pool 除外） | 80 |
+| `calc_occupation_points` | `(formula, stats)` | 职业点公式（旧 Occupation 兼容） | 112 |
+| `apply_age_modifiers` | `(stats, age)` | 年龄修正 | 139 |
+| `get_credit_level` | `(value)` | 信用等级 | 187 |
+| `create_default_unarmed` | — | 默认徒手武器 | 200 |
+| `load_occupations` | `(path)` | 旧职业 JSON 加载（兼容） | 214 |
+| `load_occupation_labels` | `(path=None)` | U9 职业标签加载（occupation_labels.json） | 232 |
+| `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 242 |
 
 ### serialization.py (184 行)
 

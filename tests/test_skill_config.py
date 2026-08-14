@@ -135,3 +135,54 @@ def test_modify_stat_con_recalcs_hp():
     assert inv.derived.HP_MAX == 10 and inv.derived.HP <= 10
     inv.modify_stat("LUCK", -5)
     assert inv.stats.LUCK == 45
+
+
+def test_roll_stats_no_siz():
+    from investigator.rules import roll_stats
+    s = roll_stats()
+    assert not hasattr(s, "SIZ")
+    assert 15 <= s.STR <= 90 and 40 <= s.INT <= 90
+
+
+def test_calc_derived_new_formulas():
+    from investigator.models import Stats
+    from investigator.rules import calc_derived
+    s = Stats(STR=80, CON=60, DEX=70, APP=50, INT=60, POW=55, EDU=65, LUCK=40)
+    d = calc_derived(s)
+    assert d.HP == 20 and d.HP_MAX == 20          # CON//3
+    assert d.MP == 11 and d.SAN == 55              # POW//5 / POW
+    assert d.DODGE == 35                           # DEX//2
+    assert not hasattr(d, "MOV")
+    # DB/BUILD 查表键 = STR + CON//2 = 80+30 = 110 → "0"/0
+    assert d.DB == "0" and d.BUILD == 0
+
+
+def test_create_skill_list_from_config():
+    from investigator.rules import create_skill_list
+    skills = create_skill_list()
+    assert len(skills) == 20
+    spot = next(s for s in skills if s.name == "侦查")
+    assert spot.base_value == 25 and spot.value == 25
+
+
+def test_allocate_attribute_pools():
+    from investigator.models import Stats
+    from investigator.rules import create_skill_list, allocate_skill_points
+    stats = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=60)
+    skills = create_skill_list()
+    allocate_skill_points(skills, stats, focus=["侦查"], focus_bonus=10)
+    spot = next(s for s in skills if s.name == "侦查")
+    # 池：INT=60*1.5=90，EDU=60*1.5=90，各均分到归属技能后叠加；标签 +10
+    assert spot.value > 25, "池分配后必须高于基础值"
+    assert spot.value <= 99
+    cthulhu = next(s for s in skills if s.name == "克苏鲁神话")
+    assert cthulhu.value == 0, "克苏鲁神话不走池"
+    luck = next((s for s in skills if s.name == "幸运"), None)
+    assert luck is None, "LUCK 不在技能列表"
+
+
+def test_load_occupation_labels():
+    from investigator.rules import load_occupation_labels
+    labels = load_occupation_labels()
+    names = [l["name"] for l in labels]
+    assert "侦探" in names and "自定义" in names
