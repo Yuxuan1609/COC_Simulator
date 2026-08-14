@@ -393,41 +393,41 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager | 663 |
-| `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 721–741 |
-| `advance_time` | `(minutes)` | 推进时间 + 注入时间标记 | 744 |
-| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 765 |
-| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 794 / 800 / 805 |
-| `mark_completed` / `is_entity_completed` | — | 完成标记 | 825 / 832 |
-| `set_background` / `set_player` / `load_player` | — | 状态设置 | 841–851 |
-| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 861–868 |
-| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 878 / 882 |
-| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 897 / 946 |
-| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 969 |
-| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 994 / 997 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端 | 1006 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1039 / 1042 |
-| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1046 / 1050 |
-| `to_dict` / `from_dict` | — | 序列化 | 1055 / 1095 |
-| `save_state` / `load_state` | — | 全量存档/恢复 | 1126 / 1145 |
+| `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager/WorldChronicle（`self.chronicle` @685） | 663 |
+| `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 722–742 |
+| `advance_time` | `(minutes)` | 推进时间 + 注入时间标记 | 745 |
+| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 766 |
+| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 795 / 801 / 806 |
+| `mark_completed` / `is_entity_completed` | — | 完成标记 | 826 / 833 |
+| `set_background` / `set_player` / `load_player` | — | 状态设置 | 842–852 |
+| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 862–869 |
+| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 879 / 883 |
+| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 898 / 947 |
+| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 970 |
+| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 995 / 998 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端 | 1007 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1040 / 1043 |
+| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1047 / 1051 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键） | 1056 / 1097 |
+| `save_state` / `load_state` | — | 全量存档/恢复 | 1129 / 1148 |
 
-### MemoryManager（@1363）
-
-| 方法 | 签名 | 作用 | 行号 |
-|------|------|------|------|
-| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1378–1438 |
-| `to_dict` / `from_dict` | — | 序列化 | 1460 / 1470 |
-
-### WorldChronicle（@1487）— 世界状态摘要层（LLM 饲料，本期消费者=Author）
+### MemoryManager（@1366）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100） | 1504 |
-| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100） | 1536 |
-| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1546 |
-| `render_for_author` | `(world) -> str` | 渲染【世界真值】+【已注入内容】+【编年史】 | 1552 |
-| `_render_event` | `(e) -> str` | 单条事件紧凑渲染 | 1607 |
-| `to_dict` / `from_dict` | — | 序列化（events 转 list） | 1625 / 1634 |
+| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1381–1441 |
+| `to_dict` / `from_dict` | — | 序列化 | 1463 / 1473 |
+
+### WorldChronicle（@1490）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+
+| 方法 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100） | 1507 |
+| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100） | 1539 |
+| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1549 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】+【已注入内容】+【编年史】 | 1555 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染 | 1610 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list） | 1628 / 1637 |
 
 ---
 

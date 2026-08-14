@@ -682,6 +682,7 @@ class ScenarioWorld:
         # 子系统
         self.clock = GameClock()
         self.memory = MemoryManager()
+        self.chronicle = WorldChronicle()
         self.enemies = EnemyManager(enemy_library) if enemy_library else None
         self.npcs = NPCManager()
         if npc_profiles:
@@ -1089,6 +1090,7 @@ class ScenarioWorld:
                 for scene, weps in self.scene_weapons.items()
             },
             "memory": self.memory.to_dict(),
+            "chronicle": self.chronicle.to_dict(),
         }
 
     @classmethod
@@ -1116,6 +1118,7 @@ class ScenarioWorld:
             if nid in graph.nodes:
                 graph.nodes[nid].description = desc
         world.memory = MemoryManager.from_dict(data.get("memory", {}))
+        world.chronicle = WorldChronicle.from_dict(data.get("chronicle", {}))
         # 恢复 clock（无外部依赖）
         clock_data = data.get("clock")
         if clock_data:

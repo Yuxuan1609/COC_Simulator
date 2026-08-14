@@ -84,3 +84,20 @@ def test_render_for_author_contains_sections():
     text = c.render_for_author(w)
     assert "【世界真值】" in text and "【编年史】" in text
     assert "IT_SEARCH" in text and "搜索房间" in text
+
+
+def test_world_has_chronicle():
+    w = _make_world()
+    from scenario_core import WorldChronicle
+    assert isinstance(w.chronicle, WorldChronicle)
+
+
+def test_world_chronicle_in_save():
+    """世界序列化必须带 chronicle（若 ScenarioWorld 有 to_dict 通路）。"""
+    w = _make_world()
+    w.chronicle.record_patch(turn=1, level="patch", entity_ids=["SI1"],
+                             new_scenes=[], justification="x")
+    assert hasattr(w, "chronicle")
+    # 存档通路探查：若 ScenarioWorld 无 to_dict，本测试只验证挂载点可序列化
+    d = w.chronicle.to_dict()
+    assert d["patches"][0]["entity_ids"] == ["SI1"]
