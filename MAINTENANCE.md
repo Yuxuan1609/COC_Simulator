@@ -22,7 +22,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
        └─ src/llm.py        统一 LLM 入口 (call_deepseek) + 传感器埋点
        └─ src/prompts.py    全部 prompt 构建
        └─ src/config.py / src/config_llm.py  配置
-       └─ src/utils.py      文件解析 / token 估算 / 掷骰
+        └─ src/utils.py      文件解析 / token 估算 / 掷骰 / 技能配置与归一
   ├─ src/game/              Keeper 回合系统 (agents/ + combat + judge + npc/enemy/boss manager + clock)
   ├─ src/scenario_core.py   数据模型 + 世界状态 (DirectedGraph / ScenarioWorld / MemoryManager / WorldChronicle)
   ├─ src/investigator/      调查员系统 (COC 7th 车卡/检定)
@@ -734,7 +734,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `LLM_THINKING_ENABLED` / `LLM_REASONING_EFFORT` / `LLM_TEMPERATURE_JSON` / `LLM_TEMPERATURE_TEXT` / `LLM_MAX_TOKENS_JSON` / `LLM_MAX_TOKENS_TEXT` | 默认生成参数 |
 | `RE_*` | 各调用点 reasoning_effort 覆盖（RE_KEEPER_PARSE="max" 等） |
 
-## src/utils.py (161 行) — 通用工具
+## src/utils.py (220 行) — 通用工具
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -743,8 +743,10 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `estimate_tokens` | `(text) -> int` | 中文≈1.5 token/字，英文≈0.25/字符 | 68 |
 | `estimate_and_truncate_context` | `(content, extra_prompt_chars, max_tokens, safety_margin) -> str` | 超限截断（找段落/句号断点） | 78 |
 | `roll_dice` / `roll_d6` | — | 掷骰 | 125 / 135 |
-| `load_skill_checks` | `(path=None)` | data/skill_checks.json | 142 |
-| `get_coc_skill_names` | `() -> list[str]` | COC 7th 技能名（缓存） | 156 |
+| `load_skill_config` | `(path=None) -> dict` | data/skill_config.json 技能体系配置（20技能/8属性/legacy_map/attr_aliases/pseudo_skills），缓存 | 145 |
+| `normalize_skill_name` | `(name) -> (kind, value)` | 技能名归一单点：skill/attr/pseudo/ignore/unknown 五路 | 161 |
+| `load_skill_checks` | `(path=None)` | data/skill_checks.json（旧表，Task 8 处理数据源） | 201 |
+| `get_coc_skill_names` | `() -> list[str]` | 新 20 项技能名（缓存，从 skill_config.json 读取） | 215 |
 
 ## src/audit_player_log.py (411 行) — LLM 玩家日志审计
 

@@ -137,6 +137,65 @@ def roll_d6(num: int) -> int:
     return roll_dice(num, 6)
 
 
+# ── 技能体系配置 ──
+
+_SKILL_CONFIG_CACHE: dict | None = None
+
+
+def load_skill_config(path: str | None = None) -> dict:
+    """加载技能体系配置（技能/属性/legacy_map/attr_aliases/pseudo_skills），缓存。"""
+    global _SKILL_CONFIG_CACHE
+    if _SKILL_CONFIG_CACHE is None or path is not None:
+        import json
+        if path is None:
+            path = os.path.join(os.path.dirname(__file__), "..", "data", "skill_config.json")
+            path = os.path.normpath(path)
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        if path.endswith("skill_config.json"):
+            _SKILL_CONFIG_CACHE = cfg
+        return cfg
+    return _SKILL_CONFIG_CACHE
+
+
+def normalize_skill_name(name: str) -> tuple[str, str]:
+    """技能名归一单点。返回 (kind, value)：
+    ("skill", 新技能名) / ("attr", 属性英文名) / ("pseudo", "DODGE") /
+    ("ignore", 原名)（已废弃如母语） / ("unknown", 原名)（未识别）。
+    顺序：新表精确 → legacy_map → 去括号重试 → 属性别名 → 伪技能 → unknown。
+    """
+    cfg = load_skill_config()
+    name = (name or "").strip()
+    if not name:
+        return ("unknown", name)
+    new_names = {s["name"] for s in cfg["skills"]}
+    legacy = cfg.get("legacy_map", {})
+
+    def _lookup(n: str) -> tuple[str, str] | None:
+        if n in new_names:
+            return ("skill", n)
+        if n in legacy:
+            mapped = legacy[n]
+            return ("ignore", n) if mapped is None else ("skill", mapped)
+        return None
+
+    hit = _lookup(name)
+    if hit:
+        return hit
+    stripped = re.sub(r"[（(][^)）]*[)）]", "", name).strip()
+    if stripped != name:
+        hit = _lookup(stripped)
+        if hit:
+            return hit
+    aliases = cfg.get("attr_aliases", {})
+    if name in aliases:
+        return ("attr", aliases[name])
+    pseudo = cfg.get("pseudo_skills", {})
+    if name in pseudo:
+        return ("pseudo", pseudo[name])
+    return ("unknown", name)
+
+
 # ── 技能检定定义加载 ──
 
 def load_skill_checks(path: str | None = None) -> list:
@@ -154,8 +213,8 @@ _COC_SKILL_NAMES_CACHE: list[str] | None = None
 
 
 def get_coc_skill_names() -> list[str]:
-    """获取全部 COC 7th 标准技能名列表（缓存，从 data/skill_checks.json 读取）。"""
+    """获取新 20 项技能名列表（缓存，从 data/skill_config.json 读取）。"""
     global _COC_SKILL_NAMES_CACHE
     if _COC_SKILL_NAMES_CACHE is None:
-        _COC_SKILL_NAMES_CACHE = [s["name"] for s in load_skill_checks()]
+        _COC_SKILL_NAMES_CACHE = [s["name"] for s in load_skill_config()["skills"]]
     return _COC_SKILL_NAMES_CACHE

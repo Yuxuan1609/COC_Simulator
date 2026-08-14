@@ -1,0 +1,80 @@
+{
+  "attributes": {
+    "STR": { "dice": [3, 6], "multiplier": 0.5, "passive": ["DB"] },
+    "CON": { "dice": [3, 6], "multiplier": 0.5, "passive": ["HP"] },
+    "DEX": { "dice": [3, 6], "multiplier": 1, "passive": ["DODGE"] },
+    "APP": { "dice": [3, 6], "multiplier": 1.5, "passive": [] },
+    "INT": { "dice": [2, 6, 6], "multiplier": 1.5, "passive": [] },
+    "POW": { "dice": [3, 6], "multiplier": 1, "passive": ["MP", "SAN"] },
+    "EDU": { "dice": [2, 6, 6], "multiplier": 1.5, "passive": [] },
+    "LUCK": { "dice": [3, 6], "multiplier": 0, "passive": [], "special": "self_skill" }
+  },
+
+  "derived": {
+    "HP": { "formula": "CON / 3" },
+    "MP": { "formula": "POW / 5" },
+    "SAN": { "formula": "POW" },
+    "SAN_MAX": { "formula": "99 - cthulhu_mythos" },
+    "DODGE": { "formula": "DEX / 2" },
+    "DB": { "formula": "table(STR + CON/2)", "table": { "0-84": "-1", "85-124": "0", "125-164": "+1D4", "165-204": "+1D6", "205+": "+2D6" } },
+    "BUILD": { "formula": "table(STR + CON/2)", "table": { "0-84": "-1", "85-124": "0", "125-164": "1", "165-204": "2", "205+": "3" } }
+  },
+
+  "skills": [
+    { "name": "格斗",   "attr": ["STR", "DEX"],       "base": 25 },
+    { "name": "枪械",   "attr": ["DEX"],               "base": 20 },
+    { "name": "运动",   "attr": ["STR", "CON", "DEX"], "base": 20 },
+    { "name": "潜行",   "attr": ["DEX"],               "base": 20 },
+    { "name": "偷窃",   "attr": ["DEX"],               "base": 10 },
+    { "name": "驾驶",   "attr": ["DEX"],               "base": 20 },
+    { "name": "生存",   "attr": ["CON", "INT"],        "base": 30 },
+    { "name": "侦查",   "attr": ["INT", "EDU"],        "base": 25 },
+    { "name": "学术",   "attr": ["INT", "EDU"],        "base": 20 },
+    { "name": "心理学", "attr": ["INT", "EDU"],        "base": 10 },
+    { "name": "科学",   "attr": ["EDU"],               "base": 1 },
+    { "name": "技术",   "attr": ["EDU"],               "base": 5 },
+    { "name": "社会科学","attr": ["EDU"],              "base": 5 },
+    { "name": "外语",   "attr": ["EDU"],               "base": 1 },
+    { "name": "维修",   "attr": ["INT", "EDU"],        "base": 10 },
+    { "name": "信用评级","attr": ["APP", "EDU"],       "base": 0 },
+    { "name": "说服",   "attr": ["APP", "EDU"],        "base": 15 },
+    { "name": "魅惑",   "attr": ["APP"],               "base": 15 },
+    { "name": "神秘学", "attr": ["INT", "POW"],        "base": 5 },
+    { "name": "克苏鲁神话","attr": ["POW"],            "base": 0, "special": "no_pool" }
+  ],
+
+  "legacy_map": {
+    "会计": "社会科学", "估价": "社会科学", "考古学": "社会科学",
+    "人类学": "社会科学", "法律": "社会科学",
+    "攀爬": "运动", "跳跃": "运动", "游泳": "运动", "投掷": "运动",
+    "汽车驾驶": "驾驶", "驾驶": "驾驶", "骑术": "驾驶",
+    "机械维修": "维修", "电气维修": "维修", "操作重型机械": "维修",
+    "魅惑": "魅惑", "乔装": "魅惑",
+    "说服": "说服", "话术": "说服", "恐吓": "说服",
+    "锁匠": "偷窃", "妙手": "偷窃",
+    "急救": "生存", "生存": "生存",
+    "侦查": "侦查", "追踪": "侦查", "聆听": "侦查",
+    "图书馆使用": "学术", "历史": "学术", "博物学": "学术",
+    "心理学": "心理学", "精神分析": "心理学",
+    "科学": "科学", "医学": "科学",
+    "计算机使用": "技术", "电子学": "技术",
+    "格斗": "格斗", "枪械": "枪械", "射击": "枪械",
+    "神秘学": "神秘学", "外语": "外语",
+    "克苏鲁神话": "克苏鲁神话", "信用评级": "信用评级",
+    "导航": "侦查",
+    "母语": null
+  },
+
+  "attr_aliases": {
+    "力量": "STR", "体质": "CON", "敏捷": "DEX", "外貌": "APP",
+    "智力": "INT", "灵感": "INT", "意志": "POW", "教育": "EDU",
+    "幸运": "LUCK",
+    "STR": "STR", "CON": "CON", "DEX": "DEX", "APP": "APP",
+    "INT": "INT", "POW": "POW", "EDU": "EDU", "LUCK": "LUCK",
+    "SIZ": "CON"
+  },
+
+  "pseudo_skills": {
+    "回避": "DODGE", "闪避": "DODGE"
+  }
+}
