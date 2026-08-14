@@ -296,8 +296,9 @@
 ### 待办（按优先级）
 
 0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期
+0.5. **U9 技能系统重修（spec 已修订，待实施）**：`docs/superpowers/specs/2026-06-10-skill-system-redesign.md`（2026-08-14 补丁版——三层防护串联/归一单点下沉 get_skill/属性检定通路/旧卡强制重建/LUCK 输入声明式/调参入 config 次要）。实施步骤 10 步见 spec 第 8 节
 1. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
-2. **巡检层 verdict 化**：llm_player 自由游玩 + audit_player_log 结构化 pass/warn/fail
+2. ~~巡检层 verdict 化~~（用户拍板暂缓）
 3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
 4. **存读档 3 个 🔴 bug（最后）**：见上队列 6
 
