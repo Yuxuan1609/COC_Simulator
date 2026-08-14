@@ -1534,7 +1534,7 @@ class Keeper:
             structural_edit.supplement_path = result.get("output_dir", "")
             structural_edit.l3_updates = result["l3"]
 
-            entity_ids = [ev["id"] for ev in l2.get("events", [])]
+            entity_ids = [ev.get("id", "") for ev in l2.get("events", [])]
             for scene_data in l2.get("scenes", {}).values():
                 entity_ids.extend(e.get("id", "") for e in scene_data.get("interactions", []))
                 entity_ids.extend(e.get("id", "") for e in scene_data.get("auto_triggers", []))
