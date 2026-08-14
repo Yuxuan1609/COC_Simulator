@@ -93,11 +93,16 @@ def test_world_has_chronicle():
 
 
 def test_world_chronicle_in_save():
-    """世界序列化必须带 chronicle（若 ScenarioWorld 有 to_dict 通路）。"""
+    """ScenarioWorld 存档通路必须带 chronicle 键，且 from_dict 回读内容一致。"""
+    from scenario_core import ScenarioWorld
     w = _make_world()
+    w.chronicle.record_turn(1, "搜索", _make_result(), w)
     w.chronicle.record_patch(turn=1, level="patch", entity_ids=["SI1"],
                              new_scenes=[], justification="x")
-    assert hasattr(w, "chronicle")
-    # 存档通路探查：若 ScenarioWorld 无 to_dict，本测试只验证挂载点可序列化
-    d = w.chronicle.to_dict()
-    assert d["patches"][0]["entity_ids"] == ["SI1"]
+    d = w.to_dict()
+    assert "chronicle" in d, "ScenarioWorld.to_dict 必须包含 chronicle 键"
+    assert d["chronicle"]["patches"][0]["entity_ids"] == ["SI1"]
+    back = ScenarioWorld.from_dict(d, w.graph)
+    assert back.chronicle.patches == w.chronicle.patches
+    assert back.chronicle.events == w.chronicle.events
+    assert back.chronicle.entity_results == w.chronicle.entity_results
