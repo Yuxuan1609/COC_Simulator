@@ -10,6 +10,11 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response, JSONRes
 
 from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
 
+import sys as _sys
+if str(PROJECT_ROOT / "src") not in _sys.path:
+    _sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from utils import load_skill_config
+
 router = APIRouter(prefix="/character", tags=["character"])
 
 TEMPLATES_DIR = FRONTEND_DIR / "templates"
@@ -18,38 +23,17 @@ UPLOADS_DIR = FRONTEND_DIR / "static" / "uploads"
 from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# ── Skill base values (COC 7th) ──
-SKILLS = [
-    {"name": "会计", "base": 5, "cat": "知识"}, {"name": "人类学", "base": 1, "cat": "知识"},
-    {"name": "估价", "base": 5, "cat": "知识"}, {"name": "考古学", "base": 1, "cat": "知识"},
-    {"name": "魅惑", "base": 15, "cat": "社交"}, {"name": "攀爬", "base": 20, "cat": "操作"},
-    {"name": "信用评级", "base": 0, "cat": "社交"}, {"name": "克苏鲁神话", "base": 0, "cat": "知识"},
-    {"name": "乔装", "base": 5, "cat": "社交"}, {"name": "汽车驾驶", "base": 20, "cat": "操作"},
-    {"name": "电气维修", "base": 10, "cat": "操作"}, {"name": "电子学", "base": 1, "cat": "知识"},
-    {"name": "话术", "base": 5, "cat": "社交"}, {"name": "格斗", "base": 25, "cat": "战斗"},
-    {"name": "枪械", "base": 20, "cat": "战斗"}, {"name": "急救", "base": 30, "cat": "操作"},
-    {"name": "历史", "base": 5, "cat": "知识"}, {"name": "恐吓", "base": 15, "cat": "社交"},
-    {"name": "跳跃", "base": 20, "cat": "操作"}, {"name": "外语", "base": 1, "cat": "知识"},
-    {"name": "母语", "base": 50, "cat": "知识"}, {"name": "法律", "base": 5, "cat": "知识"},
-    {"name": "图书馆使用", "base": 20, "cat": "知识"}, {"name": "聆听", "base": 20, "cat": "感知"},
-    {"name": "锁匠", "base": 1, "cat": "操作"}, {"name": "机械维修", "base": 10, "cat": "操作"},
-    {"name": "医学", "base": 1, "cat": "知识"}, {"name": "博物学", "base": 10, "cat": "知识"},
-    {"name": "导航", "base": 10, "cat": "知识"}, {"name": "神秘学", "base": 5, "cat": "知识"},
-    {"name": "操作重型机械", "base": 1, "cat": "操作"}, {"name": "说服", "base": 10, "cat": "社交"},
-    {"name": "驾驶", "base": 20, "cat": "操作"}, {"name": "心理学", "base": 10, "cat": "感知"},
-    {"name": "精神分析", "base": 1, "cat": "知识"}, {"name": "骑术", "base": 5, "cat": "操作"},
-    {"name": "科学", "base": 1, "cat": "知识"}, {"name": "妙手", "base": 10, "cat": "操作"},
-    {"name": "潜行", "base": 20, "cat": "操作"}, {"name": "侦查", "base": 25, "cat": "感知"},
-    {"name": "生存", "base": 10, "cat": "操作"}, {"name": "游泳", "base": 20, "cat": "操作"},
-    {"name": "投掷", "base": 20, "cat": "战斗"}, {"name": "追踪", "base": 10, "cat": "感知"},
-]
+# ── Skills & stats from skill_config.json (U9: 20 技能/8 属性) ──
+_SKILL_CFG = load_skill_config()
+SKILLS = [{"name": s["name"], "base": s["base"], "cat": "、".join(s.get("attr", []))}
+          for s in _SKILL_CFG["skills"]]
 
-STATS = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "LUCK"]
-STAT_LABELS = {"STR": "力量", "CON": "体质", "SIZ": "体型", "DEX": "敏捷", "APP": "外貌",
+STATS = list(_SKILL_CFG["attributes"].keys())
+STAT_LABELS = {"STR": "力量", "CON": "体质", "DEX": "敏捷", "APP": "外貌",
                "INT": "智力", "POW": "意志", "EDU": "教育", "LUCK": "幸运"}
 STAT_ROLLS = {
-    "STR": (3, 0), "CON": (3, 0), "DEX": (3, 0), "APP": (3, 0), "POW": (3, 0),
-    "SIZ": (2, 6), "INT": (2, 6), "EDU": (2, 6), "LUCK": (3, 0),
+    k: (v["dice"][0], v["dice"][1] if len(v["dice"]) > 1 else 0)
+    for k, v in _SKILL_CFG["attributes"].items()
 }
 
 
@@ -106,11 +90,11 @@ async def step_partial(request: Request, n: int):
 async def roll_stats():
     import random as _r
     values = {s: _roll_stat(*STAT_ROLLS[s]) for s in STATS}
-    hp = (values["CON"] + values["SIZ"]) // 10
+    hp = max(1, values["CON"] // 3)
     mp = values["POW"] // 5
     san = values["POW"]
     dodge = values["DEX"] // 2
-    ss = values["STR"] + values["SIZ"]
+    ss = values["STR"] + values["CON"] // 2
     if ss <= 64: db, build = "-2", -2
     elif ss <= 84: db, build = "-1", -1
     elif ss <= 124: db, build = "0", 0
@@ -158,7 +142,7 @@ async def skills_list(occupation: str = ""):
     cats = {}
     for s in SKILLS:
         cats.setdefault(s["cat"], []).append(s)
-    cat_order = ["战斗", "操作", "感知", "知识", "社交"]
+    cat_order = list(cats.keys())
 
     rows = []
     rows.append(f'<div class="text-sm text-gray-500 mb-2">职业技能点公式: {pts_formula} | 兴趣点: INT×2'
@@ -244,11 +228,11 @@ def _build_export(name: str, age: int, gender: str,
 
     inv = Investigator(name=name or "调查员", age=age, gender=gender or "男")
     inv.stats = Stats(
-        STR=stat_STR, CON=stat_CON, SIZ=stat_SIZ, DEX=stat_DEX,
+        STR=stat_STR, CON=stat_CON, DEX=stat_DEX,
         APP=stat_APP, INT=stat_INT, POW=stat_POW, EDU=stat_EDU, LUCK=stat_LUCK,
     )
     inv.derived = DerivedStats(
-        HP=stat_HP, HP_MAX=stat_HP, MP=stat_MP, SAN=stat_SAN, MOV=8,
+        HP=stat_HP, HP_MAX=stat_HP, MP=stat_MP, SAN=stat_SAN,
         DB=stat_DB, BUILD=stat_BUILD, DODGE=stat_DODGE,
     )
     skills = create_skill_list()
@@ -272,7 +256,7 @@ def _build_export(name: str, age: int, gender: str,
 
     data = to_dict(inv)
     data["meta"].update({
-        "version": "1.0",
+        "version": "2.0",
         "created_at": _dt.now().isoformat(),
         "rules_edition": "COC7",
     })
