@@ -16,7 +16,7 @@
     <input type="hidden" id="char-name" name="name" value="">
     <input type="hidden" id="char-age" name="age" value="">
     <input type="hidden" id="char-gender" name="gender" value="">
-    <input type="hidden" id="char-occupation" name="occupation" value="">
+    <input type="hidden" id="char-label" name="label" value="">
     <input type="hidden" id="char-appearance" name="appearance" value="">
     <input type="hidden" id="char-description" name="description" value="">
     <input type="hidden" id="char-backstory" name="backstory" value="">
@@ -30,6 +30,7 @@
     <input type="hidden" id="stat-DB" name="stat_DB" value="">
     <input type="hidden" id="stat-BUILD" name="stat_BUILD" value="">
     <input type="hidden" id="skills-json" name="skills_json" value="">
+    <input type="hidden" id="skills-label" value="">
     <input type="hidden" id="avatar-url-input-global" name="avatar_url" value="">
   </form>
 
@@ -54,18 +55,18 @@
 // === Recalculate derived stats from stat inputs ===
 function charRecalcDerived() {
   var cards = document.querySelectorAll('#roll-result .stat-input');
-  var vals = { STR: 0, CON: 0, SIZ: 0, DEX: 0, APP: 0, INT: 0, POW: 0, EDU: 0, LUCK: 0 };
+  var vals = { STR: 0, CON: 0, DEX: 0, APP: 0, INT: 0, POW: 0, EDU: 0, LUCK: 0 };
   cards.forEach(function(inp) {
     if (inp.name) {
       var key = inp.name.replace('stat_', '');
       vals[key] = parseInt(inp.value) || 0;
     }
   });
-  var hp = Math.floor((vals.CON + vals.SIZ) / 10);
+  var hp = Math.max(1, Math.floor(vals.CON / 3));
   var mp = Math.floor(vals.POW / 5);
   var san = vals.POW;
   var dodge = Math.floor(vals.DEX / 2);
-  var ss = vals.STR + vals.SIZ;
+  var ss = vals.STR + Math.floor(vals.CON / 2);
   var db, build;
   if (ss <= 64) { db = '-2'; build = -2; }
   else if (ss <= 84) { db = '-1'; build = -1; }
@@ -109,18 +110,20 @@ function charStoreSkills() {
   if (inputs.length === 0) return;
   var data = {};
   inputs.forEach(function(inp) {
-    var label = inp.closest('.flex')?.querySelector('span')?.textContent?.replace(/职业\s*$/, '').trim();
+    var label = inp.closest('.flex')?.querySelector('span')?.textContent?.replace(/(职业|专精)\s*$/, '').trim();
     if (label) data[label] = inp.value;
   });
   if (Object.keys(data).length > 0) {
     document.getElementById('skills-json').value = JSON.stringify(data);
+    var lb = document.getElementById('select-label');
+    if (lb) document.getElementById('skills-label').value = lb.value;
   }
 }
 
 // === Sync step 1 & 2 fields to hidden form before navigating away ===
 function charSyncAllFields() {
   // Sync basic info fields
-  ['name','age','gender','occupation','appearance','description','backstory'].forEach(function(f) {
+  ['name','age','gender','label','appearance','description','backstory'].forEach(function(f) {
     var el = document.querySelector('#step-content [name="' + f + '"]');
     if (el) document.getElementById('char-' + f).value = el.value;
   });

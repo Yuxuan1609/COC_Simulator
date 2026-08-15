@@ -1,30 +1,31 @@
 <div>
-  <h2 class="text-lg text-aged-gold mb-4 border-l-2 border-aged-gold pl-3">职业与技能</h2>
+  <h2 class="text-lg text-aged-gold mb-4 border-l-2 border-aged-gold pl-3">职业标签与技能</h2>
   <div class="mb-4">
-    <label class="block text-xs text-gray-500 mb-1">职业</label>
-    <select name="occupation" id="select-occupation"
+    <label class="block text-xs text-gray-500 mb-1">职业标签</label>
+    <select name="label" id="select-label"
             hx-get="/character/skills-list"
             hx-trigger="change"
             hx-target="#skills-list"
             hx-swap="innerHTML"
             hx-include="this"
-            hx-params="occupation"
+            hx-params="label"
             hx-on--htmx-before-request="charSyncAllFields()"
             class="w-full bg-[#1a150c] border border-[#4a3820] rounded px-3 py-2 text-sm text-gray-300">
-      <option value="">选择职业...</option>
-      {% for occ in occupations %}
-      <option value="{{ occ.name }}">{{ occ.name }}</option>
+      <option value="">选择职业标签...</option>
+      {% for l in labels %}
+      <option value="{{ l.name }}">{{ l.name }}{% if l.focus %}（专精: {{ l.focus|join('、') }} +{{ l.bonus }}）{% endif %}</option>
       {% endfor %}
     </select>
   </div>
-  <div id="skills-list" class="text-sm text-gray-600 max-h-[60vh] overflow-y-auto">
-    选择职业后显示所有技能（职业技能已高亮）
+  <div id="skills-list" class="text-sm text-gray-600 max-h-[60vh] overflow-y-auto"
+       hx-get="/character/skills-list" hx-trigger="load" hx-swap="innerHTML">
+    加载中...
   </div>
 
   <script>
   (function() {
-    var el = document.getElementById('select-occupation');
-    var f = document.getElementById('char-occupation');
+    var el = document.getElementById('select-label');
+    var f = document.getElementById('char-label');
     if (el && f && f.value) {
       el.value = f.value;
       el.dispatchEvent(new Event('change', {bubbles: true}));

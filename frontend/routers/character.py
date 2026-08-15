@@ -37,11 +37,9 @@ STAT_ROLLS = {
 }
 
 
-def _load_occupations():
-    path = PROJECT_ROOT / "data" / "occupations.json"
-    if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return []
+def _load_labels():
+    from investigator.rules import load_occupation_labels
+    return load_occupation_labels()
 
 
 def _roll_stat(dice: int, add: int) -> int:
@@ -54,7 +52,7 @@ async def character_page(request: Request):
         "skills": SKILLS,
         "stats": STATS,
         "stat_labels": STAT_LABELS,
-        "occupations": _load_occupations(),
+        "labels": _load_labels(),
     })
 
 
@@ -79,7 +77,7 @@ async def step_partial(request: Request, n: int):
         })
     elif n == 2:
         return templates.TemplateResponse(request, "partials/char-step2.html", {
-            "skills": SKILLS, "occupations": _load_occupations(),
+            "skills": SKILLS, "labels": _load_labels(),
         })
     elif n == 3:
         return templates.TemplateResponse(request, "partials/char-step3.html", {})
@@ -125,70 +123,94 @@ async def roll_stats():
 
 
 @router.get("/skills-list", response_class=HTMLResponse)
-async def skills_list(occupation: str = ""):
-    occs = _load_occupations()
-    occ = None
-    occ_skill_names = set()
-    if occupation:
-        occs_match = [o for o in occs if o["name"] == occupation]
-        if occs_match:
-            occ = occs_match[0]
-            occ_skill_names = set(occ.get("occupation_skills", []))
+async def skills_list(label: str = ""):
+    # 职业标签 → 专精技能 +bonus
+    focus, bonus = set(), 0
+    for l in _load_labels():
+        if l["name"] == label:
+            focus, bonus = set(l.get("focus", [])), int(l.get("bonus", 0))
+            break
 
-    pts_formula = occ.get("skill_points_formula", "—") if occ else "—"
-    cr_min, cr_max = occ.get("credit_rating_min", 0) if occ else 0, occ.get("credit_rating_max", 99) if occ else 99
+    # 按归属属性分块；双属性技能重复出现，仅首个块可编辑
+    attrs_cfg = _SKILL_CFG["attributes"]
+    attr_of: dict[str, list] = {}
+    for s in _SKILL_CFG["skills"]:
+        for a in s.get("attr", []):
+            attr_of.setdefault(a, []).append(s)
+    special = [s for s in _SKILL_CFG["skills"] if not s.get("attr")]
+    mult_js = json.dumps({k: v.get("multiplier", 0) for k, v in attrs_cfg.items()},
+                         ensure_ascii=False)
 
-    # Group skills by category
-    cats = {}
-    for s in SKILLS:
-        cats.setdefault(s["cat"], []).append(s)
-    cat_order = list(cats.keys())
-
-    rows = []
-    rows.append(f'<div class="text-sm text-gray-500 mb-2">职业技能点公式: {pts_formula} | 兴趣点: INT×2'
-                f' | 信用评级范围: {cr_min}-{cr_max}</div>')
-    if not occupation:
-        rows.append('<div class="text-xs text-gray-600 mb-3">请先选择职业以查看技能优势</div>')
-
-    for cat in cat_order:
-        cat_skills = cats.get(cat, [])
-        if not cat_skills:
-            continue
-        rows.append(f'<div class="text-xs text-gray-500 font-bold mt-3 mb-1 border-b border-gray-800 pb-1">{cat}</div>')
-        for s in cat_skills:
-            name = s["name"]
-            base = s["base"]
-            is_occ = name in occ_skill_names
-            border_cls = "border-aged-gold" if is_occ else "border-[#4a3820]"
-            bg_cls = "bg-aged-brown/20" if is_occ else "bg-[#1a150c]"
-            badge = '<span class="text-[10px] text-aged-gold bg-aged-brown/30 px-1 rounded">职业</span>' if is_occ else ''
-            rows.append(
-                f'<div class="flex items-center gap-2 py-1 px-2 {bg_cls} rounded">'
+    def _row(s, editable):
+        name, base = s["name"], s["base"]
+        is_focus = name in focus
+        val = min(99, base + bonus) if is_focus else base
+        badge = ('<span class="text-[10px] text-aged-gold bg-aged-brown/30 px-1 rounded">专精</span>'
+                 if is_focus else '')
+        border = "border-aged-gold" if is_focus else "border-[#4a3820]"
+        bg = "bg-aged-brown/20" if is_focus else "bg-[#1a150c]"
+        if editable:
+            ctrl = (f'<input type="number" min="0" max="99" value="{val}" '
+                    f'class="skill-input w-16 bg-[#1a150c] border {border} rounded px-2 py-1 text-xs text-gray-300 focus:border-aged-gold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none">')
+        else:
+            ctrl = f'<span class="w-16 text-center text-xs text-gray-600">{val}%</span>'
+        return (f'<div class="flex items-center gap-2 py-1 px-2 {bg} rounded">'
                 f'<span class="text-sm text-gray-300 w-32">{name} {badge}</span>'
-                f'<span class="text-xs text-gray-600 w-16">基础 {base}%</span>'
-                f'<input type="number" min="0" max="99" value="{base}" '
-                f'class="skill-input w-16 bg-[#1a150c] border {border_cls} rounded px-2 py-1 text-xs text-gray-300 focus:border-aged-gold focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none">'
-                f'</div>'
-            )
+                f'<span class="text-xs text-gray-600 w-16">基础 {base}%</span>{ctrl}</div>')
+
+    rows = [f'<script>window._ATTR_MULT = {mult_js};</script>',
+            f'<div id="skills-list-inner" data-label="{label}">',
+            '<div class="text-sm text-gray-500 mb-2">技能按归属属性分块；专精技能已按标签加成</div>']
+    if not label:
+        rows.append('<div class="text-xs text-gray-600 mb-3">可先选择职业标签以标记专精技能</div>')
+
+    seen = set()
+    for attr, ac in attrs_cfg.items():
+        members = attr_of.get(attr, [])
+        if not members:
+            continue
+        rows.append(
+            f'<div class="text-xs text-gray-500 font-bold mt-3 mb-1 border-b border-gray-800 pb-1">'
+            f'{STAT_LABELS[attr]} ({attr}) ×{ac.get("multiplier", 0)}'
+            f' · 池参考 <span class="pool-ref text-aged-gold" data-attr="{attr}"></span></div>')
+        for s in members:
+            editable = s["name"] not in seen
+            seen.add(s["name"])
+            rows.append(_row(s, editable))
+    if special:
+        rows.append('<div class="text-xs text-gray-500 font-bold mt-3 mb-1 border-b border-gray-800 pb-1">特殊</div>')
+        for s in special:
+            rows.append(_row(s, True))
+    rows.append('</div>')
 
     html = "".join(rows)
-    if html:
-        html += (
-            '<script>'
-            'setTimeout(function(){'
-            '  var saved = document.getElementById("skills-json")?.value;'
-            '  if (saved) {'
-            '    try { var obj = JSON.parse(saved);'
-            '      document.querySelectorAll("#skills-list .skill-input").forEach(function(inp){'
-            '        var label = inp.closest(".flex")?.querySelector("span")?.textContent?.replace(/职业\\s*$/,"").trim();'
-            '        if (label && obj[label] !== undefined) inp.value = obj[label];'
-            '      });'
-            '    } catch(e) {}'
-            '  }'
-            '  charStoreSkills();'
-            '}, 200);'
-            '</script>'
-        )
+    html += (
+        '<script>'
+        'setTimeout(function(){'
+        '  document.querySelectorAll(".pool-ref").forEach(function(el){'
+        '    var attr = el.dataset.attr;'
+        '    var inp = document.querySelector("#roll-result input[name=\'stat_" + attr + "\']")'
+        '           || document.getElementById("stat-" + attr);'
+        '    var v = inp ? (parseInt(inp.value) || 0) : 0;'
+        '    var mult = (window._ATTR_MULT || {})[attr] || 0;'
+        '    el.textContent = Math.floor(v * mult);'
+        '  });'
+        '  var inner = document.getElementById("skills-list-inner");'
+        '  var cur = inner ? inner.dataset.label : "";'
+        '  var savedLabel = document.getElementById("skills-label")?.value || "";'
+        '  var saved = document.getElementById("skills-json")?.value;'
+        '  if (saved && savedLabel === cur) {'
+        '    try { var obj = JSON.parse(saved);'
+        '      document.querySelectorAll("#skills-list .skill-input").forEach(function(inp){'
+        '        var label = inp.closest(".flex")?.querySelector("span")?.textContent?.replace(/(职业|专精)\\s*$/,"").trim();'
+        '        if (label && obj[label] !== undefined) inp.value = obj[label];'
+        '      });'
+        '    } catch(e) {}'
+        '  }'
+        '  charStoreSkills();'
+        '}, 200);'
+        '</script>'
+    )
     return HTMLResponse(html)
 
 
@@ -211,9 +233,9 @@ async def generate_description(type: str = Form(...), prompt: str = Form(...)):
 
 
 def _build_export(name: str, age: int, gender: str,
-                  occupation: str, appearance: str, description: str,
+                  label: str, appearance: str, description: str,
                   backstory: str,
-                  stat_STR: int, stat_CON: int, stat_SIZ: int,
+                  stat_STR: int, stat_CON: int,
                   stat_DEX: int, stat_APP: int, stat_INT: int,
                   stat_POW: int, stat_EDU: int, stat_LUCK: int,
                   stat_HP: int, stat_MP: int, stat_SAN: int,
@@ -221,7 +243,7 @@ def _build_export(name: str, age: int, gender: str,
                   skills_json: str, avatar_url: str):
     import json as _json
     from datetime import datetime as _dt
-    from investigator.models import Stats, DerivedStats, Occupation
+    from investigator.models import Stats, DerivedStats
     from investigator.serialization import to_dict
     from investigator import Investigator
     from investigator.rules import create_skill_list
@@ -242,13 +264,7 @@ def _build_export(name: str, age: int, gender: str,
             s.value = int(custom[s.name])
     inv.skills = skills
     inv.occupation = None
-    for _occ in _load_occupations():
-        if _occ["name"] == occupation:
-            inv.occupation = Occupation(
-                name=_occ["name"], description=_occ.get("description", ""),
-                occupation_skills=_occ.get("occupation_skills", []),
-            )
-            break
+    inv.label = label or ""
     inv.appearance = appearance or ""
     inv.description = description or ""
     inv.backstory = backstory or ""
@@ -283,17 +299,17 @@ def _build_export(name: str, age: int, gender: str,
 @router.get("/export")
 async def export_character_get(
     name: str = "", age: int = 20, gender: str = "",
-    occupation: str = "", appearance: str = "", description: str = "",
+    label: str = "", appearance: str = "", description: str = "",
     backstory: str = "",
-    stat_STR: int = 0, stat_CON: int = 0, stat_SIZ: int = 0,
+    stat_STR: int = 0, stat_CON: int = 0,
     stat_DEX: int = 0, stat_APP: int = 0, stat_INT: int = 0,
     stat_POW: int = 0, stat_EDU: int = 0, stat_LUCK: int = 0,
     stat_HP: int = 0, stat_MP: int = 0, stat_SAN: int = 0,
     stat_DODGE: int = 0, stat_DB: str = "0", stat_BUILD: int = 0,
     skills_json: str = "{}", avatar_url: str = "",
 ):
-    return _build_export(name, age, gender, occupation, appearance, description,
-                         backstory, stat_STR, stat_CON, stat_SIZ, stat_DEX,
+    return _build_export(name, age, gender, label, appearance, description,
+                         backstory, stat_STR, stat_CON, stat_DEX,
                          stat_APP, stat_INT, stat_POW, stat_EDU, stat_LUCK,
                          stat_HP, stat_MP, stat_SAN, stat_DODGE, stat_DB,
                          stat_BUILD, skills_json, avatar_url)
@@ -302,9 +318,9 @@ async def export_character_get(
 @router.post("/export")
 async def export_character(
     name: str = Form(""), age: int = Form(20), gender: str = Form(""),
-    occupation: str = Form(""), appearance: str = Form(""),
+    label: str = Form(""), appearance: str = Form(""),
     description: str = Form(""), backstory: str = Form(""),
-    stat_STR: int = Form(0), stat_CON: int = Form(0), stat_SIZ: int = Form(0),
+    stat_STR: int = Form(0), stat_CON: int = Form(0),
     stat_DEX: int = Form(0), stat_APP: int = Form(0), stat_INT: int = Form(0),
     stat_POW: int = Form(0), stat_EDU: int = Form(0), stat_LUCK: int = Form(0),
     stat_HP: int = Form(0), stat_MP: int = Form(0), stat_SAN: int = Form(0),
@@ -312,8 +328,8 @@ async def export_character(
     skills_json: str = Form("{}"),
     avatar_url: str = Form(""),
 ):
-    return _build_export(name, age, gender, occupation, appearance, description,
-                         backstory, stat_STR, stat_CON, stat_SIZ, stat_DEX,
+    return _build_export(name, age, gender, label, appearance, description,
+                         backstory, stat_STR, stat_CON, stat_DEX,
                          stat_APP, stat_INT, stat_POW, stat_EDU, stat_LUCK,
                          stat_HP, stat_MP, stat_SAN, stat_DODGE, stat_DB,
                          stat_BUILD, skills_json, avatar_url)
