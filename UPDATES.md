@@ -316,11 +316,19 @@
 
 **测试现状**：默认套件 127 passed；场景层 S-D full_clear VERDICT PASS（三层）；实连层 real_llm 11 passed
 
+**⑦ 编年史收尾 + 车卡向导 U9 适配**（70459b6/6a210bd，spec：`docs/superpowers/specs/2026-08-15-chronicle-charwizard-design.md`）
+- `_integrate_patch` 的 entity_ids 改记集成后真实 id（含 NEW_xxx 回退），修原始 dict id 空串不一致
+- 编年史补三通道投影：spawn（SpawnEnemy 副作用）/ combat=end（挂在 complete_combat_turn 统一入口，CLI/前端/auto 全覆盖）/ boss=engage·defeated（Chronicle 内置 diff，基准集入档防读档重报）；`_collect_mech_line` **不切源**（它还采 move/tier 箭头等编年史没有的字段）
+- facts 渲染补 Boss 块（已开战状态+阶段 / 未遭遇清单）与玩家关键物品（memory.key_items）
+- 车卡向导：技能按归属属性分 8 块（双属性技能首块可编辑、其余只读；块标题乘数+池参考实时算）；职业标签下拉读 occupation_labels.json（专精 +10 封顶 99、换标签整表重渲染）；导出写 personal.label、v2.0；模板 SIZ 残留清零
+- 新增 tests/test_frontend_character.py 5 例（TestClient 冒烟）+ test_chronicle.py 6 例
+
+**测试现状**：默认套件 139 passed
+
 ### 待办（按优先级）
 
-0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期；U9 遗留——车卡模板按属性分块 UI 完整版、职业标签选择 UI（当前 occupations.json 已删，前端职业下拉恒空）
-0.6. **U9 前置 minor（U2 遗留）**：_integrate_patch 记录的 entity_ids 用原始 dict 的 id（缺 id 时与实际集成的 NEW_xxx 回退不一致）；combat=end/boss/spawn 事件本期无投影（后续与测试侧 _collect_mech_line 切源一起补）；**facts 渲染缺 Boss 组**（spawn/engage/阶段 Author 不可见，spec §2 列了但实现收敛时漏了）与玩家关键物品——与上述一起补
-1. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
+0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期
+1. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现）——**暂缓**（2026-08-15 用户拍板，保持观察不处理）
 2. ~~巡检层 verdict 化~~（用户拍板暂缓）
 3. **重构（倒数第二）**：resolver 注册表 / B5 战斗完成契约 / C1 process_turn 拆分——现有 E2E 三层即其回归网
 4. **存读档 3 个 🔴 bug（最后）**：见上队列 6

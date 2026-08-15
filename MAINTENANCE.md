@@ -143,7 +143,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 1219 |
 | `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 911 |
 | `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 919 |
-| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate | 936 |
+| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 974 |
 | `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 976 |
 | `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 1052 |
 | `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 1077 |
@@ -161,7 +161,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 1448 |
 | `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 1465 |
 | `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1554 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch") | 1608 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1623 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 
@@ -422,12 +422,14 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100） | 1507 |
-| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100） | 1539 |
-| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1549 |
-| `render_for_author` | `(world) -> str` | 渲染【世界真值】+【已注入内容】+【编年史】 | 1555 |
-| `_render_event` | `(e) -> str` | 单条事件紧凑渲染 | 1610 |
-| `to_dict` / `from_dict` | — | 序列化（events 转 list） | 1628 / 1637 |
+| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1509 |
+| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1550 |
+| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1572 |
+| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1583 |
+| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1593 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含武器+关键物品、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1599 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1669 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1687 / 1698 |
 
 ---
 
@@ -810,11 +812,11 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 
 序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@70 / `_init_libraries`@104 / `_resolve_start_scene`@1086 / `_make_default_inv`@1132。
 
-### routers/character.py (319 行) — 车卡 API
+### routers/character.py (335 行) — 车卡 API
 
-U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/8 属性，删 SIZ）；`roll_stats` 衍生公式改 HP=CON//3、DB/BUILD 查表键=STR+CON//2；`_build_export` 构造 Stats/DerivedStats 不再传 SIZ/MOV，meta.version=2.0。
+U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/8 属性，删 SIZ）；`roll_stats` 衍生公式 HP=CON//3、DB/BUILD 查表键=STR+CON//2。2026-08-15：`skills_list` 按归属属性分 8 块（双属性技能仅首块可编辑，块标题含乘数+池参考 JS 实时算）；职业标签下拉读 `occupation_labels.json`（专精 +10 封顶 99、专精徽标、换标签整表重渲染）；`_build_export` 参数 occupation→label，写 `inv.label`，meta.version=2.0。
 
-`character_page`@52 / `upload_avatar`@62 / `step_partial`@75 / `roll_stats`@90 / `skills_list`@128 / `generate_description`@196（LLM 外貌）/ `_build_export`@213 / `export_character_get`@284 / `export_character`@303（ZIP 导出）；辅助 `_load_occupations`@40（occupations.json 已删，恒返回 []，职业标签制后置）/ `_roll_stat`@47。
+`character_page`@50 / `upload_avatar`@60 / `step_partial`@73 / `roll_stats`@88 / `skills_list`@126 / `generate_description`@218（LLM 外貌）/ `_build_export`@235 / `export_character_get`@300 / `export_character`@319（ZIP 导出）；辅助 `_load_labels`@40（读 occupation_labels.json）/ `_roll_stat`@45。
 
 ### routers/editor.py (116 行) — JSON 编辑器
 
