@@ -975,6 +975,9 @@ class Keeper:
         """After combat resolves, replay enrich→curate with combat result injected.
         Uses stored outcomes from the original process_turn that triggered combat.
         Returns TurnResult whose brief the caller passes to narrator."""
+        chronicle = getattr(self.world, "chronicle", None)
+        if chronicle is not None:
+            chronicle.record_combat_end(combat_result.get("outcome", ""), self.world)
         if not self._last_outcomes:
             return None
         outcomes = list(self._last_outcomes)
@@ -1620,10 +1623,12 @@ class Keeper:
     def _integrate_patch(self, patch):
         """Integrate ModulePatch entities into world graph."""
         from scenario_core import Entity as EntityClass
+        integrated_ids = []
         for ent_data in patch.entities:
             entity = EntityClass.from_dict(ent_data, overrides={
                 "id": ent_data.get("id", f"NEW_{hash(ent_data['name'])%10000}"),
             })
+            integrated_ids.append(entity.id)
             if entity.entity_type == "event":
                 self.world.graph.events[entity.id] = entity
             else:
@@ -1639,7 +1644,7 @@ class Keeper:
         self.world.chronicle.record_patch(
             turn=self.turn_number,
             level="patch",
-            entity_ids=[e.get("id", "") for e in patch.entities],
+            entity_ids=integrated_ids,
             new_scenes=[],
             justification=patch.justification,
         )

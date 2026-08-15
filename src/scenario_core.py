@@ -1501,6 +1501,8 @@ class WorldChronicle:
         self.entity_results: dict[str, str] = {}
         self.patches: list[dict] = []
         self.events_summary: str = ""
+        self._boss_seen_spawned: set[str] = set()   # boss diff 基准（入档防读档重报）
+        self._boss_seen_dead: set[str] = set()
 
     # ── 生产者 ──
 
@@ -1521,20 +1523,62 @@ class WorldChronicle:
         ats = [o.entity_id for o in outcomes if o.entity_type == "auto_trigger"]
         if ats:
             entry["at"] = ats
+        spawns = [f"{se.enemy_ref}×{getattr(se, 'quantity', 1)}"
+                  for o in outcomes
+                  for se in (getattr(o, "side_effects", None) or [])
+                  if type(se).__name__ == "SpawnEnemy"]
+        if spawns:
+            entry["spawn"] = spawns
         pend = getattr(result, "pending_interaction", None)
         if pend:
             entry["pending"] = pend.kind
         ci = getattr(result, "combat_init", None)
         if ci and ci.enemies:
-            entry["combat"] = ["start:" + ",".join(
-                getattr(e, "enemy_ref", "?") for e in ci.enemies)]
+            entry["combat"] = ["start(" + ",".join(
+                getattr(e, "enemy_ref", "?") for e in ci.enemies) + ")"]
         ending = getattr(result, "ending", None)
         if ending:
             entry["ending"] = getattr(ending, "name", "") or str(ending)
         npc_events = getattr(result, "npc_events", None)
         if npc_events:
             entry["npc"] = [n[:40] for n in npc_events]
+        boss_ev = self._diff_boss(world)
+        if boss_ev:
+            entry["boss"] = boss_ev
         self.events.append(entry)
+
+    def _diff_boss(self, world) -> list[str]:
+        """对 world.bosses 做增量 diff：新 engage / 新 defeated。逻辑同 llm_player._collect_mech_line。"""
+        bosses = getattr(world, "bosses", None)
+        if not bosses:
+            return []
+        events = []
+        spawned = set(getattr(bosses, "_spawned_boss_ids", set()) or set())
+        for bid in sorted(spawned - self._boss_seen_spawned):
+            events.append(f"engage({bid})")
+        self._boss_seen_spawned |= spawned
+        enemies = getattr(world, "enemies", None)
+        dead = set()
+        for bid in spawned:
+            iid = getattr(bosses, "_instance_ids", {}).get(bid)
+            inst = enemies.get_by_id(iid) if (iid and enemies) else None
+            if inst is not None and getattr(inst, "status", "") in ("dead", "defeated"):
+                dead.add(bid)
+        for bid in sorted(dead - self._boss_seen_dead):
+            events.append(f"defeated({bid})")
+        self._boss_seen_dead |= dead
+        return events
+
+    def record_combat_end(self, outcome: str, world) -> None:
+        """战斗结算后由 keeper.complete_combat_turn 调用：标注当回合 combat_end，
+        并同回合补 boss defeated diff（战斗在 record_turn 之后结算）。"""
+        if not self.events:
+            return
+        e = self.events[-1]
+        e["combat_end"] = outcome
+        boss_ev = self._diff_boss(world)
+        if boss_ev:
+            e.setdefault("boss", []).extend(boss_ev)
 
     def record_patch(self, turn: int, level: str, entity_ids: list[str],
                      new_scenes: list[str], justification: str) -> None:
@@ -1561,13 +1605,32 @@ class WorldChronicle:
         p = world.player
         if p:
             weapons = "、".join(w.name for w in p.weapons) or "无"
+            key_items = "、".join(getattr(world.memory, "key_items", [])) or "无"
             parts.append(f"  玩家: HP {p.derived.HP}/{p.derived.HP_MAX} "
                          f"SAN {p.derived.SAN}/{p.derived.SAN_MAX} "
-                         f"MP {p.derived.MP} LUCK {p.stats.LUCK} | 武器: {weapons}")
+                         f"MP {p.derived.MP} LUCK {p.stats.LUCK} | 武器: {weapons}"
+                         f" | 物品: {key_items}")
         if world.enemies:
             for inst in world.enemies._instances.values():
                 parts.append(f"  敌人: {inst.enemy_ref}@{inst.scene} "
                              f"状态={inst.status} flags={inst.flags}")
+        bosses = getattr(world, "bosses", None)
+        if bosses:
+            spawned = getattr(bosses, "_spawned_boss_ids", set())
+            iids = getattr(bosses, "_instance_ids", {})
+            for bid in sorted(spawned):
+                iid = iids.get(bid)
+                inst = world.enemies.get_by_id(iid) if (world.enemies and iid) else None
+                if inst is not None:
+                    phase = getattr(inst, "_current_phase", "") or "—"
+                    parts.append(f"  Boss: {bid}@{inst.scene} "
+                                 f"状态={inst.status} 阶段={phase}")
+                else:
+                    parts.append(f"  Boss: {bid} 状态=已开战（实例缺失）")
+            for enc in getattr(bosses, "_encounters", []):
+                bid = enc.get("id", enc.get("boss_ref", "?"))
+                if bid not in spawned:
+                    parts.append(f"  Boss: {bid}@{enc.get('scene', '')} 未遭遇")
         if world.npcs:
             following = {n.name for n in world.npcs.get_following()}
             for name in world.npcs.all_names():
@@ -1621,6 +1684,8 @@ class WorldChronicle:
                            ("combat", "combat"), ("npc", "npc")):
             if e.get(key):
                 segs.append(f"{label}={','.join(str(x) for x in e[key])}")
+        if e.get("combat_end"):
+            segs.append(f"combat=end({e['combat_end']})")
         return " | ".join(segs)
 
     # ── 序列化 ──
@@ -1631,6 +1696,8 @@ class WorldChronicle:
             "entity_results": dict(self.entity_results),
             "patches": list(self.patches),
             "events_summary": self.events_summary,
+            "boss_seen_spawned": sorted(self._boss_seen_spawned),
+            "boss_seen_dead": sorted(self._boss_seen_dead),
         }
 
     @classmethod
@@ -1640,4 +1707,6 @@ class WorldChronicle:
         c.entity_results = dict(data.get("entity_results", {}))
         c.patches = list(data.get("patches", []))
         c.events_summary = data.get("events_summary", "")
+        c._boss_seen_spawned = set(data.get("boss_seen_spawned", []))
+        c._boss_seen_dead = set(data.get("boss_seen_dead", []))
         return c
