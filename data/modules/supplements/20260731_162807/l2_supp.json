@@ -1,0 +1,166 @@
+{
+  "scenes": {
+    "SS1_镜子世界": {
+      "description": "穿过镜子后，你置身于一个倒悬的灰暗空间，地面由碎裂镜片铺成，倒映着电车内部的模糊影像，空气中弥漫着低语，一个由黑暗凝聚的轮廓在远处凝视。",
+      "interactions": [
+        {
+          "id": "SI1",
+          "entity_type": "interaction",
+          "scene": "SS1_镜子世界",
+          "name": "倾听低语",
+          "type": "聆听",
+          "requirement": "",
+          "trigger": "你驻足倾听空气中的低语。",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "低语杂乱无章，刺痛你的耳膜，你只感到一阵眩晕，什么也没听清。",
+            "on_regular": "你捕捉到一些词汇：'霍桑'、'实验'、'灵魂'。这些词像是从深处传来。@item_gain(item_name=\"破碎记忆\", quantity=1)",
+            "on_hard": "低语变得清晰，你听到了关于霍桑实验的具体描述：他们囚禁了无数工人的灵魂，用以维持电车的运转。你感到一阵寒意。@item_gain(item_name=\"破碎记忆\", quantity=1) @stat_change(stat_name=\"理智\", delta=-1, narrative=\"低语揭示了恐怖真相\")",
+            "on_extreme": "你完全理解了黑暗存在的意图：它自称是奈亚拉托提普的投影，渴望吞噬这些逃逸的灵魂。它似乎对你的到来既感兴趣又警惕。@item_gain(item_name=\"破碎记忆\", quantity=1) @stat_change(stat_name=\"理智\", delta=-2, narrative=\"恐怖认知侵蚀你的心智\")"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "SI2",
+          "entity_type": "interaction",
+          "scene": "SS1_镜子世界",
+          "name": "触碰镜片地面",
+          "type": "侦查",
+          "requirement": "",
+          "trigger": "你蹲下，伸手触摸碎裂的镜片地面。",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你的手掌被锋利的镜片划伤，鲜血滴落，地面微微震动，却没有暴露任何线索。你受到1点伤害。@stat_change(stat_name=\"生命\", delta=-1)",
+            "on_regular": "镜片地面在你触碰后开始轻微震动，一道裂痕出现，露出下面一张残破的纸片。你捡起它，上面写着'第7号实验体已逃逸'。@item_gain(item_name=\"实验记录碎片\", quantity=1)",
+            "on_hard": "你感受到地面的震动规律，发现某些镜片下藏着空洞。你小心地移开几片，找到一份完整记录和一把钥匙。@item_gain(item_name=\"实验记录\", quantity=1) @item_gain(item_name=\"黄铜钥匙\", quantity=1)",
+            "on_extreme": "你完全理解了地面的构造，你轻触某处，整个空间微微扭曲，黑暗轮廓似乎惊动了一下。你找到一份关键资料，显示出灵魂牢笼的控制方法。@item_gain(item_name=\"实验记录\", quantity=1) @item_gain(item_name=\"黄铜钥匙\", quantity=1) @item_gain(item_name=\"节点图\", quantity=1)"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "SI3",
+          "entity_type": "interaction",
+          "scene": "SS1_镜子世界",
+          "name": "走向黑暗轮廓",
+          "type": "话术",
+          "requirement": "",
+          "trigger": "你鼓起勇气，向那个黑暗凝聚的轮廓走去。",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "黑暗轮廓骤然膨胀，发出刺耳的嘶吼，你被一股力量推开，撞在镜片上。你感到理智受到冲击。@stat_change(stat_name=\"理智\", delta=-1)",
+            "on_regular": "黑暗轮廓似乎没有敌意，它发出低沉的共鸣，仿佛在与你交流。你感受到它渴望脱离这个空间，但需要足够的灵魂能量。它似乎想让你带走一个被困灵魂的碎片。@item_gain(item_name=\"灵魂碎片\", quantity=1)",
+            "on_hard": "你成功与黑暗存在对话。它透露自己是被奈亚拉托提普束缚在此的投影，希望你能打破镜子牢笼，释放所有灵魂。它告诉你一条安全的通道，就在回廊尽头。@item_gain(item_name=\"灵魂碎片\", quantity=1) @grant_weapon(weapon_ref=\"意志护符\", scene=\"\", quantity=1)",
+            "on_extreme": "你与黑暗存在建立了精神连接，得知了完整的真相：霍桑实验的囚笼正在崩解，如果你不封闭镜子，整个城市都会被吞噬。你获得了它的信任，它授予你一份'镜之印记'，可用来封闭镜子。@item_gain(item_name=\"镜之印记\", quantity=1)"
+          },
+          "difficulty": "hard"
+        }
+      ],
+      "auto_triggers": [],
+      "from_here": [
+        {
+          "target": "SS2_镜中回廊",
+          "method": "深入镜子世界",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "test_room",
+          "method": "穿越镜面",
+          "requirement": ""
+        }
+      ],
+      "extra": {}
+    },
+    "SS2_镜中回廊": {
+      "description": "你沿着镜子世界的深处前行，进入一条由无数镜面构成的回廊。每一面镜子都映出你不同的倒影，其中一个倒影在移动并模仿你的动作，但慢半拍。回廊尽头有一扇半掩的门。",
+      "interactions": [
+        {
+          "id": "SI4",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "观察镜中倒影",
+          "type": "侦查",
+          "requirement": "",
+          "trigger": "你仔细端详镜中的倒影。",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "镜中倒影模糊不清，你的视线被扭曲，什么也没发现。你的头隐隐作痛。",
+            "on_regular": "你发现其中一个倒影的衣服口袋里似乎有纸张。你仔细看，上面写着一些实验数据，是霍桑实验的部分记录。@item_gain(item_name=\"实验记录碎片\", quantity=1)",
+            "on_hard": "你注意到那个移动的倒影身上有一串钥匙，以及一个徽章，似乎是霍桑实验室的通行证。你尝试记下钥匙的形状。@item_gain(item_name=\"黄铜钥匙\", quantity=1) @item_gain(item_name=\"实验室通行证\", quantity=1)",
+            "on_extreme": "你发现所有倒影其实都是被囚禁的灵魂，它们的痛苦表情交织在一起。那个移动的倒影正试图向你传达什么，它指向门的方向。你领悟到只要扰乱它的动作，就能打开安全通道。@item_gain(item_name=\"实验室通行证\", quantity=1) @item_gain(item_name=\"完整实验报告\", quantity=1)"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "SI5",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "扰乱倒影的动作",
+          "type": "妙手",
+          "requirement": "",
+          "trigger": "你刻意做出与倒影不同的动作，试图搅乱镜像。",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你的动作混乱，周围的镜面开始扭曲，地面出现裂缝，你险些跌落。你被一道镜片割伤。@stat_change(stat_name=\"生命\", delta=-1)",
+            "on_regular": "你成功干扰了倒影，回廊的结构发生扭曲，一扇隐藏的安全门出现在侧面，通往一个更直接的出口。",
+            "on_hard": "你精准地打破了镜像的同步，所有镜面碎裂又重组，形成一条闪光的通道，直接通向尽头的门。",
+            "on_extreme": "你不仅扰乱了倒影，还释放了其中一个灵魂，它向你点头致意，然后消散。你感到整个回廊变得清晰，尽头的门被完全打开。"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "SI6",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "推开尽头的门",
+          "type": "无",
+          "requirement": "",
+          "trigger": "你走向回廊尽头的半掩门，伸手推开。",
+          "result": "你推开沉重的门，刺眼的光芒涌入，你发现自己回到了电车区域，镜子世界在你身后关闭。",
+          "side_effects": [],
+          "difficulty": "None"
+        }
+      ],
+      "auto_triggers": [],
+      "from_here": [
+        {
+          "target": "car_6",
+          "method": "推开尽头的门",
+          "requirement": "SI6"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "SS1_镜子世界",
+          "method": "深入镜子世界",
+          "requirement": ""
+        }
+      ],
+      "extra": {}
+    }
+  },
+  "events": [],
+  "npc_profiles": {},
+  "dependency_graph": {
+    "nodes": {
+      "SI1": {},
+      "SI2": {},
+      "SI3": {},
+      "SI4": {},
+      "SI5": {},
+      "SI6": {}
+    },
+    "edges": []
+  },
+  "_scene_names": {
+    "SS1_镜子世界": "SS1_镜子世界",
+    "SS2_镜中回廊": "SS2_镜中回廊"
+  },
+  "_phase1": {}
+}

@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from llm import call_deepseek
-from utils import parser as parse_docx, estimate_and_truncate_context
+from utils import parser as parse_docx, estimate_and_truncate_context, load_skill_checks
 
 
 def _load_document(path: str) -> str:
@@ -739,13 +739,11 @@ def _do_step2a(runner: InteractiveRunner, verbose: bool = True):
     if verbose:
         print("\n\033[1m[Step 2a] Interactions 提取\033[0m")
 
-    # Load skill names for type whitelist
-    skill_names = []
-    skill_path = PROJECT_ROOT / runner.config.skill_checks_path
-    if skill_path.exists():
-        with open(skill_path, "r", encoding="utf-8") as f:
-            skill_checks = json.load(f)
-            skill_names = sorted(set(s["name"] for s in skill_checks))
+    # Load skill names for type whitelist (U9: 从 skill_config 读取)
+    try:
+        skill_names = sorted(set(s["name"] for s in load_skill_checks()))
+    except Exception:
+        skill_names = []
 
     def _do():
         prompt = build_step2a_prompt(runner.chapters, runner.scenes, runner.characters, skill_names=skill_names)
@@ -1036,15 +1034,13 @@ def _do_phase2_finalize(runner: InteractiveRunner, verbose: bool = True):
         if desc:
             l2_descriptions[name] = desc
 
-    # 技能名
-    skill_names = []
-    skill_path = PROJECT_ROOT / runner.config.skill_checks_path
-    if skill_path.exists():
-        with open(skill_path, "r", encoding="utf-8") as f:
-            skill_checks = json.load(f)
-            skill_names = sorted(set(s["name"] for s in skill_checks))
+    # 技能名（U9: 从 skill_config 读取）
+    try:
+        skill_names = sorted(set(s["name"] for s in load_skill_checks()))
+    except Exception:
+        skill_names = []
 
-    stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
+    stat_names = ["STR", "CON", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
     prompt = build_step4_prompt(
         step35_interactions, step35_at, l2_descriptions,

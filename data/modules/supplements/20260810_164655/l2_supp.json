@@ -1,0 +1,272 @@
+{
+  "scenes": {
+    "SS1_镜后裂隙": {
+      "description": "穿过破裂的镜面，你进入一个悬浮在黑暗中的裂隙空间。脚下是碎玻璃铺成的路径，四周漂浮着扭曲的倒影碎片，空中回荡着若有若无的耳语，仿佛无数灵魂在窃窃私语。远处有一扇朦胧的光门，但中间隔着一段不稳定虚空。",
+      "interactions": [
+        {
+          "id": "SI1",
+          "entity_type": "interaction",
+          "scene": "SS1_镜后裂隙",
+          "name": "观察漂浮碎片",
+          "type": "侦查",
+          "requirement": "",
+          "trigger": "玩家主动观察漂浮的碎片",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "碎片模糊不清，只看到扭曲的倒影，没有任何有用信息。",
+            "on_regular": "你从碎片中看到模糊的影像：一个穿着实验服的人影在操作仪器，似乎在进行某种实验。你意识到这是霍桑实验的片段。",
+            "on_hard": "你看到更清晰的场景：实验中一个受试者惊恐地看着镜子，然后被某种力量拉入镜中。你注意到镜子表面有特殊的符号。",
+            "on_extreme": "你完全看清了场景：霍桑在镜子前进行某种仪式，将人的灵魂封入镜中。你还看到镜子上刻着复杂的符文，这些符文与镜子背后的力量有关。"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "SI2",
+          "entity_type": "interaction",
+          "scene": "SS1_镜后裂隙",
+          "name": "尝试穿越不稳定虚空",
+          "type": "敏捷",
+          "requirement": "",
+          "trigger": "玩家想要走向远处的光门",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你踏入虚空，脚下突然裂开一道空间裂缝，你迅速退回，但手臂被划出一道血痕。",
+            "on_regular": "你小心翼翼地沿着碎玻璃路径前进，避开了一些裂缝，但中途不得不跳过一段虚空，勉强抵达光门。",
+            "on_hard": "你灵活地穿越不稳定区域，几乎没有惊动任何裂缝，顺利到达光门附近。",
+            "on_extreme": "你几乎完美地避开了所有空间裂缝，甚至看清了裂缝中的景象——那是无尽的黑暗和扭曲的倒影。你毫发无损地站到了光门前。"
+          },
+          "difficulty": "hard"
+        },
+        {
+          "id": "SI3",
+          "entity_type": "interaction",
+          "scene": "SS1_镜后裂隙",
+          "name": "倾听耳语",
+          "type": "聆听",
+          "requirement": "",
+          "trigger": "玩家主动倾听空中的耳语",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "耳语含糊不清，你只听到一些无意义的杂音，且感到轻微头痛。",
+            "on_regular": "你捕捉到一些模糊的话语：'放我出去'、'镜子是牢笼'、'霍桑……'。",
+            "on_hard": "你听到更清晰的句子：'我们都是实验品，灵魂被囚禁在镜子中。打破镜子，但小心那些影子。'",
+            "on_extreme": "你完全理解了耳语：这是数百个被囚禁灵魂的声音，他们恳求你打破镜子，但警告你镜中的影子是看守者，它们会阻止你。你还听到一个声音在低语：'霍桑的意志在推动这一切，他要让这实验继续下去。'"
+          },
+          "difficulty": "regular"
+        }
+      ],
+      "auto_triggers": [
+        {
+          "id": "SAT1",
+          "entity_type": "auto_trigger",
+          "scene": "SS1_镜后裂隙",
+          "name": "进入裂隙的初始反应",
+          "type": "无",
+          "requirement": "",
+          "trigger": "玩家进入场景时自动触发",
+          "result": "你感到一阵寒意，周围的碎片反射出你的身影，但那些影子的动作与你不一致。远处传来微弱的哭声。",
+          "side_effects": [],
+          "difficulty": "None"
+        }
+      ],
+      "from_here": [
+        {
+          "target": "SS2_镜中回廊",
+          "method": "穿过光门",
+          "requirement": "SI2"
+        },
+        {
+          "target": "test_room",
+          "method": "从裂缝中退回，穿过破镜",
+          "requirement": ""
+        }
+      ],
+      "to_here": [
+        {
+          "source": "test_room",
+          "method": "穿过破裂的镜面",
+          "requirement": ""
+        }
+      ],
+      "extra": {}
+    },
+    "SS2_镜中回廊": {
+      "description": "穿过光门，你置身于一条由无数镜面构成的无限走廊。每面镜子都映出你的身影，但镜中倒影却有着不同的动作和表情。走廊尽头似乎有出口，但两侧镜子中隐约浮现出苍白的影子在缓慢移动，危险潜伏。",
+      "interactions": [
+        {
+          "id": "SI4",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "与镜中倒影互动",
+          "type": "心理学",
+          "requirement": "",
+          "trigger": "玩家尝试与镜中的倒影交流或触碰",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你的倒影露出讥讽的笑容，然后消失。你突然感到一阵眩晕，但没有任何收获。",
+            "on_regular": "你的倒影开口说话了：'你不是第一个来这里的。霍桑的实验还在继续，我们都被困在这里。' 倒影似乎想告诉你什么，但被一阵杂音打断。",
+            "on_hard": "你的倒影与你进行了一段短暂的对话，它说：'这里的影子是看守，它们不会让你轻易离开。但如果你能找到镜子中的裂缝，也许可以打开一条通道。' 它指向走廊深处的一面镜子。",
+            "on_extreme": "你的倒影完全与你同步了，它低声说：'我是你内心的映射，也是霍桑实验的一部分。每一个进入镜子的人都会被复制，我们的灵魂是相连的。去打破那面关键之镜，否则这里的囚牢永远不会打开。' 说完，它举手指向走廊尽头的一面装饰华丽的镜子。"
+          },
+          "difficulty": "regular"
+        },
+        {
+          "id": "SI5",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "寻找镜面裂痕",
+          "type": "侦查",
+          "requirement": "",
+          "trigger": "玩家搜索走廊中的镜面寻找裂痕",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你仔细观察了所有镜面，但都没有发现明显的裂痕。你的倒影在镜子里窃笑。",
+            "on_regular": "你发现其中一面镜子有一道细微的裂痕，但似乎不像是可以通行的通道。",
+            "on_hard": "你发现一面镜子上的裂痕呈现在一个特定的符号旁边，似乎暗示着某种机关。你注意到附近有一块松动的镜框。",
+            "on_extreme": "你发现一面巨大的、装饰华丽的镜子，其表面有一条几乎不可见的裂痕，从裂痕中透出微弱的光。你感觉这就是关键之镜，打破它可能可以离开这里。"
+          },
+          "difficulty": "hard"
+        },
+        {
+          "id": "SI6",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "躲避苍白影子",
+          "type": "潜行",
+          "requirement": "",
+          "trigger": "玩家试图在不惊动影子的情况下前进",
+          "result": "##GRADED##",
+          "side_effects": [],
+          "graded_result": {
+            "on_failure": "你被苍白影子发现。影子迅速向你扑来，你只能狼狈地逃脱，但被影子的触碰造成了精神冲击。",
+            "on_regular": "你在镜子之间小心移动，避开了影子的视线，但有一两次差点被发现。",
+            "on_hard": "你完全避开了影子的注意，甚至近距离观察到了一个影子，它似乎没有眼睛，但能感知到动作。",
+            "on_extreme": "你完美地穿过走廊，没有引起任何影子的注意，你甚至发现影子的运动模式：它们每隔几秒就会转换位置，你抓住间隙通过。"
+          },
+          "difficulty": "hard"
+        },
+        {
+          "id": "SI7",
+          "entity_type": "interaction",
+          "scene": "SS2_镜中回廊",
+          "name": "打破关键之镜",
+          "type": "格斗",
+          "requirement": "SI5",
+          "trigger": "玩家在发现关键之镜后尝试打破它",
+          "result": "##GRADED##",
+          "side_effects": [
+            "@npc_state_change(npc_name=\"苍白镜影\", new_state=\"激怒\")",
+            "@spawn_enemy(enemy_ref=\"苍白镜影\", scene=\"SS2_镜中回廊\", quantity=2)"
+          ],
+          "graded_result": {
+            "on_failure": "你用尽全力击打镜面，但镜子纹丝不动。反而触发了警报，附近的苍白影子被惊动，向你涌来。",
+            "on_regular": "你击中镜面，镜子上出现更多裂痕，但还没有完全破碎。你不得不再次尝试。",
+            "on_hard": "镜子在你的重击下裂开，但并未完全破裂，一道刺眼的光芒从中射出。你听到了破碎声，但那个声音也被影子察觉。",
+            "on_extreme": "你一拳击碎镜子，碎片四溅。裂缝中涌出白光，将你整个包裹，你感觉自己的灵魂被拉扯，然后你发现自己回到了测试房间，镜子碎片散落一地。"
+          },
+          "difficulty": "hard"
+        }
+      ],
+      "auto_triggers": [
+        {
+          "id": "SAT2",
+          "entity_type": "auto_trigger",
+          "scene": "SS2_镜中回廊",
+          "name": "进入回廊的异象",
+          "type": "无",
+          "requirement": "",
+          "trigger": "玩家进入场景时自动触发",
+          "result": "你看到所有镜子中的倒影都转头看向你，它们对你露出诡异的微笑，然后继续做自己的事情。你感到一阵不安。",
+          "side_effects": [],
+          "difficulty": "None"
+        }
+      ],
+      "from_here": [
+        {
+          "target": "test_room",
+          "method": "打破关键之镜（SI7极难成功）或找到隐藏门",
+          "requirement": "SI7"
+        }
+      ],
+      "to_here": [
+        {
+          "source": "SS1_镜后裂隙",
+          "method": "穿过光门",
+          "requirement": "SI2"
+        }
+      ],
+      "extra": {}
+    }
+  },
+  "events": [
+    {
+      "id": "SE1",
+      "entity_type": "event",
+      "scene": "SS2_镜中回廊",
+      "name": "镜影追击",
+      "trigger": "当玩家被苍白影子发现（SI6失败）或打破镜子失败（SI7失败）时触发",
+      "result": "数个苍白影子从镜子中浮现，向你扑来。你被迫逃跑，但在混乱中看到了一面隐藏的门，似乎可以通回现实。",
+      "side_effects": [
+        "@stat_change(stat_name=\"理智\", delta=-1, narrative=\"被影子追击带来的恐惧\")"
+      ],
+      "difficulty": "None"
+    }
+  ],
+  "npc_profiles": {},
+  "dependency_graph": {
+    "nodes": {
+      "SI1": {},
+      "SI2": {},
+      "SI3": {},
+      "SAT1": {},
+      "SI4": {},
+      "SI5": {},
+      "SI6": {},
+      "SI7": {},
+      "SAT2": {},
+      "SE1": {}
+    },
+    "edges": [
+      {
+        "source": "SI4",
+        "target": "SI5",
+        "condition": "optional"
+      },
+      {
+        "source": "SI7",
+        "target": "SI5",
+        "condition": "completed"
+      },
+      {
+        "source": "SE1",
+        "target": "SI6",
+        "condition": "failed"
+      },
+      {
+        "source": "SE1",
+        "target": "SI7",
+        "condition": "failed"
+      },
+      {
+        "source": "SI2",
+        "target": "SI1",
+        "condition": "optional"
+      },
+      {
+        "source": "SI2",
+        "target": "SI3",
+        "condition": "optional"
+      }
+    ]
+  },
+  "_scene_names": {
+    "SS1_镜后裂隙": "SS1_镜后裂隙",
+    "SS2_镜中回廊": "SS2_镜中回廊"
+  },
+  "_phase1": {}
+}

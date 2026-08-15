@@ -13,8 +13,8 @@ from game.messages import CombatInit
 def _make_investigator(name="测试员", hp=12, san=60, mp=14):
     inv = Investigator()
     inv.name = name
-    inv.stats = Stats(STR=50, CON=50, SIZ=50, DEX=50, APP=50, INT=50, POW=50, EDU=50, LUCK=50)
-    inv.derived = DerivedStats(HP=hp, HP_MAX=hp, SAN=san, MP=mp, MOV=8, DB=0, BUILD=0, DODGE=25)
+    inv.stats = Stats(STR=50, CON=50, DEX=50, APP=50, INT=50, POW=50, EDU=50, LUCK=50)
+    inv.derived = DerivedStats(HP=hp, HP_MAX=hp, SAN=san, MP=mp, DB="0", BUILD=0, DODGE=25)
     inv.skills = {}
     return inv
 

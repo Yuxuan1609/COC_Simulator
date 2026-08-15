@@ -1,0 +1,63 @@
+{
+  "module_meta": {
+    "name": "test_module",
+    "supplement_of": "test_module",
+    "generated_for": "尝试与镜子中的黑暗存在沟通并进入镜子世界"
+  },
+  "world_rules": [
+    {
+      "id": "WR1",
+      "name": "梦境法则",
+      "rule": "这列电车所在的整个世界是由奈亚拉托提普创造的噩梦空间，并非现实。物理法则可被扭曲，逻辑可被篡改。",
+      "scope": "整个电车及其外部黑暗空间",
+      "is_absolute": "绝对不可违反"
+    }
+  ],
+  "scene_intents": {
+    "test_room": {
+      "purpose": "Debug and expansion entry point",
+      "emotion": "Unease and curiosity"
+    },
+    "SS1_镜子世界": {
+      "purpose": "玩家穿越镜子进入扭曲的镜像空间，与黑暗存在初次互动，揭示灵魂囚笼的真相并触发关键选择。",
+      "key_threat": "黑暗存在（奈亚拉托提普投影）的引诱与吞噬威胁，以及镜像空间的不稳定性。",
+      "notes": "重点营造Lovecraftian式未知恐惧，通过低语和环境细节暗示霍桑实验的伦理恐怖，玩家需在洞察与对抗间权衡。"
+    },
+    "SS2_镜中回廊": {
+      "purpose": "在镜中回廊探索倒影线索，干扰倒影以破坏空间结构，最终找到返回电车区域的通道，强化灵魂囚笼主题。",
+      "key_threat": "倒影的滞后模仿导致空间扭曲，隐藏的霍桑实验记录可能引发认知冲击，门后的未知风险。",
+      "notes": "设计强调解谜与恐怖结合，倒影象征玩家自身与实验对象的镜像关系，行动选择影响回廊稳定性，谨慎设计结构扭曲的触发与安全通道的开放逻辑。"
+    }
+  },
+  "ending_conditions": [],
+  "tone_constraints": {
+    "genre": "Lovecraftian horror",
+    "narrative_style": "Oppressive, with faint hope in despair",
+    "forbidden": [
+      "superpowers",
+      "firearms",
+      "modern communication devices working"
+    ],
+    "recommended": [
+      "tension",
+      "unknown fear",
+      "moral dilemma"
+    ]
+  },
+  "characters": {
+    "conductor": "Injured train conductor, key info provider"
+  },
+  "driving_force": "Keep moving forward in darkness, escape the devouring maw, find hope",
+  "narrative_lines": [
+    {
+      "name": "霍桑研究员的真相",
+      "outline": "从测试房间开始，通过检查桌子上的物品发现霍桑的日志，逐步揭示镜子背后隐藏的实验真相和灵魂囚笼的秘密。",
+      "key_scenes": [
+        "test_room",
+        "car_6"
+      ],
+      "type": "main"
+    }
+  ],
+  "time_pressure": {}
+}

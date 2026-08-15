@@ -200,12 +200,11 @@ def normalize_skill_name(name: str) -> tuple[str, str]:
 # ── 技能检定定义加载 ──
 
 def load_skill_checks(path: str | None = None) -> list:
-    """加载技能检定定义表，返回列表 [{name, linked_attribute, base_value, category}, ...]"""
+    """加载技能检定定义表，返回列表 [{name, ...}, ...]。
+    U9：默认数据源切换为 skill_config.json 的 skills 列表（兼容旧形状）。"""
     import json
     if path is None:
-        import os
-        path = os.path.join(os.path.dirname(__file__), "..", "data", "skill_checks.json")
-        path = os.path.normpath(path)
+        return [dict(s) for s in load_skill_config()["skills"]]
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 

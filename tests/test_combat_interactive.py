@@ -291,7 +291,7 @@ def _make_investigator(name="调查员", hp=50, san=60):
     inv.name = name
     inv.personal_description = "退役士兵，左腿有旧伤。面对大型生物时容易紧张，但在近身格斗中经验丰富。对物理攻击有轻微心理阴影。"
     inv.extra = "【测试字段】后续 trait 系统扩展预留"
-    inv.stats = Stats(STR=60, CON=60, SIZ=50, DEX=55, APP=50, INT=60, POW=55, EDU=60, LUCK=50)
+    inv.stats = Stats(STR=60, CON=60, DEX=55, APP=50, INT=60, POW=55, EDU=60, LUCK=50)
     inv.derived = calc_derived(inv.stats)
     inv.derived.HP = hp
     inv.derived.HP_MAX = hp
