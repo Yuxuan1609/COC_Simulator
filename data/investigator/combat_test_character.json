@@ -1,7 +1,7 @@
 {
   "meta": {
     "version": "2.0",
-    "created_at": "2026-08-15T15:22:22.892285",
+    "created_at": "2026-08-15T15:46:44.487698",
     "rules_edition": "COC7"
   },
   "personal": {
@@ -182,14 +182,6 @@
         "name": "徒手",
         "skill_name": "格斗",
         "damage": "1D3+DB",
-        "range": "接触",
-        "ammo": 0,
-        "malfunction": 100
-      },
-      {
-        "name": "小刀",
-        "skill_name": "格斗",
-        "damage": "1D4+DB",
         "range": "接触",
         "ammo": 0,
         "malfunction": 100

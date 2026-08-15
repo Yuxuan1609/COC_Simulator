@@ -299,10 +299,26 @@
 - patch/supplement 成功集成后 record_patch（reject 不记）；LLM 蒸馏仅留 compress_events 接口（本期不接线）
 - keeper parse/enrich/narrator 明确不接 Chronicle（控制范围，本期唯一消费者 Author）
 
+---
+
+## 工作汇总（2026-08-15）
+
+### 已完成
+
+**⑥ U9 技能系统重修**（b599f9f→31c7058，spec：`docs/superpowers/specs/2026-06-10-skill-system-redesign.md`（2026-08-14 修订版），plan：`docs/superpowers/plans/2026-08-14-skill-system-redesign.md`）
+- 45 技能/9 属性 → **20 技能/8 属性**配置化体系：`data/skill_config.json` 单一事实源（技能/属性乘数/legacy_map/attr_aliases/pseudo_skills），`normalize_skill_name()` 五路归一（skill/attr/pseudo/ignore/unknown）单点下沉 `get_skill`/`check_skill`
+- Stats 删 SIZ（并入 CON）、DerivedStats 删 MOV；新衍生公式 HP=CON//3、DB/BUILD 查表键=STR+CON//2；属性池分配（属性值×乘数均分归属技能）；职业标签制（occupation_labels.json）
+- LUCK 声明式消耗：keeper 识别「烧/用 N 点幸运」→ spend_luck + pending_luck_bonus（当回合检定一次性消费）
+- 序列化 v2.0：旧卡（含 SIZ）拒绝加载提示重建；combat_test_character.json 按新体系重建（**武器仅留徒手**——预装小刀会让 full_clear 的 weapon_picked_up 谓词基线失效，偏离 plan Task 8 的「徒手+小刀」）
+- 管线/前端适配：layered_pipeline + run_pipeline 技能名改从 config 拉取、stat_names 删 SIZ、parser 落库归一；前端车卡 STATS/SKILLS/STAT_ROLLS 从 config 读（模板按属性分块 UI 后置）
+- 数据清理：删 skill_checks.json/occupations.json，load_skill_checks 数据源切 config
+- 敌人/Boss 侧 SIZ 与 calc_db(STR,SIZ) **保留不动**（神话生物有体型）
+
+**测试现状**：默认套件 127 passed；场景层 S-D full_clear VERDICT PASS（三层）；实连层 real_llm 11 passed
+
 ### 待办（按优先级）
 
-0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期
-0.5. **U9 技能系统重修（spec 已修订，待实施）**：`docs/superpowers/specs/2026-06-10-skill-system-redesign.md`（2026-08-14 补丁版——三层防护串联/归一单点下沉 get_skill/属性检定通路/旧卡强制重建/LUCK 输入声明式/调参入 config 次要）。实施步骤 10 步见 spec 第 8 节
+0. **前端**：现栈优化（抽 JS 出 game.html/htmx 面板/Alpine 局部交互），等用户手动测试反馈后排期；U9 遗留——车卡模板按属性分块 UI 完整版、职业标签选择 UI（当前 occupations.json 已删，前端职业下拉恒空）
 0.6. **U9 前置 minor（U2 遗留）**：_integrate_patch 记录的 entity_ids 用原始 dict 的 id（缺 id 时与实际集成的 NEW_xxx 回退不一致）；combat=end/boss/spawn 事件本期无投影（后续与测试侧 _collect_mech_line 切源一起补）；**facts 渲染缺 Boss 组**（spawn/engage/阶段 Author 不可见，spec §2 列了但实现收敛时漏了）与玩家关键物品——与上述一起补
 1. **R4 parse 稀疏实体过度匹配**：IT_END 误触发隐患（S-D 首跑曾现，近两轮未复现），观察中
 2. ~~巡检层 verdict 化~~（用户拍板暂缓）

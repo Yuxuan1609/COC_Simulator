@@ -50,7 +50,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 340 |
 | `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem） | 355 |
 
-### run_pipeline.py (1459 行) — 模组解析管线 CLI
+### run_pipeline.py (1455 行) — 模组解析管线 CLI
 
 | 函数/类 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -63,12 +63,12 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `InteractiveRunner` | `(config)` | 运行器：`_step_dir`@529 `_save_summary`@534 `_prompt_user`@538 `_handle_retry`@552 `_handle_edit`@573 `_handle_config_change`@600 `_interact`@658 | 480 |
 | `_RetryStep` | exception | 重试当前步骤 | 676 |
 | `_do_step1` | `(runner, verbose)` | Step1a 结构化提取 + 1b 精修（并行） | 685 |
-| `_do_step2a` | `(runner, verbose)` | Step2a interactions 提取 | 737 |
+| `_do_step2a` | `(runner, verbose)` | Step2a interactions 提取；技能名白名单经 `load_skill_checks()`（U9 起读 skill_config） | 737 |
 | `_do_step2bc` | `(runner, verbose)` | Step2b+2c: events+AT + L1 + L3（并行） | 773 |
 | `_do_step3a_25` | `(runner, verbose)` | Step3a 去重冲突 + 2.5 NPC 档案（并行）→ 绑定 → Boss 遭遇 → 组装 L2 | 827 |
 | `_do_step3b` | `(runner, verbose)` | L1↔L2 交叉核对 + WR0 注入 | 918 |
 | `_do_step35_phase1` | `(runner, verbose)` | Step3.5 依赖图（含循环重试）+ Phase1 约束 | 952 |
-| `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物 | 1019 |
+| `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物；技能名经 `load_skill_checks()`，`stat_names` 已删 SIZ（:1043） | 1017 |
 | `run_interactive` | `(config)` | 手动步进模式（每步 [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出），支持 start_from 断点续跑 | 1158 |
 | `run_auto` | `(config)` | 自动模式：复用同一组 `_do_step*` 全程无交互 | 1235 |
 | `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--model/--thinking-off/--weapon-lib 等 | 1329 |
@@ -748,7 +748,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `roll_dice` / `roll_d6` | — | 掷骰 | 125 / 135 |
 | `load_skill_config` | `(path=None) -> dict` | data/skill_config.json 技能体系配置（20技能/8属性/legacy_map/attr_aliases/pseudo_skills），缓存 | 145 |
 | `normalize_skill_name` | `(name) -> (kind, value)` | 技能名归一单点：skill/attr/pseudo/ignore/unknown 五路 | 161 |
-| `load_skill_checks` | `(path=None)` | data/skill_checks.json（旧表，Task 8 处理数据源） | 201 |
+| `load_skill_checks` | `(path=None)` | U9：默认数据源已切换为 skill_config.json 的 skills 列表（保持 `[{"name": ...}]` 兼容形状）；旧 skill_checks.json 已删除 | 202 |
 | `get_coc_skill_names` | `() -> list[str]` | 新 20 项技能名（缓存，从 skill_config.json 读取） | 215 |
 
 ## src/audit_player_log.py (411 行) — LLM 玩家日志审计
@@ -810,9 +810,11 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 
 序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@70 / `_init_libraries`@104 / `_resolve_start_scene`@1086 / `_make_default_inv`@1132。
 
-### routers/character.py (335 行) — 车卡 API
+### routers/character.py (319 行) — 车卡 API
 
-`character_page`@68 / `upload_avatar`@78 / `step_partial`@91 / `roll_stats`@106 / `skills_list`@144 / `generate_description`@212（LLM 外貌）/ `_build_export`@229 / `export_character_get`@300 / `export_character`@319（ZIP 导出）；辅助 `_load_occupations`@56 / `_roll_stat`@63。
+U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/8 属性，删 SIZ）；`roll_stats` 衍生公式改 HP=CON//3、DB/BUILD 查表键=STR+CON//2；`_build_export` 构造 Stats/DerivedStats 不再传 SIZ/MOV，meta.version=2.0。
+
+`character_page`@52 / `upload_avatar`@62 / `step_partial`@75 / `roll_stats`@90 / `skills_list`@128 / `generate_description`@196（LLM 外貌）/ `_build_export`@213 / `export_character_get`@284 / `export_character`@303（ZIP 导出）；辅助 `_load_occupations`@40（occupations.json 已删，恒返回 []，职业标签制后置）/ `_roll_stat`@47。
 
 ### routers/editor.py (116 行) — JSON 编辑器
 
