@@ -228,3 +228,18 @@ def test_allocate_attribute_pools_exact_value():
     spot = next(s for s in skills if s.name == "侦查")
     # INT 池 90/归属6技能=15；EDU 池 90/归属10技能=9；base 25 + 15 + 9 + focus 10 = 59
     assert spot.value == 59
+
+
+def test_pipeline_stat_names_no_siz():
+    """stat_names 不含 SIZ（SIZ→CON 由 attr_aliases 兜底）。"""
+    import re
+    src = open("src/module_designer/layered_pipeline.py", encoding="utf-8").read()
+    m = re.search(r"stat_names\s*=\s*\[([^\]]*)\]", src)
+    assert m and '"SIZ"' not in m.group(1)
+
+
+def test_normalize_entity_type_for_storage():
+    """落库归一：旧技能名→新名；属性名/未知名保留原文。"""
+    from utils import normalize_skill_name
+    assert normalize_skill_name("话术") == ("skill", "说服")
+    assert normalize_skill_name("敏捷")[0] == "attr"

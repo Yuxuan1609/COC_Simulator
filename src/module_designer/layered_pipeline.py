@@ -21,6 +21,7 @@ from typing import Optional, TYPE_CHECKING
 
 from module_designer.layered_schema import validate_all, SchemaReport
 from config import PIPELINE_MAX_RETRIES, INJECT_L3_WR0
+from utils import load_skill_config
 
 if TYPE_CHECKING:
     from library.injector import ContentInjector
@@ -483,11 +484,7 @@ def run_pipeline(
     # Pre-load skill names for Step 2a type whitelist
     skill_names_all = []
     try:
-        import os as _os
-        skill_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "skill_checks.json")
-        with open(skill_path, "r", encoding="utf-8") as _f:
-            skill_checks = json.load(_f)
-            skill_names_all = sorted(set(s["name"] for s in skill_checks))
+        skill_names_all = sorted(set(s["name"] for s in load_skill_config()["skills"]))
     except Exception:
         pass
 
@@ -755,7 +752,7 @@ def run_pipeline(
         print("═" * 50)
         print("[Step 3.5] 依赖图构建...")
 
-    stat_names = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
+    stat_names = ["STR", "CON", "DEX", "APP", "INT", "POW", "EDU", "SAN", "HP", "LUCK", "MP"]
 
     l2_descriptions = {}
     for name, sdata in l1_data.items():
@@ -765,11 +762,7 @@ def run_pipeline(
 
     skill_names = []
     try:
-        import os as _os
-        skill_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "skill_checks.json")
-        with open(skill_path, "r", encoding="utf-8") as _f:
-            skill_checks = json.load(_f)
-            skill_names = sorted(set(s["name"] for s in skill_checks))
+        skill_names = sorted(set(s["name"] for s in load_skill_config()["skills"]))
     except Exception:
         pass
 

@@ -620,7 +620,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_with_fallback` | `(parse_fn, required_keys, fallback_data, max_retries, verbose, step_name)` 带重试与保底 | 152 |
 | `parse_step1a` | 模块元信息+场景+角色+Boss+敌人/武器约束 | 278 |
 | `parse_step1b` | 精修浓缩模组文本 | 350 |
-| `parse_step2a` | interactions + scene_movements | 471 |
+| `parse_step2a` | interactions + scene_movements；返回前对 interaction 的 `type` 字段调 `normalize_skill_name` 落库归一（旧技能名→新名，属性/伪技能/未识别保留原文并 print 提示） | 471 |
 | `parse_step2b_combined` | events + auto_triggers（合并） | 563 |
 | `parse_step2c_l1` | L1 场景感知 | 631 |
 | `parse_step2c_l3` | L3 设计层 | 696 |
@@ -643,7 +643,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_inject_npc_special_entities` | 注入 follow_unlock + interact_unlock entity | 317 |
 | `_assemble_l2` | 所有 entity 组装为 L2 JSON | 367 |
 | `PipelineResult` | 结果容器（all_valid/summary） | 407 |
-| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证 | 439 |
+| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点（:485/:763）均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 439 |
 | `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 890 |
 
 ### supplement_pipeline.py (515 行) — Author 触发的轻量补充管线
