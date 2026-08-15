@@ -447,7 +447,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `check_skills` | `(skill_names)` 批量检定 | 267 |
 | `build_snapshot` | 玩家状态快照 | 285 |
 | `_recalc_derived` | 重算衍生属性 | 303 |
-| `modify_stat` | `(stat_name, delta)` 支持骰子公式；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 309 |
+| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ→CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 309 |
 | `modify_skill` / `has_item` / `list_items` | — | 387–398 |
 | `add_weapon` / `remove_weapon` | 武器管理 | 402 / 405 |
 | `save` / `load` | JSON 存档 | 412 / 418 |

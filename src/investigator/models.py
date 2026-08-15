@@ -345,6 +345,9 @@ class Investigator:
 
         detail = ""
         upper = stat_name.upper()
+        # spec 7.2：旧模组 SIZ 映射到 CON
+        if upper == "SIZ":
+            upper = "CON"
         stats = self.stats
 
         # Map to Stats field

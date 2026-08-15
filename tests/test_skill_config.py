@@ -243,3 +243,13 @@ def test_normalize_entity_type_for_storage():
     from utils import normalize_skill_name
     assert normalize_skill_name("话术") == ("skill", "说服")
     assert normalize_skill_name("敏捷")[0] == "attr"
+
+
+def test_modify_stat_siz_maps_to_con():
+    """spec 7.2：旧模组 @stat_change(SIZ) 映射到 CON。"""
+    from investigator.models import Investigator, Stats
+    inv = Investigator(name="t")
+    inv.stats = Stats(STR=60, CON=60, DEX=60, APP=60, INT=60, POW=60, EDU=60, LUCK=50)
+    inv.derived.HP = inv.derived.HP_MAX = 20
+    inv.modify_stat("SIZ", -10)
+    assert inv.stats.CON == 50, f"SIZ 必须映射 CON，实际 CON={inv.stats.CON}"

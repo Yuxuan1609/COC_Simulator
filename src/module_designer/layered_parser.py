@@ -20,6 +20,7 @@ import os
 from typing import Callable
 
 from config import PIPELINE_MAX_RETRIES
+from utils import normalize_skill_name
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -470,7 +471,6 @@ def build_step2a_prompt(chapters: dict[str, str], scenes: list[dict], characters
 \"\"\""""
 def parse_step2a(chapters: dict[str, str], scenes: list[dict], llm_call, characters: list[dict] = None, skill_names: list[str] = None) -> dict:
     """从精修模组提取所有 interactions."""
-    from utils import normalize_skill_name
     prompt = build_step2a_prompt(chapters, scenes, characters, skill_names=skill_names)
     result = llm_call(prompt, system=STEP2A_SYSTEM)
     # 落库归一：interaction 的 type 字段是技能名，旧技能名映射到新名；
