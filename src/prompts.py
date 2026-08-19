@@ -1015,26 +1015,32 @@ def build_stat_narrative_prompt(
     return prompt
 
 
+def build_material_fuzzy_prompt(target: str, catalog_text: str, quantity: int = 1) -> str:
+    prompt = f"""你是 COC 7th KP 助理。玩家输入中提到的物品/法术与可用目录名称不匹配。请判断目录中是否有语义相同的条目。
+
+玩家输入：{target}
+{'（需消耗 x%d）' % quantity if quantity and quantity > 1 else ''}
+可用目录：
+{catalog_text}
+
+请判断目录中是否有条目与玩家所指语义相同，以 JSON 格式输出：
+{{"matched": true/false, "material": "目录中的条目名", "reason": "匹配理由"}}
+
+规则：
+- 模糊匹配（如"止血的包"匹配"急救包"、"手电"匹配"手电筒"）-> matched=true
+- 完全无关或玩家并非要使用某个条目 -> matched=false
+- material 必须是目录中存在的条目名（精确复制）"""
+    _show_prompt("Material Fuzzy", prompt)
+    return prompt
+
+
 def build_consume_item_fuzzy_prompt(
     target: str,
     quantity: int,
     held_items: str,
 ) -> str:
-    prompt = f"""你是 COC 7th KP 助理。玩家需要消耗一个物品，但物品名称与背包中的精确名称不匹配。请判断背包中是否有语义相同的物品。
-
-目标物品：{target}（需要消耗 x{quantity}）
-背包物品：
-{held_items}
-
-请判断背包中是否有物品与"{target}"语义相同，以 JSON 格式输出：
-{{"matched": true/false, "item_name": "背包中的实际物品名", "reason": "匹配理由"}}
-
-规则：
-- 模糊匹配（如"手电"匹配"手电筒"、"绷带"匹配"急救包"）→ matched=true
-- 完全无关 → matched=false
-- item_name 必须是背包中存在的物品名（精确复制）"""
-    _show_prompt("Consume Item Fuzzy", prompt)
-    return prompt
+    """兼容包装：旧消耗品模糊匹配（scenario_core 通路）。"""
+    return build_material_fuzzy_prompt(f"消耗物品：{target}", held_items, quantity)
 
 
 # ── Time Pressure ──

@@ -188,3 +188,35 @@ class TestUseParserDeterministic:
     def test_no_verb_no_hit(self):
         up, cats, inv = self._setup()
         assert up.resolve("急救包挺好的", cats) is None
+
+
+class TestUseParserLLM:
+    def test_resolve_llm_match(self):
+        from library.items import ItemLibrary
+        from game.use_parser import UseParser, ItemCatalog
+        ilib = ItemLibrary(); ilib.load_core()
+        from investigator import Investigator
+        inv = Investigator(name="测试")
+        inv.item_manager.add("急救包", quantity=1)
+        import json as _json
+        calls = {}
+        def fake_llm(prompt, **kw):
+            calls["prompt"] = prompt
+            return _json.dumps({"matched": True, "material": "急救包",
+                                "reason": "语义相同"}, ensure_ascii=False)
+        up = UseParser(llm_call=fake_llm)
+        cats = [ItemCatalog(ilib, inv.item_manager)]
+        # 原文无动词/名匹配失败场景由 LLM 兜底
+        r = up.resolve_llm("把那个能止血的包拿来用", cats)
+        assert r is not None and r.material_id == "FIRST_AID_KIT"
+        assert "急救包" in calls["prompt"]
+
+    def test_resolve_llm_unmatched(self):
+        from library.items import ItemLibrary
+        from game.use_parser import UseParser, ItemCatalog
+        from investigator import Investigator
+        ilib = ItemLibrary(); ilib.load_core()
+        inv = Investigator(name="测试")
+        inv.item_manager.add("急救包", quantity=1)
+        up = UseParser(llm_call=lambda p, **k: {"matched": False, "material": "", "reason": ""})
+        assert up.resolve_llm("随便看看", [ItemCatalog(ilib, inv.item_manager)]) is None

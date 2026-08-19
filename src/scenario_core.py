@@ -1261,13 +1261,13 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                             result = call_deepseek(
                                 prompt, json_mode=True, model=LLM_FLASH_MODEL,
                                 system="你是 COC 7th KP 助理。",
-                                fallback_schema={"matched": False, "item_name": "", "reason": ""},
+                                fallback_schema={"matched": False, "material": "", "reason": ""},
                             )
                             if isinstance(result, str):
                                 import json as _json
                                 result = _json.loads(result)
-                            if result.get("matched") and result.get("item_name"):
-                                matched_name = result["item_name"]
+                            matched_name = result.get("material") or result.get("item_name") or ""
+                            if result.get("matched") and matched_name:
                                 if im.has(matched_name):
                                     im.remove(matched_name, effect.quantity)
                                     consumed = True

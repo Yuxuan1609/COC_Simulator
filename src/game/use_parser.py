@@ -149,6 +149,28 @@ class UseParser:
             constraints=dict(e.get("constraints") or {}),
         )
 
-    # ── LLM 兜底层（Task 6 实现）──
+    # ── LLM 兜底层 ──
     def resolve_llm(self, raw: str, catalogs: list[MaterialCatalog]) -> Optional[UseParseResult]:
+        from prompts import build_material_fuzzy_prompt
+        if self.llm_call is None:
+            return None
+        entries = [e for c in catalogs for e in c.entries()]
+        if not entries:
+            return None
+        catalog_text = "\n".join(
+            f"- {e['name']}（{'/'.join(e.get('aliases', []))}）：{e['description'][:50]}"
+            for e in entries)
+        resp = self.llm_call(build_material_fuzzy_prompt(raw, catalog_text),
+                             json_mode=True, system="你是 COC 7th KP 助理。")
+        if isinstance(resp, str):
+            import json as _json
+            try:
+                resp = _json.loads(resp)
+            except Exception:
+                return None
+        if not (isinstance(resp, dict) and resp.get("matched") and resp.get("material")):
+            return None
+        for e in entries:
+            if resp["material"] in (e["name"], *e.get("aliases", []), e["id"]):
+                return self.resolve(f"使用{e['name']}", catalogs)
         return None
