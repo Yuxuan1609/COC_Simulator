@@ -1619,10 +1619,12 @@ class WorldChronicle:
         if p:
             weapons = "、".join(w.name for w in p.weapons) or "无"
             key_items = "、".join(getattr(world.memory, "key_items", [])) or "无"
+            spells = "、".join(getattr(p, "known_spells", [])) or "无"
             parts.append(f"  玩家: HP {p.derived.HP}/{p.derived.HP_MAX} "
                          f"SAN {p.derived.SAN}/{p.derived.SAN_MAX} "
-                         f"MP {p.derived.MP} LUCK {p.stats.LUCK} | 武器: {weapons}"
-                         f" | 物品: {key_items}")
+                         f"MP {p.derived.MP}/{getattr(p.derived, 'MP_MAX', '?')} "
+                         f"LUCK {p.stats.LUCK} | 武器: {weapons}"
+                         f" | 物品: {key_items} | 法术: {spells}")
         if world.enemies:
             for inst in world.enemies._instances.values():
                 parts.append(f"  敌人: {inst.enemy_ref}@{inst.scene} "

@@ -995,3 +995,31 @@ class TestRequirementItem:  # 统一资源层：item: 硬条件
         r2 = run_turn(game, "用钥匙开门")     # 有钥匙
         assert_player_turn_contract(r2)
         assert world.is_entity_completed("IT_DOOR")
+
+
+class TestChronicleSpellFacts:  # 统一资源层：编年史 + 快照字段
+    def test_player_line_contains_spells_and_mp_max(self, monkeypatch):
+        from game.agents.keeper import Keeper
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = _player(world)
+        inv.known_spells = ["HEART_ARREST"]
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+        from game_loop import run_turn
+        run_turn(game, "四处看看")
+        rendered = world.chronicle.render_for_author(world)
+        assert "HEART_ARREST" in rendered, "编年史玩家行必须含已知法术"
+        assert "MP" in rendered
+
+    def test_snapshot_has_mp_max_and_spells(self):
+        from investigator import Investigator
+        from investigator.rules import calc_derived
+        from investigator.models import Stats
+        inv = Investigator(name="快照", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        inv.known_spells = ["LIFE_DETECTION"]
+        snap = inv.build_snapshot()
+        assert snap.get("mp_max") == inv.derived.MP_MAX
+        assert snap.get("known_spells") == ["LIFE_DETECTION"]

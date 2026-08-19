@@ -299,6 +299,8 @@ class Investigator:
             "max_hp": self.derived.HP_MAX,
             "san": self.derived.SAN,
             "mp": self.derived.MP,
+            "mp_max": self.derived.MP_MAX,
+            "known_spells": list(getattr(self, "known_spells", [])),
             "weapons": [w.name for w in self.weapons],
             "inventory": self.item_manager.describe(),
             "skills_summary": ", ".join(

@@ -220,6 +220,22 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     weapon_lib = WeaponLibrary()
     weapon_lib.load_core()
 
+    # 统一资源层：物品/法术库
+    from library.items import ItemLibrary
+    from library.spells import SpellLibrary
+    item_lib = ItemLibrary()
+    item_lib.load_core()
+    _item_ext_dir = Path("data/library/extensions/items")
+    if _item_ext_dir.is_dir():
+        for _f in sorted(_item_ext_dir.glob("*.json")):
+            item_lib.load_extension(str(_f))
+    spell_lib = SpellLibrary()
+    spell_lib.load_core()
+    _spell_ext_dir = Path("data/library/extensions/spells")
+    if _spell_ext_dir.is_dir():
+        for _f in sorted(_spell_ext_dir.glob("*.json")):
+            spell_lib.load_extension(str(_f))
+
     # Load boss library
     from library.bosses import BossLibrary
     boss_library = BossLibrary(
@@ -237,7 +253,9 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
                           weapon_library=weapon_lib,
                           boss_library=boss_library,
                           boss_encounters=boss_encounters,
-                          npc_profiles=npc_profiles)
+                          npc_profiles=npc_profiles,
+                          item_library=item_lib,
+                          spell_library=spell_lib)
 
     # Load dependency graph into world for runtime state tracking
     dep_graph = l2.get("dependency_graph", {})
