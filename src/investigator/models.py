@@ -196,6 +196,7 @@ class Investigator:
         self.check_warnings: list[str] = []   # 技能归一/未掌握 warning（keeper 每回合收集）
         self.pending_luck_bonus: int = 0      # LUCK 声明消耗的下一次检定加值（一次性）
         self.label: str = ""                  # 职业标签名（U9 标签制）
+        self.known_spells: list[str] = []     # 已知法术 spell_id 列表（U6 统一资源层）
 
     # ── 兼容旧 Player 接口 ──
 

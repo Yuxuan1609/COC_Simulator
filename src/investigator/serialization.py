@@ -39,7 +39,7 @@ def to_dict(inv: Investigator) -> dict:
 
     return {
         "meta": {
-            "version": "2.0",
+            "version": "2.1",
             "created_at": datetime.now().isoformat(),
             "rules_edition": "COC7",
         },
@@ -92,6 +92,7 @@ def to_dict(inv: Investigator) -> dict:
         "item_manager": inv.item_manager.to_dict() if inv.item_manager._items else {},
         "backstory": inv.backstory,
         "avatar_url": inv.avatar_url,
+        "known_spells": list(getattr(inv, 'known_spells', [])),
     }
 
 
@@ -180,6 +181,7 @@ def from_dict(data: dict) -> Investigator:
     im_data = data.get("item_manager", {})
     if im_data:
         inv.item_manager = ItemManager.from_dict(im_data)
+    inv.known_spells = list(data.get("known_spells", []) or [])
     return inv
 
 

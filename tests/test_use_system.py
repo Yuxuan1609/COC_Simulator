@@ -44,3 +44,31 @@ class TestRecalcPreservesCurrent:
         inv.modify_stat("CON", 30)   # CON90 -> HP_MAX 30，当前涨 10
         assert inv.derived.HP_MAX == 30
         assert inv.derived.HP == 15
+
+
+class TestKnownSpells:
+    def test_default_empty_and_roundtrip(self):
+        inv = _inv()
+        assert inv.known_spells == []
+        inv.known_spells = ["HEART_ARREST", "LIFE_DETECTION"]
+        from investigator.serialization import to_dict, from_dict
+        d = to_dict(inv)
+        assert d["meta"]["version"] == "2.1"
+        assert d["known_spells"] == ["HEART_ARREST", "LIFE_DETECTION"]
+        inv2 = from_dict(d)
+        assert inv2.known_spells == ["HEART_ARREST", "LIFE_DETECTION"]
+
+    def test_v20_card_loads_with_empty_spells(self):
+        from investigator.serialization import from_dict
+        d = {
+            "meta": {"version": "2.0"},
+            "personal": {"name": "旧卡", "age": 30, "gender": "女"},
+            "stats": {"STR": 50, "CON": 50, "DEX": 50, "APP": 50,
+                      "INT": 60, "POW": 55, "EDU": 65, "LUCK": 40},
+            "derived": {"HP": 16, "HP_MAX": 16, "MP": 11, "SAN": 55, "SAN_MAX": 99,
+                        "DB": "0", "BUILD": 0, "DODGE": 25},
+            "skills": [], "combat": {"weapons": []},
+        }
+        inv = from_dict(d)
+        assert inv.known_spells == []
+        assert inv.derived.MP_MAX == 11, "v2.0 无 MP_MAX 时由 MP 回填"
