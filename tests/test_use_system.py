@@ -140,3 +140,50 @@ class TestGrantSpell:
         from game.side_effects import parse_markup
         eff = parse_markup('@grant_spell(spell_ref="HEART_ARREST")')
         assert eff is not None and eff.spell_ref == "HEART_ARREST"
+
+
+class TestUseParserDeterministic:
+    def _setup(self):
+        from library.items import ItemLibrary
+        from library.spells import SpellLibrary
+        from game.use_parser import UseParser, ItemCatalog, SpellCatalog
+        from investigator import Investigator
+        ilib = ItemLibrary(); ilib.load_core()
+        slib = SpellLibrary(); slib.load_core()
+        inv = Investigator(name="测试")
+        inv.item_manager.add("急救包", quantity=2)
+        inv.known_spells = ["LIFE_DETECTION", "HEART_ARREST"]
+        up = UseParser()
+        cats = [ItemCatalog(ilib, inv.item_manager),
+                SpellCatalog(slib, inv.known_spells)]
+        return up, cats, inv
+
+    def test_verb_name_exact_hit(self):
+        up, cats, inv = self._setup()
+        r = up.resolve("我使用急救包处理伤口", cats)
+        assert r is not None and r.catalog_kind == "item"
+        assert r.material_id == "FIRST_AID_KIT" and r.impact == "L1"
+
+    def test_spell_cast_hit(self):
+        up, cats, inv = self._setup()
+        r = up.resolve("我闭上眼念诵生命觉察的咒文", cats)
+        assert r is not None and r.catalog_kind == "spell"
+        assert r.material_id == "LIFE_DETECTION" and r.impact == "L0"
+
+    def test_alias_and_fuzzy(self):
+        up, cats, inv = self._setup()
+        r = up.resolve("喝一口烈酒壮胆", cats)
+        assert r is not None and r.material_id == "WHISKEY"
+
+    def test_negation_rejected(self):
+        up, cats, inv = self._setup()
+        assert up.resolve("我不用急救包", cats) is None
+
+    def test_unheld_item_not_in_catalog(self):
+        up, cats, inv = self._setup()
+        r = up.resolve("我使用撬棍撬开门", cats)
+        assert r is None, "未持有的库物品不入目录，走 interaction 语义路径"
+
+    def test_no_verb_no_hit(self):
+        up, cats, inv = self._setup()
+        assert up.resolve("急救包挺好的", cats) is None
