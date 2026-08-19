@@ -72,3 +72,34 @@ class TestKnownSpells:
         inv = from_dict(d)
         assert inv.known_spells == []
         assert inv.derived.MP_MAX == 11, "v2.0 无 MP_MAX 时由 MP 回填"
+
+
+class TestLibraries:
+    def test_item_library_core_load(self):
+        from library.items import ItemLibrary
+        lib = ItemLibrary(); lib.load_core()
+        assert len(lib) >= 10
+        kit = lib.get("急救包")
+        assert kit is not None and kit.impact == "L1"
+        assert lib.get("FIRST_AID_KIT") is kit, "id 与名称/别名均可查"
+        assert "医疗包" in kit.aliases
+
+    def test_spell_library_core_load(self):
+        from library.spells import SpellLibrary
+        lib = SpellLibrary(); lib.load_core()
+        assert len(lib) >= 6
+        sp = lib.get("心脏骤停")
+        assert sp.category == "combat"
+        assert sp.cost.get("mp", 0) > 0
+        life = lib.get("LIFE_DETECTION")
+        assert life is not None and life.impact == "L0"
+
+    def test_extension_merge(self, tmp_path):
+        from library.items import ItemLibrary
+        import json as _json
+        p = tmp_path / "ext.json"
+        p.write_text(_json.dumps({"items": [
+            {"id": "EXT_X", "name": "扩展物品", "impact": "L1"}]}, ensure_ascii=False),
+            encoding="utf-8")
+        lib = ItemLibrary(); lib.load_core(); lib.load_extension(str(p))
+        assert lib.get("扩展物品") is not None
