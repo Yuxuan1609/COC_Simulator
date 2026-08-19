@@ -24,7 +24,8 @@ def make_scene(interactions=None, exits=None, **overrides):
 
 
 def make_world(scenes, start_node, npc_profiles=None, enemy_library=None,
-               weapon_library=None, boss_library=None, boss_encounters=None):
+               weapon_library=None, boss_library=None, boss_encounters=None,
+               item_library=None, spell_library=None):
     from scenario_core import DirectedGraph, ScenarioWorld
     return ScenarioWorld(
         DirectedGraph(scenes=scenes, events=[]),
@@ -34,6 +35,8 @@ def make_world(scenes, start_node, npc_profiles=None, enemy_library=None,
         weapon_library=weapon_library,
         boss_library=boss_library,
         boss_encounters=boss_encounters,
+        item_library=item_library,
+        spell_library=spell_library,
     )
 
 

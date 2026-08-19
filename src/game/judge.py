@@ -75,6 +75,111 @@ class Judge:
 
         return self._execute_entity(entity, intent=intent, player_input=player_input)
 
+    def execute_material(self, material, player_input: str = "") -> ActionOutcome:
+        """L1 执行通道：use 动作确定性结算。
+        硬门（已知/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定
+        -> 结果槽 -> on_use @markup 副作用。L0 无消耗无检定时纯叙事。"""
+        player = self.world.player
+        intent = ActionIntent(action="use", target=material.name)
+
+        def _fail(msg: str) -> ActionOutcome:
+            return ActionOutcome(intent=intent, success=False, message=msg,
+                                 entity_id=material.material_id,
+                                 entity_type="material")
+
+        if player is None:
+            return _fail("（无调查员，无法使用素材。）")
+        if material.catalog_kind == "spell" and material.material_id not in player.known_spells:
+            return _fail(f"你尚未习得「{material.name}」。")
+
+        cost = material.cost or {}
+        need_mp = int(cost.get("mp", 0) or 0)
+        need_san = int(cost.get("san", 0) or 0)
+        if need_mp and player.derived.MP < need_mp:
+            return _fail(f"MP不足：需要 {need_mp}，当前 {player.derived.MP}。")
+        for mat in (material.constraints or {}).get("materials", []):
+            if not player.item_manager.has(mat):
+                return _fail(f"缺少材料：{mat}。")
+
+        # L0 且零消耗无检定：纯叙事
+        if (material.impact == "L0" and not need_mp and not need_san
+                and not material.check and not material.on_use):
+            text = (material.result_slots or {}).get("on_success") or material.description
+            return ActionOutcome(intent=intent, success=True, message=text,
+                                 entity_id=material.material_id,
+                                 entity_type="material")
+
+        # 扣减（原子）
+        if need_mp:
+            player.derived.MP -= need_mp
+        if need_san:
+            player.derived.SAN = max(0, player.derived.SAN - need_san)
+        consumed_item = None
+        if (material.catalog_kind == "item"
+                and material.use_semantic == "consume"):
+            if not player.item_manager.has(material.name):
+                if need_mp:
+                    player.derived.MP += need_mp
+                return _fail(f"你没有「{material.name}」。")
+            player.item_manager.remove(material.name, 1)
+            consumed_item = material.name
+
+        # 可选检定（检定能力下沉：复用 check_skill 全套）
+        skill_tier = ""
+        skill_detail = ""
+        success = True
+        if material.check:
+            cskill = material.check.get("skill", "")
+            ctype = material.check.get("type", "regular")
+            if ctype == "opposed":
+                from investigator.rules import opposed_check
+                def_val = int((material.constraints or {}).get("opposed_value", 50))
+                att_val = player.get_skill_value(cskill) or getattr(
+                    player.stats, cskill, 50)
+                outcome, detail = opposed_check(att_val, def_val)
+                skill_detail = f"[use] {material.name} | 对抗 {cskill}={att_val} vs {def_val} | {detail}"
+                success = outcome == "win"
+                skill_tier = "regular" if success else "failure"
+            else:
+                ok, msg, skill_tier = player.check_skill(
+                    cskill, "hard" if ctype == "hard" else "regular")
+                skill_detail = f"[use] {material.name} | {cskill} | {msg}"
+                success = ok
+            log_skill_result(skill_detail)
+
+        if not success and material.refund_on_fail:
+            if need_mp:
+                player.derived.MP += need_mp
+            if need_san:
+                player.derived.SAN += need_san
+            if consumed_item:
+                player.item_manager.add(consumed_item, quantity=1)
+
+        # 结果槽（tier 选用）
+        slots = material.result_slots or {}
+        if success:
+            text = ((slots.get("on_extreme") if skill_tier == "extreme" else "")
+                    or (slots.get("on_hard") if skill_tier == "hard" else "")
+                    or slots.get("on_success")
+                    or f"你使用了{material.name}。")
+        else:
+            text = slots.get("on_failure") or f"{material.name}没有产生效果。"
+
+        # on_use @markup -> 统一副作用底座
+        side_effects = parse_markup_all(" ".join(material.on_use)) if material.on_use else []
+        side_msgs = []
+        if side_effects:
+            from scenario_core import apply_side_effects
+            side_msgs = apply_side_effects(self.world, side_effects)
+
+        message = text + ("".join(f"\n{m}" for m in side_msgs))
+        return ActionOutcome(
+            intent=intent, success=success, message=message,
+            entity_id=material.material_id, entity_type="material",
+            side_effects=side_effects, skill_tier=skill_tier,
+            skill_detail=skill_detail,
+        )
+
     # ── Internal ──
 
     def _set_completion_flag(self, entity: Entity, tier: str = ""):

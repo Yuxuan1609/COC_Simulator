@@ -248,3 +248,91 @@ class TestOpposedCheck:
                 assert outcome == "tie", f"同值同级应平局：{detail}"
             else:
                 assert outcome == ("win" if a > d else "lose"), f"等级高者应胜：{detail}"
+
+
+class TestExecuteMaterial:
+    def _world(self):
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'e2e'))
+        from helpers import make_world, make_scene
+        from library.spells import SpellLibrary
+        from library.items import ItemLibrary
+        from investigator import Investigator
+        slib = SpellLibrary(); slib.load_core()
+        ilib = ItemLibrary(); ilib.load_core()
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           item_library=ilib, spell_library=slib)
+        from investigator.models import Stats
+        inv = Investigator(name="测试", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        from investigator.rules import calc_derived
+        inv.derived = calc_derived(inv.stats)
+        inv.derived.MP = 20
+        world.set_player(inv)
+        return world, inv
+
+    def test_l0_spell_no_cost_no_check(self):
+        from game.judge import Judge
+        from game.use_parser import UseParser, SpellCatalog
+        world, inv = self._world()
+        inv.known_spells = ["LIFE_DETECTION"]
+        judge = Judge(world)
+        up = UseParser()
+        m = up.resolve("念诵生命觉察", [SpellCatalog(world.spell_library, inv.known_spells)])
+        out = judge.execute_material(m, "念诵生命觉察")
+        assert out.success and out.entity_type == "material"
+        assert inv.derived.MP == 17, "L0 感知法术也要扣 MP cost"
+        assert "轮廓" in out.message
+
+    def test_l1_item_consume_heals(self):
+        from game.judge import Judge
+        from game.use_parser import UseParser, ItemCatalog
+        world, inv = self._world()
+        inv.item_manager.add("急救包", quantity=2)
+        inv.derived.HP = 5
+        judge = Judge(world)
+        m = UseParser().resolve("使用急救包", [ItemCatalog(world.item_library, inv.item_manager)])
+        out = judge.execute_material(m, "使用急救包")
+        assert out.success
+        assert inv.item_manager.get("急救包").quantity == 1
+        assert inv.derived.HP > 5, "@stat_change HP 恢复生效"
+
+    def test_mp_insufficient_rejected(self):
+        from game.judge import Judge
+        from game.use_parser import UseParser, SpellCatalog
+        world, inv = self._world()
+        inv.known_spells = ["HEART_ARREST"]
+        inv.derived.MP = 3
+        judge = Judge(world)
+        m = UseParser().resolve("施放心脏骤停", [SpellCatalog(world.spell_library, inv.known_spells)])
+        out = judge.execute_material(m, "施放心脏骤停")
+        assert not out.success and "MP不足" in out.message
+        assert inv.derived.MP == 3 and inv.derived.SAN == inv.derived.SAN
+
+    def test_unknown_spell_rejected(self):
+        from game.judge import Judge
+        from game.use_parser import UseParseResult
+        world, inv = self._world()
+        judge = Judge(world)
+        m = UseParseResult(catalog_kind="spell", material_id="HEART_ARREST",
+                           name="心脏骤停", matched_text="心脏骤停", impact="L1")
+        out = judge.execute_material(m, "施法")
+        assert not out.success and "尚未习得" in out.message
+
+    def test_check_failure_uses_slot_and_refund(self):
+        from game.judge import Judge
+        from game.use_parser import UseParseResult
+        world, inv = self._world()
+        inv.item_manager.add("开锁工具", quantity=1)
+        judge = Judge(world)
+        m = UseParseResult(
+            catalog_kind="item", material_id="LOCKPICKS", name="开锁工具",
+            matched_text="开锁工具", impact="L1",
+            check={"skill": "锁匠", "type": "regular"},
+            cost={"mp": 0, "san": 0},
+            result_slots={"on_success": "锁开了。", "on_failure": "锁纹丝不动。"},
+            refund_on_fail=True, use_semantic="tool")
+        inv.check_skill = lambda s, d="regular": (False, "锁匠检定：D100=98/10 失败", "failure")
+        out = judge.execute_material(m, "开锁")
+        assert not out.success and "纹丝不动" in out.message
+        assert inv.item_manager.has("开锁工具"), "tool 语义失败不消耗，refund 兜底"
