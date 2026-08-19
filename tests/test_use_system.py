@@ -103,3 +103,40 @@ class TestLibraries:
             encoding="utf-8")
         lib = ItemLibrary(); lib.load_core(); lib.load_extension(str(p))
         assert lib.get("扩展物品") is not None
+
+
+class TestGrantSpell:
+    def _world(self):
+        from scenario_core import DirectedGraph, ScenarioWorld
+        from library.spells import SpellLibrary
+        lib = SpellLibrary(); lib.load_core()
+        world = ScenarioWorld(DirectedGraph(scenes={}, events=[]),
+                              start_node="room", spell_library=lib)
+        return world
+
+    def test_grant_spell_known_ref(self):
+        from scenario_core import apply_side_effects
+        from game.side_effects import GrantSpell
+        from investigator import Investigator
+        world = self._world()
+        inv = Investigator(name="测试")
+        world.set_player(inv)
+        msgs = apply_side_effects(world, [GrantSpell(spell_ref="HEART_ARREST")])
+        assert "HEART_ARREST" in inv.known_spells
+        assert any("获得法术" in m for m in msgs)
+        apply_side_effects(world, [GrantSpell(spell_ref="HEART_ARREST")])
+        assert inv.known_spells.count("HEART_ARREST") == 1, "不重复授予"
+
+    def test_grant_spell_unknown_ref_degrades(self):
+        from scenario_core import apply_side_effects
+        from game.side_effects import GrantSpell
+        from investigator import Investigator
+        world = self._world()
+        world.set_player(Investigator(name="测试"))
+        msgs = apply_side_effects(world, [GrantSpell(spell_ref="不存在的法术")])
+        assert any("不存在" in m for m in msgs)
+
+    def test_parse_markup_grant_spell(self):
+        from game.side_effects import parse_markup
+        eff = parse_markup('@grant_spell(spell_ref="HEART_ARREST")')
+        assert eff is not None and eff.spell_ref == "HEART_ARREST"

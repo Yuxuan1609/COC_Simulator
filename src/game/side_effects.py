@@ -57,10 +57,16 @@ class NPCFollow:
     follow: bool = True
 
 
+@dataclass
+class GrantSpell:
+    spell_ref: str
+    category: str = ""   # 描述性：combat/exploration，空则从库推断
+
+
 # ── @markup parsing ──
 
 _MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
+    r'@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
     r'\(([^)]*)\)'
 )
 
@@ -91,6 +97,11 @@ def _build_side_effect(func_name: str, kwargs: dict):
             weapon_ref=kwargs.get("weapon_ref", ""),
             scene=kwargs.get("scene", ""),
             quantity=int(kwargs.get("quantity", 1)),
+        )
+    elif func_name == "grant_spell":
+        return GrantSpell(
+            spell_ref=kwargs.get("spell_ref", ""),
+            category=kwargs.get("category", ""),
         )
     elif func_name == "stat_change":
         delta_str = kwargs.get("delta", "0")

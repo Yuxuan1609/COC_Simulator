@@ -16,7 +16,7 @@ from module_designer.dependency_graph import DependencyNode, DependencyEdge
 from config import COMMS_INTERVAL_MINUTES, WR0_ENABLED
 
 from game.side_effects import (
-    ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon,
+    ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon, GrantSpell,
     SceneWeapon, NPCStateChange, NPCFollow,
     parse_markup, parse_markup_all,
 )
@@ -667,7 +667,9 @@ class ScenarioWorld:
                  weapon_library: Any = None,
                  boss_library: Any = None,
                  boss_encounters: list | None = None,
-                 npc_profiles: dict | None = None):
+                 npc_profiles: dict | None = None,
+                 item_library: Any = None,
+                 spell_library: Any = None):
         from game.clock import GameClock
         from game.enemy_manager import EnemyManager
         from game.npc_manager import NPCManager
@@ -692,6 +694,8 @@ class ScenarioWorld:
         # 本体状态
         self.scene_weapons: dict[str, list[SceneWeapon]] = {}
         self.weapon_library = weapon_library
+        self.item_library = item_library      # 统一资源层：物品库（可选，init_game 注入）
+        self.spell_library = spell_library    # 统一资源层：法术库
 
         # 从 graph nodes 加载 L2 定义的 scene_weapons → world.scene_weapons
         for node_id, node in graph.nodes.items():
@@ -1292,6 +1296,15 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                 msgs.append(
                     f"[生成敌人] {effect.enemy_ref} x{effect.quantity} 在 {target_scene}"
                 )
+        elif isinstance(effect, GrantSpell):
+            lib = getattr(world, "spell_library", None)
+            spell = lib.get(effect.spell_ref) if lib else None
+            if spell is None:
+                msgs.append(f"[获得法术失败] {effect.spell_ref}（法术库中不存在，已跳过）")
+            else:
+                if world.player and effect.spell_ref not in world.player.known_spells:
+                    world.player.known_spells.append(effect.spell_ref)
+                msgs.append(f"[获得法术] {spell.name}")
         elif isinstance(effect, GrantWeapon):
             target_scene = effect.scene or world.current_location
             if not effect.scene or not effect.scene.strip():
