@@ -131,7 +131,8 @@ class Keeper:
         self._last_player_input: str = ""  # original input that triggered combat
         self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
         from game.use_parser import UseParser
-        self.use_parser = UseParser()
+        self.use_parser = UseParser(
+            llm_call=lambda prompt, **kw: call_deepseek(prompt, **kw))
 
     def _material_catalogs(self):
         """统一资源层：从世界与玩家构建 use 可解析目录（持有物 + 已知法术）。"""
