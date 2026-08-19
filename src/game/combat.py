@@ -163,9 +163,11 @@ class CombatSystem:
     CombatResult.narrative is populated. Currently disabled — plan B (O9).
     """
 
-    def __init__(self, weapon_lib=None, llm_enhancement: bool = COMBAT_LLM_ENHANCEMENT):
+    def __init__(self, weapon_lib=None, llm_enhancement: bool = COMBAT_LLM_ENHANCEMENT,
+                 spell_lib=None):
         self.weapon_lib = weapon_lib
         self.llm_enhancement = llm_enhancement
+        self.spell_lib = spell_lib   # 统一资源层：法术库（cast_spell 动作）
 
     # ── Public API ──
 
@@ -767,6 +769,19 @@ class CombatSystem:
                 "attack_bonus": getattr(w, 'attack_bonus', 0),
                 "multi_attack": getattr(w, 'multi_attack', 1),
             })
+        # 施法动作（统一资源层：known_spells ∩ combat 类）
+        spell_lib = getattr(self, "spell_lib", None)
+        for sid in getattr(player, "known_spells", []):
+            sp = spell_lib.get(sid) if spell_lib else None
+            if sp is None or sp.category != "combat":
+                continue
+            skill_name = (sp.check or {}).get("skill", "POW")
+            actions.append({
+                "id": f"cast_{sid}", "label": f"施法:{sp.name}",
+                "skill": skill_name,
+                "value": self._skill_value(player, skill_name),
+                "damage": None,
+            })
         if environment_actions:
             for ea in environment_actions:
                 skill = ea.get("skill", "")
@@ -793,6 +808,62 @@ class CombatSystem:
                                target_iid: str, environment_actions: list[dict] | None = None) -> CombatAction:
         """Execute player's chosen action. Returns CombatAction record."""
         action = CombatAction(actor="player")
+
+        if action_id.startswith("cast_"):
+            from investigator.rules import opposed_check
+            spell = (self.spell_lib.get(action_id[5:])
+                     if getattr(self, "spell_lib", None) else None)
+            action.action_type = "cast_spell"
+            if spell is None or action_id[5:] not in getattr(player, "known_spells", []):
+                action.success = False
+                action.narrative = "你尚未习得该法术，施法失败。"
+                return action
+            cost = spell.cost or {}
+            need_mp = int(cost.get("mp", 0) or 0)
+            need_san = int(cost.get("san", 0) or 0)
+            if player.derived.MP < need_mp:
+                action.success = False
+                action.narrative = f"MP不足（需 {need_mp}，有 {player.derived.MP}），施法失败。"
+                return action
+            player.derived.MP -= need_mp
+            if need_san:
+                player.derived.SAN = max(0, player.derived.SAN - need_san)
+
+            target = None
+            for e in state.enemies:
+                if getattr(e, "instance_id", None) == target_iid and e.status != "dead":
+                    target = e
+                    break
+
+            check = spell.check or {"skill": "POW", "type": "regular"}
+            action.skill_name = check.get("skill", "POW")
+            action.skill_value = self._skill_value(player, action.skill_name)
+            if check.get("type") == "opposed" and target is not None:
+                def_val = (getattr(target, "attributes", None) or {}).get("POW", 50)
+                outcome, detail = opposed_check(action.skill_value or 50, def_val)
+                action.success = outcome == "win"
+                action.tier = "regular" if action.success else "failure"
+                action.narrative = f"{spell.name}！{detail}"
+            else:
+                action.roll = random.randint(1, 100)
+                action.success = action.roll <= (action.skill_value or 50)
+                action.tier = (self._get_tier(action.roll, action.skill_value)
+                               if action.success else "failure")
+                action.narrative = f"{spell.name}！D100={action.roll}/{action.skill_value}"
+
+            effect = spell.effect or {}
+            if action.success and effect.get("type") == "damage":
+                dmg = _roll_damage(effect.get("formula", "1D6"),
+                                   player.stats.STR, player.stats.CON)
+                if not effect.get("ignore_armor") and target is not None:
+                    dmg = _apply_armor(dmg, getattr(target, "armor", "") or "")
+                action.damage = dmg
+                action.narrative += f" 造成 {dmg} 点伤害。"
+                if target is not None:
+                    target.hp = max(0, target.hp - dmg)
+                    if target.hp <= 0:
+                        target.status = "dead"
+            return action
 
         if action_id == "dodge":
             action.action_type = "dodge"

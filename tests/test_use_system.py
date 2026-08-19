@@ -336,3 +336,58 @@ class TestExecuteMaterial:
         out = judge.execute_material(m, "开锁")
         assert not out.success and "纹丝不动" in out.message
         assert inv.item_manager.has("开锁工具"), "tool 语义失败不消耗，refund 兜底"
+
+
+class TestCombatCast:
+    def _combat(self):
+        from game.combat import CombatSystem
+        from library.spells import SpellLibrary
+        from investigator import Investigator
+        from investigator.rules import calc_derived
+        slib = SpellLibrary(); slib.load_core()
+        cs = CombatSystem(spell_lib=slib)
+        from investigator.models import Stats
+        inv = Investigator(name="法师", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        inv.derived.MP = 30
+        inv.known_spells = ["HEART_ARREST", "LIFE_DETECTION"]
+        return cs, slib, inv
+
+    def test_actions_include_known_combat_spells_only(self):
+        cs, slib, inv = self._combat()
+        acts = cs._get_player_actions(inv)
+        ids = [a["id"] for a in acts]
+        assert "cast_HEART_ARREST" in ids
+        assert "cast_LIFE_DETECTION" not in ids, "exploration 类不进战斗动作"
+
+    def test_cast_without_known_spell_fails(self):
+        import random
+        random.seed(3)
+        from types import SimpleNamespace
+        cs, slib, inv = self._combat()
+        inv.known_spells = []
+        state = SimpleNamespace(enemies=[], _player_dodging=False)
+        act = cs._resolve_player_action(state, inv, "cast_HEART_ARREST", "")
+        assert not act.success and "尚未习得" in act.narrative
+
+    def test_cast_deducts_mp(self):
+        import random
+        random.seed(5)
+        from types import SimpleNamespace
+        cs, slib, inv = self._combat()
+        enemy = SimpleNamespace(instance_id="E1", enemy_ref="深潜者", hp=10,
+                                status="hostile", attributes={"POW": 30}, armor="")
+        state = SimpleNamespace(enemies=[enemy], _player_dodging=False)
+        before = inv.derived.MP
+        cs._resolve_player_action(state, inv, "cast_HEART_ARREST", "E1")
+        assert inv.derived.MP == before - 12, "施法必须扣 MP（12）"
+
+    def test_mp_insufficient_fails_without_deduction(self):
+        from types import SimpleNamespace
+        cs, slib, inv = self._combat()
+        inv.derived.MP = 3
+        state = SimpleNamespace(enemies=[], _player_dodging=False)
+        act = cs._resolve_player_action(state, inv, "cast_HEART_ARREST", "")
+        assert not act.success and "MP不足" in act.narrative
+        assert inv.derived.MP == 3

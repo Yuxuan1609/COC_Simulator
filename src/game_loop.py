@@ -776,7 +776,7 @@ def continue_standoff(keeper, player_input: str) -> TurnResult:
         combat_narrative = auto_narrative
     elif combat_init and combat_init.enemies:
         from game.combat import CombatSystem
-        cs = CombatSystem()
+        cs = CombatSystem(spell_lib=getattr(world, "spell_library", None))
         cr = cs.run_combat(combat_init)
         combat_ran = True
         combat_narrative = cr.narrative or ""

@@ -926,7 +926,7 @@ async def combat_start(request: Request):
             "combat_completed_narrative": completed_narrative,
         }
 
-    cs = CombatSystem()
+    cs = CombatSystem(spell_lib=getattr(world, "spell_library", None))
     state = cs._init_combat(combat_init)
 
     session_id = str(uuid.uuid4())[:8]
@@ -972,7 +972,9 @@ async def combat_round(request: Request):
     target_ids = data.get("target_ids", [])
     player_extra = data.get("player_extra", "")
 
-    cs = CombatSystem()
+    _game = get_game()
+    _world = _game["keeper"].world if _game else None
+    cs = CombatSystem(spell_lib=getattr(_world, "spell_library", None))
     result = cs.run_single_round(combat_init, state, action_id, target_ids, player_extra)
 
     # Update session with mutated state
