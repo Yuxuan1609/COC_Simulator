@@ -257,10 +257,21 @@ STEP1A_SYSTEM = """你是一个优秀的 TRPG 模组结构化解析助手。
 
 
 
-def build_step1a_prompt(content: str, weapon_library_names: list[str] = None, enemy_library_names: list[str] = None, boss_library_names: list[str] = None) -> str:
+def build_step1a_prompt(content: str, weapon_library_names: list[str] = None, enemy_library_names: list[str] = None, boss_library_names: list[str] = None, item_names: list[str] = None, spell_names: list[str] = None) -> str:
     weapons_list = "\n".join(f"- {w}" for w in (weapon_library_names or []))
     enemies_list = "\n".join(f"- {e}" for e in (enemy_library_names or []))
     boss_list = "\n".join(f"- {b}" for b in (boss_library_names or []))
+    items_list = "\n".join(f"- {n}" for n in (item_names or []))
+    spells_list = "\n".join(f"- {n}" for n in (spell_names or []))
+    resource_block = ""
+    if items_list or spells_list:
+        resource_block = f"""
+## 可用物品库（item_gain / requirement 的 item: 可引用）
+{items_list if items_list else "（未提供物品库）"}
+
+## 可用法术库（@grant_spell 的 spell_ref 可引用 id 或名称）
+{spells_list if spells_list else "（未提供法术库）"}
+"""
     return f"""## 可用武器库
 {weapons_list if weapons_list else "（未提供武器库，weapons 返回空列表）"}
 
@@ -269,16 +280,16 @@ def build_step1a_prompt(content: str, weapon_library_names: list[str] = None, en
 
 ## Boss 库（boss_ref 必须从此列表中选择）
 {boss_list if boss_list else "（未提供Boss库，boss_encounters 返回空列表）"}
-
+{resource_block}
 模组文档：
 \"\"\"
 {content}
 \"\"\""""
 
 
-def parse_step1a(content: str, llm_call, weapon_library_names: list[str] = None, enemy_library_names: list[str] = None, boss_library_names: list[str] = None) -> dict:
+def parse_step1a(content: str, llm_call, weapon_library_names: list[str] = None, enemy_library_names: list[str] = None, boss_library_names: list[str] = None, item_names: list[str] = None, spell_names: list[str] = None) -> dict:
     """从模组文档提取结构化元信息（含敌人/武器/Boss约束）."""
-    prompt = build_step1a_prompt(content, weapon_library_names, enemy_library_names, boss_library_names)
+    prompt = build_step1a_prompt(content, weapon_library_names, enemy_library_names, boss_library_names, item_names, spell_names)
     return llm_call(prompt, system=STEP1A_SYSTEM)
 
 
@@ -530,6 +541,7 @@ STEP2B_COMBINED_SYSTEM = """你是一个 TRPG 模组解析助手，同时提取�
 **@标记精确语法（必须严格按此格式）:**
 @spawn_enemy(enemy_ref="敌人库名", scene="场景名", quantity=数量)
 @grant_weapon(weapon_ref="武器库名", scene="场景名", quantity=数量)
+@grant_spell(spell_ref="法术库id或名称") -- 授予玩家法术（加入 known_spells）
 @item_gain(item_name="物品名", quantity=数量)
 示例: ["@spawn_enemy(enemy_ref=\"Clicker\", scene=\"2号车厢\", quantity=3)", "@item_gain(item_name=\"手电筒\", quantity=1)"]
 每个 @标记 必须是独立的一条数组元素，格式严格为 @函数(参数=值, ...)
@@ -1378,6 +1390,8 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
       用法：在某个场景中生成敌人。enemy_ref 必须来自约束列表。
     @grant_weapon(weapon_ref="武器名", scene="场景名", quantity=1)
       用法：武器放置到场景中（scene 非空），或直接授予调查员（scene=""）。
+    @grant_spell(spell_ref="法术库id或名称")
+      用法：授予玩家法术（加入 known_spells）。spell_ref 必须来自法术库列表。
     @stat_change(stat_name="属性名", delta=-1, narrative="角色经历（可选）")
       用法：调查员属性变化——包括损失/恢复 HP、SAN、MP，或获得技能点。delta 正数为增加，负数为减少。stat_name 必须来自标准属性列表。
     @item_gain(item_name="物品名", quantity=1)

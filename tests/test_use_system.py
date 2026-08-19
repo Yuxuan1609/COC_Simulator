@@ -391,3 +391,29 @@ class TestCombatCast:
         act = cs._resolve_player_action(state, inv, "cast_HEART_ARREST", "")
         assert not act.success and "MP不足" in act.narrative
         assert inv.derived.MP == 3
+
+
+class TestPipelineAwareness:
+    def test_cross_validate_flags_unknown_spell_ref(self):
+        from module_designer.layered_pipeline import cross_validate_layers
+        from library.spells import SpellLibrary
+        slib = SpellLibrary(); slib.load_core()
+        l1 = {"scenes": {}}
+        l2 = {"scenes": {"s1": {"interactions": [{
+            "id": "I1", "entity_type": "interaction", "name": "读书",
+            "type": "None", "requirement": "", "trigger": "读书",
+            "result": "你学会了咒文。", "scene": "s1",
+            "side_effects": ['@grant_spell(spell_ref="不存在的法术")'],
+            "difficulty": "None"}], "auto_triggers": []}}, "events": []}
+        l3 = {"module_meta": {}}
+        report = cross_validate_layers(l1, l2, l3, None, None,
+                                       spell_lib=slib)
+        joined = " ".join(str(i) for i in report.issues)
+        assert "不存在的法术" in joined, "未知 spell_ref 必须进交叉校验报告"
+
+    def test_step1a_prompt_contains_libraries(self):
+        from module_designer.layered_parser import build_step1a_prompt
+        p = build_step1a_prompt("模组内容", ["小刀"], ["深潜者"], [],
+                                item_names=["急救包（consumable）：止血"],
+                                spell_names=["HEART_ARREST 心脏骤停（combat）：攥心"])
+        assert "急救包" in p and "HEART_ARREST" in p

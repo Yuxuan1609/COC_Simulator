@@ -100,16 +100,19 @@ def cross_validate_layers(
     l3_data: dict,
     weapon_lib=None,
     enemy_lib=None,
+    spell_lib=None,
+    item_lib=None,
 ) -> CrossRefReport:
     """
     跨层引用验证。
 
     检查项：
-    1. L1 perceptible.linked_interaction → L2 interactions[].name
-    2. L2 encounters[].enemy_ref → enemy library
-    3. L2 scene_weapons[].weapon_ref → weapon library
+    1. L1 perceptible.linked_interaction -> L2 interactions[].name
+    2. L2 encounters[].enemy_ref -> enemy library
+    3. L2 scene_weapons[].weapon_ref -> weapon library
     4. L3 logic_chains[].branches[].condition 中引用的 flag 格式
     5. L3 scene_intents 的 key 与 L1/L2 场景名一致性
+    6. L2 side_effects @grant_spell.spell_ref -> spell library（统一资源层）
     """
     report = CrossRefReport()
 
@@ -172,6 +175,25 @@ def cross_validate_layers(
                         )
 
     # ── 4. L3 scene_intents → L1/L2 场景 ──
+    # ── 统一资源层：L2 side_effects @grant_spell -> spell library ──
+    if spell_lib is not None:
+        import re as _re
+        for scene_name, scene_data in l2_data.get("scenes", {}).items():
+            entities = (scene_data.get("interactions", [])
+                        + scene_data.get("auto_triggers", []))
+            for ent in entities:
+                if not isinstance(ent, dict):
+                    continue
+                for se in (ent.get("side_effects") or []):
+                    m = _re.search(r'spell_ref="([^"]+)"', str(se))
+                    if m and not spell_lib.get(m.group(1)):
+                        report.add(
+                            "L2->Library",
+                            f"{scene_name}.{ent.get('id', '?')}.side_effects",
+                            f"@grant_spell 引用未知法术: {m.group(1)}",
+                            "warning",
+                        )
+
     l1_scenes = set(l1_data.keys())
     l2_scenes = set(l2_data.get("scenes", {}).keys())
     all_scenes = l1_scenes | l2_scenes
@@ -445,6 +467,8 @@ def run_pipeline(
     weapon_lib=None,
     enemy_lib=None,
     boss_lib=None,
+    item_lib=None,
+    spell_lib=None,
     max_retries: int = PIPELINE_MAX_RETRIES,
     verbose: bool = True,
     inject_l3_wr0: bool = INJECT_L3_WR0,
@@ -470,6 +494,8 @@ def run_pipeline(
     # Pre-extract library name lists for Step 1a (enemy/weapon constraint selection)
     weapon_names_step1 = []
     enemy_names_step1 = []
+    item_names_step1 = None
+    spell_names_step1 = None
     try:
         if weapon_lib:
             weapon_names_step1 = [w.name for w in weapon_lib.list_all()]
@@ -478,6 +504,18 @@ def run_pipeline(
     try:
         if enemy_lib:
             enemy_names_step1 = [e.name for e in enemy_lib.list_all()]
+    except Exception:
+        pass
+    try:
+        if item_lib:
+            item_names_step1 = [f"{i.name}（{i.category}）：{i.description[:30]}"
+                                for i in item_lib.list_all()]
+    except Exception:
+        pass
+    try:
+        if spell_lib:
+            spell_names_step1 = [f"{s.id} {s.name}（{s.category}）：{s.description[:30]}"
+                                 for s in spell_lib.list_all()]
     except Exception:
         pass
 
@@ -501,7 +539,8 @@ def run_pipeline(
         pass
 
     def _do_step1a():
-        return parse_step1a(content, llm_json, weapon_names_step1, enemy_names_step1, boss_names_step1)
+        return parse_step1a(content, llm_json, weapon_names_step1, enemy_names_step1, boss_names_step1,
+                            item_names=item_names_step1, spell_names=spell_names_step1)
     def _do_step1b():
         return parse_step1b(content, llm_text)
 

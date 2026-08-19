@@ -692,9 +692,16 @@ def _do_step1(runner: InteractiveRunner, verbose: bool = True):
     weapon_names_1a = [w.name for w in runner.wl.list_all()] if runner.wl else []
     enemy_names_1a = [e.name for e in runner.el.list_all()] if runner.el else []
     boss_names_1a = runner.bl.list_names() if runner.bl else []
+    item_names_1a = ([f"{i.name}（{i.category}）：{i.description[:30]}"
+                      for i in runner.ilib.list_all()]
+                     if getattr(runner, "ilib", None) else None)
+    spell_names_1a = ([f"{s.id} {s.name}（{s.category}）：{s.description[:30]}"
+                       for s in runner.slib.list_all()]
+                      if getattr(runner, "slib", None) else None)
 
     def _do_1a():
-        prompt = build_step1a_prompt(runner.content, weapon_names_1a, enemy_names_1a, boss_names_1a)
+        prompt = build_step1a_prompt(runner.content, weapon_names_1a, enemy_names_1a, boss_names_1a,
+                                     item_names=item_names_1a, spell_names=spell_names_1a)
         return runner.llm_json(prompt, system=STEP1A_SYSTEM, call_name="step1a_structured_extract")
 
     def _do_1b():
@@ -1089,6 +1096,8 @@ def _do_phase2_finalize(runner: InteractiveRunner, verbose: bool = True):
     cross_ref = cross_validate_layers(
         runner.l1_data, runner.l2_assembled, runner.l3_data,
         weapon_lib=runner.wl, enemy_lib=runner.el,
+        spell_lib=getattr(runner, "slib", None),
+        item_lib=getattr(runner, "ilib", None),
     )
 
     with open(runner.output_dir / "_validation_report.json", "w", encoding="utf-8") as f:
@@ -1163,6 +1172,12 @@ def run_interactive(config: PipelineConfig):
     runner.wl = wl
     runner.el = el
     runner.bl = bl
+    from library.items import ItemLibrary
+    from library.spells import SpellLibrary
+    ilib = ItemLibrary(); ilib.load_core(str(PROJECT_ROOT / "data/library/core/items.json"))
+    slib = SpellLibrary(); slib.load_core(str(PROJECT_ROOT / "data/library/core/spells.json"))
+    runner.ilib = ilib
+    runner.slib = slib
 
     # ── 加载文档 ──
     docx_path = PROJECT_ROOT / config.docx_path
@@ -1240,6 +1255,12 @@ def run_auto(config: PipelineConfig):
     runner.wl = wl
     runner.el = el
     runner.bl = bl
+    from library.items import ItemLibrary
+    from library.spells import SpellLibrary
+    ilib = ItemLibrary(); ilib.load_core(str(PROJECT_ROOT / "data/library/core/items.json"))
+    slib = SpellLibrary(); slib.load_core(str(PROJECT_ROOT / "data/library/core/spells.json"))
+    runner.ilib = ilib
+    runner.slib = slib
 
     # ── 加载文档 ──
     docx_path = PROJECT_ROOT / config.docx_path
