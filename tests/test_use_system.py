@@ -172,6 +172,7 @@ class TestUseParserDeterministic:
 
     def test_alias_and_fuzzy(self):
         up, cats, inv = self._setup()
+        inv.item_manager.add("威士忌", quantity=1)   # 别名"烈酒"命中 WHISKEY
         r = up.resolve("喝一口烈酒壮胆", cats)
         assert r is not None and r.material_id == "WHISKEY"
 
