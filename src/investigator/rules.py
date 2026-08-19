@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import math
+import random
 from typing import Dict, List, Tuple
 
 from utils import roll_d6
@@ -251,3 +252,41 @@ def calc_db(STR: int, SIZ: int) -> str:
     if total <= 164:
         return "+1D4"
     return "+1D6"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  对抗检定（统一资源层：法术/物品 opposed 检定，战斗/探索两侧复用）
+# ═══════════════════════════════════════════════════════════════
+
+_TIER_RANK = {"fumble": 0, "failure": 0, "regular": 1, "hard": 2, "extreme": 3}
+
+
+def _opposed_roll(value: int) -> tuple[int, str]:
+    roll = random.randint(1, 100)
+    if roll >= 96 and roll > value:
+        return roll, "fumble"
+    if roll == 1:
+        return roll, "extreme"
+    if roll <= max(1, value // 5):
+        return roll, "extreme"
+    if roll <= max(1, value // 2):
+        return roll, "hard"
+    if roll <= value:
+        return roll, "regular"
+    return roll, "failure"
+
+
+def opposed_check(att_value: int, def_value: int) -> tuple[str, str]:
+    """对抗检定：成功等级高者胜；同级比技能值；再同（或双败）为 tie。
+    返回 ("win"|"lose"|"tie", detail)。"""
+    a_roll, a_tier = _opposed_roll(att_value)
+    d_roll, d_tier = _opposed_roll(def_value)
+    detail = (f"对抗 D100: 攻方 {a_roll}/{att_value}({a_tier}) vs "
+              f"守方 {d_roll}/{def_value}({d_tier})")
+    if _TIER_RANK[a_tier] != _TIER_RANK[d_tier]:
+        return ("win" if _TIER_RANK[a_tier] > _TIER_RANK[d_tier] else "lose"), detail
+    if _TIER_RANK[a_tier] == 0:
+        return "tie", detail + "（双方均失败）"
+    if att_value != def_value:
+        return ("win" if att_value > def_value else "lose"), detail + "（同级比技能值）"
+    return "tie", detail + "（不分胜负）"

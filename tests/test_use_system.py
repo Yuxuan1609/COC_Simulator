@@ -220,3 +220,31 @@ class TestUseParserLLM:
         inv.item_manager.add("急救包", quantity=1)
         up = UseParser(llm_call=lambda p, **k: {"matched": False, "material": "", "reason": ""})
         assert up.resolve_llm("随便看看", [ItemCatalog(ilib, inv.item_manager)]) is None
+
+
+class TestOpposedCheck:
+    def test_outcomes_and_message(self):
+        import random
+        from investigator.rules import opposed_check
+        random.seed(7)
+        seen = set()
+        for _ in range(300):
+            outcome, detail = opposed_check(80, 30)
+            assert outcome in ("win", "lose", "tie")
+            assert "对抗 D100" in detail
+            seen.add(outcome)
+        assert "win" in seen, "80 vs 30 必然出现 win"
+
+    def test_equal_values_outcome_follows_tiers(self):
+        import random, re
+        from investigator.rules import opposed_check
+        random.seed(11)
+        rank = {"fumble": 0, "failure": 0, "regular": 1, "hard": 2, "extreme": 3}
+        for _ in range(50):
+            outcome, detail = opposed_check(50, 50)
+            m = re.search(r"攻方 \d+/50\((\w+)\) vs 守方 \d+/50\((\w+)\)", detail)
+            a, d = rank[m.group(1)], rank[m.group(2)]
+            if a == d:
+                assert outcome == "tie", f"同值同级应平局：{detail}"
+            else:
+                assert outcome == ("win" if a > d else "lose"), f"等级高者应胜：{detail}"
