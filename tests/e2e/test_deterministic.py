@@ -963,3 +963,35 @@ class TestGateFlavorExemption:
         r = run_turn(game, "哼着歌走两步")
         assert_player_turn_contract(r)
         assert _FakeDetector.called == 0, "flavor 永不触发 detector"
+
+
+class TestRequirementItem:  # 统一资源层：item: 硬条件
+    def _world(self):
+        inter = {
+            "id": "IT_DOOR", "entity_type": "interaction", "name": "开锁",
+            "scene": "room_a", "type": "None",
+            "requirement": "item:黄铜钥匙", "trigger": "用钥匙开门",
+            "result": "门开了。", "side_effects": [],
+            "difficulty": "None", "time_condition": [],
+        }
+        return make_world({"room_a": make_scene(interactions=[inter])}, "room_a")
+
+    def test_item_gate_blocks_and_allows(self, monkeypatch):
+        from game.agents.keeper import Keeper
+        from game_loop import run_turn
+        world = self._world()
+        inv = _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "interaction", "id": "IT_DOOR"}]])
+        game = make_game(keeper)
+
+        r1 = run_turn(game, "用钥匙开门")     # 无钥匙
+        assert_player_turn_contract(r1)
+        assert not world.is_entity_completed("IT_DOOR")
+        assert "黄铜钥匙" in r1.brief, "无钥匙时必须给出需要物品的失败信息"
+
+        inv.item_manager.add("黄铜钥匙", quantity=1)
+        r2 = run_turn(game, "用钥匙开门")     # 有钥匙
+        assert_player_turn_contract(r2)
+        assert world.is_entity_completed("IT_DOOR")

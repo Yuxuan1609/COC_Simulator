@@ -449,6 +449,18 @@ class Judge:
         if not req:
             return True, ""
 
+        # 统一资源层：item:物品名 硬条件（持有检查）先行短路
+        _item_toks = _re.findall(r"item[:：]([^&|（）()\s]+)", req)
+        if _item_toks:
+            p = self.world.player
+            for tok in _item_toks:
+                tok = tok.strip()
+                if not (p and getattr(p, 'item_manager', None) and p.item_manager.has(tok)):
+                    return False, f"需要物品：{tok}"
+            req = _re.sub(r"item[:：][^&|（）()\s]+", "", req).strip(" &|ANDORandor")
+            if not req:
+                return True, ""
+
         # Step 0: check for flag-based requirements (flag:xxx)
         if req.startswith("flag:"):
             flag_name = req[5:].strip()
