@@ -57,7 +57,7 @@ def calc_derived(stats: Stats, age: int = 20, cthulhu_mythos: int = 0) -> Derive
     dodge = math.floor(stats.DEX / 2)
     db, build = _calc_db_build(stats.STR + stats.CON // 2)
     return DerivedStats(
-        HP=hp, HP_MAX=hp, MP=mp, SAN=san, SAN_MAX=san_max,
+        HP=hp, HP_MAX=hp, MP=mp, MP_MAX=mp, SAN=san, SAN_MAX=san_max,
         DB=db, BUILD=build, DODGE=dodge,
     )
 

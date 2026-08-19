@@ -29,6 +29,7 @@ class DerivedStats:
     HP: int = 0          # 当前生命值
     HP_MAX: int = 0      # 最大生命值 = CON//3
     MP: int = 0          # 魔法值 = floor(POW/5)
+    MP_MAX: int = 0      # 魔法值上限 = floor(POW/5)
     SAN: int = 0         # 当前理智 = POW (初始)
     SAN_MAX: int = 99    # 最大理智 = 99 - 克苏鲁神话值
     DB: str = "0"        # 伤害加值
@@ -142,6 +143,13 @@ class ItemManager:
             mgr.add(name, description=idata.get("description", ""),
                    quantity=idata.get("quantity", 1))
         return mgr
+
+
+def _carry_current(current: int, old_max: int, new_max: int) -> int:
+    """上限变化时携带当前值：涨上限当前值同步涨差值，降上限 clamp。"""
+    if new_max >= old_max:
+        return min(current + (new_max - old_max), new_max)
+    return min(current, new_max)
 
 
 class Investigator:
@@ -301,10 +309,15 @@ class Investigator:
     # ── 修改（供未来游戏循环使用）──
 
     def _recalc_derived(self):
-        """级联更新衍生属性。规则函数从 rules 模块导入，避免循环依赖。"""
+        """级联更新衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）保留并 clamp。"""
         from investigator.rules import calc_derived
         cthulhu = self.get_skill_value("克苏鲁神话")
-        self.derived = calc_derived(self.stats, self.age, cthulhu)
+        old = self.derived
+        new = calc_derived(self.stats, self.age, cthulhu)
+        new.HP = _carry_current(old.HP, old.HP_MAX, new.HP_MAX)
+        new.MP = _carry_current(old.MP, getattr(old, "MP_MAX", old.MP), new.MP_MAX)
+        new.SAN = min(old.SAN, new.SAN_MAX)   # SAN 当前值永不重置
+        self.derived = new
 
     def modify_stat(self, stat_name: str, delta) -> tuple[int, str]:
         """Modify a core stat value. delta can be int or dice formula string like \"-1d4\".
@@ -359,12 +372,15 @@ class Investigator:
 
             # Recalculate derived stats if needed
             if upper == "CON":
+                _old_max = self.derived.HP_MAX
                 self.derived.HP_MAX = max(1, stats.CON // 3)
-                self.derived.HP = min(self.derived.HP, self.derived.HP_MAX)
+                self.derived.HP = _carry_current(self.derived.HP, _old_max, self.derived.HP_MAX)
                 detail += f", HP={self.derived.HP}/{self.derived.HP_MAX}"
             if upper == "POW":
-                self.derived.MP = math.floor(stats.POW / 5)
-                detail += f", MP={self.derived.MP}"
+                _old_max = getattr(self.derived, "MP_MAX", self.derived.MP)
+                self.derived.MP_MAX = max(0, math.floor(stats.POW / 5))
+                self.derived.MP = _carry_current(self.derived.MP, _old_max, self.derived.MP_MAX)
+                detail += f", MP={self.derived.MP}/{self.derived.MP_MAX}"
             if upper == "LUCK":
                 # LUCK can't go above 99
                 if new_val > 99:

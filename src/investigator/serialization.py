@@ -60,7 +60,7 @@ def to_dict(inv: Investigator) -> dict:
         },
         "derived": {
             "HP": inv.derived.HP, "HP_MAX": inv.derived.HP_MAX,
-            "MP": inv.derived.MP,
+            "MP": inv.derived.MP, "MP_MAX": inv.derived.MP_MAX,
             "SAN": inv.derived.SAN, "SAN_MAX": inv.derived.SAN_MAX,
             "DB": inv.derived.DB,
             "BUILD": inv.derived.BUILD, "DODGE": inv.derived.DODGE,
@@ -129,6 +129,7 @@ def from_dict(data: dict) -> Investigator:
     derived = DerivedStats(
         HP=derived_data.get("HP", 0), HP_MAX=derived_data.get("HP_MAX", derived_data.get("HP", 0)),
         MP=derived_data.get("MP", 0),
+        MP_MAX=derived_data.get("MP_MAX", derived_data.get("MP", 0)),
         SAN=derived_data.get("SAN", 0), SAN_MAX=derived_data.get("SAN_MAX", 99),
         DB=derived_data.get("DB", "0"),
         BUILD=derived_data.get("BUILD", 0), DODGE=derived_data.get("DODGE", 0),
