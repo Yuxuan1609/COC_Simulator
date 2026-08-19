@@ -790,3 +790,176 @@ class TestLuckDeclare:  # U9: LUCK 输入声明式消耗
         run_turn(game, "烧10点幸运")
         assert inv.stats.LUCK == 3, "余额不足不得扣减"
         assert any("幸运" in w for w in keeper._warnings)
+
+
+class TestUseTurnFlow:  # 统一资源层：use 大类接入
+    def _setup(self, monkeypatch):
+        from game.agents.keeper import Keeper
+        from library.items import ItemLibrary
+        from library.spells import SpellLibrary
+        from investigator import Investigator
+        from investigator.rules import calc_derived
+        ilib = ItemLibrary(); ilib.load_core()
+        slib = SpellLibrary(); slib.load_core()
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           item_library=ilib, spell_library=slib)
+        from investigator.models import Stats
+        inv = Investigator(name="测试员", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        inv.derived.MP = 20
+        world.set_player(inv)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+        return world, inv, keeper, game
+
+    def test_preparse_shortcut_item_use(self, monkeypatch):
+        from game_loop import run_turn
+        world, inv, keeper, game = self._setup(monkeypatch)
+        inv.item_manager.add("急救包", quantity=1)
+        inv.derived.HP = 3
+        r = run_turn(game, "我使用急救包")
+        assert_player_turn_contract(r)
+        assert not inv.item_manager.get("急救包") or \
+            inv.item_manager.get("急救包").quantity == 0
+        assert inv.derived.HP > 3
+        assert r.status.name == "COMPLETED"
+
+    def test_parse_use_entry_routes_to_material(self, monkeypatch):
+        """pre-parse 确定性未命中（无动词直配），parse 返回 use 类型 -> LLM 兜底仍可解析。"""
+        from game_loop import run_turn
+        world, inv, keeper, game = self._setup(monkeypatch)
+        inv.item_manager.add("急救包", quantity=1)
+        keeper._parse = lambda raw: [{"type": "use", "text": raw}]
+        def fake_llm(prompt, **kw):
+            import json as _json
+            return _json.dumps({"matched": True, "material": "急救包", "reason": ""},
+                               ensure_ascii=False)
+        keeper.use_parser.llm_call = fake_llm
+        r = run_turn(game, "急救的那个包，快用")
+        assert_player_turn_contract(r)
+        assert not inv.item_manager.get("急救包") or \
+            inv.item_manager.get("急救包").quantity == 0, \
+            "LLM 兜底解析的 use 必须执行（物品被消耗）"
+
+    def test_unresolved_use_becomes_creative(self, monkeypatch):
+        from game_loop import run_turn
+        world, inv, keeper, game = self._setup(monkeypatch)
+        keeper._parse = lambda raw: [{"type": "use", "text": "用不知名的古怪装置"}]
+        keeper.use_parser.llm_call = lambda p, **k: {"matched": False, "material": "", "reason": ""}
+
+        class _FakeAuthor:
+            time_pressure = None
+            calls = 0
+            def handle_request(self, request, turn_number=0):
+                _FakeAuthor.calls += 1
+                from game.messages import ModulePatch
+                return ModulePatch(entities=[], scene_descriptions=[], justification="x")
+
+        game["author"] = _FakeAuthor()
+        from helpers import StubNarrator
+        game["narrator"] = StubNarrator()
+        r = run_turn(game, "用不知名的古怪装置")
+        assert_player_turn_contract(r)
+        assert _FakeAuthor.calls == 1, "未命中素材的 use 应转 creative 升 Author"
+
+
+class TestGateFlavorExemption:
+    """门控 flavor 豁免：氛围 AT 捎带不挡 creative；实质性动作仍硬挡。"""
+
+    def _world_with_at(self):
+        at = {
+            "id": "AT_AMBIENT", "entity_type": "auto_trigger", "type": "无",
+            "name": "灯泡闪烁", "requirement": "", "trigger": "进入房间",
+            "result": "灯泡滋滋作响。", "side_effects": [],
+            "graded_result": None, "difficulty": "None",
+            "scene": "room_a", "time_condition": [],
+        }
+        return make_world({"room_a": make_scene(auto_triggers=[at])}, "room_a")
+
+    def test_at_plus_creative_still_escalates(self, monkeypatch):
+        from game.agents.keeper import Keeper
+
+        class _FakeDetector:
+            called = 0
+            def detect(self, text, snapshot):
+                _FakeDetector.called += 1
+                class R:
+                    needs_author = False; intent = ""; reasoning = ""
+                return R()
+        world = self._world_with_at()
+        _p = _player(world)
+        keeper = Keeper(world)
+        keeper.intent_detector = _FakeDetector()
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "auto_trigger", "id": "AT_AMBIENT"},
+                                        {"type": "other", "impact": "creative",
+                                         "text": "在墙上刻字求救"}]])
+        class _FakeAuthor:
+            time_pressure = None
+        from helpers import StubNarrator
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": _FakeAuthor()}
+        from game_loop import run_turn
+        r = run_turn(game, "在墙上刻字求救")
+        assert_player_turn_contract(r)
+        assert _FakeDetector.called == 1, "AT 捎带 + creative：实质性动作缺席，detector 必须启动（escalation C/E 修复）"
+
+    def test_interaction_plus_creative_suppressed(self, monkeypatch):
+        from game.agents.keeper import Keeper
+        inter = {
+            "id": "IT_KEY", "entity_type": "interaction", "name": "翻砖",
+            "scene": "room_a", "type": "None", "requirement": "",
+            "trigger": "翻开松砖", "result": "找到钥匙。",
+            "side_effects": [], "difficulty": "None", "time_condition": [],
+        }
+        world = make_world({"room_a": make_scene(interactions=[inter])}, "room_a")
+        _p = _player(world)
+        keeper = Keeper(world)
+
+        class _FakeDetector:
+            called = 0
+            def detect(self, text, snapshot):
+                _FakeDetector.called += 1
+                class R:
+                    needs_author = False; intent = ""; reasoning = ""
+                return R()
+        keeper.intent_detector = _FakeDetector()
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "interaction", "id": "IT_KEY"},
+                                        {"type": "other", "impact": "creative",
+                                         "text": "顺便大喊救命"}]])
+        class _FakeAuthor:
+            time_pressure = None
+        from helpers import StubNarrator
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": _FakeAuthor()}
+        from game_loop import run_turn
+        r = run_turn(game, "翻砖，顺便大喊救命")
+        assert_player_turn_contract(r)
+        assert _FakeDetector.called == 0, "实质性实体 + creative：维持硬挡（防递归丢帧）"
+
+    def test_flavor_never_triggers_detector(self, monkeypatch):
+        from game.agents.keeper import Keeper
+        world = self._world_with_at()
+        _p = _player(world)
+        keeper = Keeper(world)
+
+        class _FakeDetector:
+            called = 0
+            def detect(self, text, snapshot):
+                _FakeDetector.called += 1
+                class R:
+                    needs_author = False; intent = ""; reasoning = ""
+                return R()
+        keeper.intent_detector = _FakeDetector()
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "other", "impact": "flavor",
+                                         "text": "哼着歌"}]])
+        class _FakeAuthor:
+            time_pressure = None
+        from helpers import StubNarrator
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": _FakeAuthor()}
+        from game_loop import run_turn
+        r = run_turn(game, "哼着歌走两步")
+        assert_player_turn_contract(r)
+        assert _FakeDetector.called == 0, "flavor 永不触发 detector"

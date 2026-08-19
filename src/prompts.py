@@ -534,11 +534,13 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
     {{"type": "npc_interact", "npc_name": "京山 人吉"}},
     {{"type": "move", "target": "7号车厢"}},
     {{"type": "search"}},
-    {{"type": "other", "text": "唱了一首歌"}}
+    {{"type": "use", "text": "使用背包里的急救包"}},
+    {{"type": "other", "text": "唱了一首歌", "impact": "flavor"}},
+    {{"type": "other", "text": "用刀在墙上刻字", "impact": "creative"}}
   ]
 }}
 """
-    _show_prompt("Keeper Parse", prompt, system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。\n\n你的任务是为玩家输入匹配结构化的游戏内容。\n实体分为四类：[INTERACT]（场景交互）、[AUTO_TRIGGER]（自动触发）、[NPC_INTERACT]/[NPC_AT]（NPC 专属实体）、[EVENT]（全局事件）。\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other/npc_interact)。\n只考虑可触发的entity，包括场景实体、NPC 专属实体和全局事件。\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。\n\n行为优先级：\n- 有明确对应实体时优先返回实体\n- 玩家行为泛指搜索整个场景时返回 search，玩家想要明确移动到另一个场景时返回 move\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问/请求帮助时，返回 npc_interact，npc_name 填 NPC 名称\n- 其他情况下返回 other\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作，动作应该按照常识理解\n- auto_trigger 必须在 actions 列表最前面\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。\n直接输出 JSON，不要额外文字。\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}")
+    _show_prompt("Keeper Parse", prompt, system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。\n\n你的任务是为玩家输入匹配结构化的游戏内容。\n实体分为四类：[INTERACT]（场景交互）、[AUTO_TRIGGER]（自动触发）、[NPC_INTERACT]/[NPC_AT]（NPC 专属实体）、[EVENT]（全局事件）。\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/use/other/npc_interact)。\n只考虑可触发的entity，包括场景实体、NPC 专属实体和全局事件。\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。\n\n行为优先级：\n- 有明确对应实体时优先返回实体\n- 玩家使用/服用/施放/念诵背包物品或已知法术时返回 use，text 填原文（不要自己猜物品名）\n- 玩家行为泛指搜索整个场景时返回 search，想要移动到另一场景时返回 move\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问时返回 npc_interact，npc_name 填 NPC 名称\n- 其他情况下返回 other：纯氛围/感慨/感知描述（唱歌、观察、自言自语）用 impact=\"flavor\"；尝试新行为、改变环境、创造性地使用周围事物用 impact=\"creative\"\n- 与玩家行为无关的氛围 auto_trigger 不要捎带\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作\n- auto_trigger 必须在 actions 列表最前面\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。\n直接输出 JSON，不要额外文字。\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}")
     return prompt
 
 

@@ -130,6 +130,20 @@ class Keeper:
         self._last_outcomes: list = []  # stored outcomes for combat completion replay
         self._last_player_input: str = ""  # original input that triggered combat
         self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
+        from game.use_parser import UseParser
+        self.use_parser = UseParser()
+
+    def _material_catalogs(self):
+        """统一资源层：从世界与玩家构建 use 可解析目录（持有物 + 已知法术）。"""
+        from game.use_parser import ItemCatalog, SpellCatalog
+        cats = []
+        p = self.world.player
+        if p is not None:
+            if getattr(self.world, "item_library", None):
+                cats.append(ItemCatalog(self.world.item_library, p.item_manager))
+            if getattr(self.world, "spell_library", None) and getattr(p, "known_spells", None):
+                cats.append(SpellCatalog(self.world.spell_library, p.known_spells))
+        return cats
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
         """Execute full turn: parse → judge → enrich → curate."""
@@ -188,7 +202,13 @@ class Keeper:
 
         # ── Pre-parse shortcut: move/search bypass LLM parse entirely ──
         pre_result = None
-        if at == "move":
+        # UseParser 确定性短路（统一资源层）：使用谓词+素材名命中 -> use 动作，跳过 LLM parse
+        use_hit = None
+        if self.use_parser:
+            use_hit = self.use_parser.resolve(raw, self._material_catalogs())
+        if use_hit:
+            parse_result = [{"type": "use", "material": use_hit}]
+        elif at == "move":
             target = (turn_input.action_target or "").strip()
             if not target:
                 return TurnResult(status=TurnStatus.COMPLETED,
@@ -280,19 +300,36 @@ class Keeper:
                                   npc_events=list(self._npc_events))
             parse_result = non_npc_entries
 
-        # Launch IntentDetector early if there are "other" entries.
-        # 硬性门控：本帧已有任何被覆盖的动作（实体/移动/搜索/NPC 对话）时不启动升级——
-        # 升级会导致 Author 递归丢弃外帧结果，而已执行内容的标记/状态已写入世界，
-        # 形成"状态进了世界、结果没出帧"的不一致（IT_SEARCH 钥匙丢失事件）。
-        # 纯 other 回合外帧无执行内容，递归无损。
+        # use 条目归一：LLM 粗识别但确定性层未命中 -> LLM 兜底；仍未命中转 other/creative
+        _normalized = []
+        for e in parse_result:
+            if e.get("type") == "use" and not e.get("material"):
+                _m = (self.use_parser.resolve_llm(raw, self._material_catalogs())
+                      if self.use_parser else None)
+                if _m is not None:
+                    _normalized.append({"type": "use", "material": _m})
+                else:
+                    _normalized.append({"type": "other", "impact": "creative",
+                                        "text": e.get("text") or raw})
+            else:
+                _normalized.append(e)
+        parse_result = _normalized
+
+        # Launch IntentDetector early if there are creative "other" entries.
+        # 门控（flavor 豁免，2026-08-18 spec §1.2 细化）：
+        # - other/impact=flavor：永不触发 detector（氛围动作 enrich 消化）
+        # - other/impact=creative：仅当帧内无【实质性动作】时升级--
+        #   实质性 = interaction/event/move/search/use/NPC 对话（防递归丢帧，硬挡保留）；
+        #   仅氛围 auto_trigger 捎带（如 AT_AMBIENT）不算实质覆盖（escalation C/E 修复）
         other_entries = [e for e in parse_result if e.get("type") == "other"]
-        _COVERED_TYPES = ("auto_trigger", "interaction", "event", "move", "search")
-        has_covered = bool(npc_interact_entries) or any(
-            e.get("type") in _COVERED_TYPES for e in parse_result)
+        other_creative = [e for e in other_entries if e.get("impact") != "flavor"]
+        _SUBSTANTIVE_TYPES = ("interaction", "event", "move", "search", "use")
+        has_substantive = bool(npc_interact_entries) or any(
+            e.get("type") in _SUBSTANTIVE_TYPES for e in parse_result)
         detect_future = None
         executor = None
-        if other_entries and author and not has_covered:
-            other_text = "; ".join(e.get("text", "") for e in other_entries)
+        if other_creative and author and not has_substantive:
+            other_text = "; ".join(e.get("text", "") for e in other_creative)
             world_snapshot = self._build_world_snapshot()
             executor = ThreadPoolExecutor(max_workers=1)
             detect_future = executor.submit(
@@ -346,6 +383,19 @@ class Keeper:
                     "success": outcome.success,
                     "skill_tier": outcome.skill_tier,
                 })
+            elif entry_type == "use":
+                material = entry.get("material")
+                if material is not None:
+                    outcome = self.judge.execute_material(material, raw)
+                    all_outcomes.append(outcome)
+                    enrich_input.entities.append({
+                        "entity_type": "material",
+                        "id": material.material_id,
+                        "name": material.name,
+                        "result": outcome.message,
+                        "success": outcome.success,
+                        "skill_tier": outcome.skill_tier,
+                    })
             elif entry_type == "move":
                 target = entry.get("target", "")
                 origin = self.world.current_location

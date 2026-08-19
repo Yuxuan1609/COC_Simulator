@@ -40,6 +40,8 @@ parse 将 other 拆为两个子类后，`_COVERED_TYPES` 混合帧门控（keepe
 - 帧内 **实体 + other_flavor** 混合 -> **不挡**（flavor 不代表玩家意图已被实体覆盖，ambient AT 捎带不再绑架升级）
 - 帧内 **实体 + other_creative** 混合 -> **维持硬挡**（防递归丢帧原逻辑保留）
 
+**细化（2026-08-18 plan 定稿）**："实体分两档"--实质性动作（interaction/event/move/search/use/NPC 对话）在场时 creative 仍硬挡（防递归丢帧）；仅氛围 auto_trigger 捎带（如 AT_AMBIENT）不算实质覆盖，creative 照常升级（escalation C/E 修复点）。flavor 永不触发 IntentDetector。
+
 ## 2. 统一资源层
 
 ### 2.1 库文件
