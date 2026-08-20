@@ -233,7 +233,7 @@ LLM 提取 → 与现有库去重 → 展示新条目 → 手动确认 → 写�
 | `@consume_item(item_name="", quantity=1)` | 消耗物品 | ItemManager.remove() |
 | `@npc_state_change(npc_name="", new_state="")` | NPC 状态变化 | NPCManager.set_state() |
 | `@npc_follow(npc_name="", follow=true/false)` | NPC 跟随/离开 | NPCManager.set_following() |
-| `@grant_spell(spell_ref="")` | 获得法术（U9 预留） | Investigator.known_spells |
+| `@grant_spell(spell_ref="")` | 获得法术（经法术库校验，不重复授予；2026-08-19 统一资源层正式启用） | Investigator.known_spells |
 
 ---
 
@@ -342,7 +342,8 @@ data/
 - ScenarioWorld: `docs/superpowers/specs/2026-05-22-world-refactor-design.md`
 - NPC-Entity 分离: `docs/superpowers/specs/2026-05-25-npc-entity-separation-design.md`
 - 前端 v2: `docs/superpowers/specs/2026-05-25-frontend-redesign-design.md`
-- 法术体系: `docs/superpowers/specs/2026-05-27-magic-system-design.md`
+- 法术体系: `docs/superpowers/specs/2026-05-27-magic-system-design.md`（已被统一资源层 spec 取代）
+- 统一资源层（U6 法术 + U8 物品 + parse 规范化）: `docs/superpowers/specs/2026-08-18-unified-resource-impact-design.md`
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
 - Packing: `docs/superpowers/specs/2026-05-23-packing-design.md`
 - 维护文档（函数级）: `MAINTENANCE.md`
@@ -357,9 +358,9 @@ data/
 | U9 | **技能系统重修** | 技术难度低但设计难，COC7 规则技能体系本身抽象，不必照搬（✅ 2026-08-15：20 技能/8 属性配置化 + 归一单点 + LUCK 声明消耗） | 高 |
 | U3 | LLM Provider 抽象 | 支持 OpenAI/Anthropic 多 provider（等功能层改完再做） | 中 |
 | U4 | 跨模组持久化 | 调查员永久化、战役系统（低难度，依赖技能系统重修） | 中 |
-| U6 | 法术体系 | SpellJudge + @grant_spell（低难度，等世界状态系统+技能系统重修再做） | 中 |
+| U6 | 法术体系 | （✅ 2026-08-19 统一资源层：法术库/known_spells/@grant_spell/战斗施法/UseParser use 大类） | 中 |
 | U7 | LLM 调用成本优化 | 各步骤最低配置（低难度，等功能层改完再做） | 中 |
-| U8 | 物品系统升级 | 低难度 + 低收益 | 中低 |
+| U8 | 物品系统升级 | （✅ 2026-08-19 统一资源层：物品库 impact 分级/use_semantic/requirement item: 条件） | 中低 |
 | U1 | NPC 系统升级 | 态度、跟随系统更主动化（等另一个项目技术迁移） | 低 |
 | U10 | 自动化测试体系 | 已完成基本版，剩余部分等另一个项目技术迁移 | 低 |
 | U5 | 多人模式 (Hotseat) | 同机多调查员，完全改变现有体系，系统完善前不考虑 | 极低 |

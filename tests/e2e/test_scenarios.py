@@ -488,3 +488,72 @@ class TestS11AutoTriggerFire:
                 "宽断言：进入 room_b 后 2 回合内 AT_SPAWN 应点火并生成测试巡游者（未命中则 retry）"
         finally:
             stop()
+
+
+class TestS12SpellPerception:  # 统一资源层：L0 感知法术
+    @retry_once
+    def test_l0_spell_perception(self):
+        """L0 感知法术：UseParser 命中 -> 扣 MP 叙事，真实 narrator。"""
+        from library.spells import SpellLibrary
+        from investigator import Investigator
+        from investigator.models import Stats
+        from investigator.rules import calc_derived
+        slib = SpellLibrary(); slib.load_core()
+        world = make_world({"room_a": make_scene()}, "room_a", spell_library=slib)
+        inv = Investigator(name="测试员", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        world.set_player(inv)
+        inv.known_spells = ["LIFE_DETECTION"]
+        game = _real_game(world, _l1("room_a"))
+        from game_loop import run_turn
+        r = run_turn(game, "我闭上眼睛，念诵生命觉察的咒文，感知周围的活物")
+        assert_player_turn_contract(r)
+        assert r.status.name == "COMPLETED"
+        assert inv.derived.MP == 9, "L0 感知法术扣 3 MP（12-3）"
+
+
+class TestS13ItemUse:  # 统一资源层：L1 物品消耗
+    @retry_once
+    def test_l1_first_aid(self):
+        from library.items import ItemLibrary
+        from investigator import Investigator
+        from investigator.models import Stats
+        from investigator.rules import calc_derived
+        ilib = ItemLibrary(); ilib.load_core()
+        world = make_world({"room_a": make_scene()}, "room_a", item_library=ilib)
+        inv = Investigator(name="测试员", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        world.set_player(inv)
+        inv.item_manager.add("急救包", quantity=1)
+        inv.derived.HP = max(1, inv.derived.HP_MAX - 5)
+        game = _real_game(world, _l1("room_a"))
+        from game_loop import run_turn
+        r = run_turn(game, "我使用急救包，给自己处理伤口")
+        assert_player_turn_contract(r)
+        assert inv.item_manager.get("急救包") is None \
+            or inv.item_manager.get("急救包").quantity == 0
+        assert inv.derived.HP > max(1, inv.derived.HP_MAX - 5), "急救包回血生效"
+
+
+class TestS14SpellAuthor:  # 统一资源层：库外素材 -> creative -> Author
+    @retry_once
+    def test_unknown_material_escalates(self):
+        from game.agents.author import Author
+        from game.agents.keeper import Keeper
+        world = make_world({"room_a": make_scene()}, "room_a")
+        _player(world)
+        keeper = Keeper(world)
+        keeper.narrator_l1 = _l1("room_a")
+        author = Author({"module_meta": {"name": "t"}, "scene_intents": {},
+                         "ending_conditions": []})
+        from helpers import StubNarrator
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": author}
+        # parse 粗识别 use 但素材未命中（确定性层无该物品/法术）
+        keeper._parse = lambda raw: [{"type": "use", "text": raw}]
+        keeper.use_parser.llm_call = lambda p, **k: {"matched": False, "material": "", "reason": ""}
+        from game_loop import run_turn
+        r = run_turn(game, "我举起那台古怪的黄铜装置，按下了侧面的按钮")
+        assert_player_turn_contract(r)
+        # Author 通路真实 LLM：只断言回合完整，不硬断言 patch 内容

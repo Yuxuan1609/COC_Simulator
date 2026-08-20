@@ -338,5 +338,47 @@
 - judge 缺机器事实约束时可能捏造证据（已用谓词结果注入缓解）；rubric 覆盖谓词外事件时仍有空间——打磨 rubric 时注意
 - `test_combat_smoke.py` 疑似骰子依赖 flaky（一次 >5min 长循环），未深究
 - 玩家 LLM 波动性：outcome_goals 类目标偶有不达（如低语结局拖延至 max_turns），不阻塞 verdict，重跑即可
-- escalation case E 波动新机制（2026-08-14 实连观测）：parse 当前倾向给"想走进镜子"类输入附带 AT_AMBIENT auto_trigger，触发 2a225b6 硬性门控（帧内有 covered 动作不升级 Author）→ 3 连跑均被挡；case C 同机制但重跑可过。非 U2 编年史引入（parse prompt 未变），是否放宽 ambient AT 门控待拍板
+- escalation case E 波动新机制（2026-08-14 实连观测）：parse 当前倾向给"想走进镜子"类输入附带 AT_AMBIENT auto_trigger，触发 2a225b6 硬性门控（帧内有 covered 动作不升级 Author）→ 3 连跑均被挡；case C 同机制但重跑可过。非 U2 编年史引入（parse prompt 未变），是否放宽 ambient AT 门控待拍板。**2026-08-18 复测更新**：C 亦连续 2 跑被挡（pytest + 带日志手跑各 1），"重跑可过"不再成立；定性为纯行为层问题（门控逻辑本身按设计工作），仅备注待拍板，本次不动代码。**2026-08-19 收口**：统一资源层门控 flavor 豁免（实质性动作硬挡 + 氛围 AT 不算实质覆盖）落地后 C/E 双双恢复通过（手跑 + pytest），本条关闭
 - frontend/ 本轮已随契约迁移更新（pending_interaction 展示、开场白修复），但按约定前端不排期深入测试
+- **武器库技能名归一缺口（2026-08-19 核查发现，待统一修）**：`data/library/core/weapons.json` 的 手枪(:47)/步枪(:89)/霰弹枪(:110) 不在 `skill_config.json` legacy_map -> 玩家持枪攻击 `get_skill` 归一失败，combat.py:789 兜底 STR/2（枪械技能值被旁路）+ 每次攻击刷"未掌握技能[手枪]"warning。修法：legacy_map 追加 `"手枪/步枪/霰弹枪/冲锋枪/机枪": "枪械"`。U9 管线侧其余已核查同步（落库归一/stat_names/skill_names/敌库 SIZ 自洽/POW对抗等为敌方标签无害）
+
+---
+
+## 工作汇总（2026-08-18）
+
+### 已完成
+
+**real_llm 复测 + 文档巡检（session 死机后核对）**
+- 测试：默认套件 139 passed；real_llm 14/16--escalation C/E 挂，同 08-14 已知门控机制（见已知观察末条），带日志复跑 2 次均稳定复现；S1-S11 全过（S5 首跑失败 retry_once 内消化）
+- 测试基建缺口（未修）：escalation_real 在 pytest 下 `log_dir=""` 全部诊断日志 no-op（`tests/e2e/test_escalation_real.py:184`），失败无现场，需 `python tests/e2e/test_escalation_real.py C E` 手跑
+- MAINTENANCE.md 行号巡检刷新：keeper（+17，中段漂移 +38~+110）/combat（+6）/models（+3）/layered_parser（+14）/layered_pipeline（-7）/scenario_core（尾部 +6，文件头 1643->1712）/run_pipeline（尾部 -4）对齐实际快照；逐函数核对**内容条目无缺漏**；**llm_player.py 有内容缺漏**：`_collect_mech_line`（@138，场景 runner 机制时间线，08-10 c030a25 引入）未入档、`_log_player_call` 移为嵌套函数未标注、文件头 382->482；prompts.py 尾部 +6 / game_loop init_game +1 一并修正；character.py/rules.py/serialization.py/utils.py/game.py 原本全准
+
+---
+
+## 工作汇总（2026-08-19）
+
+### 已完成
+
+**统一资源层落地（U6 法术 + U8 物品 + parse 规范化）**--spec/plan 见 docs/superpowers/{specs,plans}/2026-08-18-unified-resource-impact*，14 任务全 TDD，16 个提交：
+
+- **前置修复**：DerivedStats 拆 MP_MAX；`_recalc_derived`/`modify_stat` 经 `_carry_current` 保留 HP/MP 当前值（涨上限携带差值、降上限 clamp），SAN 永不重置；序列化 v2.1（known_spells + MP_MAX，v2.0 兼容加载）
+- **素材库**：`src/library/items.py`/`spells.py` + `data/library/core/{items,spells}.json`（12 物品/8 法术，impact L0/L1/L2 库预标注 + use_semantic + check + on_use @markup + result_slots）；ScenarioWorld 挂 item_library/spell_library，init_game 自动接线（core + extensions）
+- **@grant_spell**：第 8 种 markup（GrantSpell -> spell_library 校验 -> known_spells，不重复授予）；全库枚举同步（side_effects/prompts/judge 三处 strip 正则 + Author 文档）
+- **UseParser 子系统**：`src/game/use_parser.py` 独立小 parse 系统（MaterialCatalog 协议可注入素材源）；确定性层（否定排除 -> USE_VERBS 谓词 -> 精确/包含/difflib 三级匹配）+ LLM 兜底（build_material_fuzzy_prompt 通用化，旧 consume_item 包装兼容）；keeper pre-parse 短路 + parse use 条目归一（未命中转 creative 升 Author）
+- **Judge.execute_material**：L1 执行通道（硬门[已知/持有/MP/材料] -> 扣减[refund_on_fail 回滚] -> 可选检定[下沉复用 check_skill/opposed_check] -> 结果槽 tier 选档 -> on_use @markup 走 apply_side_effects）
+- **门控 flavor 豁免**：parse other 拆 flavor/creative 子类；other_flavor 永不触发 detector；other_creative 仅帧内无实质性动作（interaction/event/move/search/use/NPC）时升级，氛围 AT 捎带不算实质覆盖
+- **战斗施法**：cast_<SPELL_ID> 动作（known_spells∩combat）+ MP/SAN 扣减 + opposed/常规检定 + effect damage 结算（4 处 CombatSystem 构造点接 spell_lib）
+- **requirement `item:` 条件**：持有硬条件先行短路（judge._evaluate_requirement）
+- **管线感知**：Step1a prompt 物品/法术库摘要；STEP4/Step2A @grant_spell 语法；cross_validate_layers spell_ref 校验（未知引用记 warning）；run_pipeline 双库加载
+- **编年史/快照**：render_for_author 玩家行含 MP_MAX + 已知法术；build_snapshot 增 mp_max/known_spells
+- **文档**：MAINTENANCE.md 全面同步（新增 items/spells/use_parser 三节 + 全部行号刷新）；readme U6/U8 标 ✅
+
+### 测试现状
+
+- 默认套件：181 passed（基线 139 + 新增 42：test_use_system.py 33 + deterministic +5 + scenarios S12-S14 结构）
+- real_llm：S1-S14 全过（14/14，含新 S12 感知法术/S13 急救包/S14 库外素材升 Author）
+- escalation C/E：**双双 PASS（手跑 + pytest）**--门控 flavor 豁免修复了 2026-08-14/08-18 已知阻塞（见已知观察末条，已收口）；case E 在 pytest 首跑偶现"Author patch 未产新场景"（LLM 行为波动，复跑即过，与门控无关）
+
+### 已知观察（本期新增）
+
+- 测试期间产生 data/modules/supplements/20260819_* 目录（S14 场景 Author 真实调用副产物），未入库
