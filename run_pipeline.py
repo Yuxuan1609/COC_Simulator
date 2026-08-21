@@ -1172,10 +1172,9 @@ def run_interactive(config: PipelineConfig):
     runner.wl = wl
     runner.el = el
     runner.bl = bl
-    from library.items import ItemLibrary
-    from library.spells import SpellLibrary
-    ilib = ItemLibrary(); ilib.load_core(str(PROJECT_ROOT / "data/library/core/items.json"))
-    slib = SpellLibrary(); slib.load_core(str(PROJECT_ROOT / "data/library/core/spells.json"))
+    from library.loader import load_item_library, load_spell_library
+    ilib = load_item_library(str(PROJECT_ROOT / "data/library"))
+    slib = load_spell_library(str(PROJECT_ROOT / "data/library"))
     runner.ilib = ilib
     runner.slib = slib
 
@@ -1255,10 +1254,9 @@ def run_auto(config: PipelineConfig):
     runner.wl = wl
     runner.el = el
     runner.bl = bl
-    from library.items import ItemLibrary
-    from library.spells import SpellLibrary
-    ilib = ItemLibrary(); ilib.load_core(str(PROJECT_ROOT / "data/library/core/items.json"))
-    slib = SpellLibrary(); slib.load_core(str(PROJECT_ROOT / "data/library/core/spells.json"))
+    from library.loader import load_item_library, load_spell_library
+    ilib = load_item_library(str(PROJECT_ROOT / "data/library"))
+    slib = load_spell_library(str(PROJECT_ROOT / "data/library"))
     runner.ilib = ilib
     runner.slib = slib
 

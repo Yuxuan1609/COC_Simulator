@@ -220,21 +220,10 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     weapon_lib = WeaponLibrary()
     weapon_lib.load_core()
 
-    # 统一资源层：物品/法术库
-    from library.items import ItemLibrary
-    from library.spells import SpellLibrary
-    item_lib = ItemLibrary()
-    item_lib.load_core()
-    _item_ext_dir = Path("data/library/extensions/items")
-    if _item_ext_dir.is_dir():
-        for _f in sorted(_item_ext_dir.glob("*.json")):
-            item_lib.load_extension(str(_f))
-    spell_lib = SpellLibrary()
-    spell_lib.load_core()
-    _spell_ext_dir = Path("data/library/extensions/spells")
-    if _spell_ext_dir.is_dir():
-        for _f in sorted(_spell_ext_dir.glob("*.json")):
-            spell_lib.load_extension(str(_f))
+    # 统一资源层:物品/法术库(core + extensions,统一 loader)
+    from library.loader import load_item_library, load_spell_library
+    item_lib = load_item_library()
+    spell_lib = load_spell_library()
 
     # Load boss library
     from library.bosses import BossLibrary

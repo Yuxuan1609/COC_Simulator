@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-21 | effect 表达力计划 T2：新增 src/library/loader.py（load_item_library/load_spell_library，core+extensions 统一扫描，base_dir 可注入）；game_loop.init_game 与 run_pipeline 两处（run_interactive/run_auto）接入统一 loader，修复管线 extensions 不可见断点（管线此前只 load_core）；新增 tests/test_library_loader.py（3 测试）；game_loop 行号同步（run_turn 339→328、autosave 三函数 666/675/686→673/682/693、行数 902→909），run_pipeline 行数 1455→1474、run_auto 1246→1245、main 1346→1344 |
 | 2026-08-21 | effect 表达力计划 T1 review 修复：get_game_config 增非 dict JSON 防御（[]/null/str 回退全缺省）、类型严格化（`type is`，bool 不混入 int 缺省）、缓存返回副本（防调用方污染）；tests/test_game_config.py 增 4 测试；rules.py 表 roll_stats…calc_db 行号 off-by-one 修正（19→20 等，对齐 grep 实测） |
 | 2026-08-21 | effect 表达力计划 T1：新增 game_config 参数中心（data/game_config.json + rules.get_game_config/reset_game_config_cache，缺省兜底+类型校验+模块级缓存），rules.py 头部补模块级 import json/os，原有函数行号 +2 | 
 | 2026-08-21 | 前端统一资源层接线补齐：player-status/init/state JSON 补 mp/mp_max/known_spells；character-card 状态区 MP 当前/上限 + 已知法术区；game.html HUD 三条(HP/MP/SAN)+法术行；tailwind-built.css 加 coc-blue 色板 |
@@ -55,7 +56,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 340 |
 | `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem） | 355 |
 
-### run_pipeline.py (1455 行) — 模组解析管线 CLI
+### run_pipeline.py (1474 行) — 模组解析管线 CLI
 
 | 函数/类 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -74,9 +75,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_do_step3b` | `(runner, verbose)` | L1↔L2 交叉核对 + WR0 注入 | 918 |
 | `_do_step35_phase1` | `(runner, verbose)` | Step3.5 依赖图（含循环重试）+ Phase1 约束 | 952 |
 | `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物；技能名经 `load_skill_checks()`，`stat_names` 已删 SIZ（:1043） | 1017 |
-| `run_interactive` | `(config)` | 手动步进模式（每步 [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出），支持 start_from 断点续跑；统一资源层：加载 ItemLibrary/SpellLibrary 到 runner.ilib/runner.slib | 1163 |
-| `run_auto` | `(config)` | 自动模式：复用同一组 `_do_step*` 全程无交互（同载双库） | 1246 |
-| `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--model/--thinking-off/--weapon-lib 等 | 1346 |
+| `run_interactive` | `(config)` | 手动步进模式（每步 [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出），支持 start_from 断点续跑；统一资源层：经 `library.loader` 加载 Item/SpellLibrary（core+extensions，T2 起管线也扫扩展库）到 runner.ilib/runner.slib | 1163 |
+| `run_auto` | `(config)` | 自动模式：复用同一组 `_do_step*` 全程无交互（同载双库，经 `library.loader` 含 extensions） | 1245 |
+| `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--model/--thinking-off/--weapon-lib 等 | 1344 |
 
 ### run_step0.py (184 行) — 小说 → 模组文本转写
 
@@ -350,20 +351,20 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game_loop.py (902 行) — 游戏主循环
+## src/game_loop.py (909 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `set_turn_logger` | `(logger)` | 设置全局回合日志器（harness/入口调用） | 21 |
 | `setup_logging` | `() -> str` | 统一初始化日志目录 + TurnLogger + prompt/llm 日志 | 27 |
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 46 |
-| `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载 → ScenarioWorld → world 节点 AT 执行（延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
-| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史（chronicle.record_turn + 移动轨迹，FROZEN 不计，SUSPENDED 也入史）→ SUSPENDED/FROZEN 短路 → Narrator 叙事 → 场景更新 → 技能检定提取 → PlayerFacingSnapshot 组装（L1 描述/NPC 富化/技能 D100 解析） | 339 |
-| `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 642 |
-| `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 658 |
-| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 666 / 675 / 686 |
-| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接）→ complete_combat_turn | 721 |
-| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 838 |
+| `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载（物品/法术经 library.loader 统一加载 core+extensions，@224-226）→ ScenarioWorld → world 节点 AT 执行（延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
+| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史（chronicle.record_turn + 移动轨迹，FROZEN 不计，SUSPENDED 也入史）→ SUSPENDED/FROZEN 短路 → Narrator 叙事 → 场景更新 → 技能检定提取 → PlayerFacingSnapshot 组装（L1 描述/NPC 富化/技能 D100 解析） | 328 |
+| `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 631 |
+| `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 647 |
+| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 673 / 682 / 693 |
+| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接）→ complete_combat_turn | 710 |
+| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 827 |
 
 ---
 
@@ -544,6 +545,16 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 77–88 |
 
 数据类 `LibrarySpell`@14：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect{type:damage|buff,formula,ignore_armor}, weight`。
+
+### loader.py (31 行) - 统一库加载器（T2，2026-08-21 spec §6）
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `_load` | `(core_cls, core_file, ext_subdir, base_dir)` | 内部通用：load_core(base/core/<file>) + 扫 base/extensions/<subdir>/*.json 逐个 load_extension | 15 |
+| `load_item_library` | `(base_dir=None) -> ItemLibrary` | 物品库统一加载（base_dir 缺省=包相对 data/library 绝对路径，供测试注入） | 26 |
+| `load_spell_library` | `(base_dir=None) -> SpellLibrary` | 法术库统一加载（同上） | 30 |
+
+调用点：game_loop.init_game（@224-226）、run_pipeline.run_interactive/run_auto（@1175-1177 / @1257-1259；管线修复：此前只 load_core 不扫 extensions，用户扩展库管线不可见）。`_DATA_ROOT`@12 = src 上两级 data/library（绝对路径，摆脱 game_loop 旧 cwd 相对路径依赖）。
 
 ### bosses.py (79 行) — BossLibrary（@48）
 
