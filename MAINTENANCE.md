@@ -194,13 +194,13 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1248 行) — 战斗系统 v2
+## src/game/combat.py (1320 行) — 战斗系统 v2
 
 ### 模块级函数
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
-| `_roll_damage` | 从 dict/legacy 公式掷伤害骰；`db_override` 非 None 时优先用作 DB（玩家侧传 derived.DB，:883 调用点），敌人路径仍 calc_db(STR, SIZ) | 15 |
+| `_roll_damage` | 从 dict/legacy 公式掷伤害骰；`db_override` 非 None 时优先用作 DB（玩家侧传 derived.DB，:953 调用点），敌人路径仍 calc_db(STR, SIZ) | 15 |
 | `_parse_legacy_damage` | 旧式伤害公式解析 | 69 |
 | `_apply_armor` | 护甲减免 | 96 |
 | `_apply_damage_multiplier` | 伤害类型倍率 | 103 |
@@ -217,17 +217,17 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 711 |
 | `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 743 |
 | `_skill_value` | `(player, skill_name)` | 技能值查询 | 796 |
-| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> effect.damage 结算） | 807 |
-| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 984 |
-| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 996 |
-| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1004 |
-| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作 | 1008 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1055 / 1079 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1100 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1110 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1129 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1157 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1264 |
+| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> effect.damage 结算；@854 已加 TODO(T9) 标记--effect 升维原子数组后 cast effect 读法待重写） | 807 |
+| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 985 |
+| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 997 |
+| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1005 |
+| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作 | 1009 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1056 / 1080 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1101 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1111 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1130 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1158 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1265 |
 
 ## src/game/judge.py (368 行) — 确定性闸门（无 LLM 依赖）
 

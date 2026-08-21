@@ -851,6 +851,7 @@ class CombatSystem:
                                if action.success else "failure")
                 action.narrative = f"{spell.name}！D100={action.roll}/{action.skill_value}"
 
+            # TODO(T9): effect 已升维原子数组(list[dict]),本分支待重写--见 2026-08-21 spec/plan Task 9
             effect = spell.effect or {}
             if action.success and effect.get("type") == "damage":
                 dmg = _roll_damage(effect.get("formula", "1D6"),

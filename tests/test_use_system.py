@@ -434,6 +434,21 @@ class TestEffectNormalize:
                {"type": "timed", "id": "S", "description": "d", "minutes": 10}]
         sp = LibrarySpell.from_dict({"id": "X", "name": "X", "effect": eff})
         assert sp.effect == eff
+        assert sp.effect[0] is not eff[0], "元素级浅拷贝,不得别名外部 dict"
+
+    def test_spell_effect_non_dict_filtered(self):
+        from library.spells import LibrarySpell
+        sp = LibrarySpell.from_dict({"id": "X", "name": "X",
+                                     "effect": [{"type": "buff"}, "junk", 42,
+                                                {"type": "timed"}]})
+        assert [e["type"] for e in sp.effect] == ["buff", "timed"], "非 dict 元素必须被过滤"
+
+    def test_spell_effect_defensive_copy(self):
+        from library.spells import LibrarySpell
+        eff = [{"type": "buff", "reduce": 3}]
+        sp = LibrarySpell.from_dict({"id": "X", "name": "X", "effect": eff})
+        sp.effect[0]["x"] = 1
+        assert "x" not in eff[0], "改 sp.effect 不得污染原始输入 dict"
 
     def test_spell_effect_empty(self):
         from library.spells import LibrarySpell
