@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import random
 from typing import Dict, List, Tuple
 
@@ -290,3 +292,42 @@ def opposed_check(att_value: int, def_value: int) -> tuple[str, str]:
     if att_value != def_value:
         return ("win" if att_value > def_value else "lose"), detail + "（同级比技能值）"
     return "tie", detail + "（不分胜负）"
+
+
+# ═══════════════════════════════════════════════════════════════
+#  数值参数中心（data/game_config.json，见 2026-08-21 spec §5）
+# ═══════════════════════════════════════════════════════════════
+
+_GAME_CONFIG_DEFAULTS = {
+    "mp_recovery_per_hour": 1,     # MP 每小时恢复点数
+    "timed_default_minutes": 30,   # timed 原子缺省持续分钟
+    "buff_damage_floor": 0,        # 战斗 buff 减伤后伤害下限
+}
+_CONFIG_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "data", "game_config.json")
+_game_config_cache: dict | None = None
+
+
+def reset_game_config_cache() -> None:
+    """测试用:清空配置缓存。"""
+    global _game_config_cache
+    _game_config_cache = None
+
+
+def get_game_config() -> dict:
+    """惰性加载 game_config.json,缺省兜底,模块级缓存。"""
+    global _game_config_cache
+    if _game_config_cache is not None:
+        return _game_config_cache
+    cfg = dict(_GAME_CONFIG_DEFAULTS)
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for k, dv in _GAME_CONFIG_DEFAULTS.items():
+            v = data.get(k, dv)
+            if isinstance(v, type(dv)):
+                cfg[k] = v
+    except (OSError, ValueError):
+        pass
+    _game_config_cache = cfg
+    return cfg

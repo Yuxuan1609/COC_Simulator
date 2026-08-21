@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-21 | effect 表达力计划 T1：新增 game_config 参数中心（data/game_config.json + rules.get_game_config/reset_game_config_cache，缺省兜底+类型校验+模块级缓存），rules.py 头部补模块级 import json/os，原有函数行号 +2 | 
 | 2026-08-21 | 前端统一资源层接线补齐：player-status/init/state JSON 补 mp/mp_max/known_spells；character-card 状态区 MP 当前/上限 + 已知法术区；game.html HUD 三条(HP/MP/SAN)+法术行；tailwind-built.css 加 coc-blue 色板 |
 | 2026-08-10 | 全量重写：覆盖 src/ + frontend/ + run_*.py + scripts/ + tools/（不含 tests/、notebooks/）。补齐 monitor、module_designer 子模块、llm_player、utils 等此前缺失部分，行号按 2026-08-10 代码快照更新 |
 | 2026-08-19 | 统一资源层（U6 法术 + U8 物品 + parse 规范化）落地：新增 src/library/items.py、src/library/spells.py、src/game/use_parser.py 三节；keeper/judge/combat/side_effects/scenario_core/models/serialization/rules/prompts/game_loop/run_pipeline/layered_*/前端 game.py 行号与方法同步（详见各节）|
@@ -474,24 +475,27 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `add_weapon` / `remove_weapon` | 武器管理 | 421 / 424 |
 | `save` / `load` | JSON 存档 | 431 / 437 |
 
-### rules.py (292 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配）
+### rules.py (333 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import json/os）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `roll_stats` | `() -> Stats` | 掷骰生成属性（无 SIZ） | 17 |
-| `_calc_db_build` | `(key)` | DB/BUILD 查表，键=STR+CON//2 | 35 |
-| `calc_derived` | `(stats, age=20, cthulhu_mythos=0)` | 衍生属性：HP=CON//3，删 MOV | 51 |
-| `create_skill_list` | `() -> list[Skill]` | 从 skill_config.json 生成 20 项技能 | 69 |
-| `allocate_skill_points` | `(skills, stats, focus=None, focus_bonus=0)` | U9 属性池分配（池=属性×乘数，均分归属技能，no_pool 除外） | 80 |
-| `calc_occupation_points` | `(formula, stats)` | 职业点公式（旧 Occupation 兼容） | 112 |
-| `apply_age_modifiers` | `(stats, age)` | 年龄修正 | 139 |
-| `get_credit_level` | `(value)` | 信用等级 | 187 |
-| `create_default_unarmed` | — | 默认徒手武器 | 200 |
-| `load_occupations` | `(path)` | 旧职业 JSON 加载（兼容） | 214 |
-| `load_occupation_labels` | `(path=None)` | U9 职业标签加载（occupation_labels.json） | 232 |
-| `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 242 |
-| `opposed_check` | `(att_value, def_value) -> ("win"/"lose"/"tie", detail)` | **统一资源层对抗检定纯函数**：等级>技能值>平局；战斗/探索两侧复用 | 279 |
-| `_opposed_roll` / `_TIER_RANK` | - | 单侧掷骰+四级判定 / 等级序表 | 264 / 261 |
+| `roll_stats` | `() -> Stats` | 掷骰生成属性（无 SIZ） | 19 |
+| `_calc_db_build` | `(key)` | DB/BUILD 查表，键=STR+CON//2 | 37 |
+| `calc_derived` | `(stats, age=20, cthulhu_mythos=0)` | 衍生属性：HP=CON//3，删 MOV | 53 |
+| `create_skill_list` | `() -> list[Skill]` | 从 skill_config.json 生成 20 项技能 | 71 |
+| `allocate_skill_points` | `(skills, stats, focus=None, focus_bonus=0)` | U9 属性池分配（池=属性×乘数，均分归属技能，no_pool 除外） | 82 |
+| `calc_occupation_points` | `(formula, stats)` | 职业点公式（旧 Occupation 兼容） | 114 |
+| `apply_age_modifiers` | `(stats, age)` | 年龄修正 | 141 |
+| `get_credit_level` | `(value)` | 信用等级 | 189 |
+| `create_default_unarmed` | - | 默认徒手武器 | 202 |
+| `load_occupations` | `(path)` | 旧职业 JSON 加载（兼容） | 216 |
+| `load_occupation_labels` | `(path=None)` | U9 职业标签加载（occupation_labels.json） | 234 |
+| `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 244 |
+| `opposed_check` | `(att_value, def_value) -> ("win"/"lose"/"tie", detail)` | **统一资源层对抗检定纯函数**：等级>技能值>平局；战斗/探索两侧复用 | 281 |
+| `_opposed_roll` / `_TIER_RANK` | - | 单侧掷骰+四级判定 / 等级序表 | 266 / 263 |
+| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表（mp_recovery_per_hour/timed_default_minutes/buff_damage_floor）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 301 / 306 |
+| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 311 |
+| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 字段类型校验（不符回缺省）+ 模块级缓存；文件缺失/损坏静默回缺省。后续 MP 恢复/timed 默认时长/buff 减伤下限等 effect 任务统一从此读取 | 317 |
 
 ### serialization.py (189 行) — v2.0：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载
 

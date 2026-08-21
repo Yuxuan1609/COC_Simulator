@@ -1,0 +1,5 @@
+{
+  "mp_recovery_per_hour": 1,
+  "timed_default_minutes": 30,
+  "buff_damage_floor": 0
+}
