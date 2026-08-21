@@ -500,6 +500,16 @@ async def process_turn(
     }
 
 
+def _known_spell_names(world, p) -> list[str]:
+    """known_spells 的 id 列表解析为中文名(库外 id 原样保留)。"""
+    lib = getattr(world, "spell_library", None)
+    names = []
+    for sid in getattr(p, "known_spells", []):
+        sp = lib.get(sid) if lib else None
+        names.append(sp.name if sp else sid)
+    return names
+
+
 @router.get("/api/game/character-card", response_class=HTMLResponse)
 async def character_card():
     game = get_game()
@@ -571,7 +581,7 @@ async def character_card():
         f'<div><div class="flex justify-between text-[10px] text-gray-500 mb-0.5"><span>SAN</span><span class="text-aged-gold">{derived.SAN}</span></div>'
         f'<div class="h-1.5 bg-gray-800 rounded overflow-hidden"><div class="h-full bg-aged-gold rounded transition-all duration-500" style="width:{san_pct}%"></div></div></div>'
         f'<div class="flex gap-3 text-[10px] text-gray-400 pt-1">'
-        f'<span>MP <span class="text-gray-300">{derived.MP}</span></span>'
+        f'<span>MP <span class="text-gray-300">{derived.MP}/{derived.MP_MAX}</span></span>'
         f'<span>MOV <span class="text-gray-300">{derived.MOV}</span></span>'
         f'<span>DB <span class="text-gray-300">{derived.DB}</span></span>'
         f'<span>BUILD <span class="text-gray-300">{derived.BUILD}</span></span>'
@@ -631,6 +641,28 @@ async def character_card():
         + '</div></div>'
     ) if weapons else ''
 
+    # --- Spells (统一资源层:已知法术列表区) ---
+    spell_rows = []
+    _lib = getattr(world, "spell_library", None)
+    for sid in getattr(p, "known_spells", []):
+        sp = _lib.get(sid) if _lib else None
+        if sp:
+            cat_label = "战斗" if getattr(sp, "category", "") == "combat" else "探索"
+            spell_rows.append(
+                f'<div class="flex justify-between text-xs text-gray-400 py-0.5">'
+                f'<span>{sp.name}</span><span class="text-gray-500 text-[10px]">{cat_label}</span></div>'
+            )
+        else:
+            spell_rows.append(
+                f'<div class="flex justify-between text-xs text-gray-500 py-0.5">'
+                f'<span>{sid}</span><span class="text-[10px]">库中未找到</span></div>'
+            )
+    spells_html = (
+        f'<div class="pt-2 border-t border-gray-800/60">'
+        f'<div class="text-[10px] text-gray-500 font-bold mb-1.5">已知法术 ({len(spell_rows)})</div>'
+        f'<div class="space-y-0.5">{"".join(spell_rows)}</div></div>'
+    ) if spell_rows else ''
+
     # --- Items ---
     items_desc = p.item_manager.describe() if hasattr(p, 'item_manager') and p.item_manager else "无"
     items_html = (
@@ -640,7 +672,8 @@ async def character_card():
     )
 
     return HTMLResponse(
-        header + intro_html + stats_html + derived_html + skills_html + weapons_html + items_html
+        header + intro_html + stats_html + derived_html + skills_html
+        + weapons_html + spells_html + items_html
     )
 
 
@@ -655,19 +688,24 @@ async def player_status(format: str = ""):
     has_avatar = getattr(p, 'avatar_url', '')
     occupation = getattr(p, 'occupation', '')
     occ_name = getattr(occupation, 'name', '') if occupation else ''
+    spell_names = _known_spell_names(world, p)
     if format == "json":
         return {
             "hp": hp,
             "hp_max": p.derived.HP_MAX,
+            "mp": p.derived.MP,
+            "mp_max": p.derived.MP_MAX,
             "san": san,
             "name": p.name,
             "avatar_url": has_avatar,
             "occupation": occ_name,
             "age": p.age,
             "gender": p.gender,
+            "known_spells": spell_names,
         }
     return HTMLResponse(
         f'<div class="text-xs"><span class="text-gray-500">HP </span><span class="text-coc-green">{hp}</span>'
+        f'<span class="text-gray-500 ml-2">MP </span><span class="text-coc-blue">{p.derived.MP}</span>'
         f'<span class="text-gray-500 ml-2">SAN </span><span class="text-aged-gold">{san}</span></div>'
     )
 
@@ -807,8 +845,12 @@ async def init_game_api(
         "success": True,
         "location": g["keeper"].world.current_location,
         "hp": inv.derived.HP,
+        "hp_max": inv.derived.HP_MAX,
+        "mp": inv.derived.MP,
+        "mp_max": inv.derived.MP_MAX,
         "san": inv.derived.SAN,
         "name": inv.name,
+        "known_spells": _known_spell_names(g["keeper"].world, inv),
         "initial_brief": initial_brief,
         "initial_narrative": initial_narrative,
     }
@@ -823,8 +865,12 @@ async def game_state():
         "location": world.current_location,
         "turn": game["keeper"].turn_number,
         "hp": p.derived.HP if p else 0,
+        "hp_max": p.derived.HP_MAX if p else 0,
+        "mp": p.derived.MP if p else 0,
+        "mp_max": p.derived.MP_MAX if p else 0,
         "san": p.derived.SAN if p else 0,
         "name": p.name if p else "",
+        "known_spells": _known_spell_names(world, p) if p else [],
     }
 
 

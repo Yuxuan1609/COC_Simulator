@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-21 | 前端统一资源层接线补齐：player-status/init/state JSON 补 mp/mp_max/known_spells；character-card 状态区 MP 当前/上限 + 已知法术区；game.html HUD 三条(HP/MP/SAN)+法术行；tailwind-built.css 加 coc-blue 色板 |
 | 2026-08-10 | 全量重写：覆盖 src/ + frontend/ + run_*.py + scripts/ + tools/（不含 tests/、notebooks/）。补齐 monitor、module_designer 子模块、llm_player、utils 等此前缺失部分，行号按 2026-08-10 代码快照更新 |
 | 2026-08-19 | 统一资源层（U6 法术 + U8 物品 + parse 规范化）落地：新增 src/library/items.py、src/library/spells.py、src/game/use_parser.py 三节；keeper/judge/combat/side_effects/scenario_core/models/serialization/rules/prompts/game_loop/run_pipeline/layered_*/前端 game.py 行号与方法同步（详见各节）|
 | 2026-08-18 | 行号巡检：keeper/combat/models/layered_parser/layered_pipeline/scenario_core/run_pipeline 行号对齐实际快照（08-14~15 代码提交后部分条目未同步）；内容条目经逐函数核对无缺漏 |
@@ -833,25 +834,25 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `start_pipeline` | `POST /api/pipeline/start` → run_pipeline 子进程 | 140 |
 | `validate_pipeline` | `POST /api/pipeline/validate` | 188 |
 
-### routers/game.py (1139 行) — 游戏 API（核心）
+### routers/game.py (1187 行) — 游戏 API（核心）
 
 | 端点 | 路由 | 作用 | 行号 |
 |------|------|------|------|
 | `game_page` | `GET /game` | 游戏页 | 168 |
 | `_handle_slash_command` | — | 斜杠命令短路 | 172 |
 | `process_turn` | `POST /api/game/turn` | 回合入口（线程池，防止阻塞事件循环） | 253 |
-| `character_card` | `GET /api/game/character-card` | 角色卡 HTML | 504 |
-| `player_status` | `GET /api/game/player-status?format=` | HP/SAN 状态 | 648 |
-| `game_command` | `POST /api/game/command` | 命令 | 676 |
-| `scene_info` | `GET /api/game/scene` | 场景 HTML | 681 |
-| `game_progress` | `WS /api/game/progress` | 管线进度推送 | 698 |
-| `init_game_api` | `POST /api/game/init` | 初始化 + 首回合 | 730 |
-| `game_state` | `GET /api/game/state` | 游戏状态 JSON | 818 |
+| `character_card` | `GET /api/game/character-card` | 角色卡 HTML（状态区 MP 当前/上限 + 已知法术区，库外 id 降级展示） | 514 |
+| `player_status` | `GET /api/game/player-status?format=` | HP/MP/SAN 状态；JSON 含 hp_max/mp_max/mp/known_spells（id 解析为名） | 681 |
+| `game_command` | `POST /api/game/command` | 命令 | 710 |
+| `scene_info` | `GET /api/game/scene` | 场景 HTML | 715 |
+| `game_progress` | `WS /api/game/progress` | 管线进度推送 | 732 |
+| `init_game_api` | `POST /api/game/init` | 初始化 + 首回合（响应含 hp_max/mp_max/mp/known_spells） | 768 |
+| `game_state` | `GET /api/game/state` | 游戏状态 JSON（含 hp_max/mp_max/mp/known_spells） | 860 |
 | `set_auto_win` | `POST /api/game/auto-win` | 战斗自动胜利开关 | 832 |
 | `combat_start` | `POST /api/combat/start` | 初始化战斗会话（CombatSystem 传 world.spell_library） | 843 |
 | `combat_round` | `POST /api/combat/round` | 执行一轮（CombatSystem 传 spell_library，战斗施法可用） | 952 |
 
-序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@70 / `_init_libraries`@104 / `_resolve_start_scene`@1086 / `_make_default_inv`@1132。
+序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@70 / `_init_libraries`@104 / `_known_spell_names`@503（known_spells id->中文名，统一资源层前端接线共用） / `_resolve_start_scene`@1086 / `_make_default_inv`@1132。
 
 ### routers/character.py (335 行) — 车卡 API
 

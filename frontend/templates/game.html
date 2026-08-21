@@ -242,12 +242,19 @@
               </div>
             </div>
             <div class="flex-1">
+              <div class="flex justify-between text-[9px] text-gray-500 mb-0.5"><span>MP</span><span id="char-mp-text">?/?</span></div>
+              <div class="h-1.5 bg-gray-800 rounded overflow-hidden">
+                <div id="char-mp-bar" class="h-full bg-coc-blue rounded transition-all duration-500" style="width:100%"></div>
+              </div>
+            </div>
+            <div class="flex-1">
               <div class="flex justify-between text-[9px] text-gray-500 mb-0.5"><span>SAN</span><span id="char-san-text">?</span></div>
               <div class="h-1.5 bg-gray-800 rounded overflow-hidden">
                 <div id="char-san-bar" class="h-full bg-aged-gold rounded transition-all duration-500" style="width:100%"></div>
               </div>
             </div>
           </div>
+          <div id="char-spells" class="text-[9px] text-coc-dim truncate mt-1" title=""></div>
         </div>
       </div>
     </div>
@@ -534,6 +541,23 @@
     document.getElementById('char-san-text').textContent = san;
     document.getElementById('char-hp-bar').style.width = (hpMax > 0 ? (hp / hpMax * 100) : 0) + '%';
     document.getElementById('char-san-bar').style.width = (san > 0 ? (san / 99 * 100) : 0) + '%';
+    if (data.mp !== undefined && data.mp !== null) {
+      const mp = data.mp || 0;
+      const mpMax = data.mp_max || mp || 1;
+      document.getElementById('char-mp-text').textContent = mp + '/' + mpMax;
+      document.getElementById('char-mp-bar').style.width = (mpMax > 0 ? (mp / mpMax * 100) : 0) + '%';
+    }
+    if (data.known_spells !== undefined && data.known_spells !== null) {
+      const spellsEl = document.getElementById('char-spells');
+      if (data.known_spells.length) {
+        const label = '法术 · ' + data.known_spells.join(' / ');
+        spellsEl.textContent = label;
+        spellsEl.title = label;
+        spellsEl.style.display = '';
+      } else {
+        spellsEl.style.display = 'none';
+      }
+    }
     if (data.avatar_url) {
       document.getElementById('char-avatar').innerHTML = '<img src="' + data.avatar_url + '" class="w-12 h-12 rounded-full object-cover" onerror="this.parentElement.innerHTML=\'<svg class=\\\'w-6 h-6\\\' fill=\\\'none\\\' stroke=\\\'currentColor\\\' viewBox=\\\'0 0 24 24\\\'><path stroke-linecap=\\\'round\\\' stroke-linejoin=\\\'round\\\' stroke-width=\\\'1.5\\\' d=\\\'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z\\\'/></svg>\'">';
     }
@@ -570,7 +594,7 @@
       if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; console.log('[initGame] init failed:', text); return; }
       const data = JSON.parse(text);
       console.log('[initGame] init success, location:', data.location);
-      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp, san: data.san, avatar_url: '', occupation: '' });
+      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp_max || data.hp, mp: data.mp, mp_max: data.mp_max, san: data.san, known_spells: data.known_spells || [], avatar_url: '', occupation: '' });
       document.getElementById('game-setup').style.display = 'none';
       document.getElementById('game-screen').style.display = '';
       document.getElementById('user-input').focus();
@@ -982,7 +1006,7 @@
       if (!resp.ok) return;
       const state = await resp.json();
       if (state.location && state.name) {
-        updateCharHUD({ name: state.name, hp: state.hp, hp_max: state.hp, san: state.san });
+        updateCharHUD({ name: state.name, hp: state.hp, hp_max: state.hp_max || state.hp, mp: state.mp, mp_max: state.mp_max, san: state.san, known_spells: state.known_spells || [] });
         document.getElementById('game-setup').style.display = 'none';
         document.getElementById('game-screen').style.display = '';
         document.getElementById('user-input').focus();

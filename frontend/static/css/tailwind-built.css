@@ -44,10 +44,10 @@
 .bg-\[\#0d0d0d\]{background:#0d0d0d}.bg-\[\#0f0f0f\]{background:#0f0f0f}.bg-\[\#1a1a1a\]{background:#1a1a1a}.bg-\[\#1a150c\]{background:#1a150c}.bg-\[\#1a1410\]{background:#1a1410}.bg-\[\#1a1400\]{background:#1a1400}.bg-\[\#1a0a0a\]{background:#1a0a0a}.bg-\[\#0a0806\]{background:#0a0806}.bg-\[\#141414\]{background:#141414}
 .bg-black\/50{background:rgba(0,0,0,0.5)}.bg-black\/60{background:rgba(0,0,0,0.6)}.bg-black\/70{background:rgba(0,0,0,0.7)}.bg-black\/90{background:rgba(0,0,0,0.9)}.bg-\[\#0a0806\]\/95{background:rgba(10,8,6,0.95)}.bg-\[\#0a0806\]\/98{background:rgba(10,8,6,0.98)}
 .bg-aged-brown{background:#8b5a3c}.bg-aged-brown\/30{background:rgba(139,90,60,0.3)}
-.bg-coc-green{background:#3a6b3a}.bg-coc-red{background:#8b3a3a}.bg-gray-700{background:#374151}.bg-gray-800{background:#1f2937}.bg-aged-gold{background:#c9a060}
+.bg-coc-green{background:#3a6b3a}.bg-coc-red{background:#8b3a3a}.bg-coc-blue{background:#3a5a7a}.bg-gray-700{background:#374151}.bg-gray-800{background:#1f2937}.bg-aged-gold{background:#c9a060}
 
 .text-parchment{color:#d4c5a0}.text-aged-gold{color:#c9a060}.text-aged-brown{color:#8b5a3c}
-.text-coc-green{color:#3a6b3a}.text-coc-red{color:#8b3a3a}.text-coc-dim{color:#8a8278}
+.text-coc-green{color:#3a6b3a}.text-coc-red{color:#8b3a3a}.text-coc-blue{color:#6a94b8}.text-coc-dim{color:#8a8278}
 .text-gray-200{color:#e5e7eb}.text-gray-300{color:#d1d5db}.text-gray-400{color:#9ca3af}.text-gray-500{color:#6b7280}.text-gray-600{color:#4b5563}
 .text-red-400{color:#f87171}.text-yellow-300{color:#fde047}.text-yellow-400{color:#facc15}.text-green-400{color:#4ade80}.text-white{color:#fff}
 
