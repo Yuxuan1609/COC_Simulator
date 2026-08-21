@@ -6,6 +6,15 @@ import json
 import os
 
 
+def _normalize_effect(raw) -> list:
+    """旧单 dict 自动包装为 [dict];None/缺省 -> [];list 透传(浅拷贝防外部篡改)。"""
+    if not raw:
+        return []
+    if isinstance(raw, dict):
+        return [dict(raw)]
+    return [dict(e) for e in raw if isinstance(e, dict)]
+
+
 @dataclass
 class LibrarySpell:
     id: str
@@ -23,7 +32,7 @@ class LibrarySpell:
     on_extreme: str = ""
     refund_on_fail: bool = False
     constraints: dict = field(default_factory=dict)
-    effect: dict = field(default_factory=dict)   # 战斗：{"type": "damage", "formula": "1D6", "ignore_armor": false}
+    effect: list = field(default_factory=list)   # effect 原子数组(2026-08-21 spec §1.1);旧单 dict 归一化包装
     weight: str = "light"
 
     @classmethod
@@ -44,7 +53,7 @@ class LibrarySpell:
             on_extreme=data.get("on_extreme", ""),
             refund_on_fail=bool(data.get("refund_on_fail", False)),
             constraints=dict(data.get("constraints", {}) or {}),
-            effect=dict(data.get("effect", {}) or {}),
+            effect=_normalize_effect(data.get("effect")),
             weight=data.get("weight", "light"),
         )
 

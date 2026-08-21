@@ -528,23 +528,24 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `load_core` / `load_extension` / `_load_file` | 加载 | 97 / 104 / 107 |
 | `get` / `list_all` / `search` / `__len__` | 查询族 | 114–132 |
 
-### items.py (86 行) - ItemLibrary（统一资源层，@61）
+### items.py (90 行) - ItemLibrary（统一资源层，@61）
 
 | 方法 | 作用 | 行号 |
 |------|------|------|
-| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/items.json + 扩展 | 63 / 67 / 70 |
-| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 76–86 |
+| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/items.json + 扩展 | 63 / 70 / 73 |
+| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 80–90 |
 
-数据类 `LibraryItem`@14：`id, name, aliases, category(consumable/tool/document/clothing/key/misc), description, impact(L0/L1/L2 库预标注), use_semantic(consume/equip/read/tool/none), stackable, check{skill,type}, on_use(@markup 序列), on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints`。
+数据类 `LibraryItem`@12：`id, name, aliases, category(consumable/tool/document/clothing/key/misc), description, impact(L0/L1/L2 库预标注), use_semantic(consume/equip/read/tool/none), stackable, check{skill,type}, on_use(@markup 序列), on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1)`。effect 字段（T3，@29）：from_dict 经 `_normalize_effect`（自 spells.py 导入 @8）归一化——旧单 dict 包装为 [dict]，list 透传，缺省 []（@50）。
 
-### spells.py (88 行) - SpellLibrary（统一资源层，@62）
+### spells.py (97 行) - SpellLibrary（统一资源层，@62）
 
-| 方法 | 作用 | 行号 |
+| 函数/方法 | 作用 | 行号 |
 |------|------|------|
-| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展 | 64 / 68 / 71 |
-| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 77–88 |
+| `_normalize_effect` | effect 归一化：旧单 dict -> [dict]；None/缺省 -> []；list 透传（逐元素浅拷贝，忽略非 dict 元素） | 9 |
+| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展 | 70 / 77 / 80 |
+| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 87–97 |
 
-数据类 `LibrarySpell`@14：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect{type:damage|buff,formula,ignore_armor}, weight`。
+数据类 `LibrarySpell`@19：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1), weight`。effect 字段（T3，@35）：由旧单 dict（damage 类）升维为原子数组，from_dict @56 调 `_normalize_effect`；旧 JSON 单 dict 数据自动包装为单元素数组。注意：combat.py cast 分支 @854 仍按单 dict 语义读 `spell.effect or {}`——对非空数组会 AttributeError（依赖 `action.success` 短路兜底），Task 9 重写。
 
 ### loader.py (31 行) - 统一库加载器（T2，2026-08-21 spec §6）
 

@@ -5,6 +5,8 @@ from typing import Optional
 import json
 import os
 
+from library.spells import _normalize_effect
+
 
 @dataclass
 class LibraryItem:
@@ -24,6 +26,7 @@ class LibraryItem:
     on_extreme: str = ""
     refund_on_fail: bool = False
     constraints: dict = field(default_factory=dict)
+    effect: list = field(default_factory=list)   # effect 原子数组(2026-08-21 spec §1.1)
 
     @classmethod
     def from_dict(cls, data: dict) -> "LibraryItem":
@@ -44,6 +47,7 @@ class LibraryItem:
             on_extreme=data.get("on_extreme", ""),
             refund_on_fail=bool(data.get("refund_on_fail", False)),
             constraints=dict(data.get("constraints", {}) or {}),
+            effect=_normalize_effect(data.get("effect")),
         )
 
     def matches(self, ref: str) -> bool:

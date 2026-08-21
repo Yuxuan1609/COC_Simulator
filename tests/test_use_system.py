@@ -417,3 +417,44 @@ class TestPipelineAwareness:
                                 item_names=["急救包（consumable）：止血"],
                                 spell_names=["HEART_ARREST 心脏骤停（combat）：攥心"])
         assert "急救包" in p and "HEART_ARREST" in p
+
+
+class TestEffectNormalize:
+    """effect 字段升维:旧 dict 自动包装为 [dict],list 透传(2026-08-21 spec §1.1)。"""
+
+    def test_spell_effect_dict_wraps_to_list(self):
+        from library.spells import LibrarySpell
+        sp = LibrarySpell.from_dict({"id": "X", "name": "X",
+                                     "effect": {"type": "damage", "formula": "1D6"}})
+        assert sp.effect == [{"type": "damage", "formula": "1D6"}]
+
+    def test_spell_effect_list_passthrough(self):
+        from library.spells import LibrarySpell
+        eff = [{"type": "buff", "reduce": 3, "rounds": 3},
+               {"type": "timed", "id": "S", "description": "d", "minutes": 10}]
+        sp = LibrarySpell.from_dict({"id": "X", "name": "X", "effect": eff})
+        assert sp.effect == eff
+
+    def test_spell_effect_empty(self):
+        from library.spells import LibrarySpell
+        sp = LibrarySpell.from_dict({"id": "X", "name": "X"})
+        assert sp.effect == []
+
+    def test_item_effect_field(self):
+        from library.items import LibraryItem
+        it = LibraryItem.from_dict({"id": "SALT", "name": "盐袋",
+                                    "effect": [{"type": "timed",
+                                                "id": "SALT_LINE",
+                                                "description": "白色盐线",
+                                                "minutes": 60}]})
+        assert it.effect[0]["type"] == "timed"
+        it2 = LibraryItem.from_dict({"id": "Y", "name": "Y"})
+        assert it2.effect == []
+
+    def test_item_effect_dict_wraps(self):
+        from library.items import LibraryItem
+        it = LibraryItem.from_dict({"id": "Z", "name": "Z",
+                                    "effect": {"type": "timed", "id": "T",
+                                               "description": "d", "minutes": 5}})
+        assert it.effect == [{"type": "timed", "id": "T",
+                              "description": "d", "minutes": 5}]
