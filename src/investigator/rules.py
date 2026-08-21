@@ -315,19 +315,20 @@ def reset_game_config_cache() -> None:
 
 
 def get_game_config() -> dict:
-    """惰性加载 game_config.json,缺省兜底,模块级缓存。"""
+    """惰性加载 game_config.json,缺省兜底,模块级缓存(返回副本)。"""
     global _game_config_cache
-    if _game_config_cache is not None:
-        return _game_config_cache
-    cfg = dict(_GAME_CONFIG_DEFAULTS)
-    try:
-        with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for k, dv in _GAME_CONFIG_DEFAULTS.items():
-            v = data.get(k, dv)
-            if isinstance(v, type(dv)):
-                cfg[k] = v
-    except (OSError, ValueError):
-        pass
-    _game_config_cache = cfg
-    return cfg
+    if _game_config_cache is None:
+        cfg = dict(_GAME_CONFIG_DEFAULTS)
+        try:
+            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                data = {}
+            for k, dv in _GAME_CONFIG_DEFAULTS.items():
+                v = data.get(k, dv)
+                if type(v) is type(dv):
+                    cfg[k] = v
+        except (OSError, ValueError):
+            pass
+        _game_config_cache = cfg
+    return dict(_game_config_cache)

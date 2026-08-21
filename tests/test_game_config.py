@@ -33,3 +33,48 @@ def test_partial_field_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
     cfg = rules.get_game_config()
     assert cfg["mp_recovery_per_hour"] == 1     # 类型不符回缺省,不崩
+
+
+def test_non_dict_json_falls_back(monkeypatch, tmp_path):
+    """合法 JSON 但非 dict(如 []) -> 全部字段回缺省,不崩。"""
+    p = tmp_path / "game_config.json"
+    p.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    cfg = rules.get_game_config()
+    assert cfg == {"mp_recovery_per_hour": 1,
+                   "timed_default_minutes": 30,
+                   "buff_damage_floor": 0}
+
+
+def test_bool_value_rejected_for_int_default(monkeypatch, tmp_path):
+    """bool 是 int 子类:JSON true 不得混入 int 缺省。"""
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"mp_recovery_per_hour": True}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    cfg = rules.get_game_config()
+    assert cfg["mp_recovery_per_hour"] is not True   # bool 被拒
+    assert cfg["mp_recovery_per_hour"] == 1          # 回缺省
+
+
+def test_returned_dict_mutation_not_pollute_cache(monkeypatch, tmp_path):
+    """返回副本:调用方改 dict 不得污染模块级缓存。"""
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"mp_recovery_per_hour": 2}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    cfg = rules.get_game_config()
+    cfg["mp_recovery_per_hour"] = 999
+    assert rules.get_game_config()["mp_recovery_per_hour"] == 2
+
+
+def test_cache_hit_no_reread_then_reset(monkeypatch, tmp_path):
+    """缓存命中不重读文件;reset 后才读新路径。"""
+    a = tmp_path / "a.json"
+    a.write_text(json.dumps({"mp_recovery_per_hour": 2}), encoding="utf-8")
+    b = tmp_path / "b.json"
+    b.write_text(json.dumps({"mp_recovery_per_hour": 3}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(a))
+    assert rules.get_game_config()["mp_recovery_per_hour"] == 2
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(b))
+    assert rules.get_game_config()["mp_recovery_per_hour"] == 2   # 缓存,不重读
+    rules.reset_game_config_cache()
+    assert rules.get_game_config()["mp_recovery_per_hour"] == 3   # reset 后读新路径
