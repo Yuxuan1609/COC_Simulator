@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-22 | effect 表达力计划 T4 review 修复：resolve 构造点 effect 透传升级为元素级浅拷贝+非 dict 过滤（@153,原 list() 外层拷贝致元素 dict 别名库单例,下游变异会污染全库,对齐 T3 库层元素级拷贝不变量）；TestCatalogEffectPassthrough 增别名隔离断言（resolve/resolve_llm 两路径 `is not` 库元素）+ 新增 test_resolve_llm_result_carries_effect（假 llm_call 回灌路径 effect 不丢回归,4 测试） |
 | 2026-08-21 | effect 表达力计划 T4：use_parser.py 透传 effect 原子数组--UseParseResult 增 effect 字段(@35)、ItemCatalog/SpellCatalog entries() 增 "effect" 键(list 浅拷贝透传 @69/@99)、resolve 构造点透传(@153；resolve_llm 回灌 resolve 无需另改)；行数 176->180；tests/test_use_system.py 增 TestCatalogEffectPassthrough 3 测试；use_parser 节行号全面对齐 grep 实测（UseParseResult 30->22、USE_VERBS 21->14 等） |
 | 2026-08-21 | effect 表达力计划 T2：新增 src/library/loader.py（load_item_library/load_spell_library，core+extensions 统一扫描，base_dir 可注入）；game_loop.init_game 与 run_pipeline 两处（run_interactive/run_auto）接入统一 loader，修复管线 extensions 不可见断点（管线此前只 load_core）；新增 tests/test_library_loader.py（3 测试）；game_loop 行号同步（run_turn 339→328、autosave 三函数 666/675/686→673/682/693、行数 902→909），run_pipeline 行数 1455→1474、run_auto 1246→1245、main 1346→1344 |
 | 2026-08-21 | effect 表达力计划 T1 review 修复：get_game_config 增非 dict JSON 防御（[]/null/str 回退全缺省）、类型严格化（`type is`，bool 不混入 int 缺省）、缓存返回副本（防调用方污染）；tests/test_game_config.py 增 4 测试；rules.py 表 roll_stats…calc_db 行号 off-by-one 修正（19→20 等，对齐 grep 实测） |
@@ -270,7 +271,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `SpellCatalog` | `(spell_lib, known_spells)` | 法术目录：known_spells∩法术库；entries() 透传 effect（list 浅拷贝, @99） | 74 |
 | `_best_material_match` | `(raw, entries)` | 精确 -> 包含 -> difflib(>=0.6) 三级匹配 | 104 |
 | `UseParser.__init__` | `(llm_call=None)` | llm_call 可注入（keeper 晚绑定 call_deepseek） | 128 |
-| `UseParser.resolve` | `(raw, catalogs)` | **确定性层**：否定词排除 -> USE_VERBS 谓词 -> 三级名称匹配 -> UseParseResult（effect 自 entry 透传 @153；resolve_llm 回灌本方法,无需另改） | 132 |
+| `UseParser.resolve` | `(raw, catalogs)` | **确定性层**：否定词排除 -> USE_VERBS 谓词 -> 三级名称匹配 -> UseParseResult（effect 自 entry 透传 @153：元素级浅拷贝+非 dict 过滤,不别名库单例；resolve_llm 回灌本方法,无需另改） | 132 |
 | `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
 | `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 

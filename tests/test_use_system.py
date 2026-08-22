@@ -516,3 +516,19 @@ class TestCatalogEffectPassthrough:
         r = UseParser().resolve("施放试咒", [SpellCatalog(lib, ["X"])])
         assert r is not None
         assert r.effect[0]["type"] == "heal"
+        assert r.effect[0] is not lib._spells["X"].effect[0], "元素级拷贝,不得别名库单例"
+
+    def test_resolve_llm_result_carries_effect(self):
+        from library.spells import SpellLibrary, LibrarySpell
+        from game.use_parser import UseParser, SpellCatalog
+        lib = SpellLibrary()
+        lib._spells["X"] = LibrarySpell.from_dict({
+            "id": "X", "name": "试咒",
+            "effect": [{"type": "heal", "target": "self", "formula": "1D3"}]})
+        cats = [SpellCatalog(lib, ["X"])]
+        up = UseParser(llm_call=lambda p, **k: {"matched": True, "material": "试咒",
+                                                "reason": "语义相同"})
+        r = up.resolve_llm("指尖轻点念念有词", cats)
+        assert r is not None
+        assert r.effect[0]["type"] == "heal", "LLM 回灌 resolve 路径 effect 不得丢失"
+        assert r.effect[0] is not lib._spells["X"].effect[0], "回灌路径同样元素级拷贝"

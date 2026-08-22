@@ -150,7 +150,7 @@ class UseParser:
             refund_on_fail=bool(e.get("refund_on_fail", False)),
             use_semantic=e.get("use_semantic", "none"),
             constraints=dict(e.get("constraints") or {}),
-            effect=list(e.get("effect") or []),
+            effect=[dict(a) for a in (e.get("effect") or []) if isinstance(a, dict)],
         )
 
     # ── LLM 兜底层 ──
