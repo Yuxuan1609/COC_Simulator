@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-21 | effect 表达力计划 T4：use_parser.py 透传 effect 原子数组--UseParseResult 增 effect 字段(@35)、ItemCatalog/SpellCatalog entries() 增 "effect" 键(list 浅拷贝透传 @69/@99)、resolve 构造点透传(@153；resolve_llm 回灌 resolve 无需另改)；行数 176->180；tests/test_use_system.py 增 TestCatalogEffectPassthrough 3 测试；use_parser 节行号全面对齐 grep 实测（UseParseResult 30->22、USE_VERBS 21->14 等） |
 | 2026-08-21 | effect 表达力计划 T2：新增 src/library/loader.py（load_item_library/load_spell_library，core+extensions 统一扫描，base_dir 可注入）；game_loop.init_game 与 run_pipeline 两处（run_interactive/run_auto）接入统一 loader，修复管线 extensions 不可见断点（管线此前只 load_core）；新增 tests/test_library_loader.py（3 测试）；game_loop 行号同步（run_turn 339→328、autosave 三函数 666/675/686→673/682/693、行数 902→909），run_pipeline 行数 1455→1474、run_auto 1246→1245、main 1346→1344 |
 | 2026-08-21 | effect 表达力计划 T1 review 修复：get_game_config 增非 dict JSON 防御（[]/null/str 回退全缺省）、类型严格化（`type is`，bool 不混入 int 缺省）、缓存返回副本（防调用方污染）；tests/test_game_config.py 增 4 测试；rules.py 表 roll_stats…calc_db 行号 off-by-one 修正（19→20 等，对齐 grep 实测） |
 | 2026-08-21 | effect 表达力计划 T1：新增 game_config 参数中心（data/game_config.json + rules.get_game_config/reset_game_config_cache，缺省兜底+类型校验+模块级缓存），rules.py 头部补模块级 import json/os，原有函数行号 +2 | 
@@ -259,19 +260,19 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `parse_markup` | 解析单个文本中的 @标记 | 137 |
 | `parse_markup_all` | `(text) -> list` 解析全部 @标记 | 147 |
 
-## src/game/use_parser.py (176 行) - UseParser（统一资源层 use 大类独立 parse 系统）
+## src/game/use_parser.py (180 行) - UseParser（统一资源层 use 大类独立 parse 系统）
 
 | 类/函数 | 签名 | 作用 | 行号 |
 |---------|------|------|------|
-| `UseParseResult` | dataclass | 解析结果：catalog_kind(item/spell 描述性), material_id, name, matched_text, impact, check, cost, on_use, result_slots, refund_on_fail, use_semantic, constraints | 30 |
-| `MaterialCatalog` | Protocol | 目录协议（entries() -> 可解析条目 dict 列表）；待解析内容可换 | 46 |
-| `ItemCatalog` | `(item_lib, inventory)` | 物品目录：持有物∩物品库（自由文本物品不进机械通路） | 53 |
-| `SpellCatalog` | `(spell_lib, known_spells)` | 法术目录：known_spells∩法术库 | 83 |
-| `_best_material_match` | `(raw, entries)` | 精确 -> 包含 -> difflib(>=0.6) 三级匹配 | 105 |
-| `UseParser.__init__` | `(llm_call=None)` | llm_call 可注入（keeper 晚绑定 call_deepseek） | 124 |
-| `UseParser.resolve` | `(raw, catalogs)` | **确定性层**：否定词排除 -> USE_VERBS 谓词 -> 三级名称匹配 -> UseParseResult | 129 |
-| `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 151 |
-| `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 21 / 25 |
+| `UseParseResult` | dataclass | 解析结果：catalog_kind(item/spell 描述性), material_id, name, matched_text, impact, check, cost, on_use, result_slots, refund_on_fail, use_semantic, constraints, effect(list 原子数组, 库预标注, Task 6 探索侧结算消费) | 22 |
+| `MaterialCatalog` | Protocol | 目录协议（entries() -> 可解析条目 dict 列表）；待解析内容可换 | 38 |
+| `ItemCatalog` | `(item_lib, inventory)` | 物品目录：持有物∩物品库（自由文本物品不进机械通路）；entries() 透传 effect（list 浅拷贝, @69） | 44 |
+| `SpellCatalog` | `(spell_lib, known_spells)` | 法术目录：known_spells∩法术库；entries() 透传 effect（list 浅拷贝, @99） | 74 |
+| `_best_material_match` | `(raw, entries)` | 精确 -> 包含 -> difflib(>=0.6) 三级匹配 | 104 |
+| `UseParser.__init__` | `(llm_call=None)` | llm_call 可注入（keeper 晚绑定 call_deepseek） | 128 |
+| `UseParser.resolve` | `(raw, catalogs)` | **确定性层**：否定词排除 -> USE_VERBS 谓词 -> 三级名称匹配 -> UseParseResult（effect 自 entry 透传 @153；resolve_llm 回灌本方法,无需另改） | 132 |
+| `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
+| `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 
 ## src/game/npc_manager.py (411 行) — NPC 管理
 

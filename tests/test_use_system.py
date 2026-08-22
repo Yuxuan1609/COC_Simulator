@@ -473,3 +473,46 @@ class TestEffectNormalize:
                                                "description": "d", "minutes": 5}})
         assert it.effect == [{"type": "timed", "id": "T",
                               "description": "d", "minutes": 5}]
+
+
+class TestCatalogEffectPassthrough:
+    """Catalog/UseParseResult 透传 effect 原子数组(2026-08-21 plan Task 4)。"""
+
+    def test_spell_catalog_entries_carry_effect(self):
+        from library.spells import SpellLibrary, LibrarySpell
+        from game.use_parser import SpellCatalog
+        lib = SpellLibrary()
+        lib._spells["X"] = LibrarySpell.from_dict({
+            "id": "X", "name": "试咒", "category": "exploration",
+            "effect": [{"type": "timed", "id": "X_EFF",
+                        "description": "耳畔嗡鸣", "minutes": 5}]})
+        cat = SpellCatalog(lib, ["X"])
+        entries = cat.entries()
+        assert entries[0]["effect"] == [{"type": "timed", "id": "X_EFF",
+                                         "description": "耳畔嗡鸣", "minutes": 5}]
+
+    def test_item_catalog_entries_carry_effect(self):
+        from library.items import ItemLibrary, LibraryItem
+        from game.use_parser import ItemCatalog
+        lib = ItemLibrary()
+        lib._items["SALT"] = LibraryItem.from_dict({
+            "id": "SALT", "name": "盐袋",
+            "effect": [{"type": "timed", "id": "SALT_LINE",
+                        "description": "白色盐线", "minutes": 60}]})
+        # ItemCatalog 需要库存;用假 inventory: list_all() 返回带 .name 的对象
+        from types import SimpleNamespace
+        fake_inv = SimpleNamespace(list_all=lambda: [SimpleNamespace(name="盐袋", quantity=1)])
+        cat = ItemCatalog(lib, fake_inv)
+        entries = cat.entries()
+        assert entries[0]["effect"][0]["id"] == "SALT_LINE"
+
+    def test_resolve_result_carries_effect(self):
+        from library.spells import SpellLibrary, LibrarySpell
+        from game.use_parser import UseParser, SpellCatalog
+        lib = SpellLibrary()
+        lib._spells["X"] = LibrarySpell.from_dict({
+            "id": "X", "name": "试咒",
+            "effect": [{"type": "heal", "target": "self", "formula": "1D3"}]})
+        r = UseParser().resolve("施放试咒", [SpellCatalog(lib, ["X"])])
+        assert r is not None
+        assert r.effect[0]["type"] == "heal"

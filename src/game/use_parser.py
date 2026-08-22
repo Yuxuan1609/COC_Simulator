@@ -32,6 +32,7 @@ class UseParseResult:
     refund_on_fail: bool = False
     use_semantic: str = "none"
     constraints: dict = field(default_factory=dict)
+    effect: list = field(default_factory=list)   # effect 原子数组(库预标注,Task 6 结算)
 
 
 class MaterialCatalog(Protocol):
@@ -65,6 +66,7 @@ class ItemCatalog:
                 "refund_on_fail": li.refund_on_fail,
                 "use_semantic": li.use_semantic,
                 "constraints": dict(li.constraints),
+                "effect": list(li.effect),
             })
         return out
 
@@ -94,6 +96,7 @@ class SpellCatalog:
                 "refund_on_fail": sp.refund_on_fail,
                 "use_semantic": "cast",
                 "constraints": dict(sp.constraints),
+                "effect": list(sp.effect),
             })
         return out
 
@@ -147,6 +150,7 @@ class UseParser:
             refund_on_fail=bool(e.get("refund_on_fail", False)),
             use_semantic=e.get("use_semantic", "none"),
             constraints=dict(e.get("constraints") or {}),
+            effect=list(e.get("effect") or []),
         )
 
     # ── LLM 兜底层 ──
