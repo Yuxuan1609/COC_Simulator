@@ -53,7 +53,7 @@ class TestKnownSpells:
         inv.known_spells = ["HEART_ARREST", "LIFE_DETECTION"]
         from investigator.serialization import to_dict, from_dict
         d = to_dict(inv)
-        assert d["meta"]["version"] == "2.1"
+        assert d["meta"]["version"] == "2.2"
         assert d["known_spells"] == ["HEART_ARREST", "LIFE_DETECTION"]
         inv2 = from_dict(d)
         assert inv2.known_spells == ["HEART_ARREST", "LIFE_DETECTION"]
@@ -532,3 +532,42 @@ class TestCatalogEffectPassthrough:
         assert r is not None
         assert r.effect[0]["type"] == "heal", "LLM 回灌 resolve 路径 effect 不得丢失"
         assert r.effect[0] is not lib._spells["X"].effect[0], "回灌路径同样元素级拷贝"
+
+
+class TestTimedEffectsSerialization:
+    """timed_effects 序列化 v2.2:往返一致 + 旧档缺省(2026-08-21 plan Task 5)。"""
+
+    def test_timed_effects_roundtrip(self):
+        from investigator import serialization
+        inv = _inv()
+        inv.timed_effects = [{"id": "SILENCE_VEIL",
+                              "description": "帷幕吞掉一切声响",
+                              "expire_at": 1234}]
+        data = serialization.to_dict(inv)
+        assert data["meta"]["version"] == "2.2"
+        inv2 = serialization.from_dict(data)
+        assert inv2.timed_effects == [{"id": "SILENCE_VEIL",
+                                       "description": "帷幕吞掉一切声响",
+                                       "expire_at": 1234}]
+
+    def test_v21_loads_with_empty_timed_effects(self):
+        from investigator import serialization
+        inv = _inv()
+        data = serialization.to_dict(inv)
+        data["meta"]["version"] = "2.1"
+        del data["timed_effects"]
+        inv2 = serialization.from_dict(data)
+        assert inv2.timed_effects == []
+
+    def test_default_empty_on_new_investigator(self):
+        inv = _inv()
+        assert inv.timed_effects == []
+
+    def test_bad_elements_without_expire_at_filtered(self):
+        from investigator import serialization
+        inv = _inv()
+        data = serialization.to_dict(inv)
+        data["timed_effects"] = [{"id": "OK", "description": "d", "expire_at": 5},
+                                 {"id": "NO_EXPIRE"}, "junk"]
+        inv2 = serialization.from_dict(data)
+        assert inv2.timed_effects == [{"id": "OK", "description": "d", "expire_at": 5}]

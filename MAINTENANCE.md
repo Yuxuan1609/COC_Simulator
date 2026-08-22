@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-22 | effect 表达力计划 T5：Investigator 增 timed_effects 字段（timed 原子软状态 `[{id, description, expire_at}]`，expire_at=GameClock.game_time 绝对分钟数，@200）；serialization 升 v2.2（to_dict 增 timed_effects 元素级拷贝 @96；from_dict 增缺省 [] + 非 dict/无 expire_at 坏元素过滤 @186，防旧档/手改数据炸 advance_time；无版本白名单、仅 SIZ 结构校验，旧档 v2.0/2.1 继续可加载）；models/serialization 两节行号对齐 grep 实测（修正既有漂移：__init__ 152->160、check_skill 216->226、modify_stat 309->326 等）；tests/test_use_system.py 增 TestTimedEffectsSerialization 4 测试（往返/旧档缺省/新卡缺省/坏元素过滤），known_spells 往返断言 version 2.1->2.2 |
 | 2026-08-22 | effect 表达力计划 T4 review 修复：resolve 构造点 effect 透传升级为元素级浅拷贝+非 dict 过滤（@153,原 list() 外层拷贝致元素 dict 别名库单例,下游变异会污染全库,对齐 T3 库层元素级拷贝不变量）；TestCatalogEffectPassthrough 增别名隔离断言（resolve/resolve_llm 两路径 `is not` 库元素）+ 新增 test_resolve_llm_result_carries_effect（假 llm_call 回灌路径 effect 不丢回归,4 测试） |
 | 2026-08-21 | effect 表达力计划 T4：use_parser.py 透传 effect 原子数组--UseParseResult 增 effect 字段(@35)、ItemCatalog/SpellCatalog entries() 增 "effect" 键(list 浅拷贝透传 @69/@99)、resolve 构造点透传(@153；resolve_llm 回灌 resolve 无需另改)；行数 176->180；tests/test_use_system.py 增 TestCatalogEffectPassthrough 3 测试；use_parser 节行号全面对齐 grep 实测（UseParseResult 30->22、USE_VERBS 21->14 等） |
 | 2026-08-21 | effect 表达力计划 T2：新增 src/library/loader.py（load_item_library/load_spell_library，core+extensions 统一扫描，base_dir 可注入）；game_loop.init_game 与 run_pipeline 两处（run_interactive/run_auto）接入统一 loader，修复管线 extensions 不可见断点（管线此前只 load_core）；新增 tests/test_library_loader.py（3 测试）；game_loop 行号同步（run_turn 339→328、autosave 三函数 666/675/686→673/682/693、行数 902→909），run_pipeline 行数 1455→1474、run_auto 1246→1245、main 1346→1344 |
@@ -459,25 +460,25 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ## src/investigator/ — 调查员系统（COC 7th）
 
-### models.py (447 行)
+### models.py (448 行)
 
 | 类/方法 | 说明 | 行号 |
 |---------|------|------|
 | `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3；统一资源层增 MP_MAX=floor(POW/5)；Skill.category=属性归属拼接如 "INT、EDU"） | 14–81 |
 | `_carry_current` | `(current, old_max, new_max)` | 模块级：上限变化携带当前值（涨上限同步涨差值，降上限 clamp） | 148 |
 | `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 89–139 |
-| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表） | 152 |
-| `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 195 / 201 / 210 |
-| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行 | 216 |
-| `_roll_d100` | `(name, target)` 骰点+等级判定；消费 pending_luck_bonus（一次性 -N） | 237 |
-| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 258 |
-| `check_skills` | `(skill_names)` 批量检定 | 267 |
-| `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 294 |
-| `_recalc_derived` | 重算衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）经 _carry_current 携带或 clamp，SAN 永不重置 | 314 |
-| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ→CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 309 |
-| `modify_skill` / `has_item` / `list_items` | — | 390–401 |
-| `add_weapon` / `remove_weapon` | 武器管理 | 421 / 424 |
-| `save` / `load` | JSON 存档 | 431 / 437 |
+| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at}]`，2026-08-21 spec §2） | 160 |
+| `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 205 / 211 / 220 |
+| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行 | 226 |
+| `_roll_d100` | `(name, target)` 骰点+等级判定；消费 pending_luck_bonus（一次性 -N） | 247 |
+| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 268 |
+| `check_skills` | `(skill_names)` 批量检定 | 277 |
+| `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 295 |
+| `_recalc_derived` | 重算衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）经 _carry_current 携带或 clamp，SAN 永不重置 | 315 |
+| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ->CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 326 |
+| `modify_skill` / `has_item` / `list_items` | - | 410 / 417 / 421 |
+| `add_weapon` / `remove_weapon` | 武器管理 | 425 / 428 |
+| `save` / `load` | JSON 存档 | 435 / 441 |
 
 ### rules.py (334 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import json/os）
 
@@ -501,13 +502,13 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 311 |
 | `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段类型严格校验（`type is`，bool 不混入 int，不符回缺省）+ 模块级缓存（每次返回副本，防调用方污染）；文件缺失/损坏静默回缺省。后续 MP 恢复/timed 默认时长/buff 减伤下限等 effect 任务统一从此读取 | 317 |
 
-### serialization.py (189 行) — v2.0：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载
+### serialization.py (195 行) — v2.2：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载；v2.2 增 timed_effects
 
 | 函数 | 说明 | 行号 |
 |------|------|------|
 | `_occupation_dict_to_obj` | 职业 dict→对象 | 15 |
-| `to_dict` / `to_json` | Investigator → dict/JSON（meta.version="2.0"，personal 含 label） | 27–101 |
-| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建 | 105–189 |
+| `to_dict` / `to_json` | Investigator → dict/JSON（meta.version="2.2"，personal 含 label，known_spells 列表拷贝 / timed_effects 元素级拷贝 @96） | 27 / 100 |
+| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建；timed_effects 缺省 []，过滤非 dict / 无 expire_at 坏元素 @186（防旧档/手改数据炸 advance_time）；无版本白名单（仅结构校验），旧档 v2.0/v2.1 继续可加载 | 107 / 191 |
 
 ---
 

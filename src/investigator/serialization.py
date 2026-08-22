@@ -39,7 +39,7 @@ def to_dict(inv: Investigator) -> dict:
 
     return {
         "meta": {
-            "version": "2.1",
+            "version": "2.2",
             "created_at": datetime.now().isoformat(),
             "rules_edition": "COC7",
         },
@@ -93,6 +93,7 @@ def to_dict(inv: Investigator) -> dict:
         "backstory": inv.backstory,
         "avatar_url": inv.avatar_url,
         "known_spells": list(getattr(inv, 'known_spells', [])),
+        "timed_effects": [dict(t) for t in getattr(inv, 'timed_effects', [])],
     }
 
 
@@ -182,6 +183,8 @@ def from_dict(data: dict) -> Investigator:
     if im_data:
         inv.item_manager = ItemManager.from_dict(im_data)
     inv.known_spells = list(data.get("known_spells", []) or [])
+    inv.timed_effects = [dict(t) for t in (data.get("timed_effects", []) or [])
+                         if isinstance(t, dict) and "expire_at" in t]
     return inv
 
 
