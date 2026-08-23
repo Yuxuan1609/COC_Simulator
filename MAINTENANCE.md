@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-23 | effect 表达力计划 T6 review 修复：L0 纯叙事短路 guard 纳入 effect（`not getattr(material, "effect", None)`，@105-107）--原 guard 含 on_use 不含 effect，L0+on_use 走完整通路而 L0+effect 静默丢弃，非对称；修后 L0+effect 素材走完整通路执行 effect；TestExecuteMaterialEffects 增 test_l0_with_effect_not_shortcircuited（timed 挂载不因短路丢失），_mat helper 改 setdefault 支持 impact 覆盖；judge.py 552->553 行，节内行号 +1 |
 | 2026-08-23 | effect 表达力计划 T6：Judge.execute_material 探索侧 effect 原子结算--on_use @markup 之后调新增 `Judge._execute_effect_atoms(effects, player)`（@186，judge.py 行数 485->552）；语义按 spec §1.2 探索列：heal（formula NdM 掷骰/delta，clamp HP_MAX）、mp_change（clamp 0..MP_MAX）、markup（@标记走 parse_markup_all+apply_side_effects 与 on_use 同通路）、timed（挂 player.timed_effects，expire_at=clock.game_time+minutes，minutes 缺省读 get_game_config 的 timed_default_minutes）、damage（探索侧无目标：logger "game.judge" warning 跳过不阻断）、buff/control（降级 description 文本）、narrative（text 进结果）、未知 type（`[unknown:{type}]` 前缀降级）；effect 行拼在 on_use 行之后进 message（@175-178）；tests/test_use_system.py 增 TestExecuteMaterialEffects 9 测试（heal/mp clamp、markup SAN 通路、timed 挂载+config 缺省、damage 跳过+caplog warning、unknown/buff/control 降级、on_use 先 effect 后顺序断言） |
 | 2026-08-22 | effect 表达力计划 T5 review 修复：timed_effects 过滤条件升级为 expire_at 类型校验（isinstance(int/float)，原仅查 key 存在会放过 str/None 值，Task 7 `t["expire_at"] <= now` 会 TypeError）；丢弃数>0 记 logging.warning（"investigator.serialization" logger）；坏元素过滤测试增 str/None expire_at 两用例，roundtrip 测试增元素级拷贝别名隔离断言；TestKnownSpells 删除版本号断言（解耦，版本由 TestTimedEffectsSerialization 覆盖） |
 | 2026-08-22 | effect 表达力计划 T5：Investigator 增 timed_effects 字段（timed 原子软状态 `[{id, description, expire_at}]`，expire_at=GameClock.game_time 绝对分钟数，@200）；serialization 升 v2.2（to_dict 增 timed_effects 元素级拷贝 @96；from_dict 增缺省 [] + 非 dict/无 expire_at 坏元素过滤 @186，防旧档/手改数据炸 advance_time；无版本白名单、仅 SIZ 结构校验，旧档 v2.0/2.1 继续可加载）；models/serialization 两节行号对齐 grep 实测（修正既有漂移：__init__ 152->160、check_skill 216->226、modify_stat 309->326 等）；tests/test_use_system.py 增 TestTimedEffectsSerialization 4 测试（往返/旧档缺省/新卡缺省/坏元素过滤），known_spells 往返断言 version 2.1->2.2 |
@@ -234,19 +235,19 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1158 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1265 |
 
-## src/game/judge.py (552 行) — 确定性闸门（无 LLM 依赖）
+## src/game/judge.py (553 行) — 确定性闸门（无 LLM 依赖）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `_escalate_difficulty` | `(difficulty)` | 难度递增 regular→hard→extreme | 25 |
 | `Judge.check_auto_triggers` | `()` | 触发当前场景满足简单条件的全部 AT | 47 |
 | `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 63 |
-| `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@175）；L0 零消耗无检定时纯叙事 | 77 |
-| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰/delta，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级 description 文本进结果）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级）；永不报错阻断 | 186 |
-| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截 → NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 265 |
-| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 473 |
-| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 484 / 495 |
-| `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 506 |
+| `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@175）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@105） | 77 |
+| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰/delta，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级 description 文本进结果）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级）；永不报错阻断 | 187 |
+| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截 → NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 266 |
+| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 474 |
+| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 485 / 496 |
+| `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 507 |
 
 ## src/game/curator.py (68 行) — 策展器
 

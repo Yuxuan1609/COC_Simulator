@@ -101,9 +101,10 @@ class Judge:
             if not player.item_manager.has(mat):
                 return _fail(f"缺少材料：{mat}。")
 
-        # L0 且零消耗无检定：纯叙事
+        # L0 且零消耗无检定且无副作用（on_use/effect 对称）：纯叙事
         if (material.impact == "L0" and not need_mp and not need_san
-                and not material.check and not material.on_use):
+                and not material.check and not material.on_use
+                and not getattr(material, "effect", None)):
             text = (material.result_slots or {}).get("on_success") or material.description
             return ActionOutcome(intent=intent, success=True, message=text,
                                  entity_id=material.material_id,

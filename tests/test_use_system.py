@@ -601,8 +601,9 @@ class TestExecuteMaterialEffects:
 
     def _mat(self, **kw):
         from game.use_parser import UseParseResult
+        kw.setdefault("impact", "L1")
         return UseParseResult(catalog_kind="spell", material_id="X", name="试咒",
-                              matched_text="试咒", impact="L1", **kw)
+                              matched_text="试咒", **kw)
 
     def test_heal_clamped(self):
         from game.judge import Judge
@@ -718,3 +719,18 @@ class TestExecuteMaterialEffects:
         assert inv.derived.MP == 6, "effect 原子后生效"
         assert out.message.index("[属性变化]") < out.message.index("MP"), \
             "on_use 行在 effect 行之前拼入 message"
+
+    def test_l0_with_effect_not_shortcircuited(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(impact="L0",
+                      result_slots={"on_success": "咒纹在空中一闪而逝。"},
+                      effect=[{"type": "timed", "id": "T",
+                               "description": "低语", "minutes": 5}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert "咒纹在空中一闪而逝。" in out.message
+        assert len(inv.timed_effects) == 1, \
+            "L0+effect 不得因纯叙事短路而丢弃 effect(on_use/effect 对称)"
+        assert inv.timed_effects[0]["id"] == "T"
