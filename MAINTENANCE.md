@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-22 | effect 表达力计划 T5 review 修复：timed_effects 过滤条件升级为 expire_at 类型校验（isinstance(int/float)，原仅查 key 存在会放过 str/None 值，Task 7 `t["expire_at"] <= now` 会 TypeError）；丢弃数>0 记 logging.warning（"investigator.serialization" logger）；坏元素过滤测试增 str/None expire_at 两用例，roundtrip 测试增元素级拷贝别名隔离断言；TestKnownSpells 删除版本号断言（解耦，版本由 TestTimedEffectsSerialization 覆盖） |
 | 2026-08-22 | effect 表达力计划 T5：Investigator 增 timed_effects 字段（timed 原子软状态 `[{id, description, expire_at}]`，expire_at=GameClock.game_time 绝对分钟数，@200）；serialization 升 v2.2（to_dict 增 timed_effects 元素级拷贝 @96；from_dict 增缺省 [] + 非 dict/无 expire_at 坏元素过滤 @186，防旧档/手改数据炸 advance_time；无版本白名单、仅 SIZ 结构校验，旧档 v2.0/2.1 继续可加载）；models/serialization 两节行号对齐 grep 实测（修正既有漂移：__init__ 152->160、check_skill 216->226、modify_stat 309->326 等）；tests/test_use_system.py 增 TestTimedEffectsSerialization 4 测试（往返/旧档缺省/新卡缺省/坏元素过滤），known_spells 往返断言 version 2.1->2.2 |
 | 2026-08-22 | effect 表达力计划 T4 review 修复：resolve 构造点 effect 透传升级为元素级浅拷贝+非 dict 过滤（@153,原 list() 外层拷贝致元素 dict 别名库单例,下游变异会污染全库,对齐 T3 库层元素级拷贝不变量）；TestCatalogEffectPassthrough 增别名隔离断言（resolve/resolve_llm 两路径 `is not` 库元素）+ 新增 test_resolve_llm_result_carries_effect（假 llm_call 回灌路径 effect 不丢回归,4 测试） |
 | 2026-08-21 | effect 表达力计划 T4：use_parser.py 透传 effect 原子数组--UseParseResult 增 effect 字段(@35)、ItemCatalog/SpellCatalog entries() 增 "effect" 键(list 浅拷贝透传 @69/@99)、resolve 构造点透传(@153；resolve_llm 回灌 resolve 无需另改)；行数 176->180；tests/test_use_system.py 增 TestCatalogEffectPassthrough 3 测试；use_parser 节行号全面对齐 grep 实测（UseParseResult 30->22、USE_VERBS 21->14 等） |
@@ -508,7 +509,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 |------|------|------|
 | `_occupation_dict_to_obj` | 职业 dict→对象 | 15 |
 | `to_dict` / `to_json` | Investigator → dict/JSON（meta.version="2.2"，personal 含 label，known_spells 列表拷贝 / timed_effects 元素级拷贝 @96） | 27 / 100 |
-| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建；timed_effects 缺省 []，过滤非 dict / 无 expire_at 坏元素 @186（防旧档/手改数据炸 advance_time）；无版本白名单（仅结构校验），旧档 v2.0/v2.1 继续可加载 | 107 / 191 |
+| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建；timed_effects 缺省 []，过滤非 dict / expire_at 非数字（int/float，防 str/None 炸 Task 7 的 `<=` 比较）坏元素 @186，丢弃数>0 时记 logging.warning；无版本白名单（仅结构校验），旧档 v2.0/v2.1 继续可加载 | 107 / 191 |
 
 ---
 

@@ -183,8 +183,14 @@ def from_dict(data: dict) -> Investigator:
     if im_data:
         inv.item_manager = ItemManager.from_dict(im_data)
     inv.known_spells = list(data.get("known_spells", []) or [])
-    inv.timed_effects = [dict(t) for t in (data.get("timed_effects", []) or [])
-                         if isinstance(t, dict) and "expire_at" in t]
+    _raw_te = (data.get("timed_effects", []) or [])
+    inv.timed_effects = [dict(t) for t in _raw_te
+                         if isinstance(t, dict) and isinstance(t.get("expire_at"), (int, float))]
+    _dropped = len(_raw_te) - len(inv.timed_effects)
+    if _dropped:
+        import logging
+        logging.getLogger("investigator.serialization").warning(
+            "timed_effects 过滤 %d 个坏元素", _dropped)
     return inv
 
 

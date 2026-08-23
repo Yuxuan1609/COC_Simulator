@@ -53,7 +53,6 @@ class TestKnownSpells:
         inv.known_spells = ["HEART_ARREST", "LIFE_DETECTION"]
         from investigator.serialization import to_dict, from_dict
         d = to_dict(inv)
-        assert d["meta"]["version"] == "2.2"
         assert d["known_spells"] == ["HEART_ARREST", "LIFE_DETECTION"]
         inv2 = from_dict(d)
         assert inv2.known_spells == ["HEART_ARREST", "LIFE_DETECTION"]
@@ -549,6 +548,7 @@ class TestTimedEffectsSerialization:
         assert inv2.timed_effects == [{"id": "SILENCE_VEIL",
                                        "description": "帷幕吞掉一切声响",
                                        "expire_at": 1234}]
+        assert inv2.timed_effects[0] is not inv.timed_effects[0], "roundtrip 必须元素级拷贝,不得别名"
 
     def test_v21_loads_with_empty_timed_effects(self):
         from investigator import serialization
@@ -568,6 +568,9 @@ class TestTimedEffectsSerialization:
         inv = _inv()
         data = serialization.to_dict(inv)
         data["timed_effects"] = [{"id": "OK", "description": "d", "expire_at": 5},
-                                 {"id": "NO_EXPIRE"}, "junk"]
+                                 {"id": "NO_EXPIRE"},
+                                 {"id": "STR_EXPIRE", "expire_at": "晚八点"},
+                                 {"id": "NULL_EXPIRE", "expire_at": None},
+                                 "junk"]
         inv2 = serialization.from_dict(data)
         assert inv2.timed_effects == [{"id": "OK", "description": "d", "expire_at": 5}]
