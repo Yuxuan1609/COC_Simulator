@@ -696,6 +696,7 @@ class ScenarioWorld:
         self.weapon_library = weapon_library
         self.item_library = item_library      # 统一资源层：物品库（可选，init_game 注入）
         self.spell_library = spell_library    # 统一资源层：法术库
+        self._mp_regen_acc = 0        # MP 恢复分钟累计器(时间钩子)
 
         # 从 graph nodes 加载 L2 定义的 scene_weapons → world.scene_weapons
         for node_id, node in graph.nodes.items():
@@ -752,6 +753,37 @@ class ScenarioWorld:
         for flag, value in self.clock.get_time_flags().items():
             state = self.get_runtime_state(flag)
             state.completed = value
+        # 时间钩子(2026-08-21 spec §2.2/§4)
+        self._tick_time_effects(minutes)
+
+    def _tick_time_effects(self, minutes: int):
+        """MP 恢复(余数累计) + timed_effects 过期清除。"""
+        import logging
+        from investigator.rules import get_game_config
+        logger = logging.getLogger("scenario_core")
+        p = self.player
+        if p is None:
+            return
+        # MP 恢复:分钟累计器攒 60 回 1 点/点每小时恢复率
+        cfg = get_game_config()
+        per_hour = int(cfg["mp_recovery_per_hour"])
+        self._mp_regen_acc = getattr(self, "_mp_regen_acc", 0) + max(0, minutes)
+        if per_hour > 0 and self._mp_regen_acc >= 60:
+            gain = (self._mp_regen_acc // 60) * per_hour
+            self._mp_regen_acc -= (self._mp_regen_acc // 60) * 60
+            before = p.derived.MP
+            p.derived.MP = min(p.derived.MP_MAX, p.derived.MP + gain)
+            if p.derived.MP != before:
+                logger.info("[time] MP 恢复 %d -> %d", before, p.derived.MP)
+        # timed 过期清除(记录被清除的 id)
+        now = self.clock.game_time
+        expired = [t for t in getattr(p, "timed_effects", [])
+                   if t.get("expire_at", 0) <= now]
+        if expired:
+            p.timed_effects = [t for t in p.timed_effects
+                               if t.get("expire_at", 0) > now]
+            for t in expired:
+                logger.info("[time] timed 效果过期: %s", t.get("id"))
 
     def get_time_flags(self) -> dict:
         return self.clock.get_time_flags()

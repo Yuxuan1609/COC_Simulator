@@ -777,7 +777,8 @@ class Keeper:
                 enriched_summary = results
         if ta_result:
             if ta_result.get("time_delta", 0) > 0:
-                self.world.clock.advance_time(ta_result["time_delta"])
+                # 走 world.advance_time 三合一入口(T7):时钟 + MP 恢复 + timed 过期清除
+                self.world.advance_time(ta_result["time_delta"])
             narrative = (ta_result.get("narrative_hint", "") or "")
             if narrative:
                 self.world.clock.time_context = narrative

@@ -824,3 +824,75 @@ class TestExecuteMaterialEffects:
         assert any("buff" in w for w in warned), "buff 降级记 warning"
         assert any("control" in w for w in warned), "control 降级记 warning"
         assert any("summon" in w for w in warned), "unknown 降级记 warning"
+
+
+class TestAdvanceTimeHooks:
+    """advance_time 三合一:推时钟 + MP 恢复(余数累计) + timed 过期清除(2026-08-21 spec §2.2/§4)。"""
+
+    def _world(self):
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'e2e'))
+        from helpers import make_world, make_scene
+        from investigator import Investigator
+        from investigator.models import Stats
+        from investigator.rules import calc_derived
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = Investigator(name="测试", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        world.set_player(inv)
+        return world, inv
+
+    def test_mp_recovery_whole_hours(self):
+        world, inv = self._world()
+        inv.derived.MP = 0
+        world.advance_time(120)
+        assert inv.derived.MP == 2, "120 分钟=2 小时,默认 1 点/小时回 2"
+
+    def test_mp_recovery_accumulates_remainder(self):
+        world, inv = self._world()
+        inv.derived.MP = 0
+        world.advance_time(30)
+        assert inv.derived.MP == 0, "30 分钟不足 1 小时,不回 MP"
+        world.advance_time(30)
+        assert inv.derived.MP == 1, "余数累计:再 30 分钟凑满 1 小时回 1 点"
+
+    def test_mp_recovery_clamped(self):
+        world, inv = self._world()
+        inv.derived.MP = inv.derived.MP_MAX - 1
+        world.advance_time(300)
+        assert inv.derived.MP == inv.derived.MP_MAX, "恢复 clamp 到 MP_MAX 不超上限"
+
+    def test_timed_effect_expires(self):
+        world, inv = self._world()
+        base = world.clock.game_time
+        inv.timed_effects = [{"id": "V", "description": "帷幕",
+                              "expire_at": base + 10}]
+        world.advance_time(10)
+        assert inv.timed_effects == [], "恰好到期(expire_at==now)即清除"
+
+    def test_timed_effect_survives_before_expiry(self):
+        world, inv = self._world()
+        base = world.clock.game_time
+        inv.timed_effects = [{"id": "V", "description": "帷幕",
+                              "expire_at": base + 60}]
+        world.advance_time(10)
+        assert len(inv.timed_effects) == 1, "未到期不得误清"
+
+    def test_mp_recovery_rate_from_config(self, monkeypatch):
+        import investigator.rules as rules_mod
+        monkeypatch.setattr(rules_mod, "get_game_config",
+                            lambda: {"mp_recovery_per_hour": 3})
+        world, inv = self._world()
+        inv.derived.MP = 0
+        world.advance_time(60)
+        assert inv.derived.MP == 3, "恢复率读 game_config 的 mp_recovery_per_hour"
+
+    def test_mp_regen_zero_rate_disables(self, monkeypatch):
+        import investigator.rules as rules_mod
+        monkeypatch.setattr(rules_mod, "get_game_config",
+                            lambda: {"mp_recovery_per_hour": 0})
+        world, inv = self._world()
+        inv.derived.MP = 0
+        world.advance_time(600)
+        assert inv.derived.MP == 0, "0 速率关闭 MP 恢复"

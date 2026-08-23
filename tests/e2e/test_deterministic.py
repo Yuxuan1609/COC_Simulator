@@ -704,7 +704,7 @@ class TestMemoryCompression:  # D11: C4
 
 class TestTimeAdvance:  # D12: C1
     def test_time_delta_crosses_day_and_sets_context(self, monkeypatch):
-        """大估时跨天 → day 递增；narrative_hint 写入 time_context。"""
+        """大估时跨天 -> day 递增；narrative_hint 写入 time_context。"""
         from game_loop import run_turn
         from game.agents.keeper import Keeper
 
@@ -721,6 +721,27 @@ class TestTimeAdvance:  # D12: C1
         assert_player_turn_contract(r)
         assert world.clock.day == d0 + 1, "1500 分钟必须跨天"
         assert world.clock.time_context == "一天一夜过去了。"
+
+    def test_time_delta_triggers_time_hooks(self, monkeypatch):
+        """T7 三合一:keeper 时间推进必须走 world.advance_time 入口,
+        MP 恢复与 timed 过期清除在真实回合流中生效(而非仅测试直调)。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = _player(world)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch, time_delta=120)
+        game = make_game(keeper)
+
+        inv.derived.MP_MAX = 10
+        inv.derived.MP = 0
+        inv.timed_effects = [{"id": "V", "description": "帷幕",
+                              "expire_at": world.clock.game_time + 60}]
+        r = run_turn(game, "原地休整")
+        assert_player_turn_contract(r)
+        assert inv.derived.MP == 2, "回合推 120 分钟必须触发 MP 恢复钩子(1点/小时)"
+        assert inv.timed_effects == [], "回合推 120 分钟必须清除已到期 timed 效果"
 
 
 class TestChronicleWiring:  # U2: game_loop 每回合写编年史

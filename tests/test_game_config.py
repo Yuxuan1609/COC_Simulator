@@ -10,6 +10,12 @@ def setup_function():
     rules.reset_game_config_cache()
 
 
+def teardown_function():
+    # 本文件各测试会把 tmp 路径的配置写入模块级缓存;结束时必须清掉,
+    # 否则 monkeypatch 还原 _CONFIG_PATH 后缓存与真实文件不一致,污染后续测试文件。
+    rules.reset_game_config_cache()
+
+
 def test_defaults_when_file_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(rules, "_CONFIG_PATH", str(tmp_path / "nope.json"))
     cfg = rules.get_game_config()
