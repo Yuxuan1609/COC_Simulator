@@ -574,3 +574,147 @@ class TestTimedEffectsSerialization:
                                  "junk"]
         inv2 = serialization.from_dict(data)
         assert inv2.timed_effects == [{"id": "OK", "description": "d", "expire_at": 5}]
+
+
+class TestExecuteMaterialEffects:
+    """探索侧 effect 原子结算(2026-08-21 spec §1.2 探索列)。"""
+
+    def _world(self):
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'e2e'))
+        from helpers import make_world, make_scene
+        from library.spells import SpellLibrary
+        from library.items import ItemLibrary
+        from investigator import Investigator
+        slib = SpellLibrary(); slib.load_core()
+        ilib = ItemLibrary(); ilib.load_core()
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           item_library=ilib, spell_library=slib)
+        from investigator.models import Stats
+        inv = Investigator(name="测试", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        from investigator.rules import calc_derived
+        inv.derived = calc_derived(inv.stats)
+        inv.known_spells = ["X"]
+        world.set_player(inv)
+        return world, inv
+
+    def _mat(self, **kw):
+        from game.use_parser import UseParseResult
+        return UseParseResult(catalog_kind="spell", material_id="X", name="试咒",
+                              matched_text="试咒", impact="L1", **kw)
+
+    def test_heal_clamped(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.HP = inv.derived.HP_MAX - 1   # CON60 -> HP_MAX 20
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "heal", "target": "self",
+                               "formula": "1D3"}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.HP == inv.derived.HP_MAX, "heal 必须 clamp 到 HP_MAX"
+
+    def test_mp_change_clamped(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.MP = 1
+        inv.derived.MP_MAX = 4
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "mp_change", "delta": 5}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.MP == 4, "mp_change 必须 clamp 到 MP_MAX"
+
+    def test_markup_atom_applies_side_effect(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.SAN = 50
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "markup",
+                               "text": '@stat_change(stat_name="SAN", delta=-1)'}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.SAN == 49, "markup 原子走 apply_side_effects 通路"
+        assert "[属性变化]" in out.message
+
+    def test_timed_atom_mounts_on_player(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        base = world.clock.game_time
+        m = self._mat(effect=[{"type": "timed", "id": "VEIL",
+                               "description": "帷幕", "minutes": 10}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert len(inv.timed_effects) == 1
+        te = inv.timed_effects[0]
+        assert te["id"] == "VEIL" and te["description"] == "帷幕"
+        assert te["expire_at"] == base + 10
+
+    def test_timed_default_minutes_from_config(self, monkeypatch):
+        import investigator.rules as rules_mod
+        monkeypatch.setattr(rules_mod, "get_game_config",
+                            lambda: {"timed_default_minutes": 45})
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        base = world.clock.game_time
+        m = self._mat(effect=[{"type": "timed", "id": "T", "description": "低语"}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.timed_effects[0]["expire_at"] == base + 45, \
+            "minutes 缺省读 game_config 的 timed_default_minutes"
+
+    def test_damage_atom_skipped_with_warning(self, caplog):
+        import logging
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "damage", "formula": "1D6"},
+                              {"type": "narrative", "text": "余音回荡。"}])
+        with caplog.at_level(logging.WARNING, logger="game.judge"):
+            out = judge.execute_material(m, "试咒")
+        assert out.success, "探索侧 damage 跳过,不得阻断"
+        assert "余音回荡" in out.message
+        assert any(r.levelno == logging.WARNING and "damage" in r.message
+                   for r in caplog.records), "damage 跳过必须留 warning 日志"
+
+    def test_unknown_type_degrades_to_narrative(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "summon", "description": "阴影中传来窸窣声"}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success, "未知 type 降级,永不报错阻断"
+        assert "[unknown:summon]" in out.message
+        assert "窸窣声" in out.message
+
+    def test_buff_control_degrade_to_text(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "buff", "reduce": 3, "rounds": 3,
+                               "description": "石肤"},
+                              {"type": "control", "rounds": 2,
+                               "description": "支配"}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert "石肤" in out.message and "支配" in out.message, \
+            "buff/control 探索侧降级为 description 文本进结果"
+
+    def test_effect_atoms_execute_after_on_use(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.SAN = 50
+        inv.derived.MP = 5
+        judge = Judge(world)
+        m = self._mat(
+            on_use=['@stat_change(stat_name="SAN", delta=-1)'],
+            effect=[{"type": "mp_change", "delta": 1}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.SAN == 49, "on_use 副作用先生效"
+        assert inv.derived.MP == 6, "effect 原子后生效"
+        assert out.message.index("[属性变化]") < out.message.index("MP"), \
+            "on_use 行在 effect 行之前拼入 message"

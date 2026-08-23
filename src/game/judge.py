@@ -172,13 +172,80 @@ class Judge:
             from scenario_core import apply_side_effects
             side_msgs = apply_side_effects(self.world, side_effects)
 
-        message = text + ("".join(f"\n{m}" for m in side_msgs))
+        # effect 原子数组(2026-08-21 spec §1.2 探索侧)
+        eff_msgs = self._execute_effect_atoms(getattr(material, "effect", None) or [], player)
+
+        message = text + ("".join(f"\n{m}" for m in side_msgs + eff_msgs))
         return ActionOutcome(
             intent=intent, success=success, message=message,
             entity_id=material.material_id, entity_type="material",
             side_effects=side_effects, skill_tier=skill_tier,
             skill_detail=skill_detail,
         )
+
+    def _execute_effect_atoms(self, effects: list, player) -> list[str]:
+        """探索侧 effect 原子结算(spec §1.2 探索列)。返回追加进 message 的行。"""
+        import re
+        import logging
+        import random
+        from investigator.rules import get_game_config
+        cfg = get_game_config()
+        logger = logging.getLogger("game.judge")
+        msgs: list[str] = []
+
+        def _roll(formula: str) -> int:
+            m = re.match(r"^(\d*)D(\d+)([+-]\d+)?$", str(formula).strip().upper())
+            if not m:
+                return 0
+            n = int(m.group(1) or 1)
+            d = int(m.group(2))
+            bonus = int(m.group(3) or 0)
+            return sum(random.randint(1, d) for _ in range(n)) + bonus
+
+        for atom in effects or []:
+            t = atom.get("type", "")
+            if t == "heal":
+                delta = int(atom.get("delta", 0) or 0)
+                if "formula" in atom:
+                    delta = _roll(str(atom["formula"]))
+                if delta:
+                    before = player.derived.HP
+                    player.derived.HP = min(player.derived.HP_MAX,
+                                            player.derived.HP + delta)
+                    msgs.append(f"（恢复 {player.derived.HP - before} 点 HP。）")
+            elif t == "mp_change":
+                delta = int(atom.get("delta", 0) or 0)
+                if delta:
+                    before = player.derived.MP
+                    player.derived.MP = max(0, min(player.derived.MP_MAX,
+                                                   player.derived.MP + delta))
+                    msgs.append(f"（MP {player.derived.MP - before:+d}。）")
+            elif t == "markup":
+                from scenario_core import apply_side_effects
+                effs = parse_markup_all(str(atom.get("text", "")))
+                if effs:
+                    msgs.extend(apply_side_effects(self.world, effs))
+            elif t == "timed":
+                minutes = int(atom.get("minutes", 0)
+                              or cfg["timed_default_minutes"])
+                player.timed_effects.append({
+                    "id": str(atom.get("id", "TIMED")),
+                    "description": str(atom.get("description", "")),
+                    "expire_at": self.world.clock.game_time + minutes,
+                })
+            elif t == "damage":
+                # 探索侧无伤害目标:跳过 + 日志,不硬造(spec §1.2)
+                logger.warning("[effect] damage 原子在探索侧跳过: %s", atom)
+            elif t in ("buff", "control"):
+                desc = str(atom.get("description", "") or f"（{t} 效果仅在战斗中生效。）")
+                msgs.append(desc)
+            elif t == "narrative":
+                msgs.append(str(atom.get("text", "") or ""))
+            else:
+                # 未知 type:标识符前缀降级(spec §1.3)
+                text = str(atom.get("text") or atom.get("description") or "")
+                msgs.append(f"[unknown:{t}] {text}" if t else text)
+        return msgs
 
     # ── Internal ──
 
