@@ -173,8 +173,9 @@ class Judge:
             from scenario_core import apply_side_effects
             side_msgs = apply_side_effects(self.world, side_effects)
 
-        # effect 原子数组(2026-08-21 spec §1.2 探索侧)
-        eff_msgs = self._execute_effect_atoms(getattr(material, "effect", None) or [], player)
+        # effect 原子数组(2026-08-21 spec §1.2 探索侧;检定失败不结算,防退款后免费获益)
+        eff_msgs = (self._execute_effect_atoms(getattr(material, "effect", None) or [], player)
+                    if success else [])
 
         message = text + ("".join(f"\n{m}" for m in side_msgs + eff_msgs))
         return ActionOutcome(
@@ -206,7 +207,7 @@ class Judge:
         for atom in effects or []:
             t = atom.get("type", "")
             if t == "heal":
-                delta = int(atom.get("delta", 0) or 0)
+                delta = max(0, int(atom.get("delta", 0) or 0))
                 if "formula" in atom:
                     delta = _roll(str(atom["formula"]))
                 if delta:
@@ -229,6 +230,9 @@ class Judge:
             elif t == "timed":
                 minutes = int(atom.get("minutes", 0)
                               or cfg["timed_default_minutes"])
+                # 同 id refresh:替换旧条目刷新时效,不叠条
+                player.timed_effects = [te for te in player.timed_effects
+                                        if te.get("id") != str(atom.get("id", "TIMED"))]
                 player.timed_effects.append({
                     "id": str(atom.get("id", "TIMED")),
                     "description": str(atom.get("description", "")),
@@ -238,12 +242,15 @@ class Judge:
                 # 探索侧无伤害目标:跳过 + 日志,不硬造(spec §1.2)
                 logger.warning("[effect] damage 原子在探索侧跳过: %s", atom)
             elif t in ("buff", "control"):
+                logger.warning("[effect] %s 原子探索侧降级为文本: %s", t, atom)
                 desc = str(atom.get("description", "") or f"（{t} 效果仅在战斗中生效。）")
                 msgs.append(desc)
             elif t == "narrative":
                 msgs.append(str(atom.get("text", "") or ""))
             else:
                 # 未知 type:标识符前缀降级(spec §1.3)
+                if t:
+                    logger.warning("[effect] 未知 type 原子降级进结果: %s", atom)
                 text = str(atom.get("text") or atom.get("description") or "")
                 msgs.append(f"[unknown:{t}] {text}" if t else text)
         return msgs

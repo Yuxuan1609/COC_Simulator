@@ -734,3 +734,93 @@ class TestExecuteMaterialEffects:
         assert len(inv.timed_effects) == 1, \
             "L0+effect 不得因纯叙事短路而丢弃 effect(on_use/effect 对称)"
         assert inv.timed_effects[0]["id"] == "T"
+
+    def test_effect_not_executed_on_check_failure(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.MP = 10
+        inv.derived.HP = 10
+        inv.check_skill = lambda s, d="regular": (False, "检定：D100=98 失败", "failure")
+        judge = Judge(world)
+        m = self._mat(check={"skill": "锁匠", "type": "regular"},
+                      cost={"mp": 5, "san": 0}, refund_on_fail=True,
+                      effect=[{"type": "heal", "delta": 3}])
+        out = judge.execute_material(m, "试咒")
+        assert not out.success and "没有产生效果" in out.message
+        assert inv.derived.HP == 10, "检定失败路径 effect 不得生效(退款后免费获益)"
+        assert inv.derived.MP == 10, "refund_on_fail 退回 MP"
+
+    def test_timed_same_id_refresh(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        base = world.clock.game_time
+        m1 = self._mat(effect=[{"type": "timed", "id": "VEIL",
+                                "description": "帷幕", "minutes": 10}])
+        judge.execute_material(m1, "试咒")
+        m2 = self._mat(effect=[{"type": "timed", "id": "VEIL",
+                                "description": "帷幕", "minutes": 30}])
+        out = judge.execute_material(m2, "试咒")
+        assert out.success
+        assert len(inv.timed_effects) == 1, "同 id 重复施放 refresh,不叠条"
+        assert inv.timed_effects[0]["expire_at"] == base + 30, \
+            "时效以最后一次施放为准"
+
+    def test_mp_change_lower_clamp(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.MP = 1
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "mp_change", "delta": -5}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.MP == 0, "mp_change 下限 clamp 到 0"
+
+    def test_heal_delta_path(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.HP = 10
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "heal", "delta": 5}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.HP == 15, "heal delta 路径直加"
+        assert "恢复" in out.message
+
+    def test_heal_negative_delta_noop(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        inv.derived.HP = 10
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "heal", "delta": -5}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.HP == 10, "heal 负 delta 归零,不得反向扣血"
+
+    def test_empty_type_atom_no_prefix(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(effect=[{"text": "x"}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert "x" in out.message
+        assert "[unknown" not in out.message, "空 type 无标识符前缀"
+
+    def test_degrade_atoms_log_warning(self, caplog):
+        import logging
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "buff", "reduce": 3, "rounds": 3,
+                               "description": "石肤"},
+                              {"type": "control", "rounds": 2,
+                               "description": "支配"},
+                              {"type": "summon", "description": "窸窣声"}])
+        with caplog.at_level(logging.WARNING, logger="game.judge"):
+            judge.execute_material(m, "试咒")
+        warned = [r.message for r in caplog.records
+                  if r.levelno == logging.WARNING]
+        assert any("buff" in w for w in warned), "buff 降级记 warning"
+        assert any("control" in w for w in warned), "control 降级记 warning"
+        assert any("summon" in w for w in warned), "unknown 降级记 warning"
