@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-23 | effect 表达力计划 T8：WorldChronicle.render_for_author 玩家行渲染 timed_effects（LLM 可见性，spec §2.3）--法术列后拼 `生效中: 描述（剩N分钟）` 块（@1655-1659，多个用「；」连接，N=max(0, expire_at-clock.game_time) 剩余分钟，缺 expire_at 按 0 兜底；无描述条目跳过；空则整块不渲染，enrich/narrator/Author 写叙事可见"帷幕还在"）；tests/test_use_system.py 增 TestTimedFactsRender 3 测试（描述+生效中标签/剩10分钟/空列表不渲染区块）；scenario_core.py 1759->1764 行，WorldChronicle 节内行号对齐（render_for_author @1644 不变、_render_event 1720->1725、to_dict/from_dict 1740/1751->1745/1756） |
 | 2026-08-23 | effect 表达力计划 T7：ScenarioWorld.advance_time 三合一（推时钟+MP 恢复+timed 过期清除，spec §2.2/§4）--advance_time 末尾调新增私有 `_tick_time_effects(minutes)`（@759）：① MP 恢复余数累计（__init__ 增 `_mp_regen_acc` 分钟累计器 @699，不序列化、丢帧可接受；攒满 60 分钟按 game_config 的 mp_recovery_per_hour 回点，clamp MP_MAX，`max(0,minutes)` 防负数，函数内 import get_game_config 使 monkeypatch investigator.rules.get_game_config 生效）；② timed_effects 过期清除（`expire_at<=game_time` 恰好到期即除，logger "scenario_core" 记被清 id 与 MP 变化）；keeper.py 时间推进改走 world.advance_time 入口（@781，原直调 clock.advance_time 绕过三合一钩子，任务前提纠偏）--MP 恢复/timed 清除在真实回合流生效；tests/test_use_system.py 增 TestAdvanceTimeHooks 7 测试（整时恢复/余数累计/clamp/恰好到期清除/未到期存活/config 速率/0 速率关闭）+ tests/e2e/test_deterministic.py TestTimeAdvance 增 test_time_delta_triggers_time_hooks（回合级接线回归）；附带修复 test_game_config.py 缓存污染（test_cache_hit_no_reread_then_reset 结束后 _game_config_cache 残留 tmp 路径值而 _CONFIG_PATH 已被 monkeypatch 还原，后续文件读默认配置全被污染，teardown_function 补 reset_game_config_cache）；scenario_core.py 1727->1759 行，节内行号 grep 实测全面对齐 |
 | 2026-08-23 | effect 表达力计划 T6 review 修复二（Important+Minor）：① effect 结算加成功门槛（@176-179，检定失败/refund 路径不再免费获益，on_use 既有行为不动）；② timed 同 id refresh 语义（先移除同 id 旧条再 append，重复施放刷新时效不叠条）；③ buff/control/unknown 降级分支补 logger.warning（与 damage 同款含原子内容）；④ heal delta 路径 max(0,delta) 负数归零保护（spec 定义 heal 仅 +N）；⑤ 边界测试 7 个：检定失败 effect 不生效+MP 退回、timed refresh、mp_change 下限 clamp、heal delta 直加/负 delta no-op、空 type 无前缀、降级 warning 断言；judge.py 553->560 行，节内行号 grep 核实修正（execute_material 77->78、_execute_effect_atoms 187->188 等），T6 entry @175-178 -> @176-179 |
 | 2026-08-23 | effect 表达力计划 T6 review 修复：L0 纯叙事短路 guard 纳入 effect（`not getattr(material, "effect", None)`，@105-107）--原 guard 含 on_use 不含 effect，L0+on_use 走完整通路而 L0+effect 静默丢弃，非对称；修后 L0+effect 素材走完整通路执行 effect；TestExecuteMaterialEffects 增 test_l0_with_effect_not_shortcircuited（timed 挂载不因短路丢失），_mat helper 改 setdefault 支持 impact 覆盖；judge.py 552->553 行，节内行号 +1 |
@@ -459,9 +460,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1617 |
 | `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1628 |
 | `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1638 |
-| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1644 |
-| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1720 |
-| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1740 / 1751 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1644 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1725 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1745 / 1756 |
 
 ---
 

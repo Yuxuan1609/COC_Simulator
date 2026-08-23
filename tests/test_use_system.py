@@ -896,3 +896,47 @@ class TestAdvanceTimeHooks:
         inv.derived.MP = 0
         world.advance_time(600)
         assert inv.derived.MP == 0, "0 速率关闭 MP 恢复"
+
+
+class TestTimedFactsRender:
+    """facts 玩家行渲染 timed_effects(2026-08-21 spec §2.3)。"""
+
+    def _world(self):
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'e2e'))
+        from helpers import make_world, make_scene
+        from investigator import Investigator
+        from investigator.models import Stats
+        from investigator.rules import calc_derived
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = Investigator(name="测试", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        world.set_player(inv)
+        return world, inv
+
+    def test_active_timed_effects_rendered(self):
+        from scenario_core import WorldChronicle
+        world, inv = self._world()
+        inv.timed_effects = [{"id": "SILENCE_VEIL",
+                              "description": "帷幕吞掉一切声响",
+                              "expire_at": world.clock.game_time + 10}]
+        text = WorldChronicle().render_for_author(world)
+        assert "帷幕吞掉一切声响" in text
+        assert "生效中" in text, "状态区块标签"
+
+    def test_timed_remaining_minutes_rendered(self):
+        from scenario_core import WorldChronicle
+        world, inv = self._world()
+        inv.timed_effects = [{"id": "SILENCE_VEIL",
+                              "description": "帷幕吞掉一切声响",
+                              "expire_at": world.clock.game_time + 10}]
+        text = WorldChronicle().render_for_author(world)
+        assert "剩10分钟" in text, "剩余分钟必须可见"
+
+    def test_no_timed_effects_no_block(self):
+        from scenario_core import WorldChronicle
+        world, inv = self._world()
+        inv.timed_effects = []
+        text = WorldChronicle().render_for_author(world)
+        assert "生效中" not in text, "无 timed 效果时不得渲染空区块"
