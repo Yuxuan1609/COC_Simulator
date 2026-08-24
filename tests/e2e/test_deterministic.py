@@ -1044,3 +1044,166 @@ class TestChronicleSpellFacts:  # 统一资源层：编年史 + 快照字段
         snap = inv.build_snapshot()
         assert snap.get("mp_max") == inv.derived.MP_MAX
         assert snap.get("known_spells") == ["LIFE_DETECTION"]
+
+
+class TestTimedAndCombatEffectsE2E:  # T13: spec §8 e2e 三场景
+    """2026-08-21 spec §8 e2e:帷幕 timed 入档+过期、石肤战斗减伤、支配控制轮次。
+
+    帷幕走完整 keeper 回合(UseParser 确定性短路 -> judge.execute_material ->
+    timed 挂载 -> advance_time 过期);石肤/支配从战斗入口(真实 core 法术库 +
+    EnemyLibrary 实例 + CombatInit -> _init_combat)走 cast -> effect 原子 ->
+    敌方结算链路。全程真实产品代码,骰点/对抗检定 monkeypatch 固定保确定性。
+    """
+
+    def _spell_world(self, known_spells, enemy_library=None):
+        """真实 core 法术库世界 + 满 HP/MP 调查员(POW 技能 200:战斗施法必过)。"""
+        from library.spells import SpellLibrary
+        from investigator import Investigator
+        from investigator.models import Stats, Skill
+        from investigator.rules import calc_derived
+
+        slib = SpellLibrary(); slib.load_core()
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           spell_library=slib, enemy_library=enemy_library)
+        inv = Investigator(name="施法者", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        inv.derived.HP = 20; inv.derived.HP_MAX = 20
+        inv.derived.MP = 20; inv.derived.MP_MAX = 20
+        inv.skills.append(Skill(name="POW", base_value=50, value=200, category="属性"))
+        inv.known_spells = list(known_spells)
+        world.set_player(inv)
+        return world, inv, slib
+
+    @staticmethod
+    def _fresh_state(cs, inv, enemy):
+        """CombatInit -> _init_combat:同一敌人/玩家的干净战斗 state(群组展开副本)。"""
+        from game.messages import CombatInit
+        ci = CombatInit(enemies=[enemy], player=inv, scene="room_a",
+                        initiative_context="测试战斗")
+        return cs._init_combat(ci)
+
+    def _combat_env(self, known_spells):
+        """战斗场景:必中敌人(DEX/POW=200)+ CombatSystem(spell_lib, world)+ 展开后 state。"""
+        from library.enemies import EnemyLibrary, LibraryEnemy
+        from game.combat import CombatSystem
+
+        elib = EnemyLibrary()
+        elib._enemies["石壳傀儡"] = LibraryEnemy.from_dict({
+            "name": "石壳傀儡", "type": "怪物",
+            "attributes": {"STR": 50, "SIZ": 50, "DEX": 200, "POW": 200},
+            "armor": "", "attacks": [], "special_abilities": [], "san_loss": "0",
+            "description": "", "combat_behavior": "",
+        })
+        world, inv, slib = self._spell_world(known_spells, enemy_library=elib)
+        enemy = world.enemies.spawn("石壳傀儡", "room_a", 1)
+        cs = CombatSystem(spell_lib=slib, world=world)
+        return cs, self._fresh_state(cs, inv, enemy), inv, world, enemy
+
+    def test_silence_veil_timed_mounts_and_expires(self, monkeypatch):
+        """静默帷幕:keeper 回合"施放静默帷幕" -> timed 入档+MP 扣 5+叙事可见;
+        advance_time(10) 推满时长后过期清除。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world, inv, _slib = self._spell_world(["SILENCE_VEIL"])
+        # 探索侧检定走 check_skill(POW 属性路径有 96+ 大失败,stub 保确定性)
+        inv.check_skill = lambda skill, diff="regular": (
+            True, f"{skill}检定：D100=10/60", "regular")
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+
+        base = world.clock.game_time
+        r = run_turn(game, "施放静默帷幕")
+        assert_player_turn_contract(r)
+        assert r.status.name == "COMPLETED"
+        # timed 入档:id/描述/时效(施放时刻 + 10 分钟)
+        assert len(inv.timed_effects) == 1, \
+            f"timed 原子必须入档,实际 {inv.timed_effects}"
+        te = inv.timed_effects[0]
+        assert te["id"] == "SILENCE_VEIL"
+        assert te["description"] == "无形的帷幕吞掉帷幕内的一切声响"
+        assert te["expire_at"] == base + 10, \
+            f"expire_at 应为施放时刻+10,实际 {te['expire_at']}(base={base})"
+        # MP 扣 5(20 -> 15)
+        assert inv.derived.MP == 15, f"MP 应扣 5,实际 {inv.derived.MP}"
+        # 回合叙事交付 on_success 槽文本
+        assert "世界忽然安静下来" in r.narrative, \
+            f"叙事必须含帷幕生效描述: {r.narrative[:120]}"
+        # advance_time 过期:推满 10 分钟 -> timed 清空
+        world.advance_time(10)
+        assert inv.timed_effects == [], \
+            f"推满时长后 timed 必须过期清除,实际 {inv.timed_effects}"
+
+    def test_stone_skin_reduces_damage_in_combat(self, monkeypatch):
+        """石肤术:战斗施法挂 buff+timed;敌方攻击伤害 7-3=4,对照无 buff 全额 7。"""
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
+
+        cs, state, inv, world, enemy = self._combat_env(["STONE_SKIN"])
+        # 施法:POW 技能 200 必过 -> buff 挂 state + timed 挂 world.player
+        act = cs._resolve_player_action(state, inv, "cast_STONE_SKIN", "")
+        assert act.success, f"POW 200 施法必过: {act.narrative}"
+        assert state.temporary_effects == [
+            {"id": "STONE_SKIN", "reduce": 3, "rounds": 3}], \
+            f"buff 原子挂 state.temporary_effects: {state.temporary_effects}"
+        assert "皮肤紧绷如石" in act.narrative, "on_text 拼进施法叙事"
+        assert inv.derived.MP == 14, \
+            f"cost mp=6 已扣(20->14),实际 {inv.derived.MP}"
+        assert any(t["id"] == "STONE_SKIN"
+                   and t["expire_at"] == world.clock.game_time + 30
+                   for t in inv.timed_effects), \
+            f"timed 原子挂 world.player(30 分钟): {inv.timed_effects}"
+        # 敌方攻击(必中 DEX/POW=200,伤害固定 7):石肤减免 3 -> 扣 4
+        act_e = cs._resolve_enemy_action(state, state.enemies[0], inv)
+        assert act_e.success and act_e.damage == 4, \
+            f"石肤减免后伤害应为 7-3=4,实际 {act_e.damage}"
+        assert state.player_hp == 20 - 4, "扣血按减免后伤害"
+        # 对照:同一敌人/玩家干净 state(无 buff)全额 7
+        state_c = self._fresh_state(cs, inv, enemy)
+        act_c = cs._resolve_enemy_action(state_c, state_c.enemies[0], inv)
+        assert act_c.success and act_c.damage == 7, "无 buff 全额伤害"
+        assert state_c.player_hp == 20 - 7
+        assert act_c.damage - act_e.damage == 3, "差额恰为 reduce=3"
+
+    def test_dominate_skips_enemy_action(self, monkeypatch):
+        """支配:对抗必胜 -> 敌 controlled_rounds=2 跳过行动不掉血;
+        轮末递减两次后恢复行动(必中全额伤害)。"""
+        import game.combat as combat_mod
+        import investigator.rules as rules_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
+        monkeypatch.setattr(
+            rules_mod, "opposed_check",
+            lambda a, d: ("win", "对抗 D100: 攻方 5/200(extreme) vs 守方 90/200(failure)"))
+
+        cs, state, inv, _world, _enemy = self._combat_env(["DOMINATE"])
+        target = state.enemies[0]
+        # 施法:对抗检定 monkeypatch 必胜 -> control 写 target.controlled_rounds=2
+        act = cs._resolve_player_action(state, inv, "cast_DOMINATE",
+                                        target.instance_id)
+        assert act.success
+        assert "无法动弹" in act.narrative, f"施法叙事须含控制描述: {act.narrative}"
+        assert target.controlled_rounds == 2, \
+            f"control 原子写 controlled_rounds=2,实际 {target.controlled_rounds}"
+        assert inv.derived.MP == 10, \
+            f"cost mp=10 已扣(20->10),实际 {inv.derived.MP}"
+        assert inv.derived.SAN == 59, \
+            f"cost san=1 已扣(60->59),实际 {inv.derived.SAN}"
+        # 被支配敌方跳过行动:不掷骰不伤害
+        act_e = cs._resolve_enemy_action(state, target, inv)
+        assert act_e.success is False, "被支配敌人无攻击检定"
+        assert "无法动弹" in act_e.narrative and "石壳傀儡" in act_e.narrative
+        assert act_e.damage == 0
+        assert state.player_hp == 20, "被支配期间玩家不掉血"
+        # 轮末递减:2->1 仍跳过;再 1->0 恢复行动(必中全额 7)
+        cs._tick_temporary_effects(state)
+        assert target.controlled_rounds == 1
+        act_e2 = cs._resolve_enemy_action(state, target, inv)
+        assert "无法动弹" in act_e2.narrative, "控制期内(剩 1 轮)仍须跳过"
+        cs._tick_temporary_effects(state)
+        assert target.controlled_rounds == 0
+        act_e3 = cs._resolve_enemy_action(state, target, inv)
+        assert "无法动弹" not in act_e3.narrative, "归零后恢复正常行动路径"
+        assert act_e3.success and act_e3.damage == 7, "恢复后必中全额伤害"
+        assert state.player_hp == 20 - 7
