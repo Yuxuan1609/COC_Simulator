@@ -233,7 +233,8 @@ class Judge:
                 logger.warning("[effect] damage 原子在探索侧跳过: %s", atom)
             elif t in ("buff", "control"):
                 logger.warning("[effect] %s 原子探索侧降级为文本: %s", t, atom)
-                desc = str(atom.get("description", "") or f"（{t} 效果仅在战斗中生效。）")
+                desc = str(atom.get("description") or atom.get("on_text")
+                           or f"（{t} 效果仅在战斗中生效。）")
                 msgs.append(desc)
             elif t == "narrative":
                 msgs.append(str(atom.get("text", "") or ""))

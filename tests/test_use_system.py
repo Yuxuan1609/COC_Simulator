@@ -717,6 +717,18 @@ class TestExecuteMaterialEffects:
         assert "石肤" in out.message and "支配" in out.message, \
             "buff/control 探索侧降级为 description 文本进结果"
 
+    def test_buff_without_description_falls_back_to_on_text(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "buff", "target": "self", "id": "STONE_SKIN",
+                               "reduce": 3, "rounds": 3,
+                               "on_text": "皮肤紧绷如石，接下来的打击会轻一些。"}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert "皮肤紧绷如石" in out.message, \
+            "战斗向 buff 原子无 description 时降级文本回退 on_text(combat.py 读同一字段)"
+
     def test_effect_atoms_execute_after_on_use(self):
         from game.judge import Judge
         world, inv = self._world()
@@ -994,6 +1006,13 @@ class TestLibraryContentUpgrade:
         lib = ItemLibrary(); lib.load_core()
         it = lib.get("NECRONOMICON_PAGE")
         assert any("@grant_spell" in u for u in it.on_use)
+        from library.spells import SpellLibrary
+        import re
+        slib = SpellLibrary(); slib.load_core()
+        m = re.search(r'spell_ref="?([A-Z_]+)"?', " ".join(it.on_use))
+        assert m, "on_use 里必须能解析出 grant_spell 的 ref"
+        assert slib.get(m.group(1)) is not None, \
+            f"标记里的法术 ref({m.group(1)})必须能在法术库中查到"
 
     def test_salt_has_timed_effect(self):
         from library.items import ItemLibrary
