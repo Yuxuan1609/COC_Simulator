@@ -620,6 +620,65 @@ class TestCombatControl:
         assert act.damage >= 1, "正常路径造成伤害(1D6)"
 
 
+class TestRunGameControlGuard:
+    """run_game 交互战斗:被支配敌人不进敌方 LLM 修正 + 跳过叙事 CLI 可见(T11 review)。"""
+
+    def test_controlled_enemy_skips_llm_correction_and_narrative_visible(
+            self, monkeypatch, capsys, tmp_path):
+        import types
+        import run_game as rg                     # 惰性导入:库加载副作用只影响本测试
+        import game.combat as combat_mod
+
+        # 敌人:高 DEX 先手 + special_rules(触发 LLM 修正段)+ 被支配 1 轮
+        enemy = _TestEnemy("傀儡兽", hp=20, armor="0", instance_id="E_RG",
+                           special_rules="再生:每轮恢复1HP")
+        enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        enemy.controlled_rounds = 1
+        inv = _make_investigator(hp=12, san=60)
+        combat_init = CombatInit(enemies=[enemy], player=inv,
+                                 scene="测试房间", initiative_context="测试")
+
+        calls = []
+
+        def _fake_enemy_correct(self, en, ea_data, pl, extra, ctx):
+            calls.append(dict(ea_data))
+            return {"damage": 99}                 # 若被错误调用,"修正"出 99 伤害
+
+        monkeypatch.setattr(combat_mod.CombatSystem, "_llm_correct_enemy_round",
+                            _fake_enemy_correct)
+        monkeypatch.setattr(combat_mod.CombatSystem, "_llm_correct_round",
+                            lambda self, rr, *a, **k: rr)
+        monkeypatch.setattr(combat_mod.CombatSystem, "_generate_combat_narrative",
+                            lambda self, *a, **k: "")
+
+        def _fake_player_action(self, state, player, action_id, target_iid,
+                                environment_actions=None):
+            state.finished = True                 # 逃跑成功,单轮结束
+            return CombatAction(actor="player", action_type="flee",
+                                success=True, narrative="逃离成功")
+
+        monkeypatch.setattr(combat_mod.CombatSystem, "_resolve_player_action",
+                            _fake_player_action)
+        monkeypatch.setattr("builtins.input", lambda *a: "f")
+        monkeypatch.setattr(rg, "_log_dir", str(tmp_path))
+
+        world = types.SimpleNamespace(
+            spell_library=None,
+            enemy_manager=types.SimpleNamespace(exit_combat=lambda d: None),
+            bosses=None)
+        game = {"keeper": types.SimpleNamespace(world=world)}
+
+        result = rg._run_interactive_combat(game, combat_init)
+
+        assert calls == [], \
+            "被支配敌人(damage=0)不得进 _llm_correct_enemy_round(与 combat.py @294 守卫对齐)"
+        assert inv.derived.HP == 12, \
+            "玩家 HP 不被修正路径扣减(守卫缺失时会被'修正'出 99 伤害)"
+        assert result["outcome"] == "flee"
+        assert "无法动弹" in capsys.readouterr().out, \
+            "跳过叙事'被攫住无法动弹'在 CLI 敌方行动行可见"
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()
