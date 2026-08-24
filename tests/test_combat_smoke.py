@@ -345,6 +345,117 @@ def test_combat_hp_accuracy():
     print(f"  [PASS] hp_accuracy: initial={initial_hp}, final={final_hp}, rounds={result.rounds}")
 
 
+# ═══════════════════════════════════════════════════════════════
+# Test 12: cast effect atoms (2026-08-21 spec §1.2 战斗列)
+# ═══════════════════════════════════════════════════════════════
+class TestCastEffectAtoms:
+    """战斗侧 effect 原子:heal/mp_change/markup/timed/buff写状态/control写状态/narrative/未知降级。"""
+
+    def _env(self, effect, with_world=False):
+        """内存法术库 + 必过检定玩家(POW 技能 200) + CombatSystem(spell_lib, world?)。"""
+        from library.spells import SpellLibrary, LibrarySpell
+        lib = SpellLibrary()
+        lib._spells["X"] = LibrarySpell.from_dict({
+            "id": "X", "name": "试咒", "category": "combat",
+            "cost": {"mp": 1, "san": 0},
+            "check": {"skill": "POW", "type": "regular"},
+            "effect": effect})
+        inv = _make_investigator(hp=12, san=60, mp=14)
+        inv.derived.MP_MAX = 20
+        inv.skills.append(Skill(name="POW", base_value=50, value=200, category="属性"))
+        inv.known_spells = ["X"]
+        world = None
+        if with_world:
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), "e2e"))
+            from helpers import make_world, make_scene
+            world = make_world({"room_a": make_scene()}, "room_a")
+            world.set_player(inv)
+        cs = CombatSystem(spell_lib=lib, world=world)
+        return cs, inv, world
+
+    def test_heal_atom_in_combat(self):
+        cs, inv, _ = self._env([{"type": "heal", "target": "self", "formula": "1D3"}])
+        inv.derived.HP = inv.derived.HP_MAX - 3   # 9/12
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success, f"检定必过(POW=200): {act.narrative}"
+        assert inv.derived.HP > 9, "heal 后 HP 必须上升"
+        assert inv.derived.HP <= inv.derived.HP_MAX, "heal 必须 clamp 到 HP_MAX"
+
+    def test_mp_change_atom_in_combat(self):
+        cs, inv, _ = self._env([{"type": "mp_change", "delta": 2}])
+        before = inv.derived.MP   # 14
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success
+        assert inv.derived.MP == before - 1 + 2, \
+            "cost mp=1 已扣 + mp_change +2,净 +1(=15)"
+
+    def test_markup_atom_in_combat(self):
+        cs, inv, _ = self._env(
+            [{"type": "markup",
+              "text": '@stat_change(stat_name="SAN", delta=-1)'}],
+            with_world=True)
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success
+        assert inv.derived.SAN == 59, "markup 原子经 apply_side_effects 改 world.player.SAN"
+
+    def test_markup_without_world_skips(self, caplog):
+        import logging
+        cs, inv, _ = self._env(
+            [{"type": "markup",
+              "text": '@stat_change(stat_name="SAN", delta=-1)'}])
+        with caplog.at_level(logging.WARNING, logger="game.combat"):
+            act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success, "无 world 时 markup 跳过但不致败"
+        assert inv.derived.SAN == 60, "无 world 时不结算"
+        assert "markup" in caplog.text, "无 world 跳过须留 warning 日志"
+
+    def test_timed_atom_in_combat(self):
+        cs, inv, world = self._env(
+            [{"type": "timed", "id": "T", "description": "低语缠身", "minutes": 5}],
+            with_world=True)
+        base = world.clock.game_time
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success
+        assert len(inv.timed_effects) == 1
+        te = inv.timed_effects[0]
+        assert te["id"] == "T" and te["description"] == "低语缠身"
+        assert te["expire_at"] == base + 5, "expire_at = game_time + minutes"
+
+    def test_buff_atom_writes_state(self):
+        cs, inv, _ = self._env([{"type": "buff", "id": "B", "reduce": 3, "rounds": 3}])
+        state = CombatState()
+        act = cs._resolve_player_action(state, inv, "cast_X", "")
+        assert act.success
+        assert state.temporary_effects == [{"id": "B", "reduce": 3, "rounds": 3}]
+
+    def test_control_atom_writes_target(self):
+        cs, inv, _ = self._env([{"type": "control", "rounds": 2}])
+        enemy = _TestEnemy("傀儡", hp=10, armor="0", instance_id="E_CTRL")
+        state = CombatState(enemies=[enemy])
+        act = cs._resolve_player_action(state, inv, "cast_X", "E_CTRL")
+        assert act.success
+        assert enemy.controlled_rounds == 2, "control 原子写 target.controlled_rounds"
+
+    def test_narrative_and_unknown_in_combat(self):
+        cs, inv, _ = self._env([{"type": "narrative", "text": "寒意蔓延"},
+                                {"type": "summon", "description": "窸窣声"}])
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success
+        assert "寒意蔓延" in act.narrative, "narrative 原子文本拼进 action.narrative"
+        assert "[unknown:summon]" in act.narrative and "窸窣声" in act.narrative, \
+            "未知 type 降级为 [unknown:t] 前缀"
+
+    def test_damage_atom_still_works(self):
+        cs, inv, _ = self._env([{"type": "damage", "formula": "1D6",
+                                 "ignore_armor": True}])
+        enemy = _TestEnemy("木桩", hp=10, armor="3", instance_id="E_DMG")
+        state = CombatState(enemies=[enemy])
+        act = cs._resolve_player_action(state, inv, "cast_X", "E_DMG")
+        assert act.success
+        assert act.damage >= 1, "damage 原子沿用 _roll_damage(>=1)"
+        assert enemy.hp == 10 - act.damage, "敌 HP 按 damage 下降(ignore_armor 不吃甲)"
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()

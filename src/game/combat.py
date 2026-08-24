@@ -141,6 +141,7 @@ class CombatState:
     finished: bool = False
     log: list[CombatAction] = field(default_factory=list)
     full_log: list[CombatAction] = field(default_factory=list)
+    temporary_effects: list = field(default_factory=list)   # 玩家侧 buff [{id, reduce, rounds}]（2026-08-21 spec §3）
     _player_dodging: bool = False
     _player_concealed: bool = False
     _player_aim_counter: int = 0
@@ -164,10 +165,11 @@ class CombatSystem:
     """
 
     def __init__(self, weapon_lib=None, llm_enhancement: bool = COMBAT_LLM_ENHANCEMENT,
-                 spell_lib=None):
+                 spell_lib=None, world=None):
         self.weapon_lib = weapon_lib
         self.llm_enhancement = llm_enhancement
         self.spell_lib = spell_lib   # 统一资源层：法术库（cast_spell 动作）
+        self.world = world           # 统一资源层：markup/timed 原子作用域（可选，缺省跳过+日志）
 
     # ── Public API ──
 
@@ -851,19 +853,77 @@ class CombatSystem:
                                if action.success else "failure")
                 action.narrative = f"{spell.name}！D100={action.roll}/{action.skill_value}"
 
-            # TODO(T9): effect 已升维原子数组(list[dict]),本分支待重写--见 2026-08-21 spec/plan Task 9
-            effect = spell.effect or {}
-            if action.success and effect.get("type") == "damage":
-                dmg = _roll_damage(effect.get("formula", "1D6"),
-                                   player.stats.STR, player.stats.CON)
-                if not effect.get("ignore_armor") and target is not None:
-                    dmg = _apply_armor(dmg, getattr(target, "armor", "") or "")
-                action.damage = dmg
-                action.narrative += f" 造成 {dmg} 点伤害。"
-                if target is not None:
-                    target.hp = max(0, target.hp - dmg)
-                    if target.hp <= 0:
-                        target.status = "dead"
+            # effect 原子数组遍历（2026-08-21 spec §1.2 战斗列;检定成功才结算）
+            if action.success:
+                for atom in (spell.effect or []):
+                    t = atom.get("type", "")
+                    if t == "damage":
+                        dmg = _roll_damage(atom.get("formula", "1D6"),
+                                           player.stats.STR, player.stats.CON)
+                        if not atom.get("ignore_armor") and target is not None:
+                            dmg = _apply_armor(dmg, getattr(target, "armor", "") or "")
+                        action.damage = dmg
+                        action.narrative += f" 造成 {dmg} 点伤害。"
+                        if target is not None:
+                            target.hp = max(0, target.hp - dmg)
+                            if target.hp <= 0:
+                                target.status = "dead"
+                    elif t == "heal":
+                        delta = max(0, int(atom.get("delta", 0) or 0))
+                        m = re.match(r"^(\d*)D(\d+)([+-]\d+)?$",
+                                     str(atom.get("formula", "")).strip().upper())
+                        if m:
+                            delta = (sum(random.randint(1, int(m.group(2)))
+                                         for _ in range(int(m.group(1) or 1)))
+                                     + int(m.group(3) or 0))
+                        if delta:
+                            player.derived.HP = min(player.derived.HP_MAX,
+                                                    player.derived.HP + delta)
+                            action.narrative += f" 你恢复了 {delta} 点 HP。"
+                    elif t == "mp_change":
+                        d = int(atom.get("delta", 0) or 0)
+                        if d:
+                            player.derived.MP = max(0, min(player.derived.MP_MAX,
+                                                           player.derived.MP + d))
+                    elif t == "markup":
+                        if self.world is not None:
+                            from game.side_effects import parse_markup_all
+                            from scenario_core import apply_side_effects
+                            effs = parse_markup_all(str(atom.get("text", "")))
+                            if effs:
+                                apply_side_effects(self.world, effs)
+                        else:
+                            import logging
+                            logging.getLogger("game.combat").warning(
+                                "[effect] markup 原子需要 world 注入,跳过: %s", atom)
+                    elif t == "timed":
+                        if self.world is not None and self.world.player is not None:
+                            from investigator.rules import get_game_config
+                            minutes = int(atom.get("minutes", 0)
+                                          or get_game_config()["timed_default_minutes"])
+                            wp = self.world.player
+                            wp.timed_effects = [te for te in getattr(wp, "timed_effects", [])
+                                                if te.get("id") != str(atom.get("id", "TIMED"))]
+                            wp.timed_effects.append({
+                                "id": str(atom.get("id", "TIMED")),
+                                "description": str(atom.get("description", "")),
+                                "expire_at": self.world.clock.game_time + minutes,
+                            })
+                    elif t == "buff":
+                        state.temporary_effects.append({
+                            "id": str(atom.get("id", "BUFF")),
+                            "reduce": int(atom.get("reduce", 0) or 0),
+                            "rounds": int(atom.get("rounds", 1) or 1)})
+                        action.narrative += f" {atom.get('on_text', '') or ''}"
+                    elif t == "control":
+                        if target is not None:
+                            target.controlled_rounds = int(atom.get("rounds", 1) or 1)
+                            action.narrative += f" {target.enemy_ref} 无法动弹了。"
+                    elif t == "narrative":
+                        action.narrative += f" {atom.get('text', '')}"
+                    else:
+                        text = str(atom.get("text") or atom.get("description") or "")
+                        action.narrative += f" [unknown:{t}] {text}"
             return action
 
         if action_id == "dodge":

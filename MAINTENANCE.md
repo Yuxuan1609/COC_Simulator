@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-24 | effect 表达力计划 T9：战斗 cast 分支 effect 数组结算（spec §1.2 战斗列）--CombatSystem.__init__ 增 world 参数（@167，markup/timed 原子作用域，可选；缺省 markup 跳过+logger "game.combat" warning），3 处生产构造点传 world（game_loop.continue_standoff @786 传 keeper.world、frontend combat_start @975 传 world、combat_round @1023 传 _world）；cast 分支 effect 段重写为原子数组遍历（@856-928，检定成功才结算；原单 dict 读法对非空数组 AttributeError）：damage（保留 _roll_damage+ignore_armor+死亡标记）/heal（formula NdM 掷骰或 delta，clamp HP_MAX）/mp_change（clamp 0..MP_MAX）/markup（parse_markup_all+apply_side_effects 走 world）/timed（挂 world.player.timed_effects，同 id refresh 语义与 T6 一致，expire_at=clock.game_time+minutes，缺省读 timed_default_minutes）/buff（挂 state.temporary_effects {id,reduce,rounds}，消费在 T10）/control（写 target.controlled_rounds，消费在 T11）/narrative（text 拼 action.narrative）/未知 type（`[unknown:{t}] text/description` 降级，永不报错）；CombatState 增 temporary_effects 字段（@144，T10 直用）；combat.py 1320->1380 行节内行号对齐（_resolve_player_action 807->809、_get_tier 985->1045 等）；tests/test_combat_smoke.py 增 TestCastEffectAtoms 9 测试（heal 上升+clamp/mp 净+1/markup SAN 通路/无 world 跳过+warning/timed expire_at/buff 写状态/control 写 target/narrative+unknown 降级/damage 保留） |
 | 2026-08-23 | effect 表达力计划 T8：WorldChronicle.render_for_author 玩家行渲染 timed_effects（LLM 可见性，spec §2.3）--法术列后拼 `生效中: 描述（剩N分钟）` 块（@1655-1659，多个用「；」连接，N=max(0, expire_at-clock.game_time) 剩余分钟，缺 expire_at 按 0 兜底；无描述条目跳过；空则整块不渲染，enrich/narrator/Author 写叙事可见"帷幕还在"）；tests/test_use_system.py 增 TestTimedFactsRender 3 测试（描述+生效中标签/剩10分钟/空列表不渲染区块）；scenario_core.py 1759->1764 行，WorldChronicle 节内行号对齐（render_for_author @1644 不变、_render_event 1720->1725、to_dict/from_dict 1740/1751->1745/1756） |
 | 2026-08-23 | effect 表达力计划 T7：ScenarioWorld.advance_time 三合一（推时钟+MP 恢复+timed 过期清除，spec §2.2/§4）--advance_time 末尾调新增私有 `_tick_time_effects(minutes)`（@759）：① MP 恢复余数累计（__init__ 增 `_mp_regen_acc` 分钟累计器 @699，不序列化、丢帧可接受；攒满 60 分钟按 game_config 的 mp_recovery_per_hour 回点，clamp MP_MAX，`max(0,minutes)` 防负数，函数内 import get_game_config 使 monkeypatch investigator.rules.get_game_config 生效）；② timed_effects 过期清除（`expire_at<=game_time` 恰好到期即除，logger "scenario_core" 记被清 id 与 MP 变化）；keeper.py 时间推进改走 world.advance_time 入口（@781，原直调 clock.advance_time 绕过三合一钩子，任务前提纠偏）--MP 恢复/timed 清除在真实回合流生效；tests/test_use_system.py 增 TestAdvanceTimeHooks 7 测试（整时恢复/余数累计/clamp/恰好到期清除/未到期存活/config 速率/0 速率关闭）+ tests/e2e/test_deterministic.py TestTimeAdvance 增 test_time_delta_triggers_time_hooks（回合级接线回归）；附带修复 test_game_config.py 缓存污染（test_cache_hit_no_reread_then_reset 结束后 _game_config_cache 残留 tmp 路径值而 _CONFIG_PATH 已被 monkeypatch 还原，后续文件读默认配置全被污染，teardown_function 补 reset_game_config_cache）；scenario_core.py 1727->1759 行，节内行号 grep 实测全面对齐 |
 | 2026-08-23 | effect 表达力计划 T6 review 修复二（Important+Minor）：① effect 结算加成功门槛（@176-179，检定失败/refund 路径不再免费获益，on_use 既有行为不动）；② timed 同 id refresh 语义（先移除同 id 旧条再 append，重复施放刷新时效不叠条）；③ buff/control/unknown 降级分支补 logger.warning（与 damage 同款含原子内容）；④ heal delta 路径 max(0,delta) 负数归零保护（spec 定义 heal 仅 +N）；⑤ 边界测试 7 个：检定失败 effect 不生效+MP 退回、timed refresh、mp_change 下限 clamp、heal delta 直加/负 delta no-op、空 type 无前缀、降级 warning 断言；judge.py 553->560 行，节内行号 grep 核实修正（execute_material 77->78、_execute_effect_atoms 187->188 等），T6 entry @175-178 -> @176-179 |
@@ -203,7 +204,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1320 行) — 战斗系统 v2
+## src/game/combat.py (1380 行) — 战斗系统 v2
+
+CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects: list`（@144，玩家侧 buff `[{id, reduce, rounds}]`，spec §3，消费在 T10）。
 
 ### 模块级函数
 
@@ -214,29 +217,29 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_apply_armor` | 护甲减免 | 96 |
 | `_apply_damage_multiplier` | 伤害类型倍率 | 103 |
 
-### CombatSystem（@167，__init__ 增 spell_lib 参数--统一资源层法术库，4 处构造点传入 world.spell_library）
+### CombatSystem（@154，__init__ @167 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；3 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段） | 174 |
-| `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制） | 368 |
-| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事） | 531 |
-| `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 582 |
-| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻 | 663 |
-| `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 711 |
-| `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 743 |
-| `_skill_value` | `(player, skill_name)` | 技能值查询 | 796 |
-| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> effect.damage 结算；@854 已加 TODO(T9) 标记--effect 升维原子数组后 cast effect 读法待重写） | 807 |
-| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 985 |
-| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 997 |
-| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1005 |
-| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作 | 1009 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1056 / 1080 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1101 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1111 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1130 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1158 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1265 |
+| `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段） | 176 |
+| `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制） | 370 |
+| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事） | 533 |
+| `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 584 |
+| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻 | 665 |
+| `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 713 |
+| `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 745 |
+| `_skill_value` | `(player, skill_name)` | 技能值查询 | 798 |
+| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @856-928**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰或 delta，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 消费）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 809 |
+| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1045 |
+| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1057 |
+| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1065 |
+| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作 | 1069 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1116 / 1140 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1161 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1171 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1190 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1218 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1325 |
 
 ## src/game/judge.py (560 行) — 确定性闸门（无 LLM 依赖）
 
@@ -361,7 +364,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game_loop.py (909 行) — 游戏主循环
+## src/game_loop.py (910 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -373,7 +376,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 631 |
 | `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 647 |
 | `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 673 / 682 / 693 |
-| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接）→ complete_combat_turn | 710 |
+| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world @786，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 710 |
 | `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 827 |
 
 ---
@@ -556,7 +559,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展 | 70 / 77 / 80 |
 | `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 87–97 |
 
-数据类 `LibrarySpell`@19：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1), weight`。effect 字段（T3，@35）：由旧单 dict（damage 类）升维为原子数组，from_dict @56 调 `_normalize_effect`；旧 JSON 单 dict 数据自动包装为单元素数组。注意：combat.py cast 分支 @854 仍按单 dict 语义读 `spell.effect or {}`——对非空数组会 AttributeError（依赖 `action.success` 短路兜底），Task 9 重写。
+数据类 `LibrarySpell`@19：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1), weight`。effect 字段（T3，@35）：由旧单 dict（damage 类）升维为原子数组，from_dict @56 调 `_normalize_effect`；旧 JSON 单 dict 数据自动包装为单元素数组。combat.py cast 分支已由 T9 重写为原子数组遍历（@856-928，见 combat.py 节）。
 
 ### loader.py (31 行) - 统一库加载器（T2，2026-08-21 spec §6）
 
@@ -877,8 +880,8 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `init_game_api` | `POST /api/game/init` | 初始化 + 首回合（响应含 hp_max/mp_max/mp/known_spells） | 768 |
 | `game_state` | `GET /api/game/state` | 游戏状态 JSON（含 hp_max/mp_max/mp/known_spells） | 860 |
 | `set_auto_win` | `POST /api/game/auto-win` | 战斗自动胜利开关 | 832 |
-| `combat_start` | `POST /api/combat/start` | 初始化战斗会话（CombatSystem 传 world.spell_library） | 843 |
-| `combat_round` | `POST /api/combat/round` | 执行一轮（CombatSystem 传 spell_library，战斗施法可用） | 952 |
+| `combat_start` | `POST /api/combat/start` | 初始化战斗会话（CombatSystem 传 world.spell_library+world @975，T9 战斗 markup/timed 原子可用） | 843 |
+| `combat_round` | `POST /api/combat/round` | 执行一轮（CombatSystem 传 spell_library+world @1023，战斗施法可用） | 952 |
 
 序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@70 / `_init_libraries`@104 / `_known_spell_names`@503（known_spells id->中文名，统一资源层前端接线共用） / `_resolve_start_scene`@1086 / `_make_default_inv`@1132。
 
