@@ -557,3 +557,75 @@ class TestS14SpellAuthor:  # 统一资源层：库外素材 -> creative -> Autho
         r = run_turn(game, "我举起那台古怪的黄铜装置，按下了侧面的按钮")
         assert_player_turn_contract(r)
         # Author 通路真实 LLM：只断言回合完整，不硬断言 patch 内容
+
+
+class TestS15ExtensionSpell:  # effect 表达力：扩展库法术游戏内施放（2026-08-21 spec §8）
+    """S15：扩展库法术游戏内施放。
+    tmp extensions 目录注入扩展法术（带 timed effect），走 load_spell_library(base_dir=...)
+    -> make_world(spell_library=...) -> 完整 keeper 回合（"施放暗影低语"经 UseParser
+    确定性短路 -> execute_material；check=null 无检定保定性）-> 断言扣 MP + timed 生效。
+    enrich/time_agent/narrator 真实 LLM；time_delta 波动由 retry_once 消化
+    （timed 15 分钟内被推满过期或 MP 恢复属偶发，复跑即过）。"""
+
+    @retry_once
+    def test_extension_spell_timed_effect(self, tmp_path):
+        import json
+        import shutil
+        from pathlib import Path
+        from library.loader import load_spell_library
+        from investigator import Investigator
+        from investigator.models import Stats
+        from investigator.rules import calc_derived
+        log_dir = _scenario_log_dir("s15_extension_spell")
+        stop = setup_llm_logging(log_dir)
+        try:
+            # tmp 库根：core spells.json + extensions/spells/ext.json（_make_ext 模式）
+            core = tmp_path / "core"
+            ext_dir = tmp_path / "extensions" / "spells"
+            core.mkdir(parents=True, exist_ok=True)   # exist_ok：retry_once 重入安全
+            ext_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(Path(__file__).resolve().parents[2] / "data" / "library"
+                        / "core" / "spells.json", core / "spells.json")
+            (ext_dir / "ext.json").write_text(json.dumps({"spells": [{
+                "id": "EXT_WHISPER", "name": "暗影低语",
+                "category": "exploration", "impact": "L1",
+                "cost": {"mp": 2, "san": 0}, "check": None,
+                "effect": [{"type": "timed", "id": "EXT_WHISPER",
+                            "description": "耳畔有低语萦绕", "minutes": 15}],
+                "on_success": "你听见了阴影里的声音。",
+            }]}, ensure_ascii=False), encoding="utf-8")
+
+            slib = load_spell_library(base_dir=str(tmp_path))
+            assert slib.get("EXT_WHISPER") is not None, "扩展法术必须经 loader 可见"
+            assert slib.get("HEART_ARREST") is not None, "core 法术必须同时加载"
+
+            world = make_world({"room_a": make_scene()}, "room_a", spell_library=slib)
+            inv = Investigator(name="测试员", stats=Stats(
+                STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+            inv.derived = calc_derived(inv.stats)
+            world.set_player(inv)
+            inv.known_spells = ["EXT_WHISPER"]
+            game = _real_game(world, _l1("room_a"))
+            from game_loop import run_turn
+
+            base = world.clock.game_time
+            r = run_turn(game, "施放暗影低语")
+            assert_player_turn_contract(r)
+            assert r.status.name == "COMPLETED", f"status={r.status}"
+            # MP 扣 2（POW 60 -> MP 12 -> 10）
+            assert inv.derived.MP == 10, \
+                f"扩展法术扣 2 MP（12-2），实际 {inv.derived.MP}"
+            # timed 生效：挂载 + 结构（id/描述/时效=施放时刻+15）
+            assert len(inv.timed_effects) == 1, \
+                f"timed 原子必须挂载，实际 {inv.timed_effects}"
+            te = inv.timed_effects[0]
+            assert te["id"] == "EXT_WHISPER"
+            assert te["description"] == "耳畔有低语萦绕"
+            assert te["expire_at"] == base + 15, \
+                f"expire_at 应为施放时刻+15，实际 {te['expire_at']}（base={base}）"
+            # 宽断言：叙事含结果语义（真实 narrator 改写，不锁原文）
+            text = f"{r.brief}\n{r.narrative}"
+            assert any(kw in text for kw in ("低语", "声音", "阴影")), \
+                f"宽断言：叙事须含结果语义: {r.narrative[:120]}"
+        finally:
+            stop()

@@ -235,6 +235,28 @@ LLM 提取 → 与现有库去重 → 展示新条目 → 手动确认 → 写�
 | `@npc_follow(npc_name="", follow=true/false)` | NPC 跟随/离开 | NPCManager.set_following() |
 | `@grant_spell(spell_ref="")` | 获得法术（经法术库校验，不重复授予；2026-08-19 统一资源层正式启用） | Investigator.known_spells |
 
+## effect 原子系统（8 种，2026-08-21）
+
+库条目（items.json / spells.json 通用）的 `effect` 字段为**原子数组**——一个素材可挂多个原子按序结算；旧单 dict 格式加载时自动包装为 `[dict]`，现有条目无需修改。与 `@markup`（互动物 side_effects 通道）互补：effect 原子是素材（物品/法术）使用通道的表达层。
+
+| 原子 | 战斗侧（cast 分支） | 探索侧（execute_material） |
+|------|--------------------|---------------------------|
+| `{"type": "damage", "formula": "1D6", "ignore_armor": true}` | 掷骰 + 护甲（ignore_armor 跳过）+ 死亡标记 | 跳过 + warning 日志（无伤害目标，不硬造） |
+| `{"type": "heal", "formula": "1D3", "delta": 2}` | HP +N（formula 掷骰或 delta 定值，clamp HP_MAX） | 同左 |
+| `{"type": "mp_change", "delta": 2}` | MP ±N（clamp 0..MP_MAX） | 同左 |
+| `{"type": "markup", "text": "@stat_change(...)"}` | @markup 副效果（走 world 注入） | 同左（与 on_use 同通路） |
+| `{"type": "buff", "reduce": 3, "rounds": 3}` | 挂 temporary_effects：受击减免（下限 `buff_damage_floor`），轮末 rounds-1 归零移除 | 降级为文本进结果 |
+| `{"type": "control", "rounds": 2}` | 敌方挂 controlled_rounds：行动阶段跳过，轮末递减 | 降级为文本进结果 |
+| `{"type": "timed", "id": "...", "description": "...", "minutes": 10}` | 挂 player.timed_effects | 同左 |
+| `{"type": "narrative", "text": "..."}` | 文本拼进施法叙事 | 文本进结果槽 |
+
+- **未知 type 兜底**：`[unknown:类型] 描述文本` 降级进结果——不报错、不阻断其余原子，永不空转。
+- **timed 软状态**：描述性时效效果（区别于战斗轮驱动的 buff/control），挂 `player.timed_effects`（`{id, description, expire_at}` 绝对分钟；minutes 缺省读 `timed_default_minutes`），`advance_time` 推满时长自动清除（同 id 重复施放刷新时效不叠条）；编年史 facts 玩家行渲染「生效中: 描述（剩N分钟）」，Author/enrich 写叙事可感知。
+- **MP 恢复**：每小时恢复 1 点（分钟余数累计器攒满 60 分钟回点，clamp MP_MAX），速率 `mp_recovery_per_hour` 在 `data/game_config.json` 可配（0 = 关闭）。
+- **扩展库约定**：`data/library/extensions/{items,spells}/*.json` 用户放置 JSON 即生效——游戏（init_game）与模组生成管线（run_pipeline）双侧经统一 loader（`src/library/loader.py`）加载 core + extensions，扩展素材可被生成的模组引用。
+
+设计详见 `docs/superpowers/specs/2026-08-21-effect-expression-design.md`。
+
 ---
 
 # 开发者版 · 架构与设计
@@ -344,6 +366,7 @@ data/
 - 前端 v2: `docs/superpowers/specs/2026-05-25-frontend-redesign-design.md`
 - 法术体系: `docs/superpowers/specs/2026-05-27-magic-system-design.md`（已被统一资源层 spec 取代）
 - 统一资源层（U6 法术 + U8 物品 + parse 规范化）: `docs/superpowers/specs/2026-08-18-unified-resource-impact-design.md`
+- effect 表达力 + MP 恢复 + 库注入通路: `docs/superpowers/specs/2026-08-21-effect-expression-design.md`
 - Multi-Agent: `docs/superpowers/specs/2026-05-16-game-loop-multi-agent-design.md`
 - Packing: `docs/superpowers/specs/2026-05-23-packing-design.md`
 - 维护文档（函数级）: `MAINTENANCE.md`

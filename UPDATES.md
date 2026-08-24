@@ -383,3 +383,34 @@
 ### 已知观察（本期新增）
 
 - 测试期间产生 data/modules/supplements/20260819_* 目录（S14 场景 Author 真实调用副产物），未入库
+
+---
+
+## 工作汇总（2026-08-24）
+
+### 已完成
+
+**effect 表达力 + MP 恢复 + 库注入通路**（2026-08-21 spec：`docs/superpowers/specs/2026-08-21-effect-expression-design.md`，plan 14 任务 T1-T14 全部完成，commit 10cf782→本次收口）：
+
+- **effect 原子数组**（8 种类型）：库条目 `effect` 字段单 dict 升维为原子数组（旧格式自动包装兼容），damage/heal/mp_change/markup/buff/control/timed/narrative 战斗（cast 分支）/探索（execute_material）双侧结算；未知 type `[unknown:x]` 标识符降级永不空转、永不阻断；旧单 dict 数据零修改兼容
+- **timed 软状态**：挂 `player.timed_effects`（`{id, description, expire_at}`），序列化 v2.2（旧档缺省 [] + 坏元素过滤），`advance_time` 推满时长自动清除（同 id 重复施放刷新不叠条），编年史 facts 玩家行渲染「生效中」块 Author/enrich 可见
+- **MP 恢复**：每小时 1 点（分钟余数累计器攒满 60 回点，clamp MP_MAX），`mp_recovery_per_hour` 在 `data/game_config.json` 可配（0 关闭）；game_config 参数中心（get_game_config 缺省兜底+类型校验+缓存）
+- **战斗 buff / control**：buff 挂 temporary_effects 受击减免（下限 `buff_damage_floor` 可配）+ 轮末 rounds 递减归零移除（3 处轮末 tick 调用点含 run_game CLI 路径）；control 写敌方 controlled_rounds 行动阶段跳过（轮末递减）
+- **library/loader 统一加载**：`load_item_library/load_spell_library` core + extensions 目录扫描，game_loop 与 run_pipeline 双侧接入，修复管线 extensions 不可见断点（用户放 `data/library/extensions/{items,spells}/*.json` 即生效，游戏+模组管线双侧可见）
+- **核心库升维示范**（纯 JSON）：石肤 buff+timed 双原子 / 支配 control / 帷幕 timed / 死灵书残页 @grant_spell / 盐袋 timed；UseParser/Catalog effect 元素级浅拷贝透传（防库单例别名污染）
+- **文档**：readme 增「effect 原子系统」节（8 原子双侧语义表 + MP 恢复 + timed + 扩展库约定）+ spec 索引；MAINTENANCE 全程同步（含 T3 changelog 补录）
+
+### 测试现状
+
+- 默认套件：268 passed（基线 181（2026-08-19 统一资源层收口后）→ 268，计划期净增 87：test_use_system effect/timed/config 系 + test_combat_smoke buff/control/cast 系 + test_library_loader + test_game_config 防御 + e2e 确定性三场景等）
+- e2e 确定性三场景（T13）：帷幕 timed 入档+过期 / 石肤战斗减伤 / 支配控制轮次，零 API 调用
+- real_llm：S15 扩展法术游戏内施放（tmp extensions 注入 → UseParser 短路 → 扣 MP + timed 挂载 + 叙事宽断言）通过；S1-S15 15/15 首跑全过（含 S5/S9 等历史波动场景，本轮无 retry 消化）
+
+### 已知观察（本期新增，非阻塞）
+
+- loader 损坏扩展 JSON 报错缺文件名（Minor，T2 review 记录：`json.load` 异常不带来源路径，排障需逐文件试）；默认路径 cwd 独立性无回归测试
+- frontend character.py 导出 version 覆写 "2.0" 与核心序列化 v2.2 漂移（pre-existing，前端按约定不排期）
+- day:N time flag 随天数累积进 prompt/存档（T7 激活既有死代码暴露：advance_time 每次注入 runtime_state，无清理点，长期局 prompt 膨胀）
+- timed 只进 Author prompt（编年史 facts），enrich/narrator 经 Author 产出间接感知（架构特性，同 known_spells 通路）
+- 战斗轮叙事对被支配跳过渲染「未命中」不准（叙事层措辞问题，机制正确）；control 对快于玩家的敌人 rounds 有 off-by-one（spec 未规定先手，文档已注明）
+- run_step1b_test.py 收集错误：用户删除 data/modules/深渊第七城/module_raw.txt 所致（pre-existing，非代码问题）
