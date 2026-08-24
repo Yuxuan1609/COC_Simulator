@@ -455,6 +455,27 @@ class TestCastEffectAtoms:
         assert act.damage >= 1, "damage 原子沿用 _roll_damage(>=1)"
         assert enemy.hp == 10 - act.damage, "敌 HP 按 damage 下降(ignore_armor 不吃甲)"
 
+    def test_timed_atom_refresh_same_id(self):
+        cs, inv, world = self._env(
+            [{"type": "timed", "id": "T", "description": "低语缠身", "minutes": 5}],
+            with_world=True)
+        base = world.clock.game_time
+        state = CombatState()
+        cs._resolve_player_action(state, inv, "cast_X", "")   # 第一次 5 分钟
+        cs.spell_lib.get("X").effect[0]["minutes"] = 9
+        cs._resolve_player_action(state, inv, "cast_X", "")   # 同 id 再施 9 分钟
+        assert len(inv.timed_effects) == 1, "同 id timed refresh 不叠条"
+        assert inv.timed_effects[0]["expire_at"] == base + 9, \
+            "expire_at 取最后一次施放(9 分钟)"
+
+    def test_empty_type_atom_no_prefix(self):
+        cs, inv, _ = self._env([{"text": "隐隐低语"}])   # 无 type 原子
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success
+        assert "隐隐低语" in act.narrative, "空 type 原子文本直出"
+        assert "[unknown:]" not in act.narrative, \
+            "空 type 不打 [unknown:] 前缀(与 judge.py T6 语义一致)"
+
 
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")

@@ -358,7 +358,7 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
     from game_loop import run_turn
 
     world = game["keeper"].world
-    cs = CombatSystem(spell_lib=getattr(world, "spell_library", None))
+    cs = CombatSystem(spell_lib=getattr(world, "spell_library", None), world=world)
     state = cs._init_combat(combat_init)
     max_rounds = 20
 

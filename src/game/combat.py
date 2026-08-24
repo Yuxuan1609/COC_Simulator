@@ -923,7 +923,8 @@ class CombatSystem:
                         action.narrative += f" {atom.get('text', '')}"
                     else:
                         text = str(atom.get("text") or atom.get("description") or "")
-                        action.narrative += f" [unknown:{t}] {text}"
+                        # 未知 type:[unknown:{t}] 前缀降级;空 type 无前缀直出(judge.py T6 同语义)
+                        action.narrative += (f" [unknown:{t}] {text}" if t else f" {text}")
             return action
 
         if action_id == "dodge":

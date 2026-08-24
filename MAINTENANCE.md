@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-24 | T9 review 修复（Important×2+Minor×2）：① run_game._run_interactive_combat @361 补传 world（第 4 个生产构造点，原 grep 范围只扫 src/frontend/tests 漏了仓库根入口脚本；CLI 交互战斗 markup/timed 原子恢复生效）；② MAINTENANCE.md CombatSystem 节"3 处构造点"纠回 4 处（旧文档正确，run_game 构造点补列入）；③ combat.py cast 分支空 type 原子加 `if t` 守卫（@923-926：空 type 无前缀直出文本，与 judge.py T6 语义一致；原实现对空 type 打 `[unknown:]` 前缀）；④ tests/test_combat_smoke.py 增 2 测试：test_empty_type_atom_no_prefix（空 type 直出不打前缀）+ test_timed_atom_refresh_same_id（同 id timed 二次施放不叠条、expire_at 取最后一次，战斗侧 refresh 回归覆盖） |
 | 2026-08-24 | effect 表达力计划 T9：战斗 cast 分支 effect 数组结算（spec §1.2 战斗列）--CombatSystem.__init__ 增 world 参数（@167，markup/timed 原子作用域，可选；缺省 markup 跳过+logger "game.combat" warning），3 处生产构造点传 world（game_loop.continue_standoff @786 传 keeper.world、frontend combat_start @975 传 world、combat_round @1023 传 _world）；cast 分支 effect 段重写为原子数组遍历（@856-928，检定成功才结算；原单 dict 读法对非空数组 AttributeError）：damage（保留 _roll_damage+ignore_armor+死亡标记）/heal（formula NdM 掷骰或 delta，clamp HP_MAX）/mp_change（clamp 0..MP_MAX）/markup（parse_markup_all+apply_side_effects 走 world）/timed（挂 world.player.timed_effects，同 id refresh 语义与 T6 一致，expire_at=clock.game_time+minutes，缺省读 timed_default_minutes）/buff（挂 state.temporary_effects {id,reduce,rounds}，消费在 T10）/control（写 target.controlled_rounds，消费在 T11）/narrative（text 拼 action.narrative）/未知 type（`[unknown:{t}] text/description` 降级，永不报错）；CombatState 增 temporary_effects 字段（@144，T10 直用）；combat.py 1320->1380 行节内行号对齐（_resolve_player_action 807->809、_get_tier 985->1045 等）；tests/test_combat_smoke.py 增 TestCastEffectAtoms 9 测试（heal 上升+clamp/mp 净+1/markup SAN 通路/无 world 跳过+warning/timed expire_at/buff 写状态/control 写 target/narrative+unknown 降级/damage 保留） |
 | 2026-08-23 | effect 表达力计划 T8：WorldChronicle.render_for_author 玩家行渲染 timed_effects（LLM 可见性，spec §2.3）--法术列后拼 `生效中: 描述（剩N分钟）` 块（@1655-1659，多个用「；」连接，N=max(0, expire_at-clock.game_time) 剩余分钟，缺 expire_at 按 0 兜底；无描述条目跳过；空则整块不渲染，enrich/narrator/Author 写叙事可见"帷幕还在"）；tests/test_use_system.py 增 TestTimedFactsRender 3 测试（描述+生效中标签/剩10分钟/空列表不渲染区块）；scenario_core.py 1759->1764 行，WorldChronicle 节内行号对齐（render_for_author @1644 不变、_render_event 1720->1725、to_dict/from_dict 1740/1751->1745/1756） |
 | 2026-08-23 | effect 表达力计划 T7：ScenarioWorld.advance_time 三合一（推时钟+MP 恢复+timed 过期清除，spec §2.2/§4）--advance_time 末尾调新增私有 `_tick_time_effects(minutes)`（@759）：① MP 恢复余数累计（__init__ 增 `_mp_regen_acc` 分钟累计器 @699，不序列化、丢帧可接受；攒满 60 分钟按 game_config 的 mp_recovery_per_hour 回点，clamp MP_MAX，`max(0,minutes)` 防负数，函数内 import get_game_config 使 monkeypatch investigator.rules.get_game_config 生效）；② timed_effects 过期清除（`expire_at<=game_time` 恰好到期即除，logger "scenario_core" 记被清 id 与 MP 变化）；keeper.py 时间推进改走 world.advance_time 入口（@781，原直调 clock.advance_time 绕过三合一钩子，任务前提纠偏）--MP 恢复/timed 清除在真实回合流生效；tests/test_use_system.py 增 TestAdvanceTimeHooks 7 测试（整时恢复/余数累计/clamp/恰好到期清除/未到期存活/config 速率/0 速率关闭）+ tests/e2e/test_deterministic.py TestTimeAdvance 增 test_time_delta_triggers_time_hooks（回合级接线回归）；附带修复 test_game_config.py 缓存污染（test_cache_hit_no_reread_then_reset 结束后 _game_config_cache 残留 tmp 路径值而 _CONFIG_PATH 已被 monkeypatch 还原，后续文件读默认配置全被污染，teardown_function 补 reset_game_config_cache）；scenario_core.py 1727->1759 行，节内行号 grep 实测全面对齐 |
@@ -64,7 +65,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_g` | `(obj, key, default=None)` | dict 与 dataclass 通用安全取值 | 234 |
 | `_format_snapshot_chapters` | `(snap) -> str` | 快照格式化为半结构化 Markdown（场景/角色/时间/技能） | 241 |
 | `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 340 |
-| `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem） | 355 |
+| `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem，构造传 spell_lib+world @361，T9 战斗 markup/timed 原子可用） | 355 |
 
 ### run_pipeline.py (1474 行) — 模组解析管线 CLI
 
@@ -217,7 +218,7 @@ CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects
 | `_apply_armor` | 护甲减免 | 96 |
 | `_apply_damage_multiplier` | 伤害类型倍率 | 103 |
 
-### CombatSystem（@154，__init__ @167 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；3 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023）
+### CombatSystem（@154，__init__ @167 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；4 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023、run_game._run_interactive_combat@361）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
