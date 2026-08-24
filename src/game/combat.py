@@ -1075,6 +1075,14 @@ class CombatSystem:
         is_boss = "boss" in getattr(enemy, 'flags', [])
         enemy_label = getattr(enemy, 'enemy_ref', 'Boss' if is_boss else '敌人')
 
+        # control 控制(2026-08-21 spec §3):被支配的敌人跳过行动
+        if getattr(enemy, "controlled_rounds", 0) > 0:
+            action = CombatAction(actor=enemy.instance_id, action_type="attack",
+                                  weapon="--", skill_name="--", target="player")
+            action.success = False
+            action.narrative = f"{enemy_label}被无形的力量攫住，无法动弹。"
+            return action
+
         attack = self._select_enemy_attack(enemy)
         attack_name = attack.get("name", "攻击") if isinstance(attack, dict) else getattr(attack, "name", "攻击")
         action = CombatAction(

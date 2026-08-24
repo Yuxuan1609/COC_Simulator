@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-24 | effect 表达力计划 T11：战斗 control 消费侧（spec §3，敌方行动跳过）--`_resolve_enemy_action` 顶部（@1078-1084，enemy_label 组装后、`_select_enemy_attack` 之前，不选攻击不掷骰）加 control 检查：`getattr(enemy, "controlled_rounds", 0) > 0` 时构造 CombatAction(actor=instance_id, action_type="attack", weapon/skill_name="--", target="player")，success=False、narrative="被无形的力量攫住，无法动弹。"（带 enemy_label）、damage=0（默认）、直接 return（不消耗 _player_dodging，跳过本身不递减 controlled_rounds，递减只在轮末 _tick）；敌方行动 3 处循环入口（combat.py @254/@437 + run_game.py @439）全走此函数单一消费点，multi_attack 循环每段调用均命中检查全跳过，跳过的 action 由调用方 append 进 state.log 叙事可见；tests/test_combat_smoke.py 增 TestCombatControl 3 测试（controlled_rounds=2 跳过+不耗 dodge+不递减+无 control 对照必中 7 伤害/tick 1->0 恢复行动归零后正常掷骰/无属性普通敌人 getattr 默认 0 正常路径），RED(2 failed)→GREEN；combat.py 1402->1410 行（_resolve_enemy_action 1073 不变，函数体内插入；_tick_temporary_effects 1125->1133/_check_phase 1138->1146/_apply_phase 1162->1170/_any_special_rules 1183->1191/_build_battle_snapshot 1193->1201/_build_round_result 1212->1220/_llm_correct_round 1240->1248/_llm_correct_enemy_round 1347->1355，grep 实测）；全套 257 passed（基线 254+3） |
 | 2026-08-24 | T10 review 修复：run_game.py 交互战斗循环 `state.round += 1` 前补 `cs._tick_temporary_effects(state)`（@511，CLI 路径 buff 原先永不过期）；MAINTENANCE 轮末 tick 调用点表述修正为 3 处 |
 | 2026-08-24 | effect 表达力计划 T10：战斗 buff 消费侧（spec §3，受击减免+轮末递减）--① `_resolve_enemy_action` 命中段加 buff 减伤（@1108-1114：`damage = _roll_damage(...)` 后、`action.damage` 前，总减免 = sum(temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`，floor 读 game_config（函数内 import get_game_config，monkeypatch 可达，与 T6/T7 模式一致），reduce_total=0 时零开销跳过）；② CombatSystem 新方法 `_tick_temporary_effects(state)`（@1125：轮末 temporary_effects 各条 rounds-1，归零移除（`rounds-1 > 0` 存活过滤）；顺带 enemy.controlled_rounds 递减（T11 消费，先写递减逻辑））；③ 两处轮末调用点 `state.round += 1` 之前各插 `self._tick_temporary_effects(state)`（run_combat 主循环 @348、run_single_round @531；后续 review 补 run_game.py 交互循环第 3 处 @511，全仓库共 3 处）；tests/test_combat_smoke.py 增 TestCombatBuff 4 测试（受击减免 7-3=4 对照断言/floor 默认 0 减穿归零+monkeypatch rules_mod.get_game_config 配 floor=1 扣 1/rounds 2->1 仍在再 tick 移除后伤害全额/双 buff 叠加 2+3=5），RED->GREEN；combat.py 1382->1402 行（run_single_round 371/_resolve_player_action 811/effect 遍历 @858-930/_resolve_enemy_action 1073/_tick_temporary_effects 1125/_check_phase 1138 等，grep 实测）；全套 254 passed（基线 250+4） |
 | 2026-08-24 | T9 review 修复二（Important×2+Minor）：① combat.py cast 分支 timed 原子补 else 分支 logger warning（"game.combat"，"timed 原子需要 world/player 注入,跳过"，与 markup 无 world 同款；原无 world/player 静默跳过无日志）；② heal 骰式回退语义两侧统一--新增 utils.roll_formula（@136，解析 NdM+K 并掷骰，不匹配返回 0；utils.py 头部补 import random，220->232 行），judge.py `_roll` 内嵌函数删除改用共享解析器（_execute_effect_atoms 内 import re/random 一并清除，judge.py 560->550 行），两侧 heal 分支统一为 `formula 掷骰 or delta 回退`（垃圾 formula 回退 delta 恢复，原 combat 保留 delta/judge 归零分叉）；注意 review 所附代码片段（`delta = max(0, roll_formula(...))` 无回退）与 review 测试预期（"两侧都回 5"）矛盾，按测试预期实现回退语义；③ MAINTENANCE.md 行号漂移修正（CombatState @131->132/CombatSystem @154->155/_get_tier @1045->1047/combat.py 1380->1382 行，grep 实测）+ utils.py 节补 roll_formula 条目；测试 +3：test_timed_without_world_skips_with_warning（combat）、test_heal_garbage_formula_falls_back_to_delta（combat+judge 各一，RED->GREEN） |
@@ -208,7 +209,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1402 行) — 战斗系统 v2
+## src/game/combat.py (1410 行) — 战斗系统 v2
 
 CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects: list`（@144，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）。
 
@@ -233,18 +234,18 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 | `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 715 |
 | `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 747 |
 | `_skill_value` | `(player, skill_name)` | 技能值查询 | 800 |
-| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @858-930**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 消费）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 811 |
+| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @858-930**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 已消费：_resolve_enemy_action 顶部跳过行动）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 811 |
 | `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1049 |
 | `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1061 |
 | `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1069 |
-| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；命中段 @1108-1114 buff 减伤（T10）：`damage = _roll_damage(...)` 后总减免 = sum(state.temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`（floor 读 game_config，函数内 import get_game_config；reduce_total=0 零开销跳过） | 1073 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；顺带 enemy.controlled_rounds 递减（T11 消费）；调用点 run_combat @348 / run_single_round @531 / run_game.py 交互循环 @511（均在 `state.round += 1` 前，共 3 处） | 1125 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1138 / 1162 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1183 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1193 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1212 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1240 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1347 |
+| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 @1078-1084 control 检查（T11）：`controlled_rounds > 0` 时跳过行动（success=False、narrative"被无形的力量攫住，无法动弹。"、damage=0、不掷骰不耗 _player_dodging、跳过本身不递减，归零靠轮末 _tick）；命中段 @1116-1122 buff 减伤（T10）：`damage = _roll_damage(...)` 后总减免 = sum(state.temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`（floor 读 game_config，函数内 import get_game_config；reduce_total=0 零开销跳过） | 1073 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @348 / run_single_round @531 / run_game.py 交互循环 @511（均在 `state.round += 1` 前，共 3 处） | 1133 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1146 / 1170 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1191 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1201 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1220 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1248 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1355 |
 
 ## src/game/judge.py (550 行) — 确定性闸门（无 LLM 依赖）
 

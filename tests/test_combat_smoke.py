@@ -567,6 +567,59 @@ class TestCombatBuff:
         assert state.player_hp == 20 - (9 - 5)
 
 
+class TestCombatControl:
+    """战斗 control:敌方行动跳过 + 轮末递减恢复(2026-08-21 spec §3)。"""
+
+    def _env(self, controlled_rounds=None):
+        """必中敌人(attributes DEX/POW=200)+ 满 HP 玩家 state;controlled_rounds 非 None 时预置。"""
+        enemy = _TestEnemy("傀儡兽", hp=20, armor="0", instance_id="E_CTRL")
+        enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        if controlled_rounds is not None:
+            enemy.controlled_rounds = controlled_rounds
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        state.player_hp_max = 20
+        return CombatSystem(), state, enemy
+
+    def test_controlled_enemy_skips_action(self, monkeypatch):
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
+        # 被控制(controlled_rounds=2):跳过行动,不掷骰不伤害不消耗 dodge
+        cs, state, enemy = self._env(controlled_rounds=2)
+        state._player_dodging = True
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert act.success is False, "被支配敌人无攻击检定,success=False"
+        assert "无法动弹" in act.narrative and "傀儡兽" in act.narrative, \
+            "叙事含'被无形的力量攫住,无法动弹'且带敌人标签"
+        assert act.damage == 0, "不造成伤害"
+        assert state.player_hp == 20, "player_hp 不变"
+        assert state._player_dodging is True, "跳过路径不消耗 _player_dodging"
+        assert enemy.controlled_rounds == 2, "跳过本身不递减(递减只在轮末 _tick)"
+        # 对照:无 control 时同一敌人必中(DEX/POW=200)造成伤害
+        cs2, state2, enemy2 = self._env()
+        act2 = cs2._resolve_enemy_action(state2, enemy2, _make_investigator())
+        assert act2.success and act2.damage == 7, "无 control 正常命中掷骰"
+        assert state2.player_hp == 20 - 7, "无 control 正常扣血"
+
+    def test_control_decays_via_tick(self):
+        cs, state, enemy = self._env(controlled_rounds=1)
+        act_before = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert "无法动弹" in act_before.narrative, "前置:控制期内跳过行动"
+        cs._tick_temporary_effects(state)
+        assert enemy.controlled_rounds == 0, "轮末递减 1->0,恢复行动"
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert "无法动弹" not in act.narrative, "归零后走正常行动路径"
+        assert act.success and act.roll >= 1, "恢复正常掷骰且必中(DEX/POW=200)"
+
+    def test_uncontrolled_enemy_acts_normally(self):
+        cs, state, enemy = self._env()   # 无 controlled_rounds 属性的普通敌人
+        assert not hasattr(enemy, "controlled_rounds"), "前置:普通敌人无该属性"
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert act.success and act.roll >= 1, "getattr 默认 0,正常掷骰命中"
+        assert "无法动弹" not in act.narrative, "叙事走常规命中文案"
+        assert act.damage >= 1, "正常路径造成伤害(1D6)"
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()
