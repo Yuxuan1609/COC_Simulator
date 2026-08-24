@@ -508,6 +508,7 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
                 if enemy:
                     enemy.hp = max(0, getattr(enemy, 'hp', 10) - act.damage)
 
+        cs._tick_temporary_effects(state)   # buff 轮末递减(2026-08-21 spec §3)
         state.round += 1
 
     outcome = "win"
