@@ -387,6 +387,7 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
         # 玩家选择
         action_id = "punch"
         target = alive[0].instance_id
+        player_extra = ""   # 非 attack 分支不赋值,预置防 UnboundLocalError(修正段 @453 使用)
         while True:
             print("\n动作: a)攻击 d)回避 f)逃跑 c)隐蔽 m)瞄准 g)蓄力")
             choice = input("> ").strip().lower()
@@ -464,6 +465,8 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
             for ea in state.log:
                 if ea.actor == "player":
                     continue
+                if ea.damage <= 0:
+                    continue   # 被支配跳过(damage=0)不送 LLM 修正,对齐 combat.py @294 守卫(T11 review)
                 enemy = next((e for e in state.enemies if e.instance_id == ea.actor), None)
                 if enemy and getattr(enemy, 'special_rules', ''):
                     ea_data = {"actor": ea.actor, "action_type": ea.weapon,
@@ -496,6 +499,8 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
                     name = getattr(enemy, 'enemy_ref', '敌人')
                     if ea.damage > 0:
                         print(f"  {name}用{ea.weapon}击中！D100={ea.roll} 造成{ea.damage}点伤害")
+                    elif ea.weapon == "--" and ea.narrative:
+                        print(f"  {ea.narrative}")   # 被支配跳过行动,叙事 CLI 可见(T11 review)
                     break
             if state.player_hp <= 0:
                 state.finished = True
