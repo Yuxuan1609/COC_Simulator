@@ -476,6 +476,24 @@ class TestCastEffectAtoms:
         assert "[unknown:]" not in act.narrative, \
             "空 type 不打 [unknown:] 前缀(与 judge.py T6 语义一致)"
 
+    def test_timed_without_world_skips_with_warning(self, caplog):
+        import logging
+        cs, inv, _ = self._env(
+            [{"type": "timed", "id": "T", "description": "低语缠身", "minutes": 5}])
+        with caplog.at_level(logging.WARNING, logger="game.combat"):
+            act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success, "无 world 时 timed 跳过但不致败"
+        assert inv.timed_effects == [], "无 world 时不挂载"
+        assert "timed" in caplog.text, "无 world 跳过须留 warning 日志"
+
+    def test_heal_garbage_formula_falls_back_to_delta(self):
+        cs, inv, _ = self._env([{"type": "heal", "formula": "garbage", "delta": 5}])
+        inv.derived.HP = inv.derived.HP_MAX - 6
+        act = cs._resolve_player_action(CombatState(), inv, "cast_X", "")
+        assert act.success
+        assert inv.derived.HP == inv.derived.HP_MAX - 1, \
+            "垃圾 formula 回退 delta(恢复 5;与探索侧统一)"
+
 
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")

@@ -616,6 +616,19 @@ class TestExecuteMaterialEffects:
         assert out.success
         assert inv.derived.HP == inv.derived.HP_MAX, "heal 必须 clamp 到 HP_MAX"
 
+    def test_heal_garbage_formula_falls_back_to_delta(self):
+        from game.judge import Judge
+        world, inv = self._world()
+        before = inv.derived.HP_MAX - 6
+        inv.derived.HP = before
+        judge = Judge(world)
+        m = self._mat(effect=[{"type": "heal", "formula": "garbage",
+                               "delta": 5}])
+        out = judge.execute_material(m, "试咒")
+        assert out.success
+        assert inv.derived.HP == before + 5, \
+            "垃圾 formula 回退 delta(恢复 5;与战斗侧统一)"
+
     def test_mp_change_clamped(self):
         from game.judge import Judge
         world, inv = self._world()

@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-24 | T9 review 修复二（Important×2+Minor）：① combat.py cast 分支 timed 原子补 else 分支 logger warning（"game.combat"，"timed 原子需要 world/player 注入,跳过"，与 markup 无 world 同款；原无 world/player 静默跳过无日志）；② heal 骰式回退语义两侧统一--新增 utils.roll_formula（@136，解析 NdM+K 并掷骰，不匹配返回 0；utils.py 头部补 import random，220->232 行），judge.py `_roll` 内嵌函数删除改用共享解析器（_execute_effect_atoms 内 import re/random 一并清除，judge.py 560->550 行），两侧 heal 分支统一为 `formula 掷骰 or delta 回退`（垃圾 formula 回退 delta 恢复，原 combat 保留 delta/judge 归零分叉）；注意 review 所附代码片段（`delta = max(0, roll_formula(...))` 无回退）与 review 测试预期（"两侧都回 5"）矛盾，按测试预期实现回退语义；③ MAINTENANCE.md 行号漂移修正（CombatState @131->132/CombatSystem @154->155/_get_tier @1045->1047/combat.py 1380->1382 行，grep 实测）+ utils.py 节补 roll_formula 条目；测试 +3：test_timed_without_world_skips_with_warning（combat）、test_heal_garbage_formula_falls_back_to_delta（combat+judge 各一，RED->GREEN） |
 | 2026-08-24 | T9 review 修复（Important×2+Minor×2）：① run_game._run_interactive_combat @361 补传 world（第 4 个生产构造点，原 grep 范围只扫 src/frontend/tests 漏了仓库根入口脚本；CLI 交互战斗 markup/timed 原子恢复生效）；② MAINTENANCE.md CombatSystem 节"3 处构造点"纠回 4 处（旧文档正确，run_game 构造点补列入）；③ combat.py cast 分支空 type 原子加 `if t` 守卫（@923-926：空 type 无前缀直出文本，与 judge.py T6 语义一致；原实现对空 type 打 `[unknown:]` 前缀）；④ tests/test_combat_smoke.py 增 2 测试：test_empty_type_atom_no_prefix（空 type 直出不打前缀）+ test_timed_atom_refresh_same_id（同 id timed 二次施放不叠条、expire_at 取最后一次，战斗侧 refresh 回归覆盖） |
 | 2026-08-24 | effect 表达力计划 T9：战斗 cast 分支 effect 数组结算（spec §1.2 战斗列）--CombatSystem.__init__ 增 world 参数（@167，markup/timed 原子作用域，可选；缺省 markup 跳过+logger "game.combat" warning），3 处生产构造点传 world（game_loop.continue_standoff @786 传 keeper.world、frontend combat_start @975 传 world、combat_round @1023 传 _world）；cast 分支 effect 段重写为原子数组遍历（@856-928，检定成功才结算；原单 dict 读法对非空数组 AttributeError）：damage（保留 _roll_damage+ignore_armor+死亡标记）/heal（formula NdM 掷骰或 delta，clamp HP_MAX）/mp_change（clamp 0..MP_MAX）/markup（parse_markup_all+apply_side_effects 走 world）/timed（挂 world.player.timed_effects，同 id refresh 语义与 T6 一致，expire_at=clock.game_time+minutes，缺省读 timed_default_minutes）/buff（挂 state.temporary_effects {id,reduce,rounds}，消费在 T10）/control（写 target.controlled_rounds，消费在 T11）/narrative（text 拼 action.narrative）/未知 type（`[unknown:{t}] text/description` 降级，永不报错）；CombatState 增 temporary_effects 字段（@144，T10 直用）；combat.py 1320->1380 行节内行号对齐（_resolve_player_action 807->809、_get_tier 985->1045 等）；tests/test_combat_smoke.py 增 TestCastEffectAtoms 9 测试（heal 上升+clamp/mp 净+1/markup SAN 通路/无 world 跳过+warning/timed expire_at/buff 写状态/control 写 target/narrative+unknown 降级/damage 保留） |
 | 2026-08-23 | effect 表达力计划 T8：WorldChronicle.render_for_author 玩家行渲染 timed_effects（LLM 可见性，spec §2.3）--法术列后拼 `生效中: 描述（剩N分钟）` 块（@1655-1659，多个用「；」连接，N=max(0, expire_at-clock.game_time) 剩余分钟，缺 expire_at 按 0 兜底；无描述条目跳过；空则整块不渲染，enrich/narrator/Author 写叙事可见"帷幕还在"）；tests/test_use_system.py 增 TestTimedFactsRender 3 测试（描述+生效中标签/剩10分钟/空列表不渲染区块）；scenario_core.py 1759->1764 行，WorldChronicle 节内行号对齐（render_for_author @1644 不变、_render_event 1720->1725、to_dict/from_dict 1740/1751->1745/1756） |
@@ -205,9 +206,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1380 行) — 战斗系统 v2
+## src/game/combat.py (1382 行) — 战斗系统 v2
 
-CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects: list`（@144，玩家侧 buff `[{id, reduce, rounds}]`，spec §3，消费在 T10）。
+CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects: list`（@144，玩家侧 buff `[{id, reduce, rounds}]`，spec §3，消费在 T10）。
 
 ### 模块级函数
 
@@ -218,7 +219,7 @@ CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects
 | `_apply_armor` | 护甲减免 | 96 |
 | `_apply_damage_multiplier` | 伤害类型倍率 | 103 |
 
-### CombatSystem（@154，__init__ @167 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；4 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023、run_game._run_interactive_combat@361）
+### CombatSystem（@155，__init__ @167 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；4 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023、run_game._run_interactive_combat@361）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -230,8 +231,8 @@ CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects
 | `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 713 |
 | `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 745 |
 | `_skill_value` | `(player, skill_name)` | 技能值查询 | 798 |
-| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @856-928**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰或 delta，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 消费）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 809 |
-| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1045 |
+| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @856-928**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 消费）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 809 |
+| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1047 |
 | `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1057 |
 | `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1065 |
 | `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作 | 1069 |
@@ -242,7 +243,7 @@ CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1218 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1325 |
 
-## src/game/judge.py (560 行) — 确定性闸门（无 LLM 依赖）
+## src/game/judge.py (550 行) — 确定性闸门（无 LLM 依赖）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -250,7 +251,7 @@ CombatState dataclass（@131）：回合可变状态；T9 增 `temporary_effects
 | `Judge.check_auto_triggers` | `()` | 触发当前场景满足简单条件的全部 AT | 47 |
 | `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 63 |
 | `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@176-179；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@105） | 78 |
-| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级 description 文本进结果+logger warning）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 188 |
+| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级 description 文本进结果+logger warning）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 188 |
 | `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截 → NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 273 |
 | `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 481 |
 | `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 492 / 503 |
@@ -813,7 +814,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `LLM_THINKING_ENABLED` / `LLM_REASONING_EFFORT` / `LLM_TEMPERATURE_JSON` / `LLM_TEMPERATURE_TEXT` / `LLM_MAX_TOKENS_JSON` / `LLM_MAX_TOKENS_TEXT` | 默认生成参数 |
 | `RE_*` | 各调用点 reasoning_effort 覆盖（RE_KEEPER_PARSE="max" 等） |
 
-## src/utils.py (220 行) — 通用工具
+## src/utils.py (232 行) — 通用工具
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -821,7 +822,8 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `_parse_docx` / `_parse_pdf` | — | python-docx / PyPDF2 解析 | 30 / 41 |
 | `estimate_tokens` | `(text) -> int` | 中文≈1.5 token/字，英文≈0.25/字符 | 68 |
 | `estimate_and_truncate_context` | `(content, extra_prompt_chars, max_tokens, safety_margin) -> str` | 超限截断（找段落/句号断点） | 78 |
-| `roll_dice` / `roll_d6` | — | 掷骰 | 125 / 135 |
+| `roll_dice` / `roll_d6` | — | 掷骰 | 126 / 147 |
+| `roll_formula` | `(formula) -> int` | 解析 NdM+K 骰式并掷骰；不匹配返回 0（judge/combat 的 heal 原子共用解析器，垃圾 formula 由调用方回退 delta） | 136 |
 | `load_skill_config` | `(path=None) -> dict` | data/skill_config.json 技能体系配置（20技能/8属性/legacy_map/attr_aliases/pseudo_skills），缓存 | 145 |
 | `normalize_skill_name` | `(name) -> (kind, value)` | 技能名归一单点：skill/attr/pseudo/ignore/unknown 五路 | 161 |
 | `load_skill_checks` | `(path=None)` | U9：默认数据源已切换为 skill_config.json 的 skills 列表（保持 `[{"name": ...}]` 兼容形状）；旧 skill_checks.json 已删除 | 202 |

@@ -3,6 +3,7 @@
 """
 
 import os
+import random
 import re
 
 
@@ -130,6 +131,17 @@ def roll_dice(num: int, sides: int) -> int:
         raise ValueError(f"num must be >= 0, got {num}")
     import random
     return sum(random.randint(1, sides) for _ in range(num))
+
+
+def roll_formula(formula: str) -> int:
+    """解析 NdM+K 骰式并掷骰；不匹配返回 0。judge/combat 的 heal 原子共用。"""
+    m = re.match(r"^(\d*)D(\d+)([+-]\d+)?$", str(formula).strip().upper())
+    if not m:
+        return 0
+    n = int(m.group(1) or 1)
+    d = int(m.group(2))
+    bonus = int(m.group(3) or 0)
+    return sum(random.randint(1, d) for _ in range(n)) + bonus
 
 
 def roll_d6(num: int) -> int:

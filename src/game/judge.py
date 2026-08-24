@@ -187,29 +187,19 @@ class Judge:
 
     def _execute_effect_atoms(self, effects: list, player) -> list[str]:
         """探索侧 effect 原子结算(spec §1.2 探索列)。返回追加进 message 的行。"""
-        import re
         import logging
-        import random
         from investigator.rules import get_game_config
+        from utils import roll_formula
         cfg = get_game_config()
         logger = logging.getLogger("game.judge")
         msgs: list[str] = []
-
-        def _roll(formula: str) -> int:
-            m = re.match(r"^(\d*)D(\d+)([+-]\d+)?$", str(formula).strip().upper())
-            if not m:
-                return 0
-            n = int(m.group(1) or 1)
-            d = int(m.group(2))
-            bonus = int(m.group(3) or 0)
-            return sum(random.randint(1, d) for _ in range(n)) + bonus
 
         for atom in effects or []:
             t = atom.get("type", "")
             if t == "heal":
                 delta = max(0, int(atom.get("delta", 0) or 0))
                 if "formula" in atom:
-                    delta = _roll(str(atom["formula"]))
+                    delta = max(0, roll_formula(str(atom["formula"])) or delta)
                 if delta:
                     before = player.derived.HP
                     player.derived.HP = min(player.derived.HP_MAX,

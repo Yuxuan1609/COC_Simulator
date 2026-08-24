@@ -870,12 +870,9 @@ class CombatSystem:
                                 target.status = "dead"
                     elif t == "heal":
                         delta = max(0, int(atom.get("delta", 0) or 0))
-                        m = re.match(r"^(\d*)D(\d+)([+-]\d+)?$",
-                                     str(atom.get("formula", "")).strip().upper())
-                        if m:
-                            delta = (sum(random.randint(1, int(m.group(2)))
-                                         for _ in range(int(m.group(1) or 1)))
-                                     + int(m.group(3) or 0))
+                        if "formula" in atom:
+                            from utils import roll_formula
+                            delta = max(0, roll_formula(str(atom["formula"])) or delta)
                         if delta:
                             player.derived.HP = min(player.derived.HP_MAX,
                                                     player.derived.HP + delta)
@@ -909,6 +906,10 @@ class CombatSystem:
                                 "description": str(atom.get("description", "")),
                                 "expire_at": self.world.clock.game_time + minutes,
                             })
+                        else:
+                            import logging
+                            logging.getLogger("game.combat").warning(
+                                "[effect] timed 原子需要 world/player 注入,跳过: %s", atom)
                     elif t == "buff":
                         state.temporary_effects.append({
                             "id": str(atom.get("id", "BUFF")),
