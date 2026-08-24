@@ -9,6 +9,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-24 | effect 表达力计划 T12：核心库内容升维（spec §7 数据示范，纯 JSON 变更零代码）--data/library/core/spells.json 5 条：STONE_SKIN effect 由空转单 dict `{"type":"buff","formula":null}` 升为 [buff(reduce 3/rounds 3/self/on_text)+timed(minutes 30)] 双原子（on_success 检定槽文本保留不冲突）；DOMINATE 补 effect [control(target enemy/rounds 2)]（T11 消费）；SILENCE_VEIL 补 effect [timed(minutes 10)]（T6/T8 消费）；HEART_ARREST/BLOOD_CALL damage 单 dict 显式包装为单元素数组（归一化兜底仍在，数据侧升维示范）；data/library/core/items.json 2 条：NECRONOMICON_PAGE on_use 追加 `@grant_spell(spell_ref="DREAM_GAZE")`（读残页受 SAN 代价+学会梦中窥探，T4 通路）；SALT 补 effect [timed(id SALT_LINE/minutes 60)]；tests/test_use_system.py 增 TestLibraryContentUpgrade 6 测试（STONE_SKIN buff+timed/DOMINATE control/SILENCE_VEIL timed/damage 数组格式/残页 grant_spell/盐袋 timed；按文件惯例补 load_core()，任务原片段缺加载调用 get() 返 None 会因错误原因失败），RED(5 failed 1 passed，damage 格式测试被归一化兜底先行通过)→GREEN；全套 264 passed（基线 257+1 用户本地 test_combat_smoke.py 新增 TestRunGameControlGuard+6 新测试，数目核查吻合） |
 | 2026-08-24 | T11 review 修复：run_game.py 敌方 LLM 修正循环入口补 `if ea.damage <= 0: continue` 守卫（@468，对齐 combat.py @294，被支配跳过 action 不再送 _llm_correct_enemy_round，杜绝 LLM 给跳过攻击修正出正伤害）；敌方 CLI 展示补 `elif ea.weapon == "--" and ea.narrative: print(narrative)`（@502，跳过叙事可见）；玩家动作预置 `player_extra = ""`（@390，非 attack 分支 UnboundLocalError 预防） |
 | 2026-08-24 | effect 表达力计划 T11：战斗 control 消费侧（spec §3，敌方行动跳过）--`_resolve_enemy_action` 顶部（@1078-1084，enemy_label 组装后、`_select_enemy_attack` 之前，不选攻击不掷骰）加 control 检查：`getattr(enemy, "controlled_rounds", 0) > 0` 时构造 CombatAction(actor=instance_id, action_type="attack", weapon/skill_name="--", target="player")，success=False、narrative="被无形的力量攫住，无法动弹。"（带 enemy_label）、damage=0（默认）、直接 return（不消耗 _player_dodging，跳过本身不递减 controlled_rounds，递减只在轮末 _tick）；敌方行动 3 处循环入口（combat.py @254/@437 + run_game.py @439）全走此函数单一消费点，multi_attack 循环每段调用均命中检查全跳过，跳过的 action 由调用方 append 进 state.log 叙事可见；tests/test_combat_smoke.py 增 TestCombatControl 3 测试（controlled_rounds=2 跳过+不耗 dodge+不递减+无 control 对照必中 7 伤害/tick 1->0 恢复行动归零后正常掷骰/无属性普通敌人 getattr 默认 0 正常路径），RED(2 failed)→GREEN；combat.py 1402->1410 行（_resolve_enemy_action 1073 不变，函数体内插入；_tick_temporary_effects 1125->1133/_check_phase 1138->1146/_apply_phase 1162->1170/_any_special_rules 1183->1191/_build_battle_snapshot 1193->1201/_build_round_result 1212->1220/_llm_correct_round 1240->1248/_llm_correct_enemy_round 1347->1355，grep 实测）；全套 257 passed（基线 254+3） |
 | 2026-08-24 | T10 review 修复：run_game.py 交互战斗循环 `state.round += 1` 前补 `cs._tick_temporary_effects(state)`（@511，CLI 路径 buff 原先永不过期）；MAINTENANCE 轮末 tick 调用点表述修正为 3 处 |
@@ -558,6 +559,8 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 
 数据类 `LibraryItem`@12：`id, name, aliases, category(consumable/tool/document/clothing/key/misc), description, impact(L0/L1/L2 库预标注), use_semantic(consume/equip/read/tool/none), stackable, check{skill,type}, on_use(@markup 序列), on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1)`。effect 字段（T3，@29）：from_dict 经 `_normalize_effect`（自 spells.py 导入 @8）归一化——旧单 dict 包装为 [dict]，list 透传，缺省 []（@50）。
 
+core 条目内容（T12 升维，2026-08-24）：NECRONOMICON_PAGE on_use 双 markup（`@stat_change(SAN,-1D4)` + `@grant_spell(spell_ref="DREAM_GAZE")`，读残页学法术通路示范）；SALT effect=[timed(id SALT_LINE, minutes 60)]（探索侧挂 timed_effects，T6 结算/T8 渲染）。其余 10 条无 effect（纯叙事 L0 为主）。
+
 ### spells.py (97 行) - SpellLibrary（统一资源层，@62）
 
 | 函数/方法 | 作用 | 行号 |
@@ -567,6 +570,8 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 | `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 87–97 |
 
 数据类 `LibrarySpell`@19：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1), weight`。effect 字段（T3，@35）：由旧单 dict（damage 类）升维为原子数组，from_dict @56 调 `_normalize_effect`；旧 JSON 单 dict 数据自动包装为单元素数组。combat.py cast 分支已由 T9 重写为原子数组遍历（@856-928，见 combat.py 节）。
+
+core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STONE_SKIN=[buff(reduce 3, rounds 3, self)+timed(minutes 30)]（T10 减免/T6 挂载）；DOMINATE=[control(rounds 2, enemy)]（T11 跳过）；SILENCE_VEIL=[timed(minutes 10)]；HEART_ARREST/BLOOD_CALL=[damage(1D6 ignore_armor)/damage(1D4)]（显式数组）。LIFE_DETECTION/WITCH_LIGHT/DREAM_GAZE 无 effect（纯叙事，on_success 承载）。
 
 ### loader.py (31 行) - 统一库加载器（T2，2026-08-21 spec §6）
 

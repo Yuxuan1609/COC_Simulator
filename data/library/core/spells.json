@@ -7,7 +7,7 @@
      "check": {"skill": "POW", "type": "opposed"},
      "on_success": "目标的胸膛猛地一缩，仿佛被一只无形的手攥住。",
      "on_failure": "某种冰冷的东西反向攥住了你的心口。",
-     "effect": {"type": "damage", "formula": "1D6", "ignore_armor": true},
+     "effect": [{"type": "damage", "formula": "1D6", "ignore_armor": true}],
      "constraints": {"range": "视线内"}},
     {"id": "BLOOD_CALL", "name": "血之呼唤", "aliases": [],
      "category": "combat", "impact": "L1",
@@ -16,7 +16,7 @@
      "check": {"skill": "POW", "type": "regular"},
      "on_success": "敌人的皮肤下浮起暗色的纹路，它踉跄了一步。",
      "on_failure": "音节在舌尖散成了无意义的气音。",
-     "effect": {"type": "damage", "formula": "1D4", "ignore_armor": false}},
+     "effect": [{"type": "damage", "formula": "1D4", "ignore_armor": false}]},
     {"id": "LIFE_DETECTION", "name": "生命觉察", "aliases": [],
      "category": "exploration", "impact": "L0",
      "description": "闭上眼，让意识像涟漪一样扩散，感知周遭的活物。",
@@ -44,7 +44,10 @@
      "cost": {"mp": 5, "san": 0},
      "check": {"skill": "POW", "type": "regular"},
      "on_success": "世界忽然安静下来，连你的心跳都像蒙上了棉布。",
-     "on_failure": "音节走调，反而让四周安静得更加可疑。"},
+     "on_failure": "音节走调，反而让四周安静得更加可疑。",
+     "effect": [
+       {"type": "timed", "id": "SILENCE_VEIL", "description": "无形的帷幕吞掉帷幕内的一切声响", "minutes": 10}
+     ]},
     {"id": "STONE_SKIN", "name": "石肤术", "aliases": [],
      "category": "combat", "impact": "L1",
      "description": "你的皮肤泛起大理石般的灰色纹路。",
@@ -52,7 +55,11 @@
      "check": {"skill": "POW", "type": "regular"},
      "on_success": "皮肤紧绷如石。接下来的打击会轻一些。",
      "on_failure": "纹路浮现又褪去，你依旧血肉之躯。",
-     "effect": {"type": "buff", "formula": null}},
+     "effect": [
+       {"type": "buff", "target": "self", "id": "STONE_SKIN", "reduce": 3, "rounds": 3,
+        "on_text": "皮肤紧绷如石，接下来的打击会轻一些。"},
+       {"type": "timed", "id": "STONE_SKIN", "description": "皮肤泛着大理石般的灰色纹路", "minutes": 30}
+     ]},
     {"id": "DOMINATE", "name": "支配", "aliases": [],
      "category": "combat", "impact": "L1",
      "description": "你的意志越过界线，压向对方的意志。",
@@ -60,6 +67,9 @@
      "check": {"skill": "POW", "type": "opposed"},
      "on_success": "对方的眼神涣散了一瞬--那一瞬足够了。",
      "on_failure": "对方的眼神反而更清醒了，它认出了你。",
+     "effect": [
+       {"type": "control", "target": "enemy", "rounds": 2}
+     ],
      "constraints": {"range": "视线内", "opposed_value": 60}}
   ]
 }

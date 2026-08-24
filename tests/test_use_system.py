@@ -953,3 +953,50 @@ class TestTimedFactsRender:
         inv.timed_effects = []
         text = WorldChronicle().render_for_author(world)
         assert "生效中" not in text, "无 timed 效果时不得渲染空区块"
+
+
+class TestLibraryContentUpgrade:
+    """2026-08-21 spec §7 内容示范:新原子在核心库真实条目上就位。"""
+
+    def test_stone_skin_has_buff_and_timed(self):
+        from library.spells import SpellLibrary
+        lib = SpellLibrary(); lib.load_core()
+        sp = lib.get("STONE_SKIN")
+        types = [a["type"] for a in sp.effect]
+        assert "buff" in types and "timed" in types
+        buff = next(a for a in sp.effect if a["type"] == "buff")
+        assert buff["reduce"] >= 1 and buff["rounds"] >= 1
+
+    def test_dominate_has_control(self):
+        from library.spells import SpellLibrary
+        lib = SpellLibrary(); lib.load_core()
+        sp = lib.get("DOMINATE")
+        assert any(a["type"] == "control" for a in sp.effect)
+        ctrl = next(a for a in sp.effect if a["type"] == "control")
+        assert ctrl["rounds"] >= 1
+
+    def test_silence_veil_has_timed(self):
+        from library.spells import SpellLibrary
+        lib = SpellLibrary(); lib.load_core()
+        sp = lib.get("SILENCE_VEIL")
+        assert any(a["type"] == "timed" for a in sp.effect)
+
+    def test_damage_spells_array_format(self):
+        from library.spells import SpellLibrary
+        lib = SpellLibrary(); lib.load_core()
+        for sid in ("HEART_ARREST", "BLOOD_CALL"):
+            sp = lib.get(sid)
+            assert isinstance(sp.effect, list) and len(sp.effect) == 1
+            assert sp.effect[0]["type"] == "damage"
+
+    def test_necronomicon_page_grants_spell(self):
+        from library.items import ItemLibrary
+        lib = ItemLibrary(); lib.load_core()
+        it = lib.get("NECRONOMICON_PAGE")
+        assert any("@grant_spell" in u for u in it.on_use)
+
+    def test_salt_has_timed_effect(self):
+        from library.items import ItemLibrary
+        lib = ItemLibrary(); lib.load_core()
+        it = lib.get("SALT")
+        assert any(a.get("type") == "timed" for a in it.effect)
