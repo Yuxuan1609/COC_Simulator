@@ -345,6 +345,7 @@ class CombatSystem:
             if not alive_after:
                 state.finished = True
 
+            self._tick_temporary_effects(state)   # buff 轮末递减(2026-08-21 spec §3)
             state.round += 1
 
         outcome = "win"
@@ -527,6 +528,7 @@ class CombatSystem:
         if state.player_hp <= 0:
             state.finished = True
 
+        self._tick_temporary_effects(state)   # buff 轮末递减(2026-08-21 spec §3)
         state.round += 1
         return self._build_single_round_result(state, combat_init)
 
@@ -1103,6 +1105,13 @@ class CombatSystem:
             en_siz = enemy_attrs.get("SIZ", 50)
             damage_formula = attack.get("damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False}) if isinstance(attack, dict) else getattr(attack, "damage", {"dice_n": 1, "dice_d": 3, "bonus": 0, "use_db": False})
             damage = _roll_damage(damage_formula, en_str, en_siz)
+            # buff 减伤(2026-08-21 spec §3):总减免 = sum(reduce),floor 兜底
+            reduce_total = sum(int(t.get("reduce", 0) or 0)
+                               for t in getattr(state, "temporary_effects", []))
+            if reduce_total > 0:
+                from investigator.rules import get_game_config
+                floor = int(get_game_config()["buff_damage_floor"])
+                damage = max(floor, damage - reduce_total)
             action.damage = damage
             action.hp_before = state.player_hp
             state.player_hp = max(0, state.player_hp - damage)
@@ -1112,6 +1121,17 @@ class CombatSystem:
             action.narrative = f"{enemy_label}的{attack_name}未能命中你。"
 
         return action
+
+    def _tick_temporary_effects(self, state) -> None:
+        """轮末:buff rounds 递减,归零移除;enemy controlled_rounds 递减(T11 消费)。"""
+        alive = [t for t in getattr(state, "temporary_effects", [])
+                 if int(t.get("rounds", 0)) - 1 > 0]
+        for t in alive:
+            t["rounds"] -= 1
+        state.temporary_effects = alive
+        for e in state.enemies:
+            if getattr(e, "controlled_rounds", 0) > 0:
+                e.controlled_rounds -= 1
 
     # ── Phase system ──
 

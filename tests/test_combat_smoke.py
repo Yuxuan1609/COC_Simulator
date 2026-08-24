@@ -495,6 +495,78 @@ class TestCastEffectAtoms:
             "垃圾 formula 回退 delta(恢复 5;与探索侧统一)"
 
 
+class TestCombatBuff:
+    """战斗 buff:受击减免(floor 可配)+轮末递减归零移除(2026-08-21 spec §3)。"""
+
+    def _env(self, temporary_effects=None):
+        """必中敌人(attributes DEX/POW=200)+ 满 HP 玩家 state(伤害靠 monkeypatch 固定)。"""
+        enemy = _TestEnemy("甲兽", hp=20, armor="0", instance_id="E_BUFF")
+        enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        state.player_hp_max = 20
+        state.temporary_effects = temporary_effects or []
+        return CombatSystem(), state, enemy
+
+    def test_buff_reduces_incoming_damage(self, monkeypatch):
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
+        # 无 buff 对照:全额 7
+        cs, state, enemy = self._env()
+        act_plain = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert act_plain.success and act_plain.damage == 7
+        assert state.player_hp == 20 - 7
+        # 有 buff(reduce=3):7-3=4
+        cs2, state2, enemy2 = self._env([{"id": "B", "reduce": 3, "rounds": 3}])
+        act_buff = cs2._resolve_enemy_action(state2, enemy2, _make_investigator())
+        assert act_buff.success
+        assert act_buff.damage == 4, "总减免 3:伤害 7-3=4"
+        assert state2.player_hp == 20 - 4, "扣血按减免后伤害"
+        assert act_plain.damage - act_buff.damage == 3, "有 buff 扣血 < 无 buff,差值恰为 reduce"
+
+    def test_buff_damage_floor(self, monkeypatch):
+        import game.combat as combat_mod
+        import investigator.rules as rules_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 5)
+        # 默认 floor=0:reduce=99 -> 伤害 0
+        cs, state, enemy = self._env([{"id": "B", "reduce": 99, "rounds": 1}])
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert act.success and act.damage == 0
+        assert state.player_hp == 20, "floor=0 时减穿归零"
+        # floor=1:至少扣 1
+        monkeypatch.setattr(rules_mod, "get_game_config",
+                            lambda: {"buff_damage_floor": 1})
+        cs2, state2, enemy2 = self._env([{"id": "B", "reduce": 99, "rounds": 1}])
+        act2 = cs2._resolve_enemy_action(state2, enemy2, _make_investigator())
+        assert act2.success and act2.damage == 1, "floor 可配:减穿后取 floor=1"
+        assert state2.player_hp == 20 - 1
+
+    def test_buff_rounds_decay_and_expire(self, monkeypatch):
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
+        cs, state, enemy = self._env([{"id": "B", "reduce": 3, "rounds": 2}])
+        cs._tick_temporary_effects(state)
+        assert state.temporary_effects == [{"id": "B", "reduce": 3, "rounds": 1}], \
+            "轮末 rounds-1,rounds=1 仍在"
+        cs._tick_temporary_effects(state)
+        assert len(state.temporary_effects) == 0, "rounds 归零移除"
+        # 移除后伤害全额(对照)
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert act.success and act.damage == 7, "buff 过期后不再减免"
+        assert state.player_hp == 20 - 7
+
+    def test_multiple_buffs_stack_reduce(self, monkeypatch):
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 9)
+        cs, state, enemy = self._env([
+            {"id": "B1", "reduce": 2, "rounds": 3},
+            {"id": "B2", "reduce": 3, "rounds": 3}])
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        assert act.success
+        assert act.damage == 9 - 5, "两个 buff 减免叠加:2+3=5"
+        assert state.player_hp == 20 - (9 - 5)
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()
