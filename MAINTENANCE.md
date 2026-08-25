@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | SAN check 叙事补齐 review 修复（I1+M2，遭遇通路另两条战斗路径叙事不可见）--① src/game/combat.py `run_combat`（game_loop 自动战斗路径）终局叙事前置 san_log @417-421（CombatResult.narrative 开头插 "\n".join(state.san_log)+"\n" 后清空，镜像 _build_single_round_result 渲染即清语义；该路径不 build_single_round_result，原实现 _generate_combat_narrative 不读 san_log，玩家看不到目睹 check 文本）；② run_game.py CLI `_run_interactive_combat` 两处：进入战斗打印后逐行打印 san_log+清空 @370-373；命中显示硬编码"name用weapon击中！D100=x 造成N点伤害"改用 ea.narrative（已含敌名/武器/伤害句，可能追加"恐惧侵蚀"SAN check 文本）+D100 骰值前缀保留防信息丢失 @504-506（原行 D100 信息 narrative 不带）；③ M2：`parse_san_loss` 非空 raw 解析结果为空时记 combat logger debug（"[san] san_loss 无法解析: %r" 原文回显 @141-143，防未来数据坏分隔符静默禁用；空 raw/可解析输入零日志）；④ docs/ISSUES.md F9 追加设计注记：每轮情境组（如'0/1D20 (每轮在雾中停留)'）无触发点消费静默+multi_attack 每命中各一检加速 SAN 流失，与去重一并优化（不改状态）。TDD：tests/test_combat_smoke.py 增 2 测试（test_run_combat_narrative_includes_san_log：强制失败骰 roll=90 双方互不命中 draw，断言 CombatResult.narrative 含"理智检定"+敌名；test_parse_san_loss_garbage_logs_debug：caplog 断言空 raw/可解析输入零日志+坏输入 debug 原文回显），RED(2 failed)->GREEN；run_game.py 打印点 grep 代码级确认（CLI 无 pytest 覆盖惯例，不加强求）；test_combat_smoke 42 passed（基线 40+2）；全量回归 304 passed / 20 deselected（基线 302+2）；combat.py 1495->1505 行/run_game.py 601->606 行，combat.py 两表行号列 grep 实测全表对齐（_san_check_and_lose 142->147/run_combat 228->233/run_single_round 424->434/_build_single_round_result 588->598/_generate_combat_narrative 639->654/_init_combat 725->735/_match_action 769->802/_get_player_actions 801->834/_resolve_player_action 865->898/_resolve_enemy_action 1150->1160/_tick 1218->1228 等，含 66e79ff 后遗留漂移顺手修正；CombatSystem 类头 @206->212） |
 | 2026-08-26 | 遭遇 SAN check 接线 Task2（两时点接线+首轮渲染+e2e，P0 收口 2/2）--src/game/combat.py 四处接线（1464->1495 行）：① CombatState 增 `san_log: list[str]` 字段（@196，开局目睹 SAN check 叙事行缓冲）；② `_init_combat` 末尾（hp_max 兜底循环后、return 前）目睹 check 循环 @772-789：对 expanded_enemies 按 enemy_ref 去重（群组拆分后同 ref 只 check 一次；跨战斗不去重，ISSUES F9 跟踪），目睹组=parse_san_loss 注释不含"攻击"的第一组（无则第一组兜底，空 san_loss 跳过），_san_check_and_lose 扣 state.player_san（下限 0），san_log 追加"你遭遇{ref}：{text}。"；③ `_build_single_round_result` 轮叙事 lines 前插 san_log 一次性渲染 @623-626（san_log 行插最前+渲染即清空，不随下轮重复）；④ `_resolve_enemy_action` 命中分支（damage+player_hp 更新后）被攻击情境 check @1206-1212：parse_san_loss 取注释含"攻击"的第一组（无则不追加），_san_check_and_lose 扣 state.player_san，action.narrative 追加" 恐惧侵蚀：{text}。"；战斗结束写回链路已就位（game_loop._run_combat_turn player_san->derived.SAN / run_game._run_interactive_combat @535 同语义），无需新增。TDD：tests/test_combat_smoke.py 增 TestSanCheckWiring 5 测试（_TestEnemy 补 san_loss/quantity 可选参数默认空/1 兼容既有 33 测试：目睹失败扣 SAN+san_log 叙事行带敌名/quantity=3 群组展开 3 实体同 ref 只 check 一次/空 san_loss 不 check/命中走被攻击组 check+恐惧侵蚀叙事/SAN 扣减/仅目睹组命中不追加 check），tests/e2e/test_deterministic.py 增 TestSanCheckE2E 1 测试（真实 EnemyLibrary san_loss="1/1D6" 敌 + CombatInit -> _init_combat -> run_single_round 完整回合，断言 round_narrative 含"理智检定"+写回后 SAN<=战前（宽断言）+san_log 渲染后清空），RED（5 failed：san_log 缺失/无 check；no_group 负向用例实现前平凡通过）->GREEN；test_combat_smoke 40 passed（基线 35+5）/e2e deterministic 43 passed（基线 42+1，test_unresolved_use_becomes_creative 首跑偶发失败复跑即过=2026-08-24 已记录既有 flaky）；全量回归 302 passed / 20 deselected（294 基线+8）；节内行号 grep 实测对齐（run_combat 227->228/run_single_round 423->424/_build_single_round_result 587->588/_init_combat 720->725/_resolve_enemy_action 1127->1150/_tick 1187->1218） |
 | 2026-08-26 | 遭遇 SAN check 接线 Task1（解析+检定纯函数，P0 断链 1/2）--src/game/combat.py 模块级新增三函数（_apply_damage_multiplier 后，1414->1464 行）：`_san_loss_roll(formula)` @109（SAN 损失公式掷骰：纯数字直接 int，骰式走 utils.roll_formula--roll_formula 只吃 NdM+K 骰式不匹配返 0，纯数字需本地兼容，函数内 import）；`parse_san_loss(san_loss)` @121（库 san_loss 字段多情境解析"0/1D4 (目睹), 1/1D6 (被攻击)" -> [(成功公式, 失败公式, 情境注释), ...]，逗号分组+括号注释剥离+`x/y` 正则匹配，空/坏组跳过）；`_san_check_and_lose(san, success_formula, fail_formula)` @142（COC 7th 遭遇理智检定：D100 <= 当前 SAN 为成功，成功掉成功组/失败掉失败组，无 tier/fumble；SAN 检定文案"理智检定成功/失败(D100=x/y)，失去 N 点 SAN"；单次损失>=5 记 combat logger info（临时疯狂条件，ISSUES F5 疯狂体系未实现仅 log）；损失 max(0,..) 兜底）。TDD：tests/test_combat_smoke.py 增 TestSanCheckFunctions 2 测试（解析 5 例：单组/多组带注释/自由文本注释/空/坏格式；检定五分支：成功固定值/失败骰式/SAN=0 永失败/骰式 2D6 逐骰/SAN 扣减文案），RED(2 failed AttributeError)->GREEN；monkeypatch 目标勘误：combat.random 与 utils.random 为同一模块对象（两文件均模块级 import random），patch combat.random.randint 一处 D100/骰面两用均生效，计划稿成功->失败用例间漏了一次 re-patch（同 patch 下第二调用仍 roll=30 走成功分支），按测试意图补 re-patch 行；test_combat_smoke.py 全套 35 passed（基线 33+2）；节内行号 grep 实测 +50 对齐（CombatState 132->182/CombatSystem 155->206/run_combat 177->227/run_single_round 373->423/_build_single_round_result 538->587/_init_combat 670->720/_resolve_player_action 811->865/_resolve_enemy_action 1073->1127/_tick 1137->1187 等）；消费侧接线在 Task2 |
 | 2026-08-25 | 小修批次+F2 参数收编计划 Task10 总收尾:10 任务 10 commit(6e2e93b/0362eba/3d7a910/1ab5365/6e1e6a3/fc03138/75c88b7/fe9d2bb/bd96769/245234f)全部落地,294 passed 基线(269+25)确立;ISSUES B2/B4/B5/B7/B11/B12+F2 收口归档,B13(库裸 json.load 同类)/B14(load_skill_config 缓存死代码)新跟踪;tests/test_game_config.py 末尾追加 test_skill_config_attributes_match_stats_fields 锁定 skill_config.attributes 键集==Stats 字段集(roll_stats 的 Stats(**vals) 依赖,22 passed);UPDATES.md 增 2026-08-25 工作汇总节、readme.md effect 节补参数中心一句、ISSUES F2 移入 §5 |
@@ -79,7 +80,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ## 入口脚本
 
-### run_game.py (595 行) — CLI 文字跑团主入口
+### run_game.py (606 行) — CLI 文字跑团主入口
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -89,7 +90,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_g` | `(obj, key, default=None)` | dict 与 dataclass 通用安全取值 | 234 |
 | `_format_snapshot_chapters` | `(snap) -> str` | 快照格式化为半结构化 Markdown（场景/角色/时间/技能） | 241 |
 | `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 340 |
-| `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem，构造传 spell_lib+world @361，T9 战斗 markup/timed 原子可用） | 355 |
+| `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem，构造传 spell_lib+world @361，T9 战斗 markup/timed 原子可用；进入战斗打印 san_log 渲染即清 @370-373+命中显示改用 ea.narrative（D100 骰值前缀保留防丢，I1）@504-506） | 355 |
 
 ### run_pipeline.py (1474 行) — 模组解析管线 CLI
 
@@ -230,9 +231,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1495 行) — 战斗系统 v2
+## src/game/combat.py (1505 行) — 战斗系统 v2
 
-CombatState dataclass（@182）：回合可变状态；F2 增 `player_san_max: int = 99`（@189，SAN bar 分母，_init_combat 从 player.derived.SAN_MAX 接线）；T9 增 `temporary_effects: list`（@195，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）；2026-08-26 增 `san_log: list[str]`（@196，开局目睹 SAN check 叙事行，_init_combat 写入/_build_single_round_result 首轮渲染后清空）。
+CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: int = 99`（@194，SAN bar 分母，_init_combat 从 player.derived.SAN_MAX 接线）；T9 增 `temporary_effects: list`（@200，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）；2026-08-26 增 `san_log: list[str]`（@201，开局目睹 SAN check 叙事行；_init_combat 写入，三处一次性渲染后清空：_build_single_round_result 首轮 @633-636/run_combat 终局前置 @417-421/run_game CLI 进入战斗打印 @370-373）。
 
 ### 模块级函数
 
@@ -243,33 +244,33 @@ CombatState dataclass（@182）：回合可变状态；F2 增 `player_san_max: i
 | `_apply_armor` | 护甲减免 | 96 |
 | `_apply_damage_multiplier` | 伤害类型倍率 | 103 |
 | `_san_loss_roll` | SAN 损失公式掷骰：纯数字直接 int，骰式走 utils.roll_formula（遭遇 SAN check 通路 Task1，2026-08-26） | 109 |
-| `parse_san_loss` | 库 san_loss 字段多情境解析 `"0/1D4 (目睹), 1/1D6 (被攻击)"` -> [(成功公式, 失败公式, 情境注释), ...]，空/坏组跳过 | 121 |
-| `_san_check_and_lose` | COC 7th 遭遇理智检定：D100 <= 当前 SAN 为成功，掉对应组公式，返回 (损失, 叙事)；损失>=5 仅 log（F5 未实现） | 142 |
+| `parse_san_loss` | 库 san_loss 字段多情境解析 `"0/1D4 (目睹), 1/1D6 (被攻击)"` -> [(成功公式, 失败公式, 情境注释), ...]，空/坏组跳过；非空 raw 解析结果为空记 combat logger debug（原文回显，M2 防坏分隔符静默禁用）@141-143 | 121 |
+| `_san_check_and_lose` | COC 7th 遭遇理智检定：D100 <= 当前 SAN 为成功，掉对应组公式，返回 (损失, 叙事)；损失>=5 仅 log（F5 未实现） | 147 |
 
-### CombatSystem（@206，__init__ @218 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；4 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023、run_game._run_interactive_combat@361）
+### CombatSystem（@212，__init__ @224 增 spell_lib+world 参数--统一资源层法术库/markup·timed 原子作用域（world 可选，缺省 markup 跳过+warning）；4 处生产构造点传 world.spell_library+world：game_loop.continue_standoff@786、frontend combat_start@975/combat_round@1023、run_game._run_interactive_combat@361）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段；轮末 @399 `state.round += 1` 前调 `_tick_temporary_effects`） | 228 |
-| `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制；轮末 @583 `state.round += 1` 前调 `_tick_temporary_effects`） | 424 |
-| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事；F2 增 player_san_max 键 @635；2026-08-26 轮叙事 lines 前插 state.san_log 一次性渲染 @623-626（渲染即清空）） | 588 |
-| `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 639 |
-| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻；player_san_max=player.derived.SAN_MAX（F2 @798）；2026-08-26 末尾目睹 SAN check @772-789：expanded_enemies 按 enemy_ref 去重（同 ref 群组只一次，跨战斗不去重 F9 跟踪），目睹组=注释不含"攻击"的第一组，扣 state.player_san（下限 0）+san_log 追加叙事行 | 725 |
-| `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 769 |
-| `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 801 |
-| `_skill_value` | `(player, skill_name)` | 技能值查询 | 854 |
-| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @908-980**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 已消费：_resolve_enemy_action 顶部跳过行动）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 865 |
-| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1103 |
-| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1115 |
-| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1123 |
-| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 @1128-1134 control 检查（T11）：`controlled_rounds > 0` 时跳过行动（success=False、narrative"被无形的力量攫住，无法动弹。"、damage=0、不掷骰不耗 _player_dodging、跳过本身不递减，归零靠轮末 _tick）；命中段 @1166-1172 buff 减伤（T10）：`damage = _roll_damage(...)` 后总减免 = sum(state.temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`（floor 读 game_config，函数内 import get_game_config；reduce_total=0 零开销跳过）；命中分支 2026-08-26 被攻击情境 SAN check @1206-1212：parse_san_loss 取注释含"攻击"的第一组（无则跳过），扣 state.player_san，action.narrative 追加" 恐惧侵蚀：{text}。" | 1150 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @399 / run_single_round @583 / run_game.py 交互循环 @511（均在 `state.round += 1` 前，共 3 处） | 1218 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1200 / 1224 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1245 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1255 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1274 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1302 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1409 |
+| `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段；轮末 @405 `state.round += 1` 前调 `_tick_temporary_effects`；终局叙事前置 san_log 一次性渲染 @417-421（I1，自动战斗路径目睹 check 文本玩家可见）） | 233 |
+| `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制；轮末 @594 `state.round += 1` 前调 `_tick_temporary_effects`） | 434 |
+| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事；F2 增 player_san_max 键 @635；2026-08-26 轮叙事 lines 前插 state.san_log 一次性渲染 @633-636（渲染即清空）） | 598 |
+| `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 654 |
+| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻；player_san_max=player.derived.SAN_MAX（F2 @798）；2026-08-26 末尾目睹 SAN check @782-799：expanded_enemies 按 enemy_ref 去重（同 ref 群组只一次，跨战斗不去重 F9 跟踪），目睹组=注释不含"攻击"的第一组，扣 state.player_san（下限 0）+san_log 追加叙事行 | 735 |
+| `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 802 |
+| `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 834 |
+| `_skill_value` | `(player, skill_name)` | 技能值查询 | 887 |
+| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @908-980**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 已消费：_resolve_enemy_action 顶部跳过行动）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错） | 898 |
+| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1136 |
+| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1148 |
+| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1156 |
+| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 @1128-1134 control 检查（T11）：`controlled_rounds > 0` 时跳过行动（success=False、narrative"被无形的力量攫住，无法动弹。"、damage=0、不掷骰不耗 _player_dodging、跳过本身不递减，归零靠轮末 _tick）；命中段 @1166-1172 buff 减伤（T10）：`damage = _roll_damage(...)` 后总减免 = sum(state.temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`（floor 读 game_config，函数内 import get_game_config；reduce_total=0 零开销跳过）；命中分支 2026-08-26 被攻击情境 SAN check @1216-1222：parse_san_loss 取注释含"攻击"的第一组（无则跳过），扣 state.player_san，action.narrative 追加" 恐惧侵蚀：{text}。" | 1160 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @405 / run_single_round @594 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1228 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1241 / 1265 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1286 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1296 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1315 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1343 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1450 |
 
 ## src/game/judge.py (551 行) — 确定性闸门（无 LLM 依赖）
 

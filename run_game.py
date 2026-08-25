@@ -367,6 +367,10 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
         for e in combat_init.enemies
     )
     print(f"\n⚔ 进入战斗！遭遇：{enemy_desc}")
+    # 开局目睹 SAN check 叙事行一次性渲染(I1;对齐 _build_single_round_result 渲染即清语义)
+    for line in getattr(state, "san_log", []) or []:
+        print(f"  {line}")
+    state.san_log = []
 
     player = combat_init.player
     available = cs._get_player_actions(player)
@@ -496,9 +500,10 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
                 continue
             for ea in state.log:
                 if ea.actor == iid and ea.round_num == state.round:
-                    name = getattr(enemy, 'enemy_ref', '敌人')
                     if ea.damage > 0:
-                        print(f"  {name}用{ea.weapon}击中！D100={ea.roll} 造成{ea.damage}点伤害")
+                        # ea.narrative 已含敌名/武器/伤害句,可能追加"恐惧侵蚀"SAN check
+                        # 文本(I1);D100 骰值 narrative 不带,前缀保留防信息丢失
+                        print(f"  D100={ea.roll} {ea.narrative}")
                     elif ea.weapon == "--" and ea.narrative:
                         print(f"  {ea.narrative}")   # 被支配跳过行动,叙事 CLI 可见(T11 review)
                     break

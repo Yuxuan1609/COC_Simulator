@@ -121,7 +121,9 @@ def _san_loss_roll(formula: str) -> int:
 def parse_san_loss(san_loss: str) -> list:
     """解析库 san_loss 字段 "0/1D4 (目睹), 1/1D6 (被攻击)"
 
-    -> [(成功公式, 失败公式, 情境注释), ...]。空/坏组跳过。"""
+    -> [(成功公式, 失败公式, 情境注释), ...]。空/坏组跳过;
+    非空 raw 解析结果为空时记 debug(坏分隔符静默禁用防呆,M2)。"""
+    import logging
     groups = []
     for part in (san_loss or "").split(","):
         part = part.strip()
@@ -136,6 +138,9 @@ def parse_san_loss(san_loss: str) -> list:
         if not m:
             continue
         groups.append((m.group(1), m.group(2), note))
+    if (san_loss or "").strip() and not groups:
+        logging.getLogger("combat").debug(
+            "[san] san_loss 无法解析: %r", san_loss)
     return groups
 
 
@@ -409,6 +414,11 @@ class CombatSystem:
         combat_narrative = self._generate_combat_narrative(
             state, combat_init.player, combat_init.scene
         )
+        # 开局目睹 SAN check 叙事行一次性前置(镜像 _build_single_round_result;
+        # 本路径不 build_single_round_result,不前置则玩家看不到目睹 check 文本,I1)
+        if getattr(state, "san_log", None):
+            combat_narrative = "\n".join(state.san_log) + "\n" + combat_narrative
+            state.san_log = []
 
         return CombatResult(
             outcome=outcome,

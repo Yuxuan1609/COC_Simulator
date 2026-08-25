@@ -699,6 +699,23 @@ class TestSanCheckFunctions:
         assert parse_san_loss(",,") == []
         assert parse_san_loss("乱码") == []
 
+    def test_parse_san_loss_garbage_logs_debug(self, caplog):
+        """非空 raw 解析结果为空:combat logger 留 debug(坏分隔符静默禁用防呆,M2)。"""
+        import logging
+        from game.combat import parse_san_loss
+        # 空 raw / 可解析输入零日志
+        with caplog.at_level(logging.DEBUG, logger="combat"):
+            assert parse_san_loss("") == []
+            assert parse_san_loss("0/1D6") == [("0", "1D6", "")]
+        assert caplog.records == [], "空 raw/可解析输入不得打日志"
+        # 坏输入:debug 一条,原文回显
+        with caplog.at_level(logging.DEBUG, logger="combat"):
+            assert parse_san_loss("乱码") == []
+        assert any(r.levelno == logging.DEBUG
+                   and "[san] san_loss 无法解析" in r.getMessage()
+                   and "乱码" in r.getMessage()
+                   for r in caplog.records), "坏输入须留 debug 日志"
+
     def test_san_check_and_lose_success_and_fail(self, monkeypatch):
         from game import combat
         # SAN=50;强制 roll=30(<=50 成功):掉成功组(固定 2)
@@ -782,6 +799,26 @@ class TestSanCheckWiring:
         assert "理智检定" in act.narrative and "恐惧侵蚀" in act.narrative
         assert state.player_san == 49, \
             f"roll=90>50 失败,失败组 1D6=1,SAN 50->49,实际 {state.player_san}"
+
+    def test_run_combat_narrative_includes_san_log(self, monkeypatch):
+        """run_combat(自动战斗路径)终局叙事前置 san_log:目睹 check 文本玩家可见(I1)。"""
+        from game import combat
+        # roll=90>玩家技能 75/敌技能 50 双方互不命中->draw;目睹 check 失败组
+        # 1D6 骰面强制 1(combat.random 与 utils.random 为同一模块对象,patch 一处两用)
+        monkeypatch.setattr(combat.random, "randint",
+                            lambda a, b: 90 if b == 100 else 1)
+        enemy = _TestEnemy("深潜者", hp=8, armor="0", instance_id="E_RC_SAN",
+                           san_loss="0/1D6")
+        player = _make_investigator(hp=12, san=60)
+        combat_init = CombatInit(
+            enemies=[enemy], player=player,
+            scene="测试房间", initiative_context="san")
+        result = CombatSystem().run_combat(combat_init)
+        assert result.player_san == 59, \
+            f"目睹 check 失败组 1D6=1,SAN 60->59,实际 {result.player_san}"
+        assert "理智检定" in result.narrative, \
+            f"终局叙事须含目睹 check 文本,实际 {result.narrative!r}"
+        assert "深潜者" in result.narrative, "叙事行带敌人标签"
 
     def test_attacked_check_no_group(self):
         """san_loss 无'被攻击'组(仅目睹组):命中不追加 check。"""
