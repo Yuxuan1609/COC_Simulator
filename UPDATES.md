@@ -393,6 +393,8 @@
 - **library/loader 统一加载**：`load_item_library/load_spell_library` core + extensions 目录扫描，game_loop 与 run_pipeline 双侧接入，修复管线 extensions 不可见断点（用户放 `data/library/extensions/{items,spells}/*.json` 即生效，游戏+模组管线双侧可见）
 - **核心库升维示范**（纯 JSON）：石肤 buff+timed 双原子 / 支配 control / 帷幕 timed / 死灵书残页 @grant_spell / 盐袋 timed；UseParser/Catalog effect 元素级浅拷贝透传（防库单例别名污染）
 - **文档**：readme 增「effect 原子系统」节（8 原子双侧语义表 + MP 恢复 + timed + 扩展库约定）+ spec 索引；MAINTENANCE 全程同步（含 T3 changelog 补录）
+- **武器库技能名归一缺口收口**（4d62700，本期 review ①顺手修）：skill_config legacy_map 追加 手枪/步枪/霰弹枪 -> 枪械 + test_normalize_weapon_skill_names；持枪械玩家 get_skill("手枪") 归一命中，STR/2 兜底与 warning 刷屏消失；基线 269 passed
+- **问题集中化**（26af817，本期 review ②）：新建 `docs/ISSUES.md` 单一事实来源（处置约定 / Bug 🔴🟡🟢 / 功能缺口 / 重构队列 / 暂缓备忘 / 已收口滚动表）；UPDATES 全局已知观察节与队列节改指针（本节历史汇总原文保留备查）；MAINTENANCE 头部 + readme 文档索引加指引。今后：修代码前先查 ISSUES.md，收口后移入 §5
 
 ### 测试现状
 
