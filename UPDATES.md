@@ -244,6 +244,7 @@
 **方向约定**：当前只关注 CLI client（`run_game.py` 交互式命令行入口）；前端（`frontend/` FastAPI + game.html）暂时不管——前端相关 bug/重构不排期，除非阻塞 CLI。
 
 **队列顺序约定**：修复类任务优先；**重构排倒数第二**；存读档 🔴 bug 排最后。
+> 活跃队列与全部已知问题已集中于 `docs/ISSUES.md`;本节为历史记录。
 
 1. ~~run_game.py 预存 import 缺失~~ ✅（1872419 已修，CLI 冒烟通过）
 2. ~~test_escalation_real 从未真实调 LLM~~ ✅（d2e4fdd 已修：load_dotenv + wrapper 兼容 `_label` kwarg。真相：原"基线 4 失败"是 wrapper TypeError 被 keeper 吞掉导致全程降级；修复后脚本模式 5/5 通过。case C/E 依赖 Author 升级决策，存在真实 LLM 波动性）
@@ -335,15 +336,7 @@
 
 ### 已知观察（非阻塞）
 
-- judge 缺机器事实约束时可能捏造证据（已用谓词结果注入缓解）；rubric 覆盖谓词外事件时仍有空间——打磨 rubric 时注意
-- `test_combat_smoke.py` 疑似骰子依赖 flaky（一次 >5min 长循环），未深究
-- 玩家 LLM 波动性：outcome_goals 类目标偶有不达（如低语结局拖延至 max_turns），不阻塞 verdict，重跑即可
-- escalation case E 波动新机制（2026-08-14 实连观测）：parse 当前倾向给"想走进镜子"类输入附带 AT_AMBIENT auto_trigger，触发 2a225b6 硬性门控（帧内有 covered 动作不升级 Author）→ 3 连跑均被挡；case C 同机制但重跑可过。非 U2 编年史引入（parse prompt 未变），是否放宽 ambient AT 门控待拍板。**2026-08-18 复测更新**：C 亦连续 2 跑被挡（pytest + 带日志手跑各 1），"重跑可过"不再成立；定性为纯行为层问题（门控逻辑本身按设计工作），仅备注待拍板，本次不动代码。**2026-08-19 收口**：统一资源层门控 flavor 豁免（实质性动作硬挡 + 氛围 AT 不算实质覆盖）落地后 C/E 双双恢复通过（手跑 + pytest），本条关闭
-- frontend/ 本轮已随契约迁移更新（pending_interaction 展示、开场白修复），但按约定前端不排期深入测试
-- MP 恢复累计器在 MP 已满时仍被消耗：满 MP 休息 5 小时后花费 MP，不追回休满期间攒的恢复量（终审 Minor，spec 未规定，影响极小）
-- **LLM 测试随机性 flaky（2026-08-24 用户拍板，待统一观察）**：effect 表达力计划执行期间（T11 review 修复阶段观测），real_llm/LLM 相关测试存在时过时不过现象（受 LLM 随机性影响，与代码变更无关的偶发失败+偶发长跑）。处置约定：**复跑确认即过的不阻塞任务流程**，失败原因归入 LLM 波动类；待统一观察批量处理，不在单任务内深究
-- **武器库技能名归一缺口（2026-08-19 核查发现，待统一修）**：`data/library/core/weapons.json` 的 手枪(:47)/步枪(:89)/霰弹枪(:110) 不在 `skill_config.json` legacy_map -> 玩家持枪攻击 `get_skill` 归一失败，combat.py:789 兜底 STR/2（枪械技能值被旁路）+ 每次攻击刷"未掌握技能[手枪]"warning。修法：legacy_map 追加 `"手枪/步枪/霰弹枪/冲锋枪/机枪": "枪械"`。U9 管线侧其余已核查同步（落库归一/stat_names/skill_names/敌库 SIZ 自洽/POW对抗等为敌方标签无害）
-
+> **已迁移**:全部活跃问题集中于 `docs/ISSUES.md`(单一事实来源),本节不再更新。历史各期"已知观察(本期新增)"为当时快照,保留原文备查。
 ---
 
 ## 工作汇总（2026-08-18）

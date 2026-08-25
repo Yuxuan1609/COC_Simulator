@@ -358,6 +358,7 @@ data/
 
 - 战斗系统: `docs/combat-system-v2.md`
 - 设计文档（架构原理）: `docs/design.md`
+- 问题与待办总账: `docs/ISSUES.md`
 - 时间系统: `docs/superpowers/specs/2026-05-19-time-system-design.md`
 - Boss/NPC: `docs/superpowers/specs/2026-05-20-boss-npc-design.md`
 - 测试体系: `docs/superpowers/specs/2026-05-20-test-suites.md`
