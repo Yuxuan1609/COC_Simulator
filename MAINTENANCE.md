@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-25 | 小修批次 Task3/B5：pytest.ini 加 `testpaths = tests`（其余 markers/addopts 原样）--裸 `pytest`/`python -m pytest`（无路径参数）原先从仓库根收集，run_step1b_test.py（模块级读已删的 data/modules/深渊之口/module_raw.txt）import 即 FileNotFoundError 报 `1 error during collection` 中断全部收集；加 testpaths 后根目录调试脚本（run_step1b_test.py/imp.py/test.py）不进收集范围（脚本保留，调试用途），`pytest tests/` 与裸 pytest 等价免 --ignore；验证：collect-only `272/292 tests collected (20 deselected)` 无 ERROR，`pytest tests/ -q` 272 passed / 20 deselected 全绿；ISSUES B5 移入 §5 已收口 |
 | 2026-08-25 | 小修批次 Task2/B7：库文件损坏/格式错误报错带文件路径--src/library/items.py 与 spells.py `_load_file`（core 与 extensions 共用加载入口，一处修改两类文件全覆盖）裸 `json.load` 包 try/except：`(OSError, json.JSONDecodeError)` -> `raise ValueError(f"库文件加载失败: {path}") from e`（原 JSONDecodeError 不带来源路径，排障需逐文件试）；顺带覆盖顶层非 object（如数组）防御：`not isinstance(data, dict)` -> `raise ValueError(f"库文件格式错误(顶层应为 object): {path}")`（原对 `[1,2]` 抛 AttributeError: 'list' object has no attribute 'get'）；tests/test_library_loader.py 头部补 `import pytest` + 末尾追加 2 测试（test_corrupt_extension_json_error_names_file 损坏扩展 bad.json 带 / test_non_dict_library_json_error_names_file 顶层 [1,2] 数组，RED(JSONDecodeError 无路径+AttributeError)->GREEN）；items.py 90->95 行（_load_file @73 净增 6 行，get/list_all/__len__ 80/86/89->85/91/94）、spells.py 97->102 行（_load_file @80，get/list_all/__len__ 87/93/96->92/98/101），grep 实测对齐；ISSUES B7 移入 §5 已收口；tests/test_library_loader.py 5 passed（基线 3+2），关联回归 test_use_system+test_combat_smoke+loader 121 passed、tests/ 全量（除 e2e）230 passed、tests/e2e/test_deterministic.py 42 passed（test_unresolved_use_becomes_creative 首跑偶发失败复跑全绿，2026-08-24 T14 已记录的既有 flaky） |
 | 2026-08-25 | 小修批次 Task1/B2：advance_time 清旧 day:/time: flag--scenario_core.py `advance_time`（@750）注入前先删 runtime_state 中带 `day:`/`time:` 前缀且不在当前 clock.get_time_flags() 的键（先攒 stale 列表再删，剧情实体条目无此前缀不受影响），防长期局 day:0..day:N 全 completed=True 经 build_snapshot completed 列表进每回合 prompt/存档膨胀；旧档读入后下一次 advance_time 自动清理，无需迁移；tests/e2e/test_deterministic.py 增 TestTimeFlagHygiene 1 测试（文件 1209->1236 行：早晨->夜间跨天只留当日 flag/时段切换只留当前时段/build_snapshot completed 不累积旧 day 三段断言；计划原稿首推 60 分钟 hour=1 实属夜间（h<5），断言 time:早晨 即便实现正确也必挂，改为 6*60/18*60 保 game_time=1440 跨天锚点与计划全部断言不变）；scenario_core.py 1764->1771 行，ScenarioWorld/MemoryManager/WorldChronicle 节内行号 +7 对齐 grep 实测（顺修节头 1759 漂移->1771）；ISSUES B2 移入已收口；tests/e2e/test_deterministic.py 全套 42 passed（基线 41+1） |
 | 2026-08-24 | 问题集中化:新建 `docs/ISSUES.md`(bug 🔴🟡🟢/功能缺口/重构队列/处置约定/收口记录单一事实来源);UPDATES.md 全局已知观察节与队列节改为指针;MAINTENANCE 头部加问题追踪指引。同 commit 顺修武器库技能归一缺口(skill_config legacy_map 补 手枪/步枪/霰弹枪->枪械,4d62700) |
@@ -114,6 +115,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 ### run_step1b_test.py (48 行)
 
 单步测试脚本：直接对源文档执行 Step 1b（精修浓缩），输出 condensed 文本，用于快速验证 1b 质量。
+注意：模块级读 `data/modules/深渊之口/module_raw.txt`（已删）且有 LLM 副作用，不进 pytest 收集（pytest.ini `testpaths = tests` 隔离，B5/2026-08-25）。
 
 ### imp.py / test.py
 
