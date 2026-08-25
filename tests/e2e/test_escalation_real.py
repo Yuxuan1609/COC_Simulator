@@ -307,7 +307,9 @@ def _setup_llm_logging(log_dir):
 #  Case A: normal entity match
 # =====================================================================
 
-def test_case_a(log_dir=""):
+def test_case_a(tmp_path=None, log_dir=""):
+    if not log_dir and tmp_path is not None:
+        log_dir = str(tmp_path / "escalation_case_a")   # pytest 运行留日志现场(ISSUES B4)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     keeper = Keeper(world)
@@ -340,7 +342,9 @@ def test_case_a(log_dir=""):
 #  Case B: other + flavor (no Author trigger)
 # =====================================================================
 
-def test_case_b(log_dir=""):
+def test_case_b(tmp_path=None, log_dir=""):
+    if not log_dir and tmp_path is not None:
+        log_dir = str(tmp_path / "escalation_case_b")   # pytest 运行留日志现场(ISSUES B4)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     keeper = Keeper(world)
@@ -371,7 +375,9 @@ def test_case_b(log_dir=""):
 #  Case C: other + Author Patch
 # =====================================================================
 
-def test_case_c(log_dir=""):
+def test_case_c(tmp_path=None, log_dir=""):
+    if not log_dir and tmp_path is not None:
+        log_dir = str(tmp_path / "escalation_case_c")   # pytest 运行留日志现场(ISSUES B4)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     keeper = Keeper(world)
@@ -417,7 +423,9 @@ def test_case_c(log_dir=""):
 #  Case D: other + Author Reject
 # =====================================================================
 
-def test_case_d(log_dir=""):
+def test_case_d(tmp_path=None, log_dir=""):
+    if not log_dir and tmp_path is not None:
+        log_dir = str(tmp_path / "escalation_case_d")   # pytest 运行留日志现场(ISSUES B4)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     world.wr0_enabled = False
@@ -460,7 +468,9 @@ def test_case_d(log_dir=""):
 #  Case E: other + Author StructuralEdit → supplement pipeline
 # =====================================================================
 
-def test_case_e(log_dir=""):
+def test_case_e(tmp_path=None, log_dir=""):
+    if not log_dir and tmp_path is not None:
+        log_dir = str(tmp_path / "escalation_case_e")   # pytest 运行留日志现场(ISSUES B4)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     world.wr0_enabled = True  # Enable WR0 so Author can choose structural

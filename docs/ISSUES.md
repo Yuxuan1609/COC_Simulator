@@ -28,7 +28,6 @@
 | # | 问题 | 修法/备注 |
 |---|------|----------|
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
-| B4 | **escalation_real pytest 无诊断现场** | `test_escalation_real.py:184` log_dir="" 使日志 no-op,失败需 `python tests/e2e/test_escalation_real.py C E` 手跑 |
 
 ### 🟢 Minor(攒一批顺手清)
 
@@ -78,6 +77,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-25 | **B4 escalation_real pytest 运行无诊断现场** | test_case_a/b/c/d/e 签名加 `tmp_path=None`(pytest 注入 builtin fixture),log_dir 为空时落 `tmp_path/escalation_case_{a..e}` 子目录;手跑入口 run() 调 `test_fn(log_dir=case_dir)` log_dir 非空短路不受影响,默认参数 tmp_path=None 手跑/直接调用两形态兼容 |
 | 2026-08-25 | **B5 run_step1b_test.py 裸 pytest 收集错误** | pytest.ini 加 `testpaths = tests`,裸 pytest 只收集 tests/;根目录调试脚本(模块级读已删的 data/modules/深渊之口/module_raw.txt)不再进收集范围,脚本本身保留不动(调试用途);`pytest tests/` 与 `python -m pytest` 等价免 --ignore |
 | 2026-08-25 | **B7 loader 损坏扩展 JSON 报错缺文件名** | items/spells `_load_file` 裸 json.load 包 try/except:OSError/JSONDecodeError -> `ValueError` 带文件路径,另补顶层非 object 防御(数组原抛 AttributeError);core/extensions 共用入口一处覆盖两类;tests/test_library_loader.py 增 2 测试锁定 |
 | 2026-08-25 | **B2 day:N time flag 随天数累积进 prompt/存档** | advance_time 注入前清旧 `day:`/`time:` 前缀 flag(推进时清理方案,旧档下次推进自动清理无需迁移);tests/e2e/test_deterministic.py TestTimeFlagHygiene 锁定(跨天/时段切换/build_snapshot 三段断言) |
