@@ -23,6 +23,13 @@ def test_normalize_legacy_map():
     assert normalize_skill_name("导航") == ("skill", "侦查")
 
 
+def test_normalize_weapon_skill_names():
+    """武器库 skill_name 归一(2026-08-19 已知观察收口:手枪/步枪/霰弹枪 -> 枪械)。"""
+    assert normalize_skill_name("手枪") == ("skill", "枪械")
+    assert normalize_skill_name("步枪") == ("skill", "枪械")
+    assert normalize_skill_name("霰弹枪") == ("skill", "枪械")
+
+
 def test_normalize_bracket_specialization():
     assert normalize_skill_name("格斗(拳)") == ("skill", "格斗")
     assert normalize_skill_name("射击（手枪）") == ("skill", "枪械")
