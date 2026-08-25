@@ -38,7 +38,6 @@
 | B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2" |
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
 | B11 | 前端 character.py 导出 version 覆写 "2.0" 与核心 v2.2 漂移 | pre-existing;前端不排期约定下搁置 |
-| B12 | 默认路径 cwd 独立性无回归测试 | loader._DATA_ROOT 已是包相对绝对路径,但缺 monkeypatch _DATA_ROOT + os.chdir 的锁定测试 |
 | B13 | weapons/enemies/bosses 库裸 `json.load` 同类缺陷 | B7(0362eba)只修 items/spells(经 loader 的 core+extensions 通路);weapons.py:108/enemies.py:154/bosses.py:61 同款无路径报错+非 dict AttributeError,同类收编时顺修(届时抽 loader 共享 `_load_json_dict` 一次收敛) |
 
 ---
@@ -77,6 +76,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-25 | **B12 loader 默认路径 cwd 独立性缺回归** | tests/test_library_loader.py 增 test_data_root_cwd_independent:monkeypatch.chdir(tmp_path) 后不传 base_dir 走 _DATA_ROOT 双库非空断言(锁定包相对绝对路径,防改回 cwd 相对);纯测试收口零产品代码改动 |
 | 2026-08-25 | **B4 escalation_real pytest 运行无诊断现场** | test_case_a/b/c/d/e 签名加 `tmp_path=None`(pytest 注入 builtin fixture),log_dir 为空时落 `tmp_path/escalation_case_{a..e}` 子目录;手跑入口 run() 调 `test_fn(log_dir=case_dir)` log_dir 非空短路不受影响,默认参数 tmp_path=None 手跑/直接调用两形态兼容 |
 | 2026-08-25 | **B5 run_step1b_test.py 裸 pytest 收集错误** | pytest.ini 加 `testpaths = tests`,裸 pytest 只收集 tests/;根目录调试脚本(模块级读已删的 data/modules/深渊之口/module_raw.txt)不再进收集范围,脚本本身保留不动(调试用途);`pytest tests/` 与 `python -m pytest` 等价免 --ignore |
 | 2026-08-25 | **B7 loader 损坏扩展 JSON 报错缺文件名** | items/spells `_load_file` 裸 json.load 包 try/except:OSError/JSONDecodeError -> `ValueError` 带文件路径,另补顶层非 object 防御(数组原抛 AttributeError);core/extensions 共用入口一处覆盖两类;tests/test_library_loader.py 增 2 测试锁定 |

@@ -67,9 +67,17 @@ def test_corrupt_extension_json_error_names_file(tmp_path):
 
 
 def test_non_dict_library_json_error_names_file(tmp_path):
-    """库文件顶层非 object(如数组)报错带文件路径。"""
+    """ISSUES B7:库文件顶层非 object(如数组)报错带文件路径。"""
     base = tmp_path
     (base / "core").mkdir(parents=True)
     (base / "core" / "spells.json").write_text("[1, 2]", encoding="utf-8")
     with pytest.raises(ValueError, match="spells.json"):
         load_spell_library(str(base))
+
+
+def test_data_root_cwd_independent(tmp_path, monkeypatch):
+    """ISSUES B12:loader 默认路径与 cwd 无关(_DATA_ROOT 为包相对绝对路径锁定)。"""
+    monkeypatch.chdir(tmp_path)
+    lib = load_item_library()      # 不传 base_dir,走 _DATA_ROOT
+    assert len(lib) > 0
+    assert len(load_spell_library()) > 0
