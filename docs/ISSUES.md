@@ -39,6 +39,7 @@
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
 | B13 | weapons/enemies/bosses 库裸 `json.load` 同类缺陷 | B7(0362eba)只修 items/spells(经 loader 的 core+extensions 通路);weapons.py:108/enemies.py:154/bosses.py:61 同款无路径报错+非 dict AttributeError,同类收编时顺修(届时抽 loader 共享 `_load_json_dict` 一次收敛) |
 | B14 | load_skill_config 缓存写入死代码 | utils.py:167 if path is None 在 162 行重赋值后不可达,roll_stats 每次调用重读解析 JSON(实测 0.10s/200 次可接受);修法:拆显式 base 参数 |
+| B15 | fumble 边界偏差:_roll_d100 roll>=96 无条件大失败 | COC 7th 应为 96-100 且>技能值;技能 96+ 时 roll 96-99 被误判(models.py _roll_d100)。低频,规则精度修 |
 
 ---
 
@@ -49,6 +50,11 @@
 | F1 | **物品转移**(丢弃/给予 NPC/交易) | use 大类剩余的最后一块通路:"把钥匙递给 NPC"类叙事接不住。范围裁决时未选,按需排期 |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
 | F4 | timed 缺 expire_at 渲染兜底测试 / buff 探索侧降级等边界 | 已修主体,防御分支断言零散(T8/T12 review 记录) |
+| F5 | **疯狂体系**(COC 核心) | 单次 SAN 损失>=5->临时疯狂(INT 检定);当日累计>=SAN/5->总结性疯狂;恐惧症/躁狂症标记。timed_effects 基建可承载;依赖 SAN check 通路(已接通)。模组高频写法"失败则疯狂" |
+| F6 | **重伤/濒死/急救** | 当前 HP 0 直接 loss+game_over(combat.py:_build_single_round_result);缺:单次伤害>=HP/2->重伤 CON 检定(失败昏迷)/HP 0 濒死(每轮-1,可急救稳定)/急救+医学技能用途。剧情依赖(被俘/被救)会卡 |
+| F7 | **战斗反应与骰子表达** | 闪避自动成功(玩家 dodge->敌方下次攻击必 miss,无对抗检定,策略退化);反击 fight back 选项无;奖励骰/惩罚骰(bonus/penalty dice)无--模组文本高频;push roll(孤注一掷)无 |
+| F8 | **恢复生态+mythos 增长** | HP 每日自然恢复无(多日模组卡);SAN 恢复(安全环境/心理治疗)无;克苏鲁神话增长通路无(SAN_MAX=99-神话公式与技能列表已就位,@grant_spell 有而 mythos 加值无);advance_time 钩子现成(MP 已走此路) |
+| F9 | **SAN check 遭遇去重** | 当前实现(2026-08-26 接线)每场战斗对每个 enemy_ref check 一次(场内同 ref 多实例只一次);COC 规则是同恐怖源全局首次目睹才 check--需玩家 seen 集合入档。用户拍板:先接链路不去重,之后统一优化 |
 
 ## 3. 重构队列(约定:倒数第二)
 
@@ -67,6 +73,7 @@
 | 前端现栈优化(抽 JS/htmx/Alpine) | 等用户手动测试反馈后排期 |
 | L2 即兴素材沉淀回库 / 扩展包生产流程 | 远期生态,有真实模组生产需求再动 |
 | 敌人施法 / MP 战斗内恢复 / 局末成长 Epilogue | spec 明示非目标 |
+| 擒抱/缴械/处决/连发/自动武器 | 内容型战斗选项,有真实模组需求再动(2026-08-25 规则层盘点) |
 | judge 捏造证据空间(谓词外事件) | 已用谓词结果注入缓解;打磨 rubric 时注意 |
 
 ---
