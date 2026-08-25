@@ -26,7 +26,8 @@ class _TestEnemy:
     """Minimal enemy instance matching what CombatSystem expects."""
     def __init__(self, enemy_ref, hp, armor, instance_id, dex=50, attacks=None,
                  damage_multipliers=None, dodge_bonus=0, multi_attack=1,
-                 special_rules="", phases=None, boss_mechanics=""):
+                 special_rules="", phases=None, boss_mechanics="",
+                 san_loss="", quantity=1):
         self.enemy_ref = enemy_ref
         self.name = enemy_ref
         self.hp = hp
@@ -45,6 +46,8 @@ class _TestEnemy:
         self.phases = phases or []
         self.boss_mechanics = boss_mechanics
         self._current_phase = ""
+        self.san_loss = san_loss
+        self.quantity = quantity
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -714,6 +717,86 @@ class TestSanCheckFunctions:
         monkeypatch.setattr(combat.random, "randint", lambda a, b: 80 if b == 100 else 2)
         loss, _ = combat._san_check_and_lose(50, "0", "2D6")
         assert loss == 4
+
+
+class TestSanCheckWiring:
+    """遭遇 SAN check 接线(2026-08-26):目睹(战斗开始)+被击中两时点。"""
+
+    def _init(self, enemies, san=60):
+        player = _make_investigator(hp=12, san=san)
+        combat_init = CombatInit(
+            enemies=enemies, player=player,
+            scene="测试房间", initiative_context="san")
+        return CombatSystem()._init_combat(combat_init)
+
+    def test_witness_check_at_combat_start(self, monkeypatch):
+        """开战目睹:check 扣 SAN,san_log 记'理智检定失败'叙事行。"""
+        from game import combat
+        # roll=90>60 失败;失败组 1D6 骰面强制 1 点(combat.random 与 utils.random
+        # 为同一模块对象,patch 一处 D100/骰面两用)
+        monkeypatch.setattr(combat.random, "randint",
+                            lambda a, b: 90 if b == 100 else 1)
+        enemy = _TestEnemy("深潜者", hp=8, armor="0", instance_id="E_SAN_1",
+                           san_loss="0/1D6")
+        state = self._init([enemy], san=60)
+        assert state.player_san == 59, \
+            f"目睹 check 失败组 1D6=1,SAN 60->59,实际 {state.player_san}"
+        assert any("理智检定失败" in s for s in state.san_log)
+        assert any("深潜者" in s for s in state.san_log), "叙事行带敌人标签"
+
+    def test_witness_check_group_dedup_in_combat(self, monkeypatch):
+        """同场同 enemy_ref 群组(quantity=3 拆 3 实例)只 check 一次。"""
+        from game import combat
+        monkeypatch.setattr(combat.random, "randint",
+                            lambda a, b: 90 if b == 100 else 1)
+        enemy = _TestEnemy("鼠群", hp=9, armor="0", instance_id="E_RATS",
+                           quantity=3, san_loss="0/1D6")
+        state = self._init([enemy], san=60)
+        assert len(state.enemies) == 3, "quantity=3 群组展开为 3 个战斗实体"
+        assert len(state.san_log) == 1, \
+            f"同 enemy_ref 只 check 一次,实际 {len(state.san_log)} 条"
+        assert state.player_san == 59, "仅一次失败组 1D6=1 扣减"
+
+    def test_witness_check_empty_san_loss(self):
+        """san_loss 空的敌人不做目睹 check(san_log 空,SAN 不变)。"""
+        enemy = _TestEnemy("木桩", hp=5, armor="0", instance_id="E_NOSAN")
+        state = self._init([enemy], san=60)
+        assert state.san_log == []
+        assert state.player_san == 60
+
+    def test_attacked_check_on_hit(self, monkeypatch):
+        """敌方命中且 san_loss 含'被攻击'组:额外 check,narrative 含理智检定。"""
+        from game import combat
+        monkeypatch.setattr(combat.random, "randint",
+                            lambda a, b: 90 if b == 100 else 1)
+        enemy = _TestEnemy("深潜者", hp=20, armor="0", instance_id="E_ATK",
+                           san_loss="0/1D4 (目睹), 1/1D6 (被攻击)")
+        enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        state.player_hp_max = 20
+        state.player_san = 50
+        act = CombatSystem()._resolve_enemy_action(state, enemy,
+                                                   _make_investigator())
+        assert act.success, "DEX/POW=200 必中"
+        assert "理智检定" in act.narrative and "恐惧侵蚀" in act.narrative
+        assert state.player_san == 49, \
+            f"roll=90>50 失败,失败组 1D6=1,SAN 50->49,实际 {state.player_san}"
+
+    def test_attacked_check_no_group(self):
+        """san_loss 无'被攻击'组(仅目睹组):命中不追加 check。"""
+        enemy = _TestEnemy("幽灵", hp=20, armor="0", instance_id="E_NOATK",
+                           san_loss="0/1D4 (目睹)")
+        enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        state.player_hp_max = 20
+        state.player_san = 50
+        act = CombatSystem()._resolve_enemy_action(state, enemy,
+                                                   _make_investigator())
+        assert act.success, "DEX/POW=200 必中"
+        assert "理智检定" not in act.narrative, "无被攻击组不得追加 check"
+        assert state.player_san == 50
 
 
 if __name__ == "__main__":

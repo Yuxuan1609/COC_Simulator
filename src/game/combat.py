@@ -193,6 +193,7 @@ class CombatState:
     log: list[CombatAction] = field(default_factory=list)
     full_log: list[CombatAction] = field(default_factory=list)
     temporary_effects: list = field(default_factory=list)   # 玩家侧 buff [{id, reduce, rounds}]（2026-08-21 spec §3）
+    san_log: list[str] = field(default_factory=list)   # 开局目睹 SAN check 叙事行(2026-08-26 遭遇通路)
     _player_dodging: bool = False
     _player_concealed: bool = False
     _player_aim_counter: int = 0
@@ -619,6 +620,10 @@ class CombatSystem:
                 lines.append(f"{actor} | 回避")
             elif a.action_type in ("conceal", "aim", "charge"):
                 lines.append(f"{actor} | {a.action_type}")
+        # 开局目睹 SAN check 叙事行一次性渲染(插最前,渲染即清;2026-08-26 遭遇通路)
+        if getattr(state, "san_log", None):
+            lines = list(state.san_log) + lines
+            state.san_log = []
         round_narrative = "\n".join(lines)
 
         return {
@@ -764,6 +769,24 @@ class CombatSystem:
         for e in state.enemies:
             if not hasattr(e, 'hp_max') or not getattr(e, 'hp_max', 0):
                 e.hp_max = getattr(e, 'hp', 10)
+
+        # 遭遇 SAN check(目睹):开战对每个 enemy_ref 一次(群组多实例去重;
+        # 跨场不去重--现状记录,全局去重见 ISSUES F9)
+        seen_refs = set()
+        for e in expanded_enemies:
+            ref = getattr(e, 'enemy_ref', '') or e.instance_id
+            if ref in seen_refs:
+                continue
+            seen_refs.add(ref)
+            groups = parse_san_loss(getattr(e, 'san_loss', '') or '')
+            witness = next((g for g in groups if "攻击" not in g[2]),
+                           groups[0] if groups else None)
+            if not witness:
+                continue
+            loss, text = _san_check_and_lose(
+                state.player_san, witness[0], witness[1])
+            state.player_san = max(0, state.player_san - loss)
+            state.san_log.append(f"你遭遇{ref}：{text}。")
         return state
 
     def _match_action(self, raw_input: str, available: list[dict]) -> str:
@@ -1179,6 +1202,14 @@ class CombatSystem:
             state.player_hp = max(0, state.player_hp - damage)
             action.hp_after = state.player_hp
             action.narrative = f"{enemy_label}用{attack_name}击中了你！造成{damage}点伤害。"
+            # 被攻击情境 SAN check(库 san_loss 含"被攻击"组时;2026-08-26 遭遇通路)
+            groups = parse_san_loss(getattr(enemy, "san_loss", "") or "")
+            attacked = next((g for g in groups if "攻击" in g[2]), None)
+            if attacked:
+                loss, text = _san_check_and_lose(
+                    state.player_san, attacked[0], attacked[1])
+                state.player_san = max(0, state.player_san - loss)
+                action.narrative += f" 恐惧侵蚀：{text}。"
         else:
             action.narrative = f"{enemy_label}的{attack_name}未能命中你。"
 

@@ -1209,6 +1209,57 @@ class TestTimedAndCombatEffectsE2E:  # T13: spec §8 e2e 三场景
         assert state.player_hp == 20 - 7
 
 
+class TestSanCheckE2E:  # 遭遇 SAN check 通路 e2e(2026-08-26 接线)
+    """带 san_loss 库敌人走完整回合:目睹 check 进首轮叙事,SAN 扣减写回。
+
+    真实 EnemyLibrary 实例(san_loss 经 spawn 桥接进 EnemyInstance)+
+    CombatInit -> _init_combat(目睹 check)-> run_single_round(完整回合,
+    san_log 渲染进 round_narrative)-> 写回链路(game_loop/run_game 同语义)。
+    """
+
+    def test_combat_with_san_loss_enemy(self):
+        from library.enemies import EnemyLibrary, LibraryEnemy
+        from game.combat import CombatSystem
+        from game.messages import CombatInit
+
+        elib = EnemyLibrary()
+        elib._enemies["深渊幼体"] = LibraryEnemy.from_dict({
+            "name": "深渊幼体", "type": "怪物",
+            "attributes": {"STR": 50, "SIZ": 50, "DEX": 10, "POW": 10},
+            "armor": "", "attacks": [], "special_abilities": [],
+            "san_loss": "1/1D6",
+            "description": "", "combat_behavior": "",
+        })
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           enemy_library=elib)
+        from investigator import Investigator
+        from investigator.models import Stats
+        from investigator.rules import calc_derived
+        inv = Investigator(name="调查员", stats=Stats(
+            STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+        inv.derived = calc_derived(inv.stats)
+        world.set_player(inv)
+        san_before = inv.derived.SAN
+        enemy = world.enemies.spawn("深渊幼体", "room_a", 1)
+
+        cs = CombatSystem()
+        ci = CombatInit(enemies=[enemy], player=inv, scene="room_a",
+                        initiative_context="遭遇")
+        state = cs._init_combat(ci)
+        result = cs.run_single_round(ci, state, "punch",
+                                     [state.enemies[0].instance_id])
+
+        # 1) 首轮结果文本含目睹 SAN check(无论成功/失败组,文案均带"理智检定")
+        assert "理智检定" in result["round_narrative"], \
+            f"首轮叙事必须含目睹 SAN check: {result['round_narrative']}"
+        # 2) 写回链路同 game_loop/run_game 语义,战后 SAN <= 战前(宽断言)
+        inv.derived.SAN = max(0, result["player_san"])
+        assert inv.derived.SAN <= san_before, \
+            f"遭遇目睹后 SAN 不得回升: {san_before} -> {inv.derived.SAN}"
+        # 渲染一次性:san_log 清空,不随下一轮重复
+        assert state.san_log == []
+
+
 class TestTimeFlagHygiene:
     """ISSUES B2:advance_time 清旧 day:/time: flag,防 prompt/存档累积。"""
 
