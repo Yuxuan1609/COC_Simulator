@@ -194,3 +194,49 @@ def test_nested_inner_bad_value_falls_back(monkeypatch, tmp_path):
     monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
     cfg = rules.get_game_config()
     assert cfg["derived"]["hp_divisor"] == 3
+
+
+def test_roll_stats_range_matches_dice_config():
+    """骰面读 skill_config.dice:STR 3D6*5∈[15,90];INT/EDU (2D6+6)*5∈[40,90]。"""
+    for _ in range(200):
+        st = rules.roll_stats()
+        assert 15 <= st.STR <= 90
+        assert 15 <= st.CON <= 90 and 15 <= st.DEX <= 90
+        assert 40 <= st.INT <= 90 and 40 <= st.EDU <= 90
+        assert 15 <= st.POW <= 90 and 15 <= st.LUCK <= 90
+
+
+def test_roll_stats_multiplier_config(monkeypatch, tmp_path):
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"stat_roll_multiplier": 1}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    st = rules.roll_stats()
+    assert 3 <= st.STR <= 18    # 3D6*1
+    assert 8 <= st.INT <= 18    # (2D6+6)*1
+
+
+def test_db_build_table_row_bad_value_falls_back(monkeypatch, tmp_path):
+    """db_build_table 行内坏值(max_key 字符串/缺键)整体回退默认。"""
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"db_build_table": [
+        {"max_key": "oops", "db": "-2", "build": -2},
+        {"max_key": None, "db": "0", "build": 0}]}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    cfg = rules.get_game_config()
+    assert cfg["db_build_table"][0]["max_key"] == 64
+
+
+def test_age_tables_asymmetric_no_crash(monkeypatch, tmp_path):
+    """三数组不对称(phys 配短)不炸:tier 统一 clamp 到最短表档位。"""
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"age_modifiers": {
+        "start_age": 40, "max_tier": 4,
+        "app_penalties": [-5, -10, -15, -20, -25],
+        "phys_penalties": [0, -5],
+        "edu_bonuses": [5, 10, 15, 20, 25]}}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    st = Stats(STR=50, CON=50, DEX=50, APP=50, INT=50, POW=50, EDU=50, LUCK=50)
+    rules.apply_age_modifiers(st, 85)   # 原始 tier 4 -> clamp 1(phys 长 2)
+    assert st.APP == 40   # 50 + app[1](-10)  统一用 tier 1
+    assert st.STR == 45   # 50 + phys[1](-5)
+    assert st.EDU == 60   # 50 + edu[1](10)

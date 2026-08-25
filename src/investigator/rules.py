@@ -10,7 +10,6 @@ import os
 import random
 from typing import List, Tuple
 
-from utils import roll_d6
 from investigator.models import Stats, DerivedStats, Skill, Occupation, Weapon
 
 
@@ -19,17 +18,19 @@ from investigator.models import Stats, DerivedStats, Skill, Occupation, Weapon
 # ═══════════════════════════════════════════════════════════════
 
 def roll_stats() -> Stats:
-    """掷骰生成核心属性（骰面配置见 skill_config.json attributes，U9 起无 SIZ）"""
-    return Stats(
-        STR=roll_d6(3) * 5,
-        CON=roll_d6(3) * 5,
-        DEX=roll_d6(3) * 5,
-        APP=roll_d6(3) * 5,
-        INT=(roll_d6(2) + 6) * 5,
-        POW=roll_d6(3) * 5,
-        EDU=(roll_d6(2) + 6) * 5,
-        LUCK=roll_d6(3) * 5,
-    )
+    """掷骰生成核心属性。骰面读 skill_config.attributes.dice([count, sides] 或
+    [count, sides, flat])，总乘数 game_config.stat_roll_multiplier(默认 5)。"""
+    from utils import load_skill_config
+    cfg = load_skill_config()
+    times = get_game_config()["stat_roll_multiplier"]
+    vals = {}
+    for attr, ac in cfg["attributes"].items():
+        dice = ac.get("dice", [3, 6])
+        count, sides = int(dice[0]), int(dice[1])
+        flat = int(dice[2]) if len(dice) > 2 else 0
+        roll = sum(random.randint(1, sides) for _ in range(count))
+        vals[attr] = (roll + flat) * times
+    return Stats(**vals)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -84,7 +85,8 @@ def allocate_skill_points(
     focus_bonus: int = 0,
 ) -> List[Skill]:
     """U9 属性池分配：每属性池=属性值×乘数（config），均分到归属技能；
-    多属性技能从各归属池分别获益叠加；focus 技能额外 +focus_bonus；上限 99。"""
+    多属性技能从各归属池分别获益叠加；focus 技能额外 +focus_bonus；
+    上限 skill_value_cap(config)。"""
     from utils import load_skill_config
     cfg = load_skill_config()
     attrs_cfg = cfg["attributes"]
@@ -154,7 +156,9 @@ def apply_age_modifiers(stats: Stats, age: int):
         return
 
     tier = (age - cfg["start_age"]) // 10
-    tier = min(tier, cfg["max_tier"], len(cfg["app_penalties"]) - 1)
+    tier = min(tier, cfg["max_tier"],
+               len(cfg["app_penalties"]) - 1, len(cfg["phys_penalties"]) - 1,
+               len(cfg["edu_bonuses"]) - 1)
 
     stats.APP = max(0, stats.APP + cfg["app_penalties"][tier])
     if cfg["phys_penalties"][tier]:
@@ -321,13 +325,28 @@ def reset_game_config_cache() -> None:
 
 
 def _cfg_shape_ok(v, dv) -> bool:
-    """嵌套配置形状校验:dict 必需键齐全递归;list 非空且元素类型一致(不深校验行内)。"""
+    """嵌套配置形状校验:dict 必需键齐全递归;list 非空且按首元素模板深校验行
+    (行内 dict 键齐全、标量类型匹配或 None;list 行等长逐位类型)。"""
     if type(v) is not type(dv):
         return False
     if isinstance(dv, dict):
         return all(k in v and _cfg_shape_ok(v[k], dv[k]) for k in dv)
     if isinstance(dv, list):
-        return bool(v) and all(type(a) is type(dv[0]) for a in v)
+        if not v:
+            return False
+        t0 = dv[0]
+        if isinstance(t0, dict):
+            return all(
+                isinstance(a, dict) and all(
+                    k in a and (a[k] is None or type(a[k]) is type(t0[k]))
+                    for k in t0)
+                for a in v)
+        if isinstance(t0, list):
+            return all(
+                isinstance(a, list) and len(a) == len(t0) and all(
+                    type(x) is type(y) for x, y in zip(a, t0))
+                for a in v)
+        return all(type(a) is type(t0) for a in v)
     return True
 
 
