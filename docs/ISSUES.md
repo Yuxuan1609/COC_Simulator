@@ -41,6 +41,7 @@
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
 | B11 | 前端 character.py 导出 version 覆写 "2.0" 与核心 v2.2 漂移 | pre-existing;前端不排期约定下搁置 |
 | B12 | 默认路径 cwd 独立性无回归测试 | loader._DATA_ROOT 已是包相对绝对路径,但缺 monkeypatch _DATA_ROOT + os.chdir 的锁定测试 |
+| B13 | weapons/enemies/bosses 库裸 `json.load` 同类缺陷 | B7(0362eba)只修 items/spells(经 loader 的 core+extensions 通路);weapons.py:108/enemies.py:154/bosses.py:61 同款无路径报错+非 dict AttributeError,同类收编时顺修(届时抽 loader 共享 `_load_json_dict` 一次收敛) |
 
 ---
 
