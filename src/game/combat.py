@@ -136,6 +136,7 @@ class CombatState:
     player_hp: int = 0
     player_hp_max: int = 0
     player_san: int = 0
+    player_san_max: int = 99   # SAN bar 分母(F2)=derived.SAN_MAX
     initiative_order: list[str] = field(default_factory=list)
     is_player_turn: bool = True
     finished: bool = False
@@ -363,6 +364,7 @@ class CombatSystem:
             defeated_instance_ids=[],
             player_hp=state.player_hp,
             player_san=state.player_san,
+            player_san_max=getattr(state, "player_san_max", 99),
             rounds=state.round,
             narrative=combat_narrative,
             round_log=round_log,
@@ -575,6 +577,7 @@ class CombatSystem:
             "player_hp": state.player_hp,
             "player_hp_max": state.player_hp_max,
             "player_san": state.player_san,
+            "player_san_max": getattr(state, "player_san_max", 99),
             "enemies": state.enemies,
             "round_log": state.log,
             "round_narrative": round_narrative,
@@ -687,6 +690,7 @@ class CombatSystem:
             player_hp=player.derived.HP,
             player_hp_max=player.derived.HP,
             player_san=player.derived.SAN,
+            player_san_max=player.derived.SAN_MAX,
         )
 
         # Build initiative order: (actor_id, DEX)

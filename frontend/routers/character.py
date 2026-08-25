@@ -272,7 +272,7 @@ def _build_export(name: str, age: int, gender: str,
 
     data = to_dict(inv)
     data["meta"].update({
-        "version": "2.0",
+        "version": "2.2",
         "created_at": _dt.now().isoformat(),
         "rules_edition": "COC7",
     })

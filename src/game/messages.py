@@ -139,6 +139,7 @@ class CombatResult:
     narrative: str = ""            # combat summary narrative
     player_hp: int = 0
     player_san: int = 0
+    player_san_max: int = 99   # SAN bar 分母(F2)=derived.SAN_MAX
     rounds: int = 0
     round_log: list[Any] = field(default_factory=list)
 

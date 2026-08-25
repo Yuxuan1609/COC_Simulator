@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-25 | 小修批次+F2 Task9（前端 SAN bar 分母接线 san_max）+B11 version 对齐--① 数据链:SAN bar 分母由硬编码 /99 改 derived.SAN_MAX（=99-克苏鲁神话，克系内容失SAN后上限下降，原 /99 会显示不到顶/超顶）。 CombatState 增 `player_san_max: int = 99`（combat.py@139，_init_combat@693 从 player.derived.SAN_MAX 接线）；CombatResult 增同名字段（messages.py@142，run_combat 构造处 getattr 兜底 99）；_build_single_round_result dict（@580）与前端序列化 _serialize_combat_state_for_frontend（game.py@64）均带 player_san_max；② JSON 接口三处补 san_max：player-status?format=json（@700）、/api/game/init 响应（@854）、/api/game/state（@875，无 player 兜底 99）；③ 服务端渲染 character-card san_pct 用 `derived.SAN / max(1, derived.SAN_MAX)`（@576）；game.html updateCharHUD 取 data.san_max 换算 char-san-bar（543 附近）+ initGame/state 两处透传 san_max + renderCombatPanel 用 st.player_san_max（1103 附近）；④ B11：character.py _build_export meta.version "2.0"->"2.2"（@275，与核心 serialization.py v2.2 对齐）；⑤ TDD：tests/test_frontend_contract.py +6（player-status/state 含 san_max、character-card 62.5% 分母、_serialize/_init_combat/run_single_round 三层接线），_fake_game_with_spells derived 补 SAN_MAX=88；tests/test_frontend_character.py version 断言 2.0->2.2；RED 7 failed->GREEN 14 passed；grep 无 "/ 99" SAN 残留；⑥ 行号实测对齐：game.py 1187->1191 行（game_page 169/player_status 682/init 770/state 863/combat_start 893@979/combat_round 1002@1027/set_auto_win 882/_resolve_start_scene 1138/_make_default_inv 1184，顺手修正历史漂移 832/843/952 等）、combat.py 1410->1414 行（run_combat 177/run_single_round 373/_build_single_round_result 538/_init_combat 670/_tick 1137）、messages.py 302->303 行（SkillCheckResult 起全部 +1）；回归 tests/ 全量 293 passed / 20 deselected（基线 287+6）；ISSUES B11 移入 §5 已收口 |
 | 2026-08-25 | 小修批次+F2 Task8（roll_stats 骰面收编 F2）+T7 review 补丁--① roll_stats 重构：骰面不再硬编码，读 skill_config.attributes.dice（[count,sides] 或 [count,sides,flat]：STR/CON/DEX/APP/POW/LUCK [3,6]=3D6、INT/EDU [2,6,6]=2D6+6，8 属性全有），总乘数读 game_config.stat_roll_multiplier（默认 5），消代码/数据重复；顶层 from utils import roll_d6 随之删除（rules.py 内已无调用方，random.randint 直掷）；② T7 review 补丁三则：(a) _cfg_shape_ok list 分支升级按首元素模板深校验行结构（行内 dict 必需键齐全+标量类型匹配或 None 特赦、list 行等长逐位类型、标量行类型一致），db_build_table 行内坏值（max_key 字符串/缺键）不再被浅校验放行后炸消费方，整体回缺省；(b) apply_age_modifiers tier clamp 扩为三数组对称防御 min(tier, max_tier, len(app)-1, len(phys)-1, len(edu)-1)，三表配长不对称不再 IndexError（tier 统一 clamp 到最短表档位，三表共用同一档，不出现 app 用 tier4/phys 用 tier1 的分裂）；(c) allocate_skill_points docstring「上限 99」改「上限 skill_value_cap(config)」；③ TDD：tests/test_game_config.py 末尾追加 4 测试（roll_stats 范围锁定 200 轮/multiplier=1 覆盖/db_build_table 行内坏值回退/年龄三表不对称统一 clamp），RED 3 failed（范围锁定测试对旧实现亦过=锁定型；计划稿 INT/EDU 上界 80 与 16 系笔误——(2D6+6)*5 上界实为 90、乘 1 时上界 18，锁定测试对旧实现即以 EDU=90 证伪，已按真实区间修正断言）-> GREEN 21 passed；④ rules.py 351->370 行（删 roll_d6 import -1、roll_stats 12->14 行、allocate docstring +1、tier clamp 1->3 行、_cfg_shape_ok 9->24 行），节内行号 grep 实测对齐（roll_stats 21->20、_calc_db_build 39->40、calc_derived 48->49、create_skill_list 69->70、allocate_skill_points 80->81、calc_occupation_points 113->115、apply_age_modifiers 140->142、get_credit_level 171->175、create_default_unarmed 185->189、load_occupations 199->203、load_occupation_labels 217->221、calc_db 227->231、opposed_check 263->267、_GAME_CONFIG_DEFAULTS 283->287、reset_game_config_cache 317->321、_cfg_shape_ok 323->327、get_game_config 334->353）；tests/test_game_config.py 196->242 行；回归 tests/ 全量 287 passed / 20 deselected（基线 283+4） |
 | 2026-08-25 | 小修批次+F2 Task7（F2 主体）：rules.py 六函数散落数值收编进 game_config + T6 review 两补丁--① 六消费方接线（数据 T6 已迁入，本任务改读 config，默认值与现状逐位一致）：（a）_calc_db_build 硬编码 if-elif 链改遍历 game_config.db_build_table（max_key None=兜底行，空表兜底 ("0",0)）；（b）calc_derived 除数/基数（HP=CON//hp_divisor、MP=POW//mp_divisor、DODGE=DEX//dodge_divisor、SAN 上限=san_max_base-神话）读 game_config.derived；（c）allocate_skill_points 技能值上限 99 改读 skill_value_cap；（d）apply_age_modifiers start_age/max_tier/app/phys/edu 三组表读 age_modifiers（tier=min((age-start_age)//10, max_tier, len(app)-1)）；（e）删模块级 CREDIT_RATING_TABLE 常量（仅 rules.py 内部 get_credit_level 引用，已确认），get_credit_level 改读 credit_rating_table（sorted 升序遍历，空表兜底「身无分文」），typing.Dict 随之从 import 移除；（f）create_default_unarmed 伤害 "1D3+DB" 改读 unarmed_damage；② T6 review 补丁：g) get_game_config 校验升级 _cfg_shape_ok（顶层 type is 不变；嵌套 dict 必需键齐全递归，list 非空+元素类型一致（T8 补丁后按首元素模板深校验行结构：dict 嵌套+list 行结构均校验,坏值整体回退;None 仅 list 行内 dict 值合法））；h) 同步锁定测试 test_shipped_json_matches_defaults（data/game_config.json 与 _GAME_CONFIG_DEFAULTS 全量相等，不 monkeypatch 读真实 _CONFIG_PATH，teardown 既有 reset 防缓存污染）；③ TDD：tests/test_game_config.py 先加 7 测试（5 个 override + 嵌套内层坏值 + 同步锁）RED 6 failed/同步锁直接过 -> GREEN 17 passed；④ 连带修正 tests/test_use_system.py 3 处 get_game_config 整体替换 stub（test_timed_default_minutes_from_config/test_mp_recovery_rate_from_config/test_mp_regen_zero_rate_disables原 lambda 只返回单键 dict，F2 后 _world() 内 calc_derived 读 ["derived"] 即 KeyError）：改 {**_GAME_CONFIG_DEFAULTS, 单键覆盖}（测试意图不变：该键从 config 读）；rules.py 359->351 行（CREDIT_RATING_TABLE 删 10 行+收编净变化），节内行号 grep 实测对齐（calc_derived 55->48、allocate_skill_points 84->80、apply_age_modifiers 143->140、get_credit_level 191->171、create_default_unarmed 204->185、calc_db 246->227、opposed_check 282->263、_GAME_CONFIG_DEFAULTS 302->283、get_game_config 342->334、新增 _cfg_shape_ok @323）；tests/test_game_config.py 122->196 行；回归 tests/ 全量 283 passed / 20 deselected（基线 276+7，test_combat_phase_trigger 首跑偶发失败复跑即过=既有 flaky） |
 | 2026-08-25 | 小修批次+F2 Task6（F2 第一步）：game_config 扩键+深拷贝（为 Task7/8 rules.py 参数收编铺路）--① data/game_config.json 3->10 键全量重写（新增 stat_roll_multiplier=5/skill_value_cap=99/unarmed_damage="1D3+DB"/derived{hp_divisor 3,mp_divisor 5,dodge_divisor 2,san_max_base 99}/db_build_table 6 行(max_key None 兜底)/age_modifiers{start_age 40,max_tier 4,app/phys/edu 三数组}/credit_rating_table 8 档），与 _GAME_CONFIG_DEFAULTS 逐键镜像；② rules.py：头部 import 区加 `import copy`；_GAME_CONFIG_DEFAULTS 同步扩为 10 键；get_game_config 末行 `return dict(_game_config_cache)` -> `return copy.deepcopy(_game_config_cache)`（原浅拷贝嵌套结构（dict/list）与缓存共享引用，调用方改 nested 值会污染缓存；顶层类型校验 `type is` 保持，嵌套键顶层类型不符整体回默认）；③ tests/test_game_config.py 末尾追加 3 测试（test_new_keys_present 新键默认值/test_nested_config_deep_copy 改 derived.hp_divisor 与 db_build_table[0].db 不污染缓存/test_nested_type_mismatch_falls_back 嵌套键类型不符回默认），RED(3 failed KeyError)->GREEN；连带修正旧测试 test_non_dict_json_falls_back：原断言硬编码 3 键整字典精确相等，扩键后过时（断言对象本身变了而非行为回退失效），改 `cfg == rules._GAME_CONFIG_DEFAULTS`（逐键等于缺省表，意图不变）；④ rules.py 334->359 行，节内行号 grep 实测对齐（roll_stats…opposed_check +1（import copy）、_GAME_CONFIG_DEFAULTS/_CONFIG_PATH 301/306->302/331、reset_game_config_cache 311->336、get_game_config 317->342）；此刻消费方（combat/judge/scenario_core）仍只读旧 3 键，新键无人消费，行为零变化；回归 tests/ 全量 276 passed / 20 deselected（基线 273+3） |
@@ -128,7 +129,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/messages.py (302 行) — 消息类型 / 契约
+## src/game/messages.py (303 行) — 消息类型 / 契约
 
 | 类 | 字段/说明 | 作用 | 行号 |
 |----|-----------|------|------|
@@ -144,20 +145,20 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `CombatEntryCheck` | `enter_combat, enemy_instance_ids, reasoning` | LLM 判定是否进入战斗 | 100 |
 | `StandoffMatch` | `matched, skill_name, reason` | 对峙语义匹配 | 108 |
 | `CombatInit` | `enemies, player, scene, initiative_context, environment_actions, player_action, player_targets, player_extra` | →CombatSystem 初始化 | 116 |
-| `CombatResult` | `outcome, defeated_instance_ids, narrative, player_hp, player_san, rounds, round_log` | 战斗结果 | 135 |
-| `SkillCheckResult` | `entity_id, entity_type, skill_name, raw_roll, target, tier, success, enhancement` | 单次技能检定记录 | 147 |
-| `PlayerFacingSnapshot` | `scene_name, scene_description, exits, time, npcs, enemies, combat, skill_checks, investigator` | 面向前端/CLI 的回合快照 | 160 |
-| `RoundResult` | `round, player_action, player_target, player_roll, player_tier, player_damage, player_damage_type, player_effects, enemy_actions, status_changes, narrative` | 单回合战斗结果 | 178 |
-| `Phase` | `trigger, name, overrides, description` | Boss 阶段定义 | 194 |
-| `TimeCommsPacket` | `game_time, day, time_of_day, current_scene, player_actions, world_state` | Keeper→Author 时间通信包 | 203 |
-| `PreParseResult` | `clarity, interpretation, question, resolved_text` | Pre-parse 消歧输出 | 214 |
-| `EnrichInput` | `entities, actions` | parse→enrich 中间体 | 223 |
-| `TurnStatus` | Enum: COMPLETED / SUSPENDED / FROZEN | 回合终局状态 | 232 |
-| `PendingInteraction` | `kind, question, interaction_id` | 挂起待答问题（weapon_offer/standoff/clarify） | 240 |
-| `EndingInfo` | `name, narrative, game_over` | 结局信息 | 248 |
-| `TurnDiagnostics` | `combat_entry, time_agent, enrich_raw, pre_parse` | 低频/调试数据入口 | 256 |
-| `TurnResult` | `status, brief, text, pending_interaction, combat_init, ending, npc_events, warnings, frozen_message, diagnostics` | **Keeper.process_turn 内部契约返回**；`__post_init__` 校验 SUSPENDED 必须带 pending_interaction | 265 |
-| `PlayerTurnResult` | `status, brief, narrative, pending_interaction, player_snapshot, skill_results, combat, combat_init, ending, game_over, timestamp, diagnostics` | **run_turn 玩家面契约返回** | 289 |
+| `CombatResult` | `outcome, defeated_instance_ids, narrative, player_hp, player_san, player_san_max, rounds, round_log` | 战斗结果；player_san_max=F2 SAN bar 分母（默认 99） | 135 |
+| `SkillCheckResult` | `entity_id, entity_type, skill_name, raw_roll, target, tier, success, enhancement` | 单次技能检定记录 | 148 |
+| `PlayerFacingSnapshot` | `scene_name, scene_description, exits, time, npcs, enemies, combat, skill_checks, investigator` | 面向前端/CLI 的回合快照 | 161 |
+| `RoundResult` | `round, player_action, player_target, player_roll, player_tier, player_damage, player_damage_type, player_effects, enemy_actions, status_changes, narrative` | 单回合战斗结果 | 179 |
+| `Phase` | `trigger, name, overrides, description` | Boss 阶段定义 | 195 |
+| `TimeCommsPacket` | `game_time, day, time_of_day, current_scene, player_actions, world_state` | Keeper→Author 时间通信包 | 204 |
+| `PreParseResult` | `clarity, interpretation, question, resolved_text` | Pre-parse 消歧输出 | 215 |
+| `EnrichInput` | `entities, actions` | parse→enrich 中间体 | 224 |
+| `TurnStatus` | Enum: COMPLETED / SUSPENDED / FROZEN | 回合终局状态 | 233 |
+| `PendingInteraction` | `kind, question, interaction_id` | 挂起待答问题（weapon_offer/standoff/clarify） | 241 |
+| `EndingInfo` | `name, narrative, game_over` | 结局信息 | 249 |
+| `TurnDiagnostics` | `combat_entry, time_agent, enrich_raw, pre_parse` | 低频/调试数据入口 | 257 |
+| `TurnResult` | `status, brief, text, pending_interaction, combat_init, ending, npc_events, warnings, frozen_message, diagnostics` | **Keeper.process_turn 内部契约返回**；`__post_init__` 校验 SUSPENDED 必须带 pending_interaction | 266 |
+| `PlayerTurnResult` | `status, brief, narrative, pending_interaction, player_snapshot, skill_results, combat, combat_init, ending, game_over, timestamp, diagnostics` | **run_turn 玩家面契约返回** | 290 |
 
 ---
 
@@ -226,9 +227,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1410 行) — 战斗系统 v2
+## src/game/combat.py (1414 行) — 战斗系统 v2
 
-CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects: list`（@144，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）。
+CombatState dataclass（@132）：回合可变状态；F2 增 `player_san_max: int = 99`（@139，SAN bar 分母，_init_combat 从 player.derived.SAN_MAX 接线）；T9 增 `temporary_effects: list`（@145，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）。
 
 ### 模块级函数
 
@@ -243,11 +244,11 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段；轮末 @348 `state.round += 1` 前调 `_tick_temporary_effects`） | 176 |
-| `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制；轮末 @531 `state.round += 1` 前调 `_tick_temporary_effects`） | 371 |
-| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事） | 535 |
+| `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段；轮末 @349 `state.round += 1` 前调 `_tick_temporary_effects`） | 177 |
+| `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制；轮末 @533 `state.round += 1` 前调 `_tick_temporary_effects`） | 373 |
+| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事；F2 增 player_san_max 键 @580） | 538 |
 | `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 586 |
-| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻 | 667 |
+| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻；player_san_max=player.derived.SAN_MAX（F2 @693） | 670 |
 | `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 715 |
 | `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 747 |
 | `_skill_value` | `(player, skill_name)` | 技能值查询 | 800 |
@@ -256,7 +257,7 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 | `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1061 |
 | `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1069 |
 | `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 @1078-1084 control 检查（T11）：`controlled_rounds > 0` 时跳过行动（success=False、narrative"被无形的力量攫住，无法动弹。"、damage=0、不掷骰不耗 _player_dodging、跳过本身不递减，归零靠轮末 _tick）；命中段 @1116-1122 buff 减伤（T10）：`damage = _roll_damage(...)` 后总减免 = sum(state.temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`（floor 读 game_config，函数内 import get_game_config；reduce_total=0 零开销跳过） | 1073 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @348 / run_single_round @531 / run_game.py 交互循环 @511（均在 `state.round += 1` 前，共 3 处） | 1133 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @349 / run_single_round @533 / run_game.py 交互循环 @511（均在 `state.round += 1` 前，共 3 处） | 1137 |
 | `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1146 / 1170 |
 | `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1191 |
 | `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1201 |
@@ -894,29 +895,29 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `start_pipeline` | `POST /api/pipeline/start` → run_pipeline 子进程 | 140 |
 | `validate_pipeline` | `POST /api/pipeline/validate` | 188 |
 
-### routers/game.py (1187 行) — 游戏 API（核心）
+### routers/game.py (1191 行) — 游戏 API（核心）
 
 | 端点 | 路由 | 作用 | 行号 |
 |------|------|------|------|
-| `game_page` | `GET /game` | 游戏页 | 168 |
-| `_handle_slash_command` | — | 斜杠命令短路 | 172 |
-| `process_turn` | `POST /api/game/turn` | 回合入口（线程池，防止阻塞事件循环） | 253 |
-| `character_card` | `GET /api/game/character-card` | 角色卡 HTML（状态区 MP 当前/上限 + 已知法术区，库外 id 降级展示） | 514 |
-| `player_status` | `GET /api/game/player-status?format=` | HP/MP/SAN 状态；JSON 含 hp_max/mp_max/mp/known_spells（id 解析为名） | 681 |
-| `game_command` | `POST /api/game/command` | 命令 | 710 |
-| `scene_info` | `GET /api/game/scene` | 场景 HTML | 715 |
-| `game_progress` | `WS /api/game/progress` | 管线进度推送 | 732 |
-| `init_game_api` | `POST /api/game/init` | 初始化 + 首回合（响应含 hp_max/mp_max/mp/known_spells） | 768 |
-| `game_state` | `GET /api/game/state` | 游戏状态 JSON（含 hp_max/mp_max/mp/known_spells） | 860 |
-| `set_auto_win` | `POST /api/game/auto-win` | 战斗自动胜利开关 | 832 |
-| `combat_start` | `POST /api/combat/start` | 初始化战斗会话（CombatSystem 传 world.spell_library+world @975，T9 战斗 markup/timed 原子可用） | 843 |
-| `combat_round` | `POST /api/combat/round` | 执行一轮（CombatSystem 传 spell_library+world @1023，战斗施法可用） | 952 |
+| `game_page` | `GET /game` | 游戏页 | 169 |
+| `_handle_slash_command` | — | 斜杠命令短路 | 173 |
+| `process_turn` | `POST /api/game/turn` | 回合入口（线程池，防止阻塞事件循环） | 254 |
+| `character_card` | `GET /api/game/character-card` | 角色卡 HTML（状态区 MP 当前/上限 + 已知法术区，库外 id 降级展示；F2 SAN bar 分母=derived.SAN_MAX @576） | 515 |
+| `player_status` | `GET /api/game/player-status?format=` | HP/MP/SAN 状态；JSON 含 hp_max/mp_max/mp/known_spells/san_max（id 解析为名；F2 @700） | 682 |
+| `game_command` | `POST /api/game/command` | 命令 | 716 |
+| `scene_info` | `GET /api/game/scene` | 场景 HTML | 721 |
+| `game_progress` | `WS /api/game/progress` | 管线进度推送 | 738 |
+| `init_game_api` | `POST /api/game/init` | 初始化 + 首回合（响应含 hp_max/mp_max/mp/known_spells/san_max，F2 @854） | 770 |
+| `game_state` | `GET /api/game/state` | 游戏状态 JSON（含 hp_max/mp_max/mp/known_spells/san_max，F2 @875） | 863 |
+| `set_auto_win` | `POST /api/game/auto-win` | 战斗自动胜利开关 | 882 |
+| `combat_start` | `POST /api/combat/start` | 初始化战斗会话（CombatSystem 传 world.spell_library+world @979，T9 战斗 markup/timed 原子可用） | 893 |
+| `combat_round` | `POST /api/combat/round` | 执行一轮（CombatSystem 传 spell_library+world @1027，战斗施法可用） | 1002 |
 
-序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@70 / `_init_libraries`@104 / `_known_spell_names`@503（known_spells id->中文名，统一资源层前端接线共用） / `_resolve_start_scene`@1086 / `_make_default_inv`@1132。
+序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57（F2 增 player_san_max 键 @64，getattr 兜底 99） / `_deserialize_enemies_for_combat`@71 / `_init_libraries`@105 / `_known_spell_names`@504（known_spells id->中文名，统一资源层前端接线共用） / `_resolve_start_scene`@1138 / `_make_default_inv`@1184。
 
 ### routers/character.py (335 行) — 车卡 API
 
-U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/8 属性，删 SIZ）；`roll_stats` 衍生公式 HP=CON//3、DB/BUILD 查表键=STR+CON//2。2026-08-15：`skills_list` 按归属属性分 8 块（双属性技能仅首块可编辑，块标题含乘数+池参考 JS 实时算）；职业标签下拉读 `occupation_labels.json`（专精 +10 封顶 99、专精徽标、换标签整表重渲染）；`_build_export` 参数 occupation→label，写 `inv.label`，meta.version=2.0。
+U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/8 属性，删 SIZ）；`roll_stats` 衍生公式 HP=CON//3、DB/BUILD 查表键=STR+CON//2。2026-08-15：`skills_list` 按归属属性分 8 块（双属性技能仅首块可编辑，块标题含乘数+池参考 JS 实时算）；职业标签下拉读 `occupation_labels.json`（专精 +10 封顶 99、专精徽标、换标签整表重渲染）；`_build_export` 参数 occupation→label，写 `inv.label`，meta.version=2.0；2026-08-25 B11：导出覆写 2.2（与核心 serialization v2.2 对齐，@275）。
 
 `character_page`@50 / `upload_avatar`@60 / `step_partial`@73 / `roll_stats`@88 / `skills_list`@126 / `generate_description`@218（LLM 外貌）/ `_build_export`@235 / `export_character_get`@300 / `export_character`@319（ZIP 导出）；辅助 `_load_labels`@40（读 occupation_labels.json）/ `_roll_stat`@45。
 

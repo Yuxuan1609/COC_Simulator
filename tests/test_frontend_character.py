@@ -57,7 +57,7 @@ def test_skills_list_label_focus_bonus():
 
 
 def test_export_zip_has_label_and_v2():
-    """导出 zip 内 character.json：personal.label 写入、无 SIZ、version=2.0。"""
+    """导出 zip 内 character.json：personal.label 写入、无 SIZ、version=2.2（B11 与核心序列化对齐）。"""
     r = _client().post("/character/export", data={
         "name": "导出测试", "label": "侦探",
         "stat_STR": 60, "stat_CON": 60, "stat_DEX": 60, "stat_APP": 60,
@@ -69,7 +69,7 @@ def test_export_zip_has_label_and_v2():
     assert r.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     card = json.loads(zf.read("character.json").decode("utf-8"))
-    assert card["meta"]["version"] == "2.0"
+    assert card["meta"]["version"] == "2.2"
     assert "SIZ" not in card["stats"]
     assert card["personal"]["label"] == "侦探"
     skills = {s["name"]: s["value"] for s in card["skills"]}

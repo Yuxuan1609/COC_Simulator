@@ -61,6 +61,7 @@ def _serialize_combat_state_for_frontend(state) -> dict:
         "player_hp": state.player_hp,
         "player_hp_max": state.player_hp_max,
         "player_san": state.player_san,
+        "player_san_max": getattr(state, "player_san_max", 99),
         "enemies": _serialize_enemies_for_frontend(state.enemies),
         "initiative_order": state.initiative_order,
         "finished": state.finished,
@@ -572,7 +573,7 @@ async def character_card():
 
     # --- Derived stats bar ---
     hp_pct = min(100, max(0, (derived.HP / derived.HP_MAX * 100) if derived.HP_MAX else 0))
-    san_pct = min(100, max(0, derived.SAN / 99 * 100))
+    san_pct = min(100, max(0, derived.SAN / max(1, derived.SAN_MAX) * 100))
     derived_html = (
         f'<div class="pt-2"><div class="text-[10px] text-gray-500 font-bold mb-1.5">状态</div>'
         f'<div class="space-y-2">'
@@ -696,6 +697,7 @@ async def player_status(format: str = ""):
             "mp": p.derived.MP,
             "mp_max": p.derived.MP_MAX,
             "san": san,
+            "san_max": p.derived.SAN_MAX,
             "name": p.name,
             "avatar_url": has_avatar,
             "occupation": occ_name,
@@ -849,6 +851,7 @@ async def init_game_api(
         "mp": inv.derived.MP,
         "mp_max": inv.derived.MP_MAX,
         "san": inv.derived.SAN,
+        "san_max": inv.derived.SAN_MAX,
         "name": inv.name,
         "known_spells": _known_spell_names(g["keeper"].world, inv),
         "initial_brief": initial_brief,
@@ -869,6 +872,7 @@ async def game_state():
         "mp": p.derived.MP if p else 0,
         "mp_max": p.derived.MP_MAX if p else 0,
         "san": p.derived.SAN if p else 0,
+        "san_max": p.derived.SAN_MAX if p else 99,
         "name": p.name if p else "",
         "known_spells": _known_spell_names(world, p) if p else [],
     }

@@ -536,11 +536,12 @@
     const hp = data.hp || 0;
     const hpMax = data.hp_max || hp || 10;
     const san = data.san || 0;
+    const sanMax = data.san_max || 99;
     document.getElementById('char-name').textContent = data.name || '调查员';
     document.getElementById('char-hp-text').textContent = hp + '/' + hpMax;
     document.getElementById('char-san-text').textContent = san;
     document.getElementById('char-hp-bar').style.width = (hpMax > 0 ? (hp / hpMax * 100) : 0) + '%';
-    document.getElementById('char-san-bar').style.width = (san > 0 ? (san / 99 * 100) : 0) + '%';
+    document.getElementById('char-san-bar').style.width = (san > 0 ? (san / Math.max(1, sanMax) * 100) : 0) + '%';
     if (data.mp !== undefined && data.mp !== null) {
       const mp = data.mp || 0;
       const mpMax = data.mp_max || mp || 1;
@@ -594,7 +595,7 @@
       if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; console.log('[initGame] init failed:', text); return; }
       const data = JSON.parse(text);
       console.log('[initGame] init success, location:', data.location);
-      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp_max || data.hp, mp: data.mp, mp_max: data.mp_max, san: data.san, known_spells: data.known_spells || [], avatar_url: '', occupation: '' });
+      updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp_max || data.hp, mp: data.mp, mp_max: data.mp_max, san: data.san, san_max: data.san_max || 99, known_spells: data.known_spells || [], avatar_url: '', occupation: '' });
       document.getElementById('game-setup').style.display = 'none';
       document.getElementById('game-screen').style.display = '';
       document.getElementById('user-input').focus();
@@ -1006,7 +1007,7 @@
       if (!resp.ok) return;
       const state = await resp.json();
       if (state.location && state.name) {
-        updateCharHUD({ name: state.name, hp: state.hp, hp_max: state.hp_max || state.hp, mp: state.mp, mp_max: state.mp_max, san: state.san, known_spells: state.known_spells || [] });
+        updateCharHUD({ name: state.name, hp: state.hp, hp_max: state.hp_max || state.hp, mp: state.mp, mp_max: state.mp_max, san: state.san, san_max: state.san_max || 99, known_spells: state.known_spells || [] });
         document.getElementById('game-setup').style.display = 'none';
         document.getElementById('game-screen').style.display = '';
         document.getElementById('user-input').focus();
@@ -1098,7 +1099,7 @@
 
     // Player HP/SAN bars
     var hpPct = st.player_hp_max > 0 ? (st.player_hp / st.player_hp_max * 100) : 0;
-    var sanPct = st.player_san > 0 ? (st.player_san / 99 * 100) : 0;
+    var sanPct = st.player_san > 0 ? (st.player_san / Math.max(1, st.player_san_max || 99) * 100) : 0;
     document.getElementById('combat-hp-text').textContent = st.player_hp + '/' + st.player_hp_max;
     document.getElementById('combat-san-text').textContent = st.player_san;
     document.getElementById('combat-hp-bar').style.width = hpPct + '%';
