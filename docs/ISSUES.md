@@ -36,7 +36,6 @@
 | # | 问题 | 备注 |
 |---|------|------|
 | B6 | 战斗轮叙事把被支配跳过渲染"未命中" | 措辞不准,机制正确(combat.py 轮叙事行 + LLM 摘要喂 "--=0 D100=0" 噪声) |
-| B7 | loader 损坏扩展 JSON 报错缺文件名 | `json.load` 异常不带来源路径;包一层 `raise ValueError(f"扩展库文件损坏: {f}") from e` |
 | B8 | MP 恢复累计器在 MP 已满时仍被消耗 | 满 MP 休息 5 小时后花费 MP 不追回;spec 未规定,影响极小 |
 | B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2" |
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
@@ -79,6 +78,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-25 | **B7 loader 损坏扩展 JSON 报错缺文件名** | items/spells `_load_file` 裸 json.load 包 try/except:OSError/JSONDecodeError -> `ValueError` 带文件路径,另补顶层非 object 防御(数组原抛 AttributeError);core/extensions 共用入口一处覆盖两类;tests/test_library_loader.py 增 2 测试锁定 |
 | 2026-08-25 | **B2 day:N time flag 随天数累积进 prompt/存档** | advance_time 注入前清旧 `day:`/`time:` 前缀 flag(推进时清理方案,旧档下次推进自动清理无需迁移);tests/e2e/test_deterministic.py TestTimeFlagHygiene 锁定(跨天/时段切换/build_snapshot 三段断言) |
 | 2026-08-24 | **武器库技能名归一缺口**(手枪/步枪/霰弹枪不在 legacy_map -> STR/2 兜底 + warning 刷屏) | 4d62700:legacy_map 追加映射 + test_normalize_weapon_skill_names |
 | 2026-08-24 | LLM flaky 处置约定 | UPDATES 记录:复跑即过不阻塞 |

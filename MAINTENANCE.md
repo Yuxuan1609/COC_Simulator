@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-25 | 小修批次 Task2/B7：库文件损坏/格式错误报错带文件路径--src/library/items.py 与 spells.py `_load_file`（core 与 extensions 共用加载入口，一处修改两类文件全覆盖）裸 `json.load` 包 try/except：`(OSError, json.JSONDecodeError)` -> `raise ValueError(f"库文件加载失败: {path}") from e`（原 JSONDecodeError 不带来源路径，排障需逐文件试）；顺带覆盖顶层非 object（如数组）防御：`not isinstance(data, dict)` -> `raise ValueError(f"库文件格式错误(顶层应为 object): {path}")`（原对 `[1,2]` 抛 AttributeError: 'list' object has no attribute 'get'）；tests/test_library_loader.py 头部补 `import pytest` + 末尾追加 2 测试（test_corrupt_extension_json_error_names_file 损坏扩展 bad.json 带 / test_non_dict_library_json_error_names_file 顶层 [1,2] 数组，RED(JSONDecodeError 无路径+AttributeError)->GREEN）；items.py 90->95 行（_load_file @73 净增 6 行，get/list_all/__len__ 80/86/89->85/91/94）、spells.py 97->102 行（_load_file @80，get/list_all/__len__ 87/93/96->92/98/101），grep 实测对齐；ISSUES B7 移入 §5 已收口；tests/test_library_loader.py 5 passed（基线 3+2），关联回归 test_use_system+test_combat_smoke+loader 121 passed、tests/ 全量（除 e2e）230 passed、tests/e2e/test_deterministic.py 42 passed（test_unresolved_use_becomes_creative 首跑偶发失败复跑全绿，2026-08-24 T14 已记录的既有 flaky） |
 | 2026-08-25 | 小修批次 Task1/B2：advance_time 清旧 day:/time: flag--scenario_core.py `advance_time`（@750）注入前先删 runtime_state 中带 `day:`/`time:` 前缀且不在当前 clock.get_time_flags() 的键（先攒 stale 列表再删，剧情实体条目无此前缀不受影响），防长期局 day:0..day:N 全 completed=True 经 build_snapshot completed 列表进每回合 prompt/存档膨胀；旧档读入后下一次 advance_time 自动清理，无需迁移；tests/e2e/test_deterministic.py 增 TestTimeFlagHygiene 1 测试（文件 1209->1236 行：早晨->夜间跨天只留当日 flag/时段切换只留当前时段/build_snapshot completed 不累积旧 day 三段断言；计划原稿首推 60 分钟 hour=1 实属夜间（h<5），断言 time:早晨 即便实现正确也必挂，改为 6*60/18*60 保 game_time=1440 跨天锚点与计划全部断言不变）；scenario_core.py 1764->1771 行，ScenarioWorld/MemoryManager/WorldChronicle 节内行号 +7 对齐 grep 实测（顺修节头 1759 漂移->1771）；ISSUES B2 移入已收口；tests/e2e/test_deterministic.py 全套 42 passed（基线 41+1） |
 | 2026-08-24 | 问题集中化:新建 `docs/ISSUES.md`(bug 🔴🟡🟢/功能缺口/重构队列/处置约定/收口记录单一事实来源);UPDATES.md 全局已知观察节与队列节改为指针;MAINTENANCE 头部加问题追踪指引。同 commit 顺修武器库技能归一缺口(skill_config legacy_map 补 手枪/步枪/霰弹枪->枪械,4d62700) |
 | 2026-08-24 | effect 表达力计划 T14（收口）：S15 + 文档 + 全量回归--① tests/e2e/test_scenarios.py 增 TestS15ExtensionSpell（文件 559->631 行）：扩展库法术游戏内施放（spec §8），tmp_path 造库根（copy core spells.json + extensions/spells/ext.json 写 EXT_WHISPER 暗影低语 L1/mp 2/check null/effect [timed 15min]），load_spell_library(base_dir) 断言扩展+core 双可见，make_world(spell_library=) + known_spells=["EXT_WHISPER"]，"施放暗影低语"走完整 keeper 回合（UseParser 确定性短路 -> execute_material，check=null 无检定保定性；enrich/time_agent/narrator 真实 LLM），断言 MP 12->10 + timed_effects [{id EXT_WHISPER/description 耳畔有低语萦绕/expire_at=施放时刻+15}] + 叙事宽断言（低语/声音/阴影任一，brief+narrative 合查）；retry_once 消化 time_agent 波动（timed 15min 内推满过期/MP 恢复属偶发）；mkdir exist_ok 保证 retry 重入安全；② readme.md 增「effect 原子系统（8 种，2026-08-21）」节（@markup 节后：原子表 damage/heal/mp_change/markup/buff/control/timed/narrative 战斗/探索双列 + 未知 type [unknown:x] 降级 + timed 软状态 + MP 恢复（每小时 1 点余数累计，mp_recovery_per_hour 可配）+ 扩展库约定（data/library/extensions/{items,spells}/*.json 放置即生效，游戏+管线双侧））+ 设计文档索引补 2026-08-21-effect-expression-design.md；③ changelog 补录 T3 缺失条目（本轮巡检发现，commit 31d3376+49aee16 当时未记）；④ 行号抽查（judge/combat/scenario_core/serialization/models/utils/loader 全准无漂移）；⑤ UPDATES.md 工作汇总 + 已知观察补条；全量回归：默认套件 268 passed / 20 deselected（S15 为 real_llm 标记不入默认套件；首轮 1 failed test_unresolved_use_becomes_creative 为偶发，复跑全绿）+ real_llm scenarios S1-S15 15/15 首跑全过（251s，无 retry 消化） |
@@ -557,24 +558,24 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 | `load_core` / `load_extension` / `_load_file` | 加载 | 97 / 104 / 107 |
 | `get` / `list_all` / `search` / `__len__` | 查询族 | 114–132 |
 
-### items.py (90 行) - ItemLibrary（统一资源层，@61）
+### items.py (95 行) - ItemLibrary（统一资源层，@61）
 
 | 方法 | 作用 | 行号 |
 |------|------|------|
-| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/items.json + 扩展 | 63 / 70 / 73 |
-| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 80–90 |
+| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/items.json + 扩展；_load_file（B7，@73）损坏 JSON/OSError -> `ValueError("库文件加载失败: {path}")`、顶层非 dict -> `ValueError("库文件格式错误(顶层应为 object): {path}")`（报错带来源路径，core/extensions 共用） | 63 / 70 / 73 |
+| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 85–95 |
 
 数据类 `LibraryItem`@12：`id, name, aliases, category(consumable/tool/document/clothing/key/misc), description, impact(L0/L1/L2 库预标注), use_semantic(consume/equip/read/tool/none), stackable, check{skill,type}, on_use(@markup 序列), on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1)`。effect 字段（T3，@29）：from_dict 经 `_normalize_effect`（自 spells.py 导入 @8）归一化——旧单 dict 包装为 [dict]，list 透传，缺省 []（@50）。
 
 core 条目内容（T12 升维，2026-08-24）：NECRONOMICON_PAGE on_use 双 markup（`@stat_change(SAN,-1D4)` + `@grant_spell(spell_ref="DREAM_GAZE")`，读残页学法术通路示范）；SALT effect=[timed(id SALT_LINE, minutes 60)]（探索侧挂 timed_effects，T6 结算/T8 渲染）。其余 10 条无 effect（纯叙事 L0 为主）。
 
-### spells.py (97 行) - SpellLibrary（统一资源层，@62）
+### spells.py (102 行) - SpellLibrary（统一资源层，@62）
 
 | 函数/方法 | 作用 | 行号 |
 |------|------|------|
 | `_normalize_effect` | effect 归一化：旧单 dict -> [dict]；None/缺省 -> []；list 透传（逐元素浅拷贝，忽略非 dict 元素） | 9 |
-| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展 | 70 / 77 / 80 |
-| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 87–97 |
+| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展；_load_file（B7，@80）损坏 JSON/OSError -> `ValueError("库文件加载失败: {path}")`、顶层非 dict -> `ValueError("库文件格式错误(顶层应为 object): {path}")`（与 items.py 同款，core/extensions 共用） | 70 / 77 / 80 |
+| `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 92–102 |
 
 数据类 `LibrarySpell`@19：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1), weight`。effect 字段（T3，@35）：由旧单 dict（damage 类）升维为原子数组，from_dict @56 调 `_normalize_effect`；旧 JSON 单 dict 数据自动包装为单元素数组。combat.py cast 分支已由 T9 重写为原子数组遍历（@856-928，见 combat.py 节）。
 

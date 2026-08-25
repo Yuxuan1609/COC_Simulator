@@ -78,8 +78,13 @@ class SpellLibrary:
         self._load_file(path)
 
     def _load_file(self, path: str) -> None:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            raise ValueError(f"库文件加载失败: {path}") from e
+        if not isinstance(data, dict):
+            raise ValueError(f"库文件格式错误(顶层应为 object): {path}")
         for sp in data.get("spells", []):
             ls = LibrarySpell.from_dict(sp)
             self._spells[ls.id] = ls

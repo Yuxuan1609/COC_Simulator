@@ -4,6 +4,8 @@ import shutil
 import sys, os
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from library.loader import load_item_library, load_spell_library
@@ -50,3 +52,24 @@ def test_extension_visible_in_step1a_summary(tmp_path):
     prompt = build_step1a_prompt(
         "源文档", spell_names=[s.name for s in lib.list_all()])
     assert "暗影低语" in prompt
+
+
+def test_corrupt_extension_json_error_names_file(tmp_path):
+    """ISSUES B7:损坏扩展 JSON 报错带文件路径。"""
+    base = tmp_path
+    (base / "core").mkdir(parents=True)
+    (base / "core" / "items.json").write_text('{"items": []}', encoding="utf-8")
+    ext = base / "extensions" / "items"
+    ext.mkdir(parents=True)
+    (ext / "bad.json").write_text("{oops", encoding="utf-8")
+    with pytest.raises(ValueError, match="bad.json"):
+        load_item_library(str(base))
+
+
+def test_non_dict_library_json_error_names_file(tmp_path):
+    """库文件顶层非 object(如数组)报错带文件路径。"""
+    base = tmp_path
+    (base / "core").mkdir(parents=True)
+    (base / "core" / "spells.json").write_text("[1, 2]", encoding="utf-8")
+    with pytest.raises(ValueError, match="spells.json"):
+        load_spell_library(str(base))
