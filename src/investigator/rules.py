@@ -8,7 +8,7 @@ import json
 import math
 import os
 import random
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 from utils import roll_d6
 from investigator.models import Stats, DerivedStats, Skill, Occupation, Weapon
@@ -37,28 +37,24 @@ def roll_stats() -> Stats:
 # ═══════════════════════════════════════════════════════════════
 
 def _calc_db_build(key: int) -> Tuple[str, int]:
-    """U9 查表键 = STR + CON//2，返回 (DB, BUILD)"""
-    if key <= 64:
-        return "-2", -2
-    elif key <= 84:
-        return "-1", -1
-    elif key <= 124:
-        return "0", 0
-    elif key <= 164:
-        return "+1D4", 1
-    elif key <= 204:
-        return "+1D6", 2
-    else:
-        return "+2D6", 3
+    """U9 查表键 = STR + CON//2，返回 (DB, BUILD)(表: game_config.db_build_table)。"""
+    for row in get_game_config()["db_build_table"]:
+        mk = row["max_key"]
+        if mk is None or key <= mk:
+            return row["db"], row["build"]
+    return "0", 0  # 空表兜底
 
 
 def calc_derived(stats: Stats, age: int = 20, cthulhu_mythos: int = 0) -> DerivedStats:
-    """U9 衍生公式：HP=CON//3；DB/BUILD 查表键=STR+CON//2；删 MOV。"""
-    hp = max(1, math.floor(stats.CON / 3))
-    mp = math.floor(stats.POW / 5)
+    """U9 衍生公式(除数/基数见 game_config.derived)：HP=CON//hp_divisor；
+    MP=POW//mp_divisor；DODGE=DEX//dodge_divisor；SAN 上限=san_max_base-神话；
+    DB/BUILD 查表键=STR+CON//2。"""
+    d = get_game_config()["derived"]
+    hp = max(1, math.floor(stats.CON / d["hp_divisor"]))
+    mp = math.floor(stats.POW / d["mp_divisor"])
     san = stats.POW
-    san_max = 99 - cthulhu_mythos
-    dodge = math.floor(stats.DEX / 2)
+    san_max = d["san_max_base"] - cthulhu_mythos
+    dodge = math.floor(stats.DEX / d["dodge_divisor"])
     db, build = _calc_db_build(stats.STR + stats.CON // 2)
     return DerivedStats(
         HP=hp, HP_MAX=hp, MP=mp, MP_MAX=mp, SAN=san, SAN_MAX=san_max,
@@ -108,8 +104,9 @@ def allocate_skill_points(
     for n in (focus or []):
         if n in by_name:
             by_name[n].value += focus_bonus
+    cap = get_game_config()["skill_value_cap"]
     for s in skills:
-        s.value = min(99, max(s.value, s.base_value if s.name not in no_pool else 0))
+        s.value = min(cap, max(s.value, s.base_value if s.name not in no_pool else 0))
     return skills
 
 
@@ -152,46 +149,30 @@ def apply_age_modifiers(stats: Stats, age: int):
     | 70-79 (3)     | -20    | -20           | +20  |
     | 80+ (4)       | -25    | -40           | +25  |
     """
-    if age < 40:
+    cfg = get_game_config()["age_modifiers"]
+    if age < cfg["start_age"]:
         return
 
-    tier = (age - 40) // 10
-    if tier > 4:
-        tier = 4
+    tier = (age - cfg["start_age"]) // 10
+    tier = min(tier, cfg["max_tier"], len(cfg["app_penalties"]) - 1)
 
-    # Lookup tables by tier
-    app_penalties = [-5, -10, -15, -20, -25]
-    phys_penalties = [0, -5, -10, -20, -40]
-    edu_bonuses = [5, 10, 15, 20, 25]
-
-    stats.APP = max(0, stats.APP + app_penalties[tier])
-    if phys_penalties[tier]:
-        stats.STR = max(0, stats.STR + phys_penalties[tier])
-        stats.CON = max(0, stats.CON + phys_penalties[tier])
-        stats.DEX = max(0, stats.DEX + phys_penalties[tier])
-    stats.EDU = min(99, stats.EDU + edu_bonuses[tier])
+    stats.APP = max(0, stats.APP + cfg["app_penalties"][tier])
+    if cfg["phys_penalties"][tier]:
+        stats.STR = max(0, stats.STR + cfg["phys_penalties"][tier])
+        stats.CON = max(0, stats.CON + cfg["phys_penalties"][tier])
+        stats.DEX = max(0, stats.DEX + cfg["phys_penalties"][tier])
+    stats.EDU = min(99, stats.EDU + cfg["edu_bonuses"][tier])
 
 
 # ═══════════════════════════════════════════════════════════════
 #  信用评级
 # ═══════════════════════════════════════════════════════════════
 
-CREDIT_RATING_TABLE: Dict[int, str] = {
-    0: "身无分文",
-    5: "拮据",
-    10: "一般",
-    20: "中等",
-    30: "宽裕",
-    50: "富裕",
-    70: "富有",
-    90: "极富",
-}
-
-
 def get_credit_level(value: int) -> str:
-    """根据信用评级数值返回等级描述"""
-    result = "身无分文"
-    for threshold, label in sorted(CREDIT_RATING_TABLE.items()):
+    """根据信用评级数值返回等级描述(表: game_config.credit_rating_table)。"""
+    table = sorted(get_game_config()["credit_rating_table"])
+    result = table[0][1] if table else "身无分文"
+    for threshold, label in table:
         if value >= threshold:
             result = label
     return result
@@ -206,7 +187,7 @@ def create_default_unarmed() -> Weapon:
     return Weapon(
         name="徒手",
         skill_name="格斗",
-        damage="1D3+DB",
+        damage=get_game_config()["unarmed_damage"],
         range="接触",
     )
 
@@ -339,6 +320,17 @@ def reset_game_config_cache() -> None:
     _game_config_cache = None
 
 
+def _cfg_shape_ok(v, dv) -> bool:
+    """嵌套配置形状校验:dict 必需键齐全递归;list 非空且元素类型一致(不深校验行内)。"""
+    if type(v) is not type(dv):
+        return False
+    if isinstance(dv, dict):
+        return all(k in v and _cfg_shape_ok(v[k], dv[k]) for k in dv)
+    if isinstance(dv, list):
+        return bool(v) and all(type(a) is type(dv[0]) for a in v)
+    return True
+
+
 def get_game_config() -> dict:
     """惰性加载 game_config.json,缺省兜底,模块级缓存(返回副本)。"""
     global _game_config_cache
@@ -351,7 +343,7 @@ def get_game_config() -> dict:
                 data = {}
             for k, dv in _GAME_CONFIG_DEFAULTS.items():
                 v = data.get(k, dv)
-                if type(v) is type(dv):
+                if _cfg_shape_ok(v, dv):
                     cfg[k] = v
         except (OSError, ValueError):
             pass

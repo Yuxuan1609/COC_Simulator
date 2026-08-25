@@ -668,8 +668,10 @@ class TestExecuteMaterialEffects:
 
     def test_timed_default_minutes_from_config(self, monkeypatch):
         import investigator.rules as rules_mod
+        # F2 后 calc_derived 等消费方也读 config,stub 需给全量(默认表+覆盖单键)
         monkeypatch.setattr(rules_mod, "get_game_config",
-                            lambda: {"timed_default_minutes": 45})
+                            lambda: {**rules_mod._GAME_CONFIG_DEFAULTS,
+                                     "timed_default_minutes": 45})
         from game.judge import Judge
         world, inv = self._world()
         judge = Judge(world)
@@ -906,8 +908,10 @@ class TestAdvanceTimeHooks:
 
     def test_mp_recovery_rate_from_config(self, monkeypatch):
         import investigator.rules as rules_mod
+        # F2 后 calc_derived 等消费方也读 config,stub 需给全量(默认表+覆盖单键)
         monkeypatch.setattr(rules_mod, "get_game_config",
-                            lambda: {"mp_recovery_per_hour": 3})
+                            lambda: {**rules_mod._GAME_CONFIG_DEFAULTS,
+                                     "mp_recovery_per_hour": 3})
         world, inv = self._world()
         inv.derived.MP = 0
         world.advance_time(60)
@@ -915,8 +919,10 @@ class TestAdvanceTimeHooks:
 
     def test_mp_regen_zero_rate_disables(self, monkeypatch):
         import investigator.rules as rules_mod
+        # F2 后 calc_derived 等消费方也读 config,stub 需给全量(默认表+覆盖单键)
         monkeypatch.setattr(rules_mod, "get_game_config",
-                            lambda: {"mp_recovery_per_hour": 0})
+                            lambda: {**rules_mod._GAME_CONFIG_DEFAULTS,
+                                     "mp_recovery_per_hour": 0})
         world, inv = self._world()
         inv.derived.MP = 0
         world.advance_time(600)

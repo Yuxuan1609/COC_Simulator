@@ -4,6 +4,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from investigator import rules
+from investigator.models import Stats, Skill
 
 
 def setup_function():
@@ -120,3 +121,76 @@ def test_nested_type_mismatch_falls_back(monkeypatch, tmp_path):
     assert cfg["derived"]["hp_divisor"] == 3
     assert cfg["db_build_table"][0]["db"] == "-2"
     assert cfg["credit_rating_table"][0] == [0, "身无分文"]
+
+
+def test_shipped_json_matches_defaults():
+    """data/game_config.json 与 _GAME_CONFIG_DEFAULTS 全量一致(双份维护锁定)。"""
+    with open(rules._CONFIG_PATH, encoding="utf-8") as f:
+        assert json.load(f) == rules._GAME_CONFIG_DEFAULTS
+
+
+def test_calc_derived_reads_config(monkeypatch, tmp_path):
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"derived": {"hp_divisor": 2, "mp_divisor": 10,
+                                          "dodge_divisor": 4, "san_max_base": 90}}),
+                 encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    st = Stats(STR=50, CON=60, DEX=70, APP=40, INT=60, POW=50, EDU=70, LUCK=50)
+    d = rules.calc_derived(st)
+    assert d.HP == 30      # 60 // 2
+    assert d.MP == 5       # 50 // 10
+    assert d.DODGE == 17   # 70 // 4
+    assert d.SAN_MAX == 90
+
+
+def test_db_build_table_override(monkeypatch, tmp_path):
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"db_build_table": [
+        {"max_key": 100, "db": "+9D9", "build": 9},
+        {"max_key": None, "db": "0", "build": 0}]}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    assert rules._calc_db_build(50) == ("+9D9", 9)
+    assert rules._calc_db_build(150) == ("0", 0)
+
+
+def test_age_modifiers_override(monkeypatch, tmp_path):
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"age_modifiers": {"start_age": 20, "max_tier": 1,
+                                                "app_penalties": [-1, -2],
+                                                "phys_penalties": [0, -3],
+                                                "edu_bonuses": [1, 2]}}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    st = Stats(STR=50, CON=50, DEX=50, APP=50, INT=50, POW=50, EDU=50, LUCK=50)
+    rules.apply_age_modifiers(st, 35)   # (35-20)//10 = tier 1
+    assert st.APP == 48 and st.STR == 47 and st.CON == 47 and st.DEX == 47
+    assert st.EDU == 52
+
+
+def test_credit_rating_table_override(monkeypatch, tmp_path):
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"credit_rating_table": [[0, "穷"], [80, "豪"]]}),
+                 encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    assert rules.get_credit_level(90) == "豪"
+    assert rules.get_credit_level(10) == "穷"
+
+
+def test_skill_cap_and_unarmed_override(monkeypatch, tmp_path):
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"skill_value_cap": 80, "unarmed_damage": "1D2"}),
+                 encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    assert rules.create_default_unarmed().damage == "1D2"
+    sk = [Skill(name="射击", base_value=50, value=50, category="DEX")]
+    st = Stats(STR=50, CON=50, DEX=50, APP=50, INT=50, POW=50, EDU=50, LUCK=50)
+    out = rules.allocate_skill_points(sk, st, focus=["射击"], focus_bonus=100)
+    assert out[0].value == 80   # 50+100 被 cap 80 截断
+
+
+def test_nested_inner_bad_value_falls_back(monkeypatch, tmp_path):
+    """嵌套内层坏值(derived.hp_divisor 字符串)整体回退默认(不炸消费方)。"""
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"derived": {"hp_divisor": "x"}}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    cfg = rules.get_game_config()
+    assert cfg["derived"]["hp_divisor"] == 3
