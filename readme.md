@@ -253,6 +253,7 @@ LLM 提取 → 与现有库去重 → 展示新条目 → 手动确认 → 写�
 - **未知 type 兜底**：`[unknown:类型] 描述文本` 降级进结果——不报错、不阻断其余原子，永不空转。
 - **timed 软状态**：描述性时效效果（区别于战斗轮驱动的 buff/control），挂 `player.timed_effects`（`{id, description, expire_at}` 绝对分钟；minutes 缺省读 `timed_default_minutes`），`advance_time` 推满时长自动清除（同 id 重复施放刷新时效不叠条）；编年史 facts 玩家行渲染「生效中: 描述（剩N分钟）」，Author/enrich 写叙事可感知。
 - **MP 恢复**：每小时恢复 1 点（分钟余数累计器攒满 60 分钟回点，clamp MP_MAX），速率 `mp_recovery_per_hour` 在 `data/game_config.json` 可配（0 = 关闭）。
+- **参数中心**：数值参数集中 `data/game_config.json`——MP 恢复/属性骰面乘数/技能上限/衍生公式除数/DB-BUILD 查表/年龄修正/信用评级/徒手伤害，改档调参免改码（嵌套坏值自动回退默认）。
 - **扩展库约定**：`data/library/extensions/{items,spells}/*.json` 用户放置 JSON 即生效——游戏（init_game）与模组生成管线（run_pipeline）双侧经统一 loader（`src/library/loader.py`）加载 core + extensions，扩展素材可被生成的模组引用。
 
 设计详见 `docs/superpowers/specs/2026-08-21-effect-expression-design.md`。

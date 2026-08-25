@@ -380,6 +380,25 @@
 
 ---
 
+## 工作汇总（2026-08-25）
+
+### 已完成
+
+**小修批次 + F2 参数集中化全面收编**（计划 10 任务 T1-T10 全部完成，commit 6e2e93b→本次收口，subagent 执行 + 两轮 review）：
+
+- **小修批次 5 项**：B2 day/time flag 清理（advance_time 注入前清旧 flag，旧档下次推进自动清理，6e2e93b）/ B7 库报错带路径（items/spells `_load_file` 损坏/非 dict 报错带文件名，0362eba）+ B13 跟踪（weapons/enemies/bosses 同类裸 json.load，3d7a910）/ B5 testpaths=tests 隔离根目录调试脚本收集错（1ab5365）/ B4 escalation real_llm 日志落 tmp_path 留现场（6e1e6a3）/ B12 loader 默认路径 cwd 独立性回归锁定（fc03138）
+- **F2 game_config 扩键**：3→10 键（stat_roll_multiplier/skill_value_cap/unarmed_damage/derived 四除数/db_build_table 查表/age_modifiers 三数组/credit_rating_table）+ 深拷贝防缓存污染 + 嵌套形状校验（坏值整体回退默认）+ 同步锁测试（75c88b7）
+- **F2 rules 六函数收编**：_calc_db_build/calc_derived/allocate_skill_points/apply_age_modifiers/get_credit_level/create_default_unarmed 散落数值改读 config，数值默认零变化（程序化对照验证）；配套嵌套校验升级+同步锁（fe9d2bb）
+- **F2 roll_stats 骰面**：骰面读 skill_config.attributes.dice（消代码/数据重复）+ 总乘数读 game_config.stat_roll_multiplier；行深校验/年龄表对称防御补丁（bd96769）
+- **F2 前端 SAN bar 分母**：硬编码 /99 改 derived.SAN_MAX 三接口（player-status json/api init/api state）+ 双 dataclass（CombatState/CombatResult player_san_max）+ JS data-san_max 兜底 + B11 version 2.0→2.2 对齐（245234f）
+
+### 测试现状
+
+- 默认套件：269→294 passed（净增 25：config 系 15 / loader 3 / deterministic 1 / frontend 6），20 deselected 不变；裸 pytest 收集无 ERROR（testpaths 生效）
+- 计划 10 任务 subagent 执行，两轮 review 捕获计划笔误 2 处（时段注释/骰面上界）+ 补丁 3 项（嵌套校验/同步锁/年龄表对称）
+
+---
+
 ## 工作汇总（2026-08-24）
 
 ### 已完成

@@ -240,3 +240,11 @@ def test_age_tables_asymmetric_no_crash(monkeypatch, tmp_path):
     assert st.APP == 40   # 50 + app[1](-10)  统一用 tier 1
     assert st.STR == 45   # 50 + phys[1](-5)
     assert st.EDU == 60   # 50 + edu[1](10)
+
+
+def test_skill_config_attributes_match_stats_fields():
+    """skill_config.attributes 键集与 Stats 字段集一致(roll_stats 的 Stats(**vals) 依赖)。"""
+    from utils import load_skill_config
+    from investigator.models import Stats
+    import dataclasses
+    assert set(load_skill_config()["attributes"]) == {f.name for f in dataclasses.fields(Stats)}

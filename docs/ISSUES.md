@@ -38,6 +38,7 @@
 | B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2" |
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
 | B13 | weapons/enemies/bosses 库裸 `json.load` 同类缺陷 | B7(0362eba)只修 items/spells(经 loader 的 core+extensions 通路);weapons.py:108/enemies.py:154/bosses.py:61 同款无路径报错+非 dict AttributeError,同类收编时顺修(届时抽 loader 共享 `_load_json_dict` 一次收敛) |
+| B14 | load_skill_config 缓存写入死代码 | utils.py:167 if path is None 在 162 行重赋值后不可达,roll_stats 每次调用重读解析 JSON(实测 0.10s/200 次可接受);修法:拆显式 base 参数 |
 
 ---
 
@@ -46,7 +47,6 @@
 | # | 缺口 | 定位 |
 |---|------|------|
 | F1 | **物品转移**(丢弃/给予 NPC/交易) | use 大类剩余的最后一块通路:"把钥匙递给 NPC"类叙事接不住。范围裁决时未选,按需排期 |
-| F2 | **参数集中化全面收编**(已拍板,下一步) | rules.py 函数体内散落数值(DB/BUILD 查表/tier 阈值/EDU 增益表)迁 data/game_config.json;前端硬编码(SAN bar /99 等)收编 |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
 | F4 | timed 缺 expire_at 渲染兜底测试 / buff 探索侧降级等边界 | 已修主体,防御分支断言零散(T8/T12 review 记录) |
 
@@ -75,6 +75,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-25 | F2 参数集中化全面收编(rules 六函数+roll_stats 骰面+前端 SAN bar 分母+game_config 10 键/深拷贝/嵌套校验) | 75c88b7+fe9d2bb+bd96769+245234f |
 | 2026-08-25 | **B11 前端 character.py 导出 version 覆写 "2.0" 与核心 v2.2 漂移** | 小修批次 Task9/F2:_build_export meta.version "2.0"->"2.2"(@275);tests/test_frontend_character.py 导出断言同步 2.2 |
 | 2026-08-25 | **B12 loader 默认路径 cwd 独立性缺回归** | tests/test_library_loader.py 增 test_data_root_cwd_independent:monkeypatch.chdir(tmp_path) 后不传 base_dir 走 _DATA_ROOT 双库非空断言(锁定包相对绝对路径,防改回 cwd 相对);纯测试收口零产品代码改动 |
 | 2026-08-25 | **B4 escalation_real pytest 运行无诊断现场** | test_case_a/b/c/d/e 签名加 `tmp_path=None`(pytest 注入 builtin fixture),log_dir 为空时落 `tmp_path/escalation_case_{a..e}` 子目录;手跑入口 run() 调 `test_fn(log_dir=case_dir)` log_dir 非空短路不受影响,默认参数 tmp_path=None 手跑/直接调用两形态兼容 |
