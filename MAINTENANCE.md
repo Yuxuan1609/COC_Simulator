@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-25 | 小修批次+F2 Task6（F2 第一步）：game_config 扩键+深拷贝（为 Task7/8 rules.py 参数收编铺路）--① data/game_config.json 3->10 键全量重写（新增 stat_roll_multiplier=5/skill_value_cap=99/unarmed_damage="1D3+DB"/derived{hp_divisor 3,mp_divisor 5,dodge_divisor 2,san_max_base 99}/db_build_table 6 行(max_key None 兜底)/age_modifiers{start_age 40,max_tier 4,app/phys/edu 三数组}/credit_rating_table 8 档），与 _GAME_CONFIG_DEFAULTS 逐键镜像；② rules.py：头部 import 区加 `import copy`；_GAME_CONFIG_DEFAULTS 同步扩为 10 键；get_game_config 末行 `return dict(_game_config_cache)` -> `return copy.deepcopy(_game_config_cache)`（原浅拷贝嵌套结构（dict/list）与缓存共享引用，调用方改 nested 值会污染缓存；顶层类型校验 `type is` 保持，嵌套键顶层类型不符整体回默认）；③ tests/test_game_config.py 末尾追加 3 测试（test_new_keys_present 新键默认值/test_nested_config_deep_copy 改 derived.hp_divisor 与 db_build_table[0].db 不污染缓存/test_nested_type_mismatch_falls_back 嵌套键类型不符回默认），RED(3 failed KeyError)->GREEN；连带修正旧测试 test_non_dict_json_falls_back：原断言硬编码 3 键整字典精确相等，扩键后过时（断言对象本身变了而非行为回退失效），改 `cfg == rules._GAME_CONFIG_DEFAULTS`（逐键等于缺省表，意图不变）；④ rules.py 334->359 行，节内行号 grep 实测对齐（roll_stats…opposed_check +1（import copy）、_GAME_CONFIG_DEFAULTS/_CONFIG_PATH 301/306->302/331、reset_game_config_cache 311->336、get_game_config 317->342）；此刻消费方（combat/judge/scenario_core）仍只读旧 3 键，新键无人消费，行为零变化；回归 tests/ 全量 276 passed / 20 deselected（基线 273+3） |
 | 2026-08-25 | 小修批次 Task5/B12：tests/test_library_loader.py 末尾追加 test_data_root_cwd_independent（monkeypatch.chdir(tmp_path) 后不传 base_dir 调 load_item_library/load_spell_library 走 _DATA_ROOT，断言双库非空）--锁定 loader 默认路径与 cwd 无关（_DATA_ROOT@12 为包相对绝对路径），防将来改回 cwd 相对（改坏即此测试红）；纯测试收口零产品代码改动，src/library/loader.py 31 行不变；tests/test_library_loader.py 6 passed（基线 5+1）；ISSUES B12 移入 §5 已收口 |
 | 2026-08-25 | 小修批次 Task4/B4：tests/e2e/test_escalation_real.py 5 个用例 pytest 运行留日志现场--test_case_a/b/c/d/e 签名 `def test_case_x(log_dir="")` -> `def test_case_x(tmp_path=None, log_dir="")`（tmp_path 前置，pytest 自动注入 builtin fixture），函数体首部加 2 行：`if not log_dir and tmp_path is not None: log_dir = str(tmp_path / "escalation_case_x")`，pytest 运行（log_dir 空）日志落 tmp_path 子目录，`_log_text/_log_json` 不再 no-op，失败有 prompt/response/meta 诊断现场；手跑入口 run() 调 `test_fn(log_dir=case_dir)`（@572）log_dir 非空短路、直接调用 tmp_path 缺省 None，两种形态零影响；文件 588->598 行（5 函数各净增 2 行，_setup_llm_logging @242 不变、CASE_MAP 523->533、run 543->553，grep 实测）；验证：`--collect-only -m real_llm` 5 tests collected 无错误、默认收集 5 deselected；ISSUES B4 移入 §5 已收口 |
 | 2026-08-25 | 小修批次 Task3/B5：pytest.ini 加 `testpaths = tests`（其余 markers/addopts 原样）--裸 `pytest`/`python -m pytest`（无路径参数）原先从仓库根收集，run_step1b_test.py（模块级读已删的 data/modules/深渊之口/module_raw.txt）import 即 FileNotFoundError 报 `1 error during collection` 中断全部收集；加 testpaths 后根目录调试脚本（run_step1b_test.py/imp.py/test.py）不进收集范围（脚本保留，调试用途），`pytest tests/` 与裸 pytest 等价免 --ignore；验证：collect-only `272/292 tests collected (20 deselected)` 无 ERROR，`pytest tests/ -q` 272 passed / 20 deselected 全绿；ISSUES B5 移入 §5 已收口 |
@@ -511,27 +512,27 @@ CombatState dataclass（@132）：回合可变状态；T9 增 `temporary_effects
 | `add_weapon` / `remove_weapon` | 武器管理 | 425 / 428 |
 | `save` / `load` | JSON 存档 | 435 / 441 |
 
-### rules.py (334 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import json/os）
+### rules.py (359 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import copy/json/os）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `roll_stats` | `() -> Stats` | 掷骰生成属性（无 SIZ） | 20 |
-| `_calc_db_build` | `(key)` | DB/BUILD 查表，键=STR+CON//2 | 38 |
-| `calc_derived` | `(stats, age=20, cthulhu_mythos=0)` | 衍生属性：HP=CON//3，删 MOV | 54 |
-| `create_skill_list` | `() -> list[Skill]` | 从 skill_config.json 生成 20 项技能 | 72 |
-| `allocate_skill_points` | `(skills, stats, focus=None, focus_bonus=0)` | U9 属性池分配（池=属性×乘数，均分归属技能，no_pool 除外） | 83 |
-| `calc_occupation_points` | `(formula, stats)` | 职业点公式（旧 Occupation 兼容） | 115 |
-| `apply_age_modifiers` | `(stats, age)` | 年龄修正 | 142 |
-| `get_credit_level` | `(value)` | 信用等级 | 190 |
-| `create_default_unarmed` | - | 默认徒手武器 | 203 |
-| `load_occupations` | `(path)` | 旧职业 JSON 加载（兼容） | 217 |
-| `load_occupation_labels` | `(path=None)` | U9 职业标签加载（occupation_labels.json） | 235 |
-| `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 245 |
-| `opposed_check` | `(att_value, def_value) -> ("win"/"lose"/"tie", detail)` | **统一资源层对抗检定纯函数**：等级>技能值>平局；战斗/探索两侧复用 | 281 |
-| `_opposed_roll` / `_TIER_RANK` | - | 单侧掷骰+四级判定 / 等级序表 | 266 / 263 |
-| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表（mp_recovery_per_hour/timed_default_minutes/buff_damage_floor）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 301 / 306 |
-| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 311 |
-| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段类型严格校验（`type is`，bool 不混入 int，不符回缺省）+ 模块级缓存（每次返回副本，防调用方污染）；文件缺失/损坏静默回缺省。后续 MP 恢复/timed 默认时长/buff 减伤下限等 effect 任务统一从此读取 | 317 |
+| `roll_stats` | `() -> Stats` | 掷骰生成属性（无 SIZ） | 21 |
+| `_calc_db_build` | `(key)` | DB/BUILD 查表，键=STR+CON//2 | 39 |
+| `calc_derived` | `(stats, age=20, cthulhu_mythos=0)` | 衍生属性：HP=CON//3，删 MOV | 55 |
+| `create_skill_list` | `() -> list[Skill]` | 从 skill_config.json 生成 20 项技能 | 73 |
+| `allocate_skill_points` | `(skills, stats, focus=None, focus_bonus=0)` | U9 属性池分配（池=属性×乘数，均分归属技能，no_pool 除外） | 84 |
+| `calc_occupation_points` | `(formula, stats)` | 职业点公式（旧 Occupation 兼容） | 116 |
+| `apply_age_modifiers` | `(stats, age)` | 年龄修正 | 143 |
+| `get_credit_level` | `(value)` | 信用等级 | 191 |
+| `create_default_unarmed` | - | 默认徒手武器 | 204 |
+| `load_occupations` | `(path)` | 旧职业 JSON 加载（兼容） | 218 |
+| `load_occupation_labels` | `(path=None)` | U9 职业标签加载（occupation_labels.json） | 236 |
+| `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 246 |
+| `opposed_check` | `(att_value, def_value) -> ("win"/"lose"/"tie", detail)` | **统一资源层对抗检定纯函数**：等级>技能值>平局；战斗/探索两侧复用 | 282 |
+| `_opposed_roll` / `_TIER_RANK` | - | 单侧掷骰+四级判定 / 等级序表 | 267 / 264 |
+| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表 10 键（F2：mp_recovery_per_hour/timed_default_minutes/buff_damage_floor/stat_roll_multiplier/skill_value_cap/unarmed_damage/derived/db_build_table/age_modifiers/credit_rating_table，与 data/game_config.json 逐键镜像）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 302 / 331 |
+| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 336 |
+| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段类型严格校验（`type is`，bool 不混入 int，不符回缺省；嵌套键顶层类型不符整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。后续 MP 恢复/timed 默认时长/buff 减伤下限/F2 衍生查表等任务统一从此读取 | 342 |
 
 ### serialization.py (195 行) — v2.2：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载；v2.2 增 timed_effects
 

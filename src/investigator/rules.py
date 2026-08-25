@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
@@ -302,6 +303,30 @@ _GAME_CONFIG_DEFAULTS = {
     "mp_recovery_per_hour": 1,     # MP 每小时恢复点数
     "timed_default_minutes": 30,   # timed 原子缺省持续分钟
     "buff_damage_floor": 0,        # 战斗 buff 减伤后伤害下限
+    "stat_roll_multiplier": 5,     # 属性掷骰总乘数(U9: 3D6*5 / (2D6+6)*5)
+    "skill_value_cap": 99,         # 技能值上限
+    "unarmed_damage": "1D3+DB",    # 默认徒手武器伤害
+    "derived": {                   # 衍生公式参数(除数/基数)
+        "hp_divisor": 3, "mp_divisor": 5, "dodge_divisor": 2, "san_max_base": 99,
+    },
+    "db_build_table": [            # DB/BUILD 查表(键=STR+CON//2,max_key None=兜底行)
+        {"max_key": 64, "db": "-2", "build": -2},
+        {"max_key": 84, "db": "-1", "build": -1},
+        {"max_key": 124, "db": "0", "build": 0},
+        {"max_key": 164, "db": "+1D4", "build": 1},
+        {"max_key": 204, "db": "+1D6", "build": 2},
+        {"max_key": None, "db": "+2D6", "build": 3},
+    ],
+    "age_modifiers": {             # 年龄修正(start_age 起每 10 年一档)
+        "start_age": 40, "max_tier": 4,
+        "app_penalties": [-5, -10, -15, -20, -25],
+        "phys_penalties": [0, -5, -10, -20, -40],
+        "edu_bonuses": [5, 10, 15, 20, 25],
+    },
+    "credit_rating_table": [       # 信用评级 [阈值, 标签](升序)
+        [0, "身无分文"], [5, "拮据"], [10, "一般"], [20, "中等"],
+        [30, "宽裕"], [50, "富裕"], [70, "富有"], [90, "极富"],
+    ],
 }
 _CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "game_config.json")
@@ -331,4 +356,4 @@ def get_game_config() -> dict:
         except (OSError, ValueError):
             pass
         _game_config_cache = cfg
-    return dict(_game_config_cache)
+    return copy.deepcopy(_game_config_cache)

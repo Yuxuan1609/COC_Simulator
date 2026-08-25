@@ -47,9 +47,7 @@ def test_non_dict_json_falls_back(monkeypatch, tmp_path):
     p.write_text("[]", encoding="utf-8")
     monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
     cfg = rules.get_game_config()
-    assert cfg == {"mp_recovery_per_hour": 1,
-                   "timed_default_minutes": 30,
-                   "buff_damage_floor": 0}
+    assert cfg == rules._GAME_CONFIG_DEFAULTS   # 逐键等于缺省表(F2 扩键后共 10 键)
 
 
 def test_bool_value_rejected_for_int_default(monkeypatch, tmp_path):
@@ -84,3 +82,41 @@ def test_cache_hit_no_reread_then_reset(monkeypatch, tmp_path):
     assert rules.get_game_config()["mp_recovery_per_hour"] == 2   # 缓存,不重读
     rules.reset_game_config_cache()
     assert rules.get_game_config()["mp_recovery_per_hour"] == 3   # reset 后读新路径
+
+
+def test_new_keys_present():
+    """F2 收编键齐全(默认值)。"""
+    cfg = rules.get_game_config()
+    assert cfg["stat_roll_multiplier"] == 5
+    assert cfg["skill_value_cap"] == 99
+    assert cfg["unarmed_damage"] == "1D3+DB"
+    assert cfg["derived"] == {"hp_divisor": 3, "mp_divisor": 5,
+                              "dodge_divisor": 2, "san_max_base": 99}
+    assert len(cfg["db_build_table"]) == 6
+    assert cfg["db_build_table"][-1] == {"max_key": None, "db": "+2D6", "build": 3}
+    assert cfg["age_modifiers"]["start_age"] == 40
+    assert cfg["age_modifiers"]["app_penalties"] == [-5, -10, -15, -20, -25]
+    assert len(cfg["credit_rating_table"]) == 8
+    assert cfg["credit_rating_table"][0] == [0, "身无分文"]
+
+
+def test_nested_config_deep_copy():
+    """嵌套结构返回深拷贝:改返回值不污染缓存。"""
+    cfg1 = rules.get_game_config()
+    cfg1["derived"]["hp_divisor"] = 99
+    cfg1["db_build_table"][0]["db"] = "HACK"
+    cfg2 = rules.get_game_config()
+    assert cfg2["derived"]["hp_divisor"] == 3
+    assert cfg2["db_build_table"][0]["db"] == "-2"
+
+
+def test_nested_type_mismatch_falls_back(monkeypatch, tmp_path):
+    """嵌套键类型不匹配回退默认。"""
+    p = tmp_path / "game_config.json"
+    p.write_text(json.dumps({"derived": 3, "db_build_table": "x",
+                             "credit_rating_table": 9}), encoding="utf-8")
+    monkeypatch.setattr(rules, "_CONFIG_PATH", str(p))
+    cfg = rules.get_game_config()
+    assert cfg["derived"]["hp_divisor"] == 3
+    assert cfg["db_build_table"][0]["db"] == "-2"
+    assert cfg["credit_rating_table"][0] == [0, "身无分文"]
