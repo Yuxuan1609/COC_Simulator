@@ -106,6 +106,56 @@ def _apply_damage_multiplier(damage: int, damage_type: str, multipliers: dict) -
     return max(0, int(damage * mult))
 
 
+def _san_loss_roll(formula: str) -> int:
+    """SAN 损失公式掷骰:纯数字直接取值,骰式走 roll_formula。
+
+    (roll_formula 只吃骰式,纯数字 "3"/"0" 不匹配返 0,故本地兼容。)
+    """
+    from utils import roll_formula
+    s = str(formula).strip()
+    if re.fullmatch(r"\d+", s):
+        return int(s)
+    return roll_formula(s)
+
+
+def parse_san_loss(san_loss: str) -> list:
+    """解析库 san_loss 字段 "0/1D4 (目睹), 1/1D6 (被攻击)"
+
+    -> [(成功公式, 失败公式, 情境注释), ...]。空/坏组跳过。"""
+    groups = []
+    for part in (san_loss or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        note = ""
+        if "(" in part and part.endswith(")"):
+            i = part.index("(")
+            note = part[i + 1:-1]
+            part = part[:i].strip()
+        m = re.match(r"^(\S+?)\s*/\s*(\S+)$", part)
+        if not m:
+            continue
+        groups.append((m.group(1), m.group(2), note))
+    return groups
+
+
+def _san_check_and_lose(san: int, success_formula: str, fail_formula: str) -> tuple:
+    """COC 7th 遭遇理智检定:D100 <= 当前 SAN 为成功;成功掉 success、失败掉 fail。
+
+    返回 (损失点数, 叙事文本)。单次损失>=5 记 log(临时疯狂条件,F5 未实现)。"""
+    import logging
+    roll = random.randint(1, 100)
+    ok = roll <= san
+    loss = max(0, _san_loss_roll(success_formula if ok else fail_formula))
+    if loss >= 5:
+        logging.getLogger("combat").info(
+            "[san] 单次损失 %d >= 5(临时疯狂条件;疯狂体系 ISSUES F5 未实现)", loss)
+    tier_txt = "成功" if ok else "失败"
+    text = (f"理智检定{tier_txt}(D100={roll}/{san})"
+            + (f"，失去 {loss} 点 SAN" if loss else "，未失去 SAN"))
+    return loss, text
+
+
 # ── Data structures ──
 
 @dataclass

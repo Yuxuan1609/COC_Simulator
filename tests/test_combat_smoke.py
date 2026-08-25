@@ -679,6 +679,43 @@ class TestRunGameControlGuard:
             "跳过叙事'被攫住无法动弹'在 CLI 敌方行动行可见"
 
 
+class TestSanCheckFunctions:
+    """遭遇 SAN check 通路(ISSUES P0):解析+检定纯函数。"""
+
+    def test_parse_san_loss_groups(self):
+        from game.combat import parse_san_loss
+        # 单组无注释
+        assert parse_san_loss("0/1D6") == [("0", "1D6", "")]
+        # 多组带情境注释
+        got = parse_san_loss("0/1D4 (目睹), 1/1D6 (被攻击)")
+        assert got == [("0", "1D4", "目睹"), ("1", "1D6", "被攻击")]
+        # 注释自由文本
+        assert parse_san_loss("0/1D2 (目睹他们空洞的眼神)") == [("0", "1D2", "目睹他们空洞的眼神")]
+        # 空/坏格式
+        assert parse_san_loss("") == []
+        assert parse_san_loss(",,") == []
+        assert parse_san_loss("乱码") == []
+
+    def test_san_check_and_lose_success_and_fail(self, monkeypatch):
+        from game import combat
+        # SAN=50;强制 roll=30(<=50 成功):掉成功组(固定 2)
+        # combat.random 与 utils.random 为同一模块对象,patch 一处 D100/骰面两用
+        monkeypatch.setattr(combat.random, "randint", lambda a, b: 30 if b == 100 else 1)
+        loss, text = combat._san_check_and_lose(50, "2", "1D6")
+        assert loss == 2 and "成功" in text and "2" in text
+        # 强制 roll=80(>50 失败):掉失败组 1D6(骰面强制 1 点)
+        monkeypatch.setattr(combat.random, "randint", lambda a, b: 80 if b == 100 else 1)
+        loss, text = combat._san_check_and_lose(50, "2", "1D6")
+        assert loss == 1 and "失败" in text
+        # SAN=0:roll>=1 永失败(当前 patch roll=80>0),掉失败组固定 3
+        loss, _ = combat._san_check_and_lose(0, "2", "3")
+        assert loss == 3
+        # 骰式公式:失败组 2D6 逐骰强制 2 点 -> 2+2
+        monkeypatch.setattr(combat.random, "randint", lambda a, b: 80 if b == 100 else 2)
+        loss, _ = combat._san_check_and_lose(50, "0", "2D6")
+        assert loss == 4
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()
