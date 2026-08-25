@@ -750,7 +750,14 @@ class ScenarioWorld:
     def advance_time(self, minutes: int):
         self.clock.advance_time(minutes)
         # Auto-inject time flags into runtime_state
-        for flag, value in self.clock.get_time_flags().items():
+        # (先清旧 day:/time: flag 防长期局累积进 prompt/存档 -- ISSUES B2)
+        current = self.clock.get_time_flags()
+        for prefix in ("day:", "time:"):
+            stale = [k for k in self.runtime_state
+                     if k.startswith(prefix) and k not in current]
+            for k in stale:
+                del self.runtime_state[k]
+        for flag, value in current.items():
             state = self.get_runtime_state(flag)
             state.completed = value
         # 时间钩子(2026-08-21 spec §2.2/§4)

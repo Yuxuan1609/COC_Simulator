@@ -27,7 +27,6 @@
 
 | # | 问题 | 修法/备注 |
 |---|------|----------|
-| B2 | **day:N time flag 随天数累积**进 prompt/存档 | T7 激活既有死代码暴露:advance_time 每次注入 runtime_state 无清理点,长期局 prompt 膨胀。修法:build_snapshot 的 completed 列表排除 `day:` 前缀,或推进时清旧日 flag |
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
 | B4 | **escalation_real pytest 无诊断现场** | `test_escalation_real.py:184` log_dir="" 使日志 no-op,失败需 `python tests/e2e/test_escalation_real.py C E` 手跑 |
 | B5 | **run_step1b_test.py 收集错误** | 依赖 data/modules/深渊第七城/module_raw.txt(用户已删)。修法:测试 fixture 化或删除;当前 `pytest tests/` 报收集错(用 --ignore 隔离) |
@@ -80,6 +79,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-25 | **B2 day:N time flag 随天数累积进 prompt/存档** | advance_time 注入前清旧 `day:`/`time:` 前缀 flag(推进时清理方案,旧档下次推进自动清理无需迁移);tests/e2e/test_deterministic.py TestTimeFlagHygiene 锁定(跨天/时段切换/build_snapshot 三段断言) |
 | 2026-08-24 | **武器库技能名归一缺口**(手枪/步枪/霰弹枪不在 legacy_map -> STR/2 兜底 + warning 刷屏) | 4d62700:legacy_map 追加映射 + test_normalize_weapon_skill_names |
 | 2026-08-24 | LLM flaky 处置约定 | UPDATES 记录:复跑即过不阻塞 |
 | 2026-08-19 | escalation C/E 被挡 | 统一资源层门控 flavor 豁免收口(详见 UPDATES 2026-08-19 汇总) |
