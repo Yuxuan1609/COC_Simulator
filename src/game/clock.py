@@ -22,7 +22,7 @@ class GameClock:
     def time_of_day(self) -> str:
         h = self.hour
         if h < 5:
-            return "夜间"
+            return "凌晨"
         if h < 8:
             return "早晨"
         if h < 17:

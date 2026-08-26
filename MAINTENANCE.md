@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | B16-① GameClock.time_of_day 补凌晨：hour<5 由「夜间」改为「凌晨」（5 时段：凌晨/早晨/白天/黄昏/夜间），与 scenario_core._TIME_CONDITION_TIMES / layered_parser 对齐，times=["凌晨"] 实体可触发；tests/test_clock.py 新建 2 测试（时段边界 + get_time_flags 01:00 出 time:凌晨 不出 time:夜间）；TestTimeFlagHygiene 跨天 hour=0 断言 夜间→凌晨；TDD RED(h=0 得夜间)->GREEN；clock.py 60 行不变 |
 | 2026-08-26 | 测试分层政策：pytest.ini 增 real_llm_smoke marker；S1/S2/S4 + escalation Case A 叠标记；AGENTS.md 增测试验证约定（默认零 API，全量 real_llm 禁单任务后跑） |
 | 2026-08-26 | 规则层盘点+机制缺口归档(文档工作,零代码):COC 规则六域现状盘点(检定/SAN/战斗/成长/恢复/LUCK),核心发现 P0 断裂链 san_loss(数据在库 8/8 敌人,tier1_san_check 死代码零调用)遭遇 SAN check 完全缺失->已接通(50a58b7/66e79ff/ace087b/1ce2ce4 详见各条);ISSUES 归档规则盘点缺口 F5-F9(疯狂/重伤/战斗反应/恢复生态/去重)+B15(fumble 边界)与机制思考缺口 F10-F12(周期性效应/库 schema 作者文档/条件效果);readme 战斗系统节补「遭遇理智检定」条目;UPDATES 增 2026-08-26 工作汇总节 |
 | 2026-08-26 | SAN check 叙事补齐 review 修复（I1+M2，遭遇通路另两条战斗路径叙事不可见）--① src/game/combat.py `run_combat`（game_loop 自动战斗路径）终局叙事前置 san_log @417-421（CombatResult.narrative 开头插 "\n".join(state.san_log)+"\n" 后清空，镜像 _build_single_round_result 渲染即清语义；该路径不 build_single_round_result，原实现 _generate_combat_narrative 不读 san_log，玩家看不到目睹 check 文本）；② run_game.py CLI `_run_interactive_combat` 两处：进入战斗打印后逐行打印 san_log+清空 @370-373；命中显示硬编码"name用weapon击中！D100=x 造成N点伤害"改用 ea.narrative（已含敌名/武器/伤害句，可能追加"恐惧侵蚀"SAN check 文本）+D100 骰值前缀保留防信息丢失 @504-506（原行 D100 信息 narrative 不带）；③ M2：`parse_san_loss` 非空 raw 解析结果为空时记 combat logger debug（"[san] san_loss 无法解析: %r" 原文回显 @141-143，防未来数据坏分隔符静默禁用；空 raw/可解析输入零日志）；④ docs/ISSUES.md F9 追加设计注记：每轮情境组（如'0/1D20 (每轮在雾中停留)'）无触发点消费静默+multi_attack 每命中各一检加速 SAN 流失，与去重一并优化（不改状态）。TDD：tests/test_combat_smoke.py 增 2 测试（test_run_combat_narrative_includes_san_log：强制失败骰 roll=90 双方互不命中 draw，断言 CombatResult.narrative 含"理智检定"+敌名；test_parse_san_loss_garbage_logs_debug：caplog 断言空 raw/可解析输入零日志+坏输入 debug 原文回显），RED(2 failed)->GREEN；run_game.py 打印点 grep 代码级确认（CLI 无 pytest 覆盖惯例，不加强求）；test_combat_smoke 42 passed（基线 40+2）；全量回归 304 passed / 20 deselected（基线 302+2）；combat.py 1495->1505 行/run_game.py 601->606 行，combat.py 两表行号列 grep 实测全表对齐（_san_check_and_lose 142->147/run_combat 228->233/run_single_round 424->434/_build_single_round_result 588->598/_generate_combat_narrative 639->654/_init_combat 725->735/_match_action 769->802/_get_player_actions 801->834/_resolve_player_action 865->898/_resolve_enemy_action 1150->1160/_tick 1218->1228 等，含 66e79ff 后遗留漂移顺手修正；CombatSystem 类头 @206->212） |
@@ -371,7 +372,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 | 成员 | 说明 | 行号 |
 |------|------|------|
-| `day` / `hour` / `time_of_day` | property：分钟 → 天/小时/5 时段（夜间/早晨/白天/黄昏） | 14 / 18 / 22 |
+| `day` / `hour` / `time_of_day` | property：分钟 → 天/小时/5 时段（凌晨 h<5 / 早晨 h<8 / 白天 h<17 / 黄昏 h<20 / 夜间） | 14 / 18 / 22 |
 | `advance_time` | `(minutes)` 推进时钟 | 34 |
 | `get_time_flags` | `{day:N:True, time:period:True}` | 37 |
 | `to_dict` / `from_dict` | 序列化 | 43 / 54 |

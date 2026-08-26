@@ -1270,16 +1270,16 @@ class TestTimeFlagHygiene:
         assert "day:0" in world.runtime_state
         assert "time:早晨" in world.runtime_state
 
-        world.advance_time(18 * 60)  # game_time=1440: day 1, hour 0(夜间)
+        world.advance_time(18 * 60)  # game_time=1440: day 1, hour 0(凌晨)
         assert "day:1" in world.runtime_state
         assert "day:0" not in world.runtime_state
         # time flag 只保留当前时段
         tods = [k for k in world.runtime_state if k.startswith("time:")]
-        assert tods == ["time:夜间"]
+        assert tods == ["time:凌晨"]
 
         world.advance_time(8 * 60)    # game_time=1920: day 1, hour 8(白天)
         assert "time:白天" in world.runtime_state
-        assert "time:夜间" not in world.runtime_state
+        assert "time:凌晨" not in world.runtime_state
 
         # build_snapshot completed 列表不再累积旧 day flag
         snap = world.build_snapshot()
