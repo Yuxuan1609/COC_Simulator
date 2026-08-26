@@ -211,6 +211,8 @@ class PipelineConfig:
     #   False = 每步完成后暂停 → [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出
     start_from: str = "step_1"
     #   断点续跑起点: step_1 | step_2a | step_2bc | step_3a | step_3b | step_35 | phase_1 | phase_2
+    resume_dir: str = ""
+    #   续跑时指向已有中间结果目录（含 step_1/ 等）。空则取 output_dir 下最新时间戳子目录
     max_retries: int = 3
     #   每步 LLM 调用（含 JSON 解析失败）的最大重试次数
     parallel_workers: int = 4
@@ -547,6 +549,88 @@ def _apply_step_artifact(runner: "InteractiveRunner", path: Path) -> None:
         runner.phase1_clean = data
 
 
+_STEP_ORDER = ["step_1", "step_2a", "step_2bc", "step_3a", "step_3b", "step_35", "phase_2"]
+
+_STEP_ARTIFACTS = {
+    "step_1": [
+        ("step_1", "1a_structured_extraction.json"),
+        ("step_1", "1b_condensed_text.txt"),
+    ],
+    "step_2a": [("step_2a", "2a_interactions.json")],
+    "step_2bc": [
+        ("step_2bc", "2b_combined.json"),
+        ("step_2bc", "2c_l1.json"),
+        ("step_2bc", "2c_l3.json"),
+    ],
+    "step_3a": [
+        ("step_3a", "3a_dedup_conflict.json"),
+        ("step_25", "25_npc_profiles.json"),
+    ],
+    "step_3b": [("step_3b", "3b_cross_check.json")],
+    "step_35": [
+        ("step_35", "35_dependency_graph.json"),
+        ("phase_1", "phase1_style_preview.json"),
+    ],
+}
+
+
+def _normalize_start_from(start_from: str) -> str:
+    if start_from == "phase_1":
+        return "step_35"
+    return start_from
+
+
+def _prior_artifact_paths(run_dir: Path, start_from: str) -> list[Path]:
+    start_from = _normalize_start_from(start_from)
+    if start_from not in _STEP_ORDER:
+        raise ValueError(f"未知起始步骤: {start_from}")
+    idx = _STEP_ORDER.index(start_from)
+    paths = []
+    for step in _STEP_ORDER[:idx]:
+        for sub, name in _STEP_ARTIFACTS.get(step, []):
+            paths.append(Path(run_dir) / sub / name)
+    return paths
+
+
+def _latest_run_dir(root: Path) -> Path | None:
+    if not root.is_dir():
+        return None
+    subs = [p for p in root.iterdir() if p.is_dir()]
+    if not subs:
+        return None
+    return max(subs, key=lambda p: p.name)
+
+
+def _resolve_resume_dir(config: "PipelineConfig") -> Path:
+    if config.resume_dir:
+        p = Path(config.resume_dir)
+        return p if p.is_absolute() else PROJECT_ROOT / p
+    latest = _latest_run_dir(PROJECT_ROOT / config.output_dir)
+    if latest is None:
+        print(f"错误：找不到可续跑目录: {PROJECT_ROOT / config.output_dir}")
+        sys.exit(1)
+    return latest
+
+
+def _hydrate_prior_steps(runner: "InteractiveRunner", start_from: str) -> None:
+    """从 runner.output_dir 加载 start_from 之前各步中间产物。"""
+    start_from = _normalize_start_from(start_from)
+    paths = _prior_artifact_paths(runner.output_dir, start_from)
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        listed = ", ".join(str(p) for p in missing)
+        raise FileNotFoundError(f"续跑缺少中间文件: {listed}")
+    for p in paths:
+        _apply_step_artifact(runner, p)
+    if _STEP_ORDER.index(start_from) > _STEP_ORDER.index("step_3a"):
+        runner.l2_assembled = _assemble_l2(
+            runner.interactions, runner.events, runner.auto_triggers,
+            runner.scene_movements, runner.l1_data,
+            npc_profiles=runner.npc_profiles,
+            boss_encounters=[],
+        )
+
+
 class InteractiveRunner:
     """管线运行器：自动模式（委托 run_pipeline）或手动步进模式。
 
@@ -556,9 +640,13 @@ class InteractiveRunner:
 
     def __init__(self, config: PipelineConfig):
         self.config = config
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.output_dir = PROJECT_ROOT / config.output_dir / self.timestamp
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        if config.start_from != "step_1":
+            self.output_dir = _resolve_resume_dir(config)
+            self.timestamp = self.output_dir.name
+        else:
+            self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.output_dir = PROJECT_ROOT / config.output_dir / self.timestamp
+            self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # LLM 日志
         self.llm_logger = LLMLogger(self.output_dir)
@@ -1230,10 +1318,6 @@ def _do_phase2_finalize(runner: InteractiveRunner, verbose: bool = True):
 #  主入口
 # ═══════════════════════════════════════════════════════════════
 
-# 可跳过的步骤映射（start_from 使用）
-_STEP_ORDER = ["step_1", "step_2a", "step_2bc", "step_3a", "step_3b", "step_35", "phase_2"]
-
-
 def run_interactive(config: PipelineConfig):
     """手动步进模式：逐步执行，每步可暂停/重试/编辑/改配置。"""
     runner = InteractiveRunner(config)
@@ -1265,12 +1349,13 @@ def run_interactive(config: PipelineConfig):
     # 保存配置快照
     config.to_json(str(runner.output_dir / "config.json"))
 
-    skip_until = config.start_from if config.start_from != "step_1" else None
+    skip_until = _normalize_start_from(config.start_from) if config.start_from != "step_1" else None
     skip_mode = skip_until is not None
 
     if skip_mode:
         print(f"\n  断点续跑模式，跳过 {skip_until} 之前的步骤")
-        print(f"  确保中间文件存在于: {runner.output_dir}")
+        print(f"  中间目录: {runner.output_dir}")
+        _hydrate_prior_steps(runner, config.start_from)
         input("  按 Enter 继续...")
 
     # ── 步骤列表 ──
@@ -1364,10 +1449,14 @@ def run_auto(config: PipelineConfig):
     ]
 
     t0 = time.time()
-    skip_mode = config.start_from != "step_1"
+    start_from = _normalize_start_from(config.start_from)
+    skip_mode = start_from != "step_1"
+    if skip_mode:
+        print(f"  [续跑] 加载中间产物: {runner.output_dir}")
+        _hydrate_prior_steps(runner, start_from)
     for step_name, step_fn in steps:
         if skip_mode:
-            if step_name == config.start_from:
+            if step_name == start_from:
                 skip_mode = False
                 print(f"  [续跑] 从 {step_name} 开始执行")
             else:
@@ -1438,6 +1527,8 @@ def main():
     parser.add_argument("--start-from", type=str,
                         choices=VALID_START_FROM,
                         help="断点续跑起始步骤")
+    parser.add_argument("--resume-dir", type=str,
+                        help="续跑中间目录（含 step_1/ 等）；缺省取 output_dir 下最新时间戳子目录")
     parser.add_argument("--model", type=str,
                         choices=VALID_MODELS,
                         help="LLM 模型（覆盖配置文件，JSON 和文本模式同时设置）")
@@ -1478,6 +1569,8 @@ def main():
         config.auto_mode = True
     if args.start_from:
         config.start_from = args.start_from
+    if args.resume_dir:
+        config.resume_dir = args.resume_dir
     if args.model:
         config.json_model = args.model
         config.text_model = args.model

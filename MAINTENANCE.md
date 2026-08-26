@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | B18 断点续跑回灌：`PipelineConfig.resume_dir`；`_hydrate_prior_steps`@615 按 `_STEP_ARTIFACTS` 加载 start_from 之前产物（缺文件 FileNotFoundError）；续跑时 `InteractiveRunner` 复用 resume_dir/最新 timestamp 目录不再新建；run_interactive/run_auto 跳步前 hydrate；CLI `--resume-dir`；launcher `validate_pipeline` 改查 data/debug 中间产物不再查 modules 最终 JSON。TDD：test_pipeline_resume 增 hydrate 成功/缺文件/resume_dir 复用 3 测试。run_pipeline.py 1548->1641 行 |
 | 2026-08-26 | B17 `_handle_edit` 回灌：新增模块级 `_apply_step_artifact(runner, path)`@480（InteractiveRunner 类前），按文件名把磁盘中间产物写回 runner 字段（1a/1b/2a/2b/2c_l1/2c_l3/3a/25/3b/35/phase1；未知文件名 ValueError「无法回灌」；缺文件 FileNotFoundError；JSON 损坏 ValueError「中间文件损坏」）；`_handle_edit`@643 保存确认后调 `_apply_step_artifact`，失败打印错误不假装已加载。TDD：tests/test_pipeline_resume.py 新建 5 测试（1a scenes/2a interactions/missing/unknown/bad json），RED(ImportError)->GREEN。不实现 `_hydrate_prior_steps`/resume_dir（Task 5）。run_pipeline.py 1474->1548 行 |
 | 2026-08-26 | B16-② Judge.check_auto_triggers 补 time_condition：兜底/AT 点火路径与 keeper parse 路径对齐，list 先 json.dumps 再 check_time_condition(tc, day, tod)，不满足跳过；空 []/"[]" 仍放行。TDD：tests/e2e/test_deterministic.py 增 TestAutoTriggerTimeCondition 2 测试（白天独立 world 凌晨 AT 不触发防 completed 假绿 + 凌晨独立 world 触发；空 time_condition 仍触发），RED(白天仍点火)->GREEN；judge.py 551->556 行 |
 | 2026-08-26 | B16-① GameClock.time_of_day 补凌晨：hour<5 由「夜间」改为「凌晨」（5 时段：凌晨/早晨/白天/黄昏/夜间），与 scenario_core._TIME_CONDITION_TIMES / layered_parser 对齐，times=["凌晨"] 实体可触发；tests/test_clock.py 新建 2 测试（时段边界 + get_time_flags 01:00 出 time:凌晨 不出 time:夜间）；TestTimeFlagHygiene 跨天 hour=0 断言 夜间→凌晨；TDD RED(h=0 得夜间)->GREEN；clock.py 60 行不变 |
@@ -104,22 +105,23 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_load_document` | `(path) -> str` | 按扩展名加载 .docx/.txt/.pdf | 38 |
 | `_pick_file_gui` | `() -> str` | tkinter 文件对话框选文档 | 66 |
 | `_pick_file_scan` | `() -> str` | 扫描当前目录列文档供选择 | 90 |
-| `PipelineConfig` | dataclass | 管线配置（路径/模型/温度/执行/注入开关），to_dict/to_json/from_dict/from_json/from_wizard | 176 |
-| `LLMLogger` | `(output_dir)` | 包装 llm_json/llm_text，每次调用保存 prompt+response 到 `_llm_calls/<n>/`；wrap_json @371 / wrap_text @423 / call_log @467 | 352 |
-| `PipelineAborted` | exception | 用户中止管线 | 475 |
-| `_apply_step_artifact` | `(runner, path)` | 按文件名把磁盘中间产物回灌 InteractiveRunner 字段（1a scenes/characters、1b condensed+chapters、2a/2b/2c/3a/25/3b/35/phase1）；未知名 ValueError、缺文件 FileNotFoundError、JSON 损坏 ValueError。Task 5 `_hydrate_prior_steps` 将复用 | 480 |
-| `InteractiveRunner` | `(config)` | 运行器：`_step_dir`@599 `_save_summary`@604 `_prompt_user`@608 `_handle_retry`@622 `_handle_edit`@643（保存后 `_apply_step_artifact` 回灌，失败不假装已加载） `_handle_config_change`@674 `_interact`@732 | 550 |
-| `_RetryStep` | exception | 重试当前步骤 | 750 |
-| `_do_step1` | `(runner, verbose)` | Step1a 结构化提取 + 1b 精修（并行）；Step1a prompt 含 runner.ilib/runner.slib 双库摘要 | 759 |
-| `_do_step2a` | `(runner, verbose)` | Step2a interactions 提取；技能名白名单经 `load_skill_checks()`（U9 起读 skill_config） | 818 |
-| `_do_step2bc` | `(runner, verbose)` | Step2b+2c: events+AT + L1 + L3（并行） | 852 |
-| `_do_step3a_25` | `(runner, verbose)` | Step3a 去重冲突 + 2.5 NPC 档案（并行）→ 绑定 → Boss 遭遇 → 组装 L2 | 906 |
-| `_do_step3b` | `(runner, verbose)` | L1↔L2 交叉核对 + WR0 注入 | 997 |
-| `_do_step35_phase1` | `(runner, verbose)` | Step3.5 依赖图（含循环重试）+ Phase1 约束 | 1031 |
-| `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物；技能名经 `load_skill_checks()`，`stat_names` 已删 SIZ | 1098 |
-| `run_interactive` | `(config)` | 手动步进模式（每步 [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出），支持 start_from 断点续跑；统一资源层：经 `library.loader` 加载 Item/SpellLibrary（core+extensions，T2 起管线也扫扩展库）到 runner.ilib/runner.slib | 1237 |
-| `run_auto` | `(config)` | 自动模式：复用同一组 `_do_step*` 全程无交互（同载双库，经 `library.loader` 含 extensions） | 1319 |
-| `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--model/--thinking-off/--weapon-lib 等 | 1418 |
+| `PipelineConfig` | dataclass | 管线配置（路径/模型/温度/执行/注入开关 + resume_dir），to_dict/to_json/from_dict/from_json/from_wizard | 176 |
+| `LLMLogger` | `(output_dir)` | 包装 llm_json/llm_text，每次调用保存 prompt+response 到 `_llm_calls/<n>/`；wrap_json @371 / wrap_text @423 / call_log @467 | 354 |
+| `PipelineAborted` | exception | 用户中止管线 | 477 |
+| `_apply_step_artifact` | `(runner, path)` | 按文件名把磁盘中间产物回灌 InteractiveRunner 字段（1a scenes/characters、1b condensed+chapters、2a/2b/2c/3a/25/3b/35/phase1）；未知名 ValueError、缺文件 FileNotFoundError、JSON 损坏 ValueError | 482 |
+| `_hydrate_prior_steps` | `(runner, start_from)` | 加载 start_from 之前各步产物；缺文件 FileNotFoundError；step_3a 之后重组装 l2_assembled | 615 |
+| `InteractiveRunner` | `(config)` | 运行器：续跑复用 resume_dir/最新 timestamp；`_step_dir` `_save_summary` `_prompt_user` `_handle_retry` `_handle_edit`（保存后回灌） `_handle_config_change` `_interact` | 634 |
+| `_RetryStep` | exception | 重试当前步骤 | 838 |
+| `_do_step1` | `(runner, verbose)` | Step1a 结构化提取 + 1b 精修（并行）；Step1a prompt 含 runner.ilib/runner.slib 双库摘要 | 847 |
+| `_do_step2a` | `(runner, verbose)` | Step2a interactions 提取；技能名白名单经 `load_skill_checks()`（U9 起读 skill_config） | 906 |
+| `_do_step2bc` | `(runner, verbose)` | Step2b+2c: events+AT + L1 + L3（并行） | 940 |
+| `_do_step3a_25` | `(runner, verbose)` | Step3a 去重冲突 + 2.5 NPC 档案（并行）→ 绑定 → Boss 遭遇 → 组装 L2 | 994 |
+| `_do_step3b` | `(runner, verbose)` | L1↔L2 交叉核对 + WR0 注入 | 1085 |
+| `_do_step35_phase1` | `(runner, verbose)` | Step3.5 依赖图（含循环重试）+ Phase1 约束 | 1119 |
+| `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物；技能名经 `load_skill_checks()`，`stat_names` 已删 SIZ | 1186 |
+| `run_interactive` | `(config)` | 手动步进模式；start_from≠step_1 时先 `_hydrate_prior_steps` | 1321 |
+| `run_auto` | `(config)` | 自动模式；续跑同样 hydrate | 1404 |
+| `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--resume-dir/--model/--thinking-off/--weapon-lib 等 | 1507 |
 
 ### run_step0.py (184 行) — 小说 → 模组文本转写
 
@@ -898,7 +900,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 
 集中路径解析：`IS_FROZEN`（PyInstaller `sys._MEIPASS` / Nuitka `.dist` 后缀检测）、`PROJECT_ROOT`、`FRONTEND_DIR`。
 
-### routers/launcher.py (238 行) — 启动页 API
+### routers/launcher.py (251 行) — 启动页 API
 
 | 端点 | 路由 | 行号 |
 |------|------|------|
@@ -906,7 +908,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `save_config` / `load_config` | `POST/GET /api/config/save\|load`（模型/温度/超时/战斗增强等） | 70 / 95 |
 | `start_step0` | `POST /api/step0/start` → run_step0 子进程 | 100 |
 | `start_pipeline` | `POST /api/pipeline/start` → run_pipeline 子进程 | 140 |
-| `validate_pipeline` | `POST /api/pipeline/validate` | 188 |
+| `validate_pipeline` | `POST /api/pipeline/validate`（查 data/debug 最新 timestamp 的 step_* 产物，不再查 modules 最终 JSON） | 188 |
 
 ### routers/game.py (1191 行) — 游戏 API（核心）
 

@@ -2,7 +2,7 @@ import json, sys, os
 from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from run_pipeline import InteractiveRunner, PipelineConfig, _apply_step_artifact
+from run_pipeline import InteractiveRunner, PipelineConfig, _apply_step_artifact, _hydrate_prior_steps
 
 def _runner(tmp_path):
     cfg = PipelineConfig(output_dir=str(tmp_path), module_name="t")
@@ -56,3 +56,32 @@ def test_apply_bad_json_raises(tmp_path):
     r = _runner(tmp_path)
     with pytest.raises(ValueError, match="中间文件损坏"):
         _apply_step_artifact(r, p)
+
+def test_hydrate_from_step1_then_start_2a(tmp_path):
+    run_dir = tmp_path / "20260101_000000"
+    (run_dir / "step_1").mkdir(parents=True)
+    (run_dir / "step_1" / "1a_structured_extraction.json").write_text(
+        json.dumps({"scenes": [{"name": "S"}], "characters": []}), encoding="utf-8")
+    (run_dir / "step_1" / "1b_condensed_text.txt").write_text("## 章\n正文", encoding="utf-8")
+    r = _runner(tmp_path)
+    r.output_dir = run_dir
+    _hydrate_prior_steps(r, start_from="step_2a")
+    assert r.scenes == [{"name": "S"}]
+    assert r.step1a["scenes"][0]["name"] == "S"
+
+def test_runner_resume_dir_reuses_existing(tmp_path):
+    run_dir = tmp_path / "20260101_000000"
+    run_dir.mkdir()
+    cfg = PipelineConfig(output_dir=str(tmp_path), start_from="step_2a",
+                         resume_dir=str(run_dir))
+    r = InteractiveRunner(cfg)
+    assert r.output_dir.resolve() == run_dir.resolve()
+    assert not (tmp_path / r.timestamp).exists() or r.timestamp == "20260101_000000"
+
+def test_hydrate_missing_prior_raises(tmp_path):
+    import pytest
+    r = _runner(tmp_path)
+    r.output_dir = tmp_path / "empty"
+    r.output_dir.mkdir()
+    with pytest.raises(FileNotFoundError):
+        _hydrate_prior_steps(r, start_from="step_2a")

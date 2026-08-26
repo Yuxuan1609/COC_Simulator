@@ -203,19 +203,29 @@ async def validate_pipeline(
             '<span class="text-coc-green">将从 Step 1a 开始完整生成</span>'
         )
 
-    mod_dir = output_dir or f"data/modules/{module_name}"
+    from run_pipeline import _prior_artifact_paths, _latest_run_dir, _normalize_start_from
 
-    required = {
-        "step_2a": [f"{mod_dir}/module_step0.txt"],
-        "step_3a": [f"{mod_dir}/module_step0.txt", f"{mod_dir}/l2_keeper.json"],
-        "step_3b": [f"{mod_dir}/l2_keeper.json", f"{mod_dir}/l1_player.json", f"{mod_dir}/l3_designer.json"],
-    }
+    od = (output_dir or "").strip().rstrip("/").rstrip("\\")
+    if not od or od == "data/modules":
+        od = "data/debug"
+    debug_root = PROJECT_ROOT / od
+    run_dir = _latest_run_dir(debug_root)
+    if run_dir is None:
+        return HTMLResponse(
+            f'<span class="text-red-400">找不到中间目录: {debug_root}</span>'
+        )
 
-    files_needed = required.get(start_from, [])
-    if not files_needed:
+    try:
+        needed = _prior_artifact_paths(run_dir, _normalize_start_from(start_from))
+    except ValueError:
         return HTMLResponse('<span class="text-gray-400">未知步骤</span>')
 
-    missing = [f for f in files_needed if not _os.path.exists(str(PROJECT_ROOT / f))]
+    if not needed:
+        return HTMLResponse(
+            '<span class="text-coc-green">将从 Step 1 开始完整生成</span>'
+        )
+
+    missing = [str(p) for p in needed if not p.exists()]
     if missing:
         names = ", ".join(missing)
         return HTMLResponse(
@@ -223,14 +233,13 @@ async def validate_pipeline(
         )
 
     import json as _json
-    for f in files_needed:
-        fp = PROJECT_ROOT / f
+    for fp in needed:
         if fp.suffix == ".json" and fp.exists():
             try:
                 _json.loads(fp.read_text(encoding="utf-8"))
             except Exception:
                 return HTMLResponse(
-                    f'<span class="text-red-400">JSON 格式错误: {f}</span>'
+                    f'<span class="text-red-400">JSON 格式错误: {fp}</span>'
                 )
 
     return HTMLResponse(
