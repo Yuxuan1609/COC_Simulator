@@ -58,7 +58,8 @@ class BossLibrary:
         p = Path(path)
         if not p.exists():
             return
-        data = json.loads(p.read_text(encoding="utf-8"))
+        from library.loader import load_json_object
+        data = load_json_object(str(p))
         for name, bdata in data.items():
             bdata.setdefault("name", name)
             self._bosses[name] = LibraryBoss.from_dict(bdata)

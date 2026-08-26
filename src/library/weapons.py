@@ -105,8 +105,8 @@ class WeaponLibrary:
         self._load_file(path)
 
     def _load_file(self, path: str) -> None:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        from library.loader import load_json_object
+        data = load_json_object(path)
         for item in data.get("items", []):
             weapon = LibraryWeapon.from_dict(item)
             self._weapons[weapon.name] = weapon

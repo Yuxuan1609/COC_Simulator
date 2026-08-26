@@ -4,10 +4,22 @@
 base_dir 参数供测试注入(base_dir 下应有 core/ 与 extensions/)。
 """
 from __future__ import annotations
+import json
 from pathlib import Path
 
 from library.items import ItemLibrary
 from library.spells import SpellLibrary
+
+
+def load_json_object(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"库文件加载失败: {path}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"库文件格式错误(顶层应为 object): {path}")
+    return data
 
 _DATA_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "library"
 

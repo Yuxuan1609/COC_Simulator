@@ -75,6 +75,32 @@ def test_non_dict_library_json_error_names_file(tmp_path):
         load_spell_library(str(base))
 
 
+def test_corrupt_weapons_json_error_names_file(tmp_path):
+    from library.weapons import WeaponLibrary
+    p = tmp_path / "weapons.json"
+    p.write_text("{oops", encoding="utf-8")
+    lib = WeaponLibrary()
+    with pytest.raises(ValueError, match="weapons.json"):
+        lib._load_file(str(p))
+
+
+def test_non_dict_enemies_json_error_names_file(tmp_path):
+    from library.enemies import EnemyLibrary
+    p = tmp_path / "enemies.json"
+    p.write_text("[1, 2]", encoding="utf-8")
+    lib = EnemyLibrary()
+    with pytest.raises(ValueError, match="应为 object"):
+        lib._load_file(str(p))
+
+
+def test_corrupt_bosses_json_error_names_file(tmp_path):
+    from library.bosses import BossLibrary
+    p = tmp_path / "bosses.json"
+    p.write_text("{oops", encoding="utf-8")
+    with pytest.raises(ValueError, match="bosses.json"):
+        BossLibrary(str(p))
+
+
 def test_data_root_cwd_independent(tmp_path, monkeypatch):
     """ISSUES B12:loader 默认路径与 cwd 无关(_DATA_ROOT 为包相对绝对路径锁定)。"""
     monkeypatch.chdir(tmp_path)
