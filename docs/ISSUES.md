@@ -55,6 +55,9 @@
 | F7 | **战斗反应与骰子表达** | 闪避自动成功(玩家 dodge->敌方下次攻击必 miss,无对抗检定,策略退化);反击 fight back 选项无;奖励骰/惩罚骰(bonus/penalty dice)无--模组文本高频;push roll(孤注一掷)无 |
 | F8 | **恢复生态+mythos 增长** | HP 每日自然恢复无(多日模组卡);SAN 恢复(安全环境/心理治疗)无;克苏鲁神话增长通路无(SAN_MAX=99-神话公式与技能列表已就位,@grant_spell 有而 mythos 加值无);advance_time 钩子现成(MP 已走此路) |
 | F9 | **SAN check 遭遇去重** | 当前实现(2026-08-26 接线)每场战斗对每个 enemy_ref check 一次(场内同 ref 多实例只一次);COC 规则是同恐怖源全局首次目睹才 check--需玩家 seen 集合入档。用户拍板:先接链路不去重,之后统一优化。设计注记(2026-08-26 I1 review):每轮情境组(如'0/1D20 (每轮在雾中停留)')当前无触发点消费,静默;multi_attack 敌每命中各一检,叠加不去重会加速 SAN 流失--与去重一并优化 |
+| F10 | **周期性/环境效应**(表达力缺口) | timed/effect 原子只有"到期清除",无周期 tick payload;毒每轮掉 HP/雾中每轮 SAN/诅咒每日发作类模组写法无结构化通道(F9 注记"每轮在雾中停留"即此例)。钩子现成:_tick_time_effects(小时粒度,MP 恢复已走)/_tick_temporary_effects(轮末,buff 递减已走)。方向:effect 原子加 interval(round/hour/day)+payload 原子数组,8 原子体系自然延伸(2026-08-26 机制层思考) |
+| F11 | **库 schema 作者参考文档** | 定位前提"素材能表达"需要作者知道怎么写;五库全字段(enemies/bosses/spells/items/weapons)+san_loss 多情境格式+combat_behavior [flag] 前缀+effect 原子+扩展库放置约定散在 readme 各节与代码。建议 docs/library-schema.md 集中(半天量级,素材生态前置) |
+| F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 
 ## 3. 重构队列(约定:倒数第二)
 

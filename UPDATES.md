@@ -429,3 +429,18 @@
 - timed 只进 Author prompt（编年史 facts），enrich/narrator 经 Author 产出间接感知（架构特性，同 known_spells 通路）
 - 战斗轮叙事对被支配跳过渲染「未命中」不准（叙事层措辞问题，机制正确）；control 对快于玩家的敌人 rounds 有 off-by-one（spec 未规定先手，文档已注明）
 - run_step1b_test.py 收集错误：用户删除 data/modules/深渊第七城/module_raw.txt 所致（pre-existing，非代码问题）
+
+
+## 工作汇总（2026-08-26）
+
+### 已完成
+
+**规则层盘点 + 遭遇 SAN check 通路接通**（P0 断链修复）+ 机制层思考：
+
+- **规则层盘点**（调研输出，零代码）：COC 规则六域现状（检定/SAN/战斗/成长/恢复/LUCK）——检定系统完整（五档 tier+属性/pseudo 归一+未掌握放行）、LUCK 声明式消耗自洽、战斗骨架健康（先攻/多攻击/装甲/buff 减伤）；核心发现 **P0 断裂链**：san_loss 库数据全配（8/8 敌人）而 tier1_san_check 死代码，遭遇 SAN check 完全缺失；缺口分级归档 ISSUES F5-F9/B15
+- **遭遇 SAN check 接通**（50a58b7/66e79ff/ace087b/1ce2ce4）：纯函数（parse_san_loss 多情境解析 "0/1D4 (目睹), 1/1D6 (被攻击)" + _san_check_and_lose D100<=当前SAN）+ 两时点接线（开战目睹按 enemy_ref 场内去重 + 被击中"恐惧侵蚀"）+ san_log 叙事三路径全覆盖（前端首轮渲染/run_combat 终局前缀/CLI 打印，I1 review 修复）；写回复用既有 game_loop/run_game 链路；单次损失>=5 仅 log（疯狂 F5 钩子预留）；跨场不去重（F9 跟踪，用户拍板先接链路）
+- **机制层思考**（对照 41 specs/NEXT-SESSION/readme 待升级）：trait 修正/对峙/@markup 等历史承诺全部活着；法术 spec 无失控承诺已兑现；新缺口归档 **F10 周期性/环境效应**（timed 无周期 tick payload，两钩子现成）/ **F11 库 schema 作者文档**（素材生态前置）/ **F12 条件效果**（敌人特殊能力数值化，等内容需求）；readme 待升级 U3/U4/U7 维持原状（功能层稳定后再说）
+
+### 测试现状
+
+- 默认套件：294 -> **304 passed / 20 deselected**（SAN check 纯函数 2 + 接线 5 + e2e 1 + I1 叙事 2）；库 san_loss 数据全量验证 15 条（core enemies 8 + bosses 3 + templates 2 + testbed 2）全部正确解析
