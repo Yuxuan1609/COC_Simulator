@@ -1285,3 +1285,44 @@ class TestTimeFlagHygiene:
         snap = world.build_snapshot()
         completed = snap["runtime"]["completed"]
         assert "day:0" not in completed and "day:1" in completed
+
+
+class TestAutoTriggerTimeCondition:
+    def _at(self, times):
+        import json
+        return {
+            "id": "AT_DAWN", "entity_type": "auto_trigger",
+            "name": "凌晨低语", "scene": "room_a",
+            "type": "None", "requirement": "", "trigger": "time",
+            "result": "黑暗中传来低语。", "side_effects": [],
+            "difficulty": "None",
+            "time_condition": json.dumps([{"day": "ALL", "times": times}]),
+        }
+
+    def test_dawn_at_fires_only_at_lingchen(self):
+        from game.judge import Judge
+        from game.clock import GameClock
+
+        day_world = make_world({"room_a": make_scene(
+            auto_triggers=[self._at(["凌晨"])])}, "room_a")
+        day_world.clock = GameClock(start_time=12 * 60)  # 白天
+        assert Judge(day_world).check_auto_triggers() == []
+
+        dawn_world = make_world({"room_a": make_scene(
+            auto_triggers=[self._at(["凌晨"])])}, "room_a")
+        dawn_world.clock = GameClock(start_time=60)  # 01:00 凌晨
+        out = Judge(dawn_world).check_auto_triggers()
+        assert len(out) == 1 and out[0].success
+
+    def test_empty_time_condition_still_fires(self):
+        from game.judge import Judge
+        world = make_world({"room_a": make_scene(
+            auto_triggers=[{
+                "id": "AT_ALWAYS", "entity_type": "auto_trigger",
+                "name": "常驻", "scene": "room_a", "type": "None",
+                "requirement": "", "trigger": "enter",
+                "result": "灯在闪。", "side_effects": [],
+                "difficulty": "None", "time_condition": [],
+            }])}, "room_a")
+        out = Judge(world).check_auto_triggers()
+        assert len(out) == 1

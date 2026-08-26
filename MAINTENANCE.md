@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | B16-② Judge.check_auto_triggers 补 time_condition：兜底/AT 点火路径与 keeper parse 路径对齐，list 先 json.dumps 再 check_time_condition(tc, day, tod)，不满足跳过；空 []/"[]" 仍放行。TDD：tests/e2e/test_deterministic.py 增 TestAutoTriggerTimeCondition 2 测试（白天独立 world 凌晨 AT 不触发防 completed 假绿 + 凌晨独立 world 触发；空 time_condition 仍触发），RED(白天仍点火)->GREEN；judge.py 551->556 行 |
 | 2026-08-26 | B16-① GameClock.time_of_day 补凌晨：hour<5 由「夜间」改为「凌晨」（5 时段：凌晨/早晨/白天/黄昏/夜间），与 scenario_core._TIME_CONDITION_TIMES / layered_parser 对齐，times=["凌晨"] 实体可触发；tests/test_clock.py 新建 2 测试（时段边界 + get_time_flags 01:00 出 time:凌晨 不出 time:夜间）；TestTimeFlagHygiene 跨天 hour=0 断言 夜间→凌晨；TDD RED(h=0 得夜间)->GREEN；clock.py 60 行不变 |
 | 2026-08-26 | 测试分层政策：pytest.ini 增 real_llm_smoke marker；S1/S2/S4 + escalation Case A 叠标记；AGENTS.md 增测试验证约定（默认零 API，全量 real_llm 禁单任务后跑） |
 | 2026-08-26 | 规则层盘点+机制缺口归档(文档工作,零代码):COC 规则六域现状盘点(检定/SAN/战斗/成长/恢复/LUCK),核心发现 P0 断裂链 san_loss(数据在库 8/8 敌人,tier1_san_check 死代码零调用)遭遇 SAN check 完全缺失->已接通(50a58b7/66e79ff/ace087b/1ce2ce4 详见各条);ISSUES 归档规则盘点缺口 F5-F9(疯狂/重伤/战斗反应/恢复生态/去重)+B15(fumble 边界)与机制思考缺口 F10-F12(周期性效应/库 schema 作者文档/条件效果);readme 战斗系统节补「遭遇理智检定」条目;UPDATES 增 2026-08-26 工作汇总节 |
@@ -275,19 +276,19 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1343 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1450 |
 
-## src/game/judge.py (551 行) — 确定性闸门（无 LLM 依赖）
+## src/game/judge.py (556 行) — 确定性闸门（无 LLM 依赖）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `_escalate_difficulty` | `(difficulty)` | 难度递增 regular→hard→extreme | 25 |
-| `Judge.check_auto_triggers` | `()` | 触发当前场景满足简单条件的全部 AT | 47 |
-| `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 63 |
-| `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@176-179；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@105） | 78 |
-| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 188 |
-| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截 → NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 273 |
-| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 481 |
-| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 492 / 503 |
-| `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 514 |
+| `Judge.check_auto_triggers` | `()` | 触发当前场景满足简单条件且 time_condition 匹配的全部 AT；list 先 json.dumps 再 check_time_condition(tc, day, tod)，空 []/"[]" 放行 | 47 |
+| `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 68 |
+| `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@181-184；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@110） | 83 |
+| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 193 |
+| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截 → NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 269 |
+| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 477 |
+| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 488 / 499 |
+| `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 510 |
 
 ## src/game/curator.py (68 行) — 策展器
 

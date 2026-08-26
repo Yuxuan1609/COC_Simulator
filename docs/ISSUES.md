@@ -85,6 +85,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-26 | **B16 time_condition 两处静默失效** ① GameClock.time_of_day 补凌晨(hour<5)；② Judge.check_auto_triggers 兜底路径查 time_condition（list 先 dumps） | e371a33 + 本 commit |
 | 2026-08-26 | 遭遇 SAN check 断链->接通（战斗开始目睹按 enemy_ref 去重 check+敌方命中"被攻击"组 check,san_loss 库数据激活,san_log 首轮渲染;跨场不去重 F9 跟踪,疯狂联动 F5 跟踪） | 50a58b7+66e79ff |
 | 2026-08-25 | F2 参数集中化全面收编(rules 六函数+roll_stats 骰面+前端 SAN bar 分母+game_config 10 键/深拷贝/嵌套校验) | 75c88b7+fe9d2bb+bd96769+245234f |
 | 2026-08-25 | **B11 前端 character.py 导出 version 覆写 "2.0" 与核心 v2.2 漂移** | 小修批次 Task9/F2:_build_export meta.version "2.0"->"2.2"(@275);tests/test_frontend_character.py 导出断言同步 2.2 |

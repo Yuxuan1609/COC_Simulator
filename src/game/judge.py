@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from scenario_core import ScenarioWorld, Entity, ActionResult
 
 from game.side_effects import parse_markup_all
-from scenario_core import resolve_graded_result
+from scenario_core import resolve_graded_result, check_time_condition
 
 _MARKUP_STRIP_RE = _re.compile(
     r'\s*@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
@@ -45,17 +45,22 @@ class Judge:
     # ── Auto-triggers ──
 
     def check_auto_triggers(self) -> list[ActionOutcome]:
-        """Check all ATs in current scene. Fire those with simple requirements met."""
+        """Check all ATs in current scene. Fire those with simple requirements and time_condition met."""
         results = []
         node = self.world._current_node()
         if not node:
             return results
-
+        tod = self.world.clock.time_of_day
+        day = self.world.clock.day
         for at in node.auto_triggers:
             if not self._check_simple_requirement(at):
                 continue
-            outcome = self._execute_entity(at)
-            results.append(outcome)
+            tc = at.time_condition if hasattr(at, "time_condition") else ""
+            if isinstance(tc, list):
+                tc = json.dumps(tc, ensure_ascii=False)
+            if not check_time_condition(tc, day, tod):
+                continue
+            results.append(self._execute_entity(at))
         return results
 
     # ── Interactions ──
