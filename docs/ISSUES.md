@@ -33,13 +33,9 @@
 
 | # | 问题 | 备注 |
 |---|------|------|
-| B6 | 战斗轮叙事把被支配跳过渲染"未命中" | 措辞不准,机制正确(combat.py 轮叙事行 + LLM 摘要喂 "--=0 D100=0" 噪声) |
-| B8 | MP 恢复累计器在 MP 已满时仍被消耗 | 满 MP 休息 5 小时后花费 MP 不追回;spec 未规定,影响极小 |
-| B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2" |
+| B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2"（阶段 0 跳过） |
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
-| B13 | weapons/enemies/bosses 库裸 `json.load` 同类缺陷 | B7(0362eba)只修 items/spells(经 loader 的 core+extensions 通路);weapons.py:108/enemies.py:154/bosses.py:61 同款无路径报错+非 dict AttributeError,同类收编时顺修(届时抽 loader 共享 `_load_json_dict` 一次收敛) |
-| B14 | load_skill_config 缓存写入死代码 | utils.py:167 if path is None 在 162 行重赋值后不可达,roll_stats 每次调用重读解析 JSON(实测 0.10s/200 次可接受);修法:拆显式 base 参数 |
-| B15 | fumble 边界偏差:_roll_d100 roll>=96 无条件大失败 | COC 7th 应为 96-100 且>技能值;技能 96+ 时 roll 96-99 被误判(models.py _roll_d100)。低频,规则精度修 |
+| B19 | 角色卡加载失败静默降级默认卡 | frontend/routers/game.py 异常被吞换默认卡;玩家无提示（前端域,按约定不排期） |
 
 ---
 
@@ -85,6 +81,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-26 | **B13 三库裸 json.load / B14 skill_config 缓存死代码 / B15 fumble 边界 / B6 被支配渲染未命中 / B8 满 MP 仍耗累计器** | load_json_object 五库收敛；load_skill_config 默认路径真正缓存；_roll_d100 `roll>=96 and roll>target`；跳过叙事不写未命中；满 MP acc 清零 |
 | 2026-08-26 | **B17 `_handle_edit` 编辑回路无效 + B18 断点续跑不回灌中间状态** | d209787 `_apply_step_artifact` 回灌；本 commit `_hydrate_prior_steps` + resume_dir + launcher 校验改查 debug 中间目录 |
 | 2026-08-26 | **B16 time_condition 两处静默失效** ① GameClock.time_of_day 补凌晨(hour<5)；② Judge.check_auto_triggers 兜底路径查 time_condition（list 先 dumps） | e371a33 + 本 commit |
 | 2026-08-26 | 遭遇 SAN check 断链->接通（战斗开始目睹按 enemy_ref 去重 check+敌方命中"被攻击"组 check,san_loss 库数据激活,san_log 首轮渲染;跨场不去重 F9 跟踪,疯狂联动 F5 跟踪） | 50a58b7+66e79ff |

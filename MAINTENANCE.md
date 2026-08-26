@@ -10,6 +10,12 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | 阶段 0 收口：§1 活跃区余 B1 存读档 / B3 flaky 观察 / B9 control off-by-one 跳过 / B10 备忘 / B19 前端静默降级不排期。B6/B8/B13/B14/B15/B16/B17/B18 已入 §5。验证政策：默认 `pytest tests/ -q`；阶段完成后 `pytest -m real_llm_smoke` |
+| 2026-08-26 | B8 满 MP 不消耗恢复累计器：`_tick_time_effects` 满 MP 时 acc 清零，花费后再从 0 攒。TDD：test_full_mp_does_not_burn_accumulator |
+| 2026-08-26 | B6 被支配跳过不再渲染「未命中」：`_build_single_round_result` 对 weapon="--" / 无法动弹 叙事走跳过行。TDD：test_controlled_skip_round_narrative_not_miss |
+| 2026-08-26 | B15 fumble 边界：`_roll_d100` 改为 roll>=96 且 roll>target（对齐 opposed_check）。TDD：test_fumble_only_when_roll_ge_96_and_above_skill |
+| 2026-08-26 | B14 load_skill_config 缓存：显式 path 不写 cache；默认路径写入 `_SKILL_CONFIG_CACHE`。TDD：test_default_path_is_cached |
+| 2026-08-26 | B13 三库裸 json.load 收敛：loader.load_json_object；items/spells/weapons/enemies/bosses 改走共享函数。TDD：weapons/enemies/bosses 损坏与非 dict 3 测试 |
 | 2026-08-26 | B18 断点续跑回灌：`PipelineConfig.resume_dir`；`_hydrate_prior_steps`@615 按 `_STEP_ARTIFACTS` 加载 start_from 之前产物（缺文件 FileNotFoundError）；续跑时 `InteractiveRunner` 复用 resume_dir/最新 timestamp 目录不再新建；run_interactive/run_auto 跳步前 hydrate；CLI `--resume-dir`；launcher `validate_pipeline` 改查 data/debug 中间产物不再查 modules 最终 JSON。TDD：test_pipeline_resume 增 hydrate 成功/缺文件/resume_dir 复用 3 测试。run_pipeline.py 1548->1641 行 |
 | 2026-08-26 | B17 `_handle_edit` 回灌：新增模块级 `_apply_step_artifact(runner, path)`@480（InteractiveRunner 类前），按文件名把磁盘中间产物写回 runner 字段（1a/1b/2a/2b/2c_l1/2c_l3/3a/25/3b/35/phase1；未知文件名 ValueError「无法回灌」；缺文件 FileNotFoundError；JSON 损坏 ValueError「中间文件损坏」）；`_handle_edit`@643 保存确认后调 `_apply_step_artifact`，失败打印错误不假装已加载。TDD：tests/test_pipeline_resume.py 新建 5 测试（1a scenes/2a interactions/missing/unknown/bad json），RED(ImportError)->GREEN。不实现 `_hydrate_prior_steps`/resume_dir（Task 5）。run_pipeline.py 1474->1548 行 |
 | 2026-08-26 | B16-② Judge.check_auto_triggers 补 time_condition：兜底/AT 点火路径与 keeper parse 路径对齐，list 先 json.dumps 再 check_time_condition(tc, day, tod)，不满足跳过；空 []/"[]" 仍放行。TDD：tests/e2e/test_deterministic.py 增 TestAutoTriggerTimeCondition 2 测试（白天独立 world 凌晨 AT 不触发防 completed 假绿 + 凌晨独立 world 触发；空 time_condition 仍触发），RED(白天仍点火)->GREEN；judge.py 551->556 行 |
@@ -261,7 +267,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 |------|------|------|------|
 | `run_combat` | `(combat_init, player_action="", max_rounds=20) -> CombatResult` | **主入口**：完整战斗循环（确定性 → LLM 修正 → 结算 → Boss 阶段；轮末 @405 `state.round += 1` 前调 `_tick_temporary_effects`；终局叙事前置 san_log 一次性渲染 @417-421（I1，自动战斗路径目睹 check 文本玩家可见）） | 233 |
 | `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制；轮末 @594 `state.round += 1` 前调 `_tick_temporary_effects`） | 434 |
-| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict（胜负判定/回合叙事；F2 增 player_san_max 键 @635；2026-08-26 轮叙事 lines 前插 state.san_log 一次性渲染 @633-636（渲染即清空）） | 598 |
+| `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict；被支配跳过（weapon="--"/无法动弹）不渲染「未命中」；san_log 一次性渲染 | 598 |
 | `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 654 |
 | `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻；player_san_max=player.derived.SAN_MAX（F2 @798）；2026-08-26 末尾目睹 SAN check @782-799：expanded_enemies 按 enemy_ref 去重（同 ref 群组只一次，跨战斗不去重 F9 跟踪），目睹组=注释不含"攻击"的第一组，扣 state.player_san（下限 0）+san_log 追加叙事行 | 735 |
 | `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 802 |
@@ -470,7 +476,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles, item_library, spell_library)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager/WorldChronicle（统一资源层：item_library/spell_library 挂载，init_game 注入；时间钩子：`_mp_regen_acc` MP 恢复分钟累计器 @699，不序列化） | 663 |
 | `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 722–742 |
 | `advance_time` | `(minutes)` | **三合一**（spec §2.2/§4）：推进时钟 + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2，旧档下次推进自动清理无需迁移） + 调 `_tick_time_effects` 时间钩子（keeper 每回合经 TimeAgent time_delta 走此单一入口） | 750 |
-| `_tick_time_effects` | `(minutes)` | 时间钩子（私有）：① MP 恢复余数累计--`_mp_regen_acc` 攒 60 分钟按 game_config 的 `mp_recovery_per_hour` 回点，clamp MP_MAX，`max(0,minutes)` 防负数；② timed_effects 过期清除--`expire_at<=clock.game_time` 恰好到期即除；logger "scenario_core" 记 MP 变化/被清 id；get_game_config 函数内 import（monkeypatch investigator.rules.get_game_config 生效） | 766 |
+| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；timed_effects 到期清除 | 766 |
 | `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 809 |
 | `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 838 / 844 / 849 |
 | `mark_completed` / `is_entity_completed` | — | 完成标记 | 869 / 876 |
@@ -520,7 +526,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at}]`，2026-08-21 spec §2） | 160 |
 | `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 205 / 211 / 220 |
 | `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行 | 226 |
-| `_roll_d100` | `(name, target)` 骰点+等级判定；消费 pending_luck_bonus（一次性 -N） | 247 |
+| `_roll_d100` | `(name, target)` 骰点+等级判定；fumble = roll>=96 且 roll>target；消费 pending_luck_bonus（一次性 -N） | 247 |
 | `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 268 |
 | `check_skills` | `(skill_names)` 批量检定 | 277 |
 | `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 295 |
@@ -569,7 +575,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 | 方法 | 作用 | 行号 |
 |------|------|------|
-| `load_core` / `load_extension` / `_load_file` | 加载 core + 扩展 | 143 / 150 / 153 |
+| `load_core` / `load_extension` / `_load_file` | 加载 core + 扩展；`_load_file` 走 `load_json_object` | 143 / 150 / 153 |
 | `get` / `list_all` / `search` / `__len__` | 查询族 | 160–176 |
 
 数据类：`EnemyAttack`@11 `SpecialAbility`@46 `LibraryEnemy`@59（`from_dict` 解析 [flag] 标记）。
@@ -579,14 +585,14 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | 函数/方法 | 作用 | 行号 |
 |-----------|------|------|
 | `_damage_str_to_dict` | 伤害字符串 → dict | 10 |
-| `load_core` / `load_extension` / `_load_file` | 加载 | 97 / 104 / 107 |
+| `load_core` / `load_extension` / `_load_file` | 加载；`_load_file` 走 `load_json_object` | 97 / 104 / 107 |
 | `get` / `list_all` / `search` / `__len__` | 查询族 | 114–132 |
 
 ### items.py (95 行) - ItemLibrary（统一资源层，@61）
 
 | 方法 | 作用 | 行号 |
 |------|------|------|
-| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/items.json + 扩展；_load_file（B7，@73）损坏 JSON/OSError -> `ValueError("库文件加载失败: {path}")`、顶层非 dict -> `ValueError("库文件格式错误(顶层应为 object): {path}")`（报错带来源路径，core/extensions 共用） | 63 / 70 / 73 |
+| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/items.json + 扩展；`_load_file` 走 `load_json_object` | 63 / 70 / 73 |
 | `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 85–95 |
 
 数据类 `LibraryItem`@12：`id, name, aliases, category(consumable/tool/document/clothing/key/misc), description, impact(L0/L1/L2 库预标注), use_semantic(consume/equip/read/tool/none), stackable, check{skill,type}, on_use(@markup 序列), on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1)`。effect 字段（T3，@29）：from_dict 经 `_normalize_effect`（自 spells.py 导入 @8）归一化——旧单 dict 包装为 [dict]，list 透传，缺省 []（@50）。
@@ -598,28 +604,29 @@ core 条目内容（T12 升维，2026-08-24）：NECRONOMICON_PAGE on_use 双 ma
 | 函数/方法 | 作用 | 行号 |
 |------|------|------|
 | `_normalize_effect` | effect 归一化：旧单 dict -> [dict]；None/缺省 -> []；list 透传（逐元素浅拷贝，忽略非 dict 元素） | 9 |
-| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展；_load_file（B7，@80）损坏 JSON/OSError -> `ValueError("库文件加载失败: {path}")`、顶层非 dict -> `ValueError("库文件格式错误(顶层应为 object): {path}")`（与 items.py 同款，core/extensions 共用） | 70 / 77 / 80 |
+| `load_core` / `load_extension` / `_load_file` | 加载 data/library/core/spells.json + 扩展；`_load_file` 走 `load_json_object` | 70 / 77 / 80 |
 | `get` / `list_all` / `__len__` | 查询族（id/名称/别名三路 matches） | 92–102 |
 
 数据类 `LibrarySpell`@19：`id, name, aliases, category(combat/exploration), description, impact, cost{mp,san}, check{skill,type}, on_use, on_success/on_failure/on_hard/on_extreme, refund_on_fail, constraints, effect(list[dict] 原子数组, 2026-08-21 spec §1.1), weight`。effect 字段（T3，@35）：由旧单 dict（damage 类）升维为原子数组，from_dict @56 调 `_normalize_effect`；旧 JSON 单 dict 数据自动包装为单元素数组。combat.py cast 分支已由 T9 重写为原子数组遍历（@856-928，见 combat.py 节）。
 
 core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STONE_SKIN=[buff(reduce 3, rounds 3, self)+timed(minutes 30)]（T10 减免/T6 挂载）；DOMINATE=[control(rounds 2, enemy)]（T11 跳过）；SILENCE_VEIL=[timed(minutes 10)]；HEART_ARREST/BLOOD_CALL=[damage(1D6 ignore_armor)/damage(1D4)]（显式数组）。LIFE_DETECTION/WITCH_LIGHT/DREAM_GAZE 无 effect（纯叙事，on_success 承载）。
 
-### loader.py (31 行) - 统一库加载器（T2，2026-08-21 spec §6）
+### loader.py (43 行) - 统一库加载器（T2，2026-08-21 spec §6）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `_load` | `(core_cls, core_file, ext_subdir, base_dir)` | 内部通用：load_core(base/core/<file>) + 扫 base/extensions/<subdir>/*.json 逐个 load_extension | 15 |
-| `load_item_library` | `(base_dir=None) -> ItemLibrary` | 物品库统一加载（base_dir 缺省=包相对 data/library 绝对路径，供测试注入） | 26 |
-| `load_spell_library` | `(base_dir=None) -> SpellLibrary` | 法术库统一加载（同上） | 30 |
+| `load_json_object` | `(path) -> dict` | 共享 JSON 对象加载：损坏/OSError 带路径 ValueError；顶层非 dict 报「应为 object」 | 14 |
+| `_load` | `(core_cls, core_file, ext_subdir, base_dir)` | 内部通用：load_core(base/core/<file>) + 扫 base/extensions/<subdir>/*.json 逐个 load_extension | 27 |
+| `load_item_library` | `(base_dir=None) -> ItemLibrary` | 物品库统一加载（base_dir 缺省=包相对 data/library 绝对路径，供测试注入） | 38 |
+| `load_spell_library` | `(base_dir=None) -> SpellLibrary` | 法术库统一加载（同上） | 42 |
 
-调用点：game_loop.init_game（@224-226）、run_pipeline.run_interactive/run_auto（@1249-1253 / @1331-1335；管线修复：此前只 load_core 不扫 extensions，用户扩展库管线不可见）。`_DATA_ROOT`@12 = src 上两级 data/library（绝对路径，摆脱 game_loop 旧 cwd 相对路径依赖）；cwd 独立性由 tests/test_library_loader.py test_data_root_cwd_independent 锁定（B12，2026-08-25）。
+调用点：game_loop.init_game、run_pipeline.run_interactive/run_auto。`_DATA_ROOT` = src 上两级 data/library。五库 `_load_file`/`_load` 均走 `load_json_object`（B13）。
 
-### bosses.py (79 行) — BossLibrary（@48）
+### bosses.py (80 行) — BossLibrary（@48）
 
 | 方法 | 作用 | 行号 |
 |------|------|------|
-| `_load` / `_load_extensions` | 加载 bosses.json + 扩展目录 | 57 / 66 |
+| `_load` / `_load_extensions` | 加载 bosses.json + 扩展目录；`_load` 走 `load_json_object` | 57 / 67 |
 | `get` / `list_names` / `__len__` | 查询族 | 72–78 |
 
 ### injector.py (101 行) — ContentInjector
@@ -866,8 +873,8 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `estimate_and_truncate_context` | `(content, extra_prompt_chars, max_tokens, safety_margin) -> str` | 超限截断（找段落/句号断点） | 78 |
 | `roll_dice` / `roll_d6` | — | 掷骰 | 126 / 147 |
 | `roll_formula` | `(formula) -> int` | 解析 NdM+K 骰式并掷骰；不匹配返回 0（judge/combat 的 heal 原子共用解析器，垃圾 formula 由调用方回退 delta） | 136 |
-| `load_skill_config` | `(path=None) -> dict` | data/skill_config.json 技能体系配置（20技能/8属性/legacy_map/attr_aliases/pseudo_skills），缓存 | 145 |
-| `normalize_skill_name` | `(name) -> (kind, value)` | 技能名归一单点：skill/attr/pseudo/ignore/unknown 五路 | 161 |
+| `load_skill_config` | `(path=None) -> dict` | data/skill_config.json 技能体系配置；默认路径写入缓存，显式 path 不污染缓存 | 157 |
+| `normalize_skill_name` | `(name) -> (kind, value)` | 技能名归一单点：skill/attr/pseudo/ignore/unknown 五路 | 172 |
 | `load_skill_checks` | `(path=None)` | U9：默认数据源已切换为 skill_config.json 的 skills 列表（保持 `[{"name": ...}]` 兼容形状）；旧 skill_checks.json 已删除 | 202 |
 | `get_coc_skill_names` | `() -> list[str]` | 新 20 项技能名（缓存，从 skill_config.json 读取） | 215 |
 
