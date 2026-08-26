@@ -249,7 +249,7 @@ class Investigator:
         if self.pending_luck_bonus:
             roll = max(1, roll - self.pending_luck_bonus)
             self.pending_luck_bonus = 0
-        if roll >= 96:
+        if roll >= 96 and roll > target:
             return False, f"{name}检定：D100={roll}/{target} ≥96 大失败！", "fumble"
         if roll == 1:
             return True, f"{name}检定：D100=1/{target} 大成功！", "extreme"
