@@ -108,6 +108,7 @@ def _deep_one_world(hostile_only=False):
 
 class TestS1NormalTurn:
     @retry_once
+    @pytest.mark.real_llm_smoke
     def test_normal_action_turn(self):
         """S1：普通行动回合——全真实 LLM（pre_parse/parse/enrich/time_agent/narrator）。"""
         from game_loop import run_turn
@@ -131,6 +132,7 @@ class TestS1NormalTurn:
 
 class TestS2AmbiguousClarify:
     @retry_once
+    @pytest.mark.real_llm_smoke
     def test_ambiguous_then_clarified(self):
         """S2：模糊输入澄清——disambiguate 真实 LLM 判 ambiguous；澄清后回合推进。"""
         from game_loop import run_turn
@@ -193,6 +195,7 @@ class TestS3WeaponOffer:
 
 class TestS4StandoffAvoid:
     @retry_once
+    @pytest.mark.real_llm_smoke
     def test_standoff_then_avoid(self):
         """S4：standoff 回避。combat_entry 单点 stub（见模块 docstring）；
         standoff_match/D100/enrich/narrator 真实。玩家回避技能 95 提高回避成功率。"""

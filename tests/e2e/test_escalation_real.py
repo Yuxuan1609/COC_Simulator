@@ -307,6 +307,7 @@ def _setup_llm_logging(log_dir):
 #  Case A: normal entity match
 # =====================================================================
 
+@pytest.mark.real_llm_smoke
 def test_case_a(tmp_path=None, log_dir=""):
     if not log_dir and tmp_path is not None:
         log_dir = str(tmp_path / "escalation_case_a")   # pytest 运行留日志现场(ISSUES B4)
