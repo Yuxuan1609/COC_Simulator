@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | F13 敌人 attack.skill_value 断链 + F24 纯对话 memory：`_resolve_enemy_action` 优先读 attack.skill_value（>0），否则回退 (DEX+POW)//2，dodge_bonus 仍加；game_loop 早退路径有 npc_events 时 add_record(action=npc_dialogue)。TDD：TestEnemyAttackSkillValue 3 + test_pure_dialogue_records_memory。ISSUES 五域 F13–F43 回登，F13 拆④真断链/①②⑤⑥ 长期 TODO/③非目标。combat.py 1505->1515 / game_loop.py 910->917 |
 | 2026-08-26 | 阶段 0 收口：§1 活跃区余 B1 存读档 / B3 flaky 观察 / B9 control off-by-one 跳过 / B10 备忘 / B19 前端静默降级不排期。B6/B8/B13/B14/B15/B16/B17/B18 已入 §5。验证政策：默认 `pytest tests/ -q`；阶段完成后 `pytest -m real_llm_smoke` |
 | 2026-08-26 | B8 满 MP 不消耗恢复累计器：`_tick_time_effects` 满 MP 时 acc 清零，花费后再从 0 攒。TDD：test_full_mp_does_not_burn_accumulator |
 | 2026-08-26 | B6 被支配跳过不再渲染「未命中」：`_build_single_round_result` 对 weapon="--" / 无法动弹 叙事走跳过行。TDD：test_controlled_skip_round_narrative_not_miss |
@@ -245,7 +246,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1505 行) — 战斗系统 v2
+## src/game/combat.py (1515 行) — 战斗系统 v2
 
 CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: int = 99`（@194，SAN bar 分母，_init_combat 从 player.derived.SAN_MAX 接线）；T9 增 `temporary_effects: list`（@200，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）；2026-08-26 增 `san_log: list[str]`（@201，开局目睹 SAN check 叙事行；_init_combat 写入，三处一次性渲染后清空：_build_single_round_result 首轮 @633-636/run_combat 终局前置 @417-421/run_game CLI 进入战斗打印 @370-373）。
 
@@ -277,14 +278,14 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1136 |
 | `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1148 |
 | `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1156 |
-| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 @1128-1134 control 检查（T11）：`controlled_rounds > 0` 时跳过行动（success=False、narrative"被无形的力量攫住，无法动弹。"、damage=0、不掷骰不耗 _player_dodging、跳过本身不递减，归零靠轮末 _tick）；命中段 @1166-1172 buff 减伤（T10）：`damage = _roll_damage(...)` 后总减免 = sum(state.temporary_effects[].reduce)，`damage = max(buff_damage_floor, damage - 总减免)`（floor 读 game_config，函数内 import get_game_config；reduce_total=0 零开销跳过）；命中分支 2026-08-26 被攻击情境 SAN check @1216-1222：parse_san_loss 取注释含"攻击"的第一组（无则跳过），扣 state.player_san，action.narrative 追加" 恐惧侵蚀：{text}。" | 1160 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @405 / run_single_round @594 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1228 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1241 / 1265 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1286 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1296 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1315 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1343 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1450 |
+| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 control 检查跳过；命中技能优先读 attack.skill_value（>0），否则 (DEX+POW)//2，再加 dodge_bonus（F13）；buff 减伤；被攻击 SAN check | 1164 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @405 / run_single_round @594 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1238 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1251 / 1275 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1296 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1306 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1325 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1353 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1460 |
 
 ## src/game/judge.py (556 行) — 确定性闸门（无 LLM 依赖）
 
@@ -409,7 +410,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/game_loop.py (910 行) — 游戏主循环
+## src/game_loop.py (917 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -417,12 +418,12 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `setup_logging` | `() -> str` | 统一初始化日志目录 + TurnLogger + prompt/llm 日志 | 27 |
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 46 |
 | `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载（物品/法术经 library.loader 统一加载 core+extensions，@224-226）→ ScenarioWorld → world 节点 AT 执行（延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
-| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史（chronicle.record_turn + 移动轨迹，FROZEN 不计，SUSPENDED 也入史）→ SUSPENDED/FROZEN 短路 → Narrator 叙事 → 场景更新 → 技能检定提取 → PlayerFacingSnapshot 组装（L1 描述/NPC 富化/技能 D100 解析） | 328 |
-| `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 631 |
-| `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 647 |
-| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 673 / 682 / 693 |
-| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world @786，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 710 |
-| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 827 |
+| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史 → SUSPENDED/FROZEN 短路 → Narrator 叙事（无 brief 早退且有 npc_events 时 add_record，F24）→ 场景更新 → PlayerFacingSnapshot | 328 |
+| `save_game` | `(game, path)` | 存档 + `_meta.turn_number` 写入 | 638 |
+| `load_game` | `(game, path)` | 读档并回填世界属性 + turn_number | 654 |
+| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换） | 680 / 689 / 700 |
+| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world @786，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 717 |
+| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 835 |
 
 ---
 

@@ -33,7 +33,7 @@ class _TestEnemy:
         self.flags = set()
         self.DEX = dex
         self.attributes = {}
-        self.attacks = attacks or [{"name": "爪击", "skill_name": "格斗", "skill_value": 40, "damage": "1D6"}]
+        self.attacks = attacks or [{"name": "爪击", "skill_name": "格斗", "skill_value": 0, "damage": "1D6"}]
         self.damage_multipliers = damage_multipliers or {}
         self.dodge_bonus = dodge_bonus
         self.multi_attack = multi_attack

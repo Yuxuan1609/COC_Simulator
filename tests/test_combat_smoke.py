@@ -38,7 +38,7 @@ class _TestEnemy:
         self.flags = set()
         self.DEX = dex
         self.attributes = {}       # needed by _resolve_enemy_action
-        self.attacks = attacks or [{"name": "爪击", "skill_name": "格斗", "skill_value": 40, "damage": "1D6"}]
+        self.attacks = attacks or [{"name": "爪击", "skill_name": "格斗", "skill_value": 0, "damage": "1D6"}]
         self.damage_multipliers = damage_multipliers or {}
         self.dodge_bonus = dodge_bonus
         self.multi_attack = multi_attack
@@ -846,6 +846,37 @@ class TestSanCheckWiring:
         assert act.success, "DEX/POW=200 必中"
         assert "理智检定" not in act.narrative, "无被攻击组不得追加 check"
         assert state.player_san == 50
+
+
+class TestEnemyAttackSkillValue:
+    """F13: 敌人 attack.skill_value 断链接通。库字段优先,缺省回退 (DEX+POW)//2。"""
+
+    def _act(self, monkeypatch, roll, skill_value, dex=50, pow_=50, dodge_bonus=0):
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod.random, "randint", lambda a, b: roll)
+        enemy = _TestEnemy("测击", hp=20, armor="0", instance_id="E_SV",
+                           dodge_bonus=dodge_bonus,
+                           attacks=[{"name": "爪击", "skill_name": "格斗",
+                                     "skill_value": skill_value, "damage": "1D3"}])
+        enemy.attributes = {"DEX": dex, "POW": pow_, "STR": 50, "SIZ": 50}
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        return CombatSystem()._resolve_enemy_action(state, enemy, _make_investigator())
+
+    def test_reads_attack_skill_value(self, monkeypatch):
+        act = self._act(monkeypatch, roll=30, skill_value=20, dex=50, pow_=50)
+        assert act.skill_value == 20, f"应读 attack.skill_value=20,实际 {act.skill_value}"
+        assert act.success is False, "roll=30 > skill_value=20 应未命中"
+
+    def test_fallback_when_skill_value_zero(self, monkeypatch):
+        act = self._act(monkeypatch, roll=30, skill_value=0, dex=80, pow_=40)
+        assert act.skill_value == 60, f"skill_value=0 回退 (80+40)//2=60,实际 {act.skill_value}"
+        assert act.success is True, "roll=30 <= 60 应命中"
+
+    def test_dodge_bonus_still_applies(self, monkeypatch):
+        act = self._act(monkeypatch, roll=25, skill_value=20, dodge_bonus=10)
+        assert act.skill_value == 30, f"skill_value+dodge_bonus=30,实际 {act.skill_value}"
+        assert act.success is True
 
 
 if __name__ == "__main__":

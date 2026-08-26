@@ -283,6 +283,32 @@ class TestNpcDialogueTurn:
         assert "你好，乘客" in r.narrative
         assert r.diagnostics["npc_events"], "npc_events 必须非空"
 
+    def test_pure_dialogue_records_memory(self, monkeypatch):
+        """F24: 纯对话短路也必须 add_record,parse 下轮能看见已问情报。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           npc_profiles={"列车员": {
+                               "name": "列车员", "scene": "room_a",
+                               "can_interact": True}})
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "npc_interact",
+                                         "npc_name": "列车员"}]])
+        monkeypatch.setattr("game.agents.keeper.call_deepseek",
+                            lambda *a, **k: "你好，乘客。车厢里不太平。")
+        game = make_game(keeper)
+
+        run_turn(game, "和列车员搭话")
+        hist = world.memory.raw_history
+        assert hist, "纯对话必须写入 memory.raw_history"
+        rec = hist[-1]
+        assert "搭话" in rec["user_input"]
+        assert "车厢里不太平" in rec["result"] or "你好" in rec["result"]
+        ctx = world.memory.get_context()
+        assert "车厢里不太平" in ctx or "你好" in ctx, "parse prompt 的近期行动须含对话内容"
+
 
 class TestMultiTurnStateSequence:
     def test_turn_sequence_state_integrity(self, monkeypatch):

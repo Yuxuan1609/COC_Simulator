@@ -55,6 +55,37 @@
 | F11 | **库 schema 作者参考文档** | 定位前提"素材能表达"需要作者知道怎么写;五库全字段(enemies/bosses/spells/items/weapons)+san_loss 多情境格式+combat_behavior [flag] 前缀+effect 原子+扩展库放置约定散在 readme 各节与代码。建议 docs/library-schema.md 集中(半天量级,素材生态前置) |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 
+| F14 | **技能成长标记** | Skill 无 checked 标记,check_skill 成功不记录;"成功使用→幕末成长检定"循环断裂,角色永远停留在车卡(依赖 U4 战役化才有意义) |
+| F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
+| F16 | **锁-钥匙关联** | judge `item:` 只查持有同名物品,任意"钥匙"开任意门;LOCKPICKS 检定成功不翻转任何锁状态;解锁/永久开锁等解谜核心落空 |
+| F17 | **场景物品放置/拾取/容器** | 只有武器能放场景(scene_weapons),无 drop API、无容器嵌套;"抽屉里的东西""把物品藏回现场"接不住 |
+| F18 | **时间触发世界事件调度器** | clock 纯计数器;"22:00 凶手行动"玩家不动永不发生;钩子现成(_tick_time_effects) |
+| F19 | **环境状态进检定** | 光照/天气/噪音无修正源(难度只来自 entity.difficulty);手电筒/火柴 L0 无 effect,黑暗侦查无机械支撑 |
+| F20 | **探索侧潜行/躲藏** | 潜行只在对峙与战斗;"悄悄潜入/躲进柜子"只能 Author 自由发挥 |
+| F21 | **物品组合/合成 + 耐久/次数** | 无 combine/split;InventoryItem 只有 quantity,tool 类永不损耗 |
+| F22 | **线索系统结构化** | note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
+| F23 | **场景状态演化 + 实体可重复策略** | 已成功实体一刀切不可重复;场景描述只有 Author 补丁能改;重读文件/复查现场被硬挡 |
+
+| F25 | **Narrator 长期记忆** | build_narrator_prompt 只注入当前 brief+快照,无历史;伏笔回收/多轮呼应无锚点 |
+| F26 | **谎言/欺骗机制** | 玩家陈述无条件采信并写入 memory,伪装身份套情报无支撑 |
+| F27 | **NPC 度量层缺口**(U1 前置) | `set_attitude` 与 `process_npc_turn` 定义后零调用=死代码;好感/瞬态情绪/自主日程连度量字段都不存在 |
+| F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
+| F29 | **NPC 死亡剧情连锁** | dead 只做门控;无目击者反应/态度联动/事件传播 |
+| F30 | **追逐/移动力** | MOV 已从 Stats 删除;flee 单骰 DEX 立即定音,无追逐轮/速度分级 |
+| F31 | **模组体检 lint** | 现有验证只到 schema+引用存在性;DependencyGraph 无可达性分析;无独立 CLI |
+| F32 | **模组试玩报告/难度标定** | llm_player 只出 goal_achieved 布尔;无场景覆盖率/结局触达率/检定难度分布 |
+| F33 | **手写模组支持** | 无手写路径;前端编辑器校验只查 scenes/entities 非空不接 layered_schema |
+| F34 | **模组版本管理/增量再生** | 无 manifest/源文档快照;重跑静默覆盖手改 JSON |
+| F35 | **分歧/结局结构可视化** | dependency_graph 只有 JSON;多结局分支汇合关系无法直观检查 |
+| F36 | **管线进度/失败前端可见 + 质量量化指标** | launcher 后台线程 fire-and-forget;auto 失败仍打印"执行完毕"(前端域) |
+| F37 | **撤销/回滚上一回合** | 无 undo;误操作只能翻旧手动存档或重开(体验破例,前端/CLI 皆缺) |
+| F38 | **存档槽位 UI + 元信息 + autosave 入口** | 存读档靠手敲命令;save_game 只记 turn_number;autosave 无法经 /load 触及(前端域) |
+| F39 | **叙事历史玩家侧回看** | 历史只在浏览器内存刷新即丢;WorldChronicle 已入档但只喂 Author(体验破例) |
+| F40 | **战斗中刷新/断线恢复** | _combat_sessions 进程内存态;刷新丢战斗面板(体验破例,前端域) |
+| F41 | **新手引导/规则查询/行动建议** | 帮助仅斜杠命令清单;场景可交互实体不作为建议呈现(前端域) |
+| F42 | **回合进度真实反馈** | WS 进度流失真:LLM 前推一条即静态"思考中"(前端域) |
+| F43 | **角色卡导入回流** | 导出 zip 无导入端点;文件浏览器白名单不含 .zip(前端域) |
+
 ## 3. 重构队列(约定:倒数第二)
 
 | # | 项 | 备注 |
@@ -74,6 +105,16 @@
 | 敌人施法 / MP 战斗内恢复 / 局末成长 Epilogue | spec 明示非目标 |
 | 擒抱/缴械/处决/连发/自动武器 | 内容型战斗选项,有真实模组需求再动(2026-08-25 规则层盘点) |
 | judge 捏造证据空间(谓词外事件) | 已用谓词结果注入缓解;打磨 rubric 时注意 |
+| F13-① 弹药消耗/装填 | 长期 TODO:库 `shots` 在,`Weapon.ammo` 未从库拷贝(`_build_investigator_weapon` 漏字段),combat 零读写;需弹匣当前量/装填动作/空枪失败 |
+| F13-② malfunction 卡壳 | 长期 TODO:字段已拷到运行时武器,combat 命中判定不比较;需卡壳 flag+清膛占一轮 |
+| F13-⑤ 射程/距离模型 | 长期 TODO:`Weapon.range` 纯展示,霰弹 `/` 截第一段;需距离带/移动/衰减整套状态机 |
+| F13-⑥ 极难贯穿差异化 | 长期 TODO:`_get_tier` 已算只进文本,伤害不变;需贯穿/最大伤害公式 |
+| F13-③ 玩家护甲 | 非目标(统一资源层 spec:equip 无机制加成;护甲只作用敌方) |
+| 输入格式扩展(epub/html/URL)/Step0 只认 txt | 有真实内容源需求再动(2026-08-26 盘点) |
+| 多语言模组/i18n | 叙事文本与结构键混存,远期 |
+| 模组素材附件(地图/立绘/handout) | schema 无 image 字段,远期生态 |
+| 多人混战目标选择/队友误伤/掩体 | 依赖 F28 先行;掩体等防御向机制随 F13 批次评估 |
+| 移动端响应式/音效氛围/掷骰动效 | 前端打磨,随前端排期 |
 
 ---
 
@@ -81,6 +122,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-26 | **F13 敌人 attack.skill_value 断链 + F24 纯对话 memory 漏记** | combat 优先读 skill_value（>0）否则 (DEX+POW)//2+dodge_bonus；game_loop 早退路径 npc_events 时 add_record。F13 其余①②⑤⑥ 入 §4 长期 TODO、③非目标。五域 F14–F43 回登 ISSUES |
 | 2026-08-26 | **B13 三库裸 json.load / B14 skill_config 缓存死代码 / B15 fumble 边界 / B6 被支配渲染未命中 / B8 满 MP 仍耗累计器** | load_json_object 五库收敛；load_skill_config 默认路径真正缓存；_roll_d100 `roll>=96 and roll>target`；跳过叙事不写未命中；满 MP acc 清零 |
 | 2026-08-26 | **B17 `_handle_edit` 编辑回路无效 + B18 断点续跑不回灌中间状态** | d209787 `_apply_step_artifact` 回灌；本 commit `_hydrate_prior_steps` + resume_dir + launcher 校验改查 debug 中间目录 |
 | 2026-08-26 | **B16 time_condition 两处静默失效** ① GameClock.time_of_day 补凌晨(hour<5)；② Judge.check_auto_triggers 兜底路径查 time_condition（list 先 dumps） | e371a33 + 本 commit |

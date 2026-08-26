@@ -488,6 +488,13 @@ def run_turn(game: dict, user_input: str,
         # Keeper returned early with plain-text brief/narrative (boss trigger, weapon pickup, combat, etc.)
         narrative_brief = display_brief or "（处理中）"
         narrative = result.text or ""
+        if result.npc_events:
+            world.memory.add_record(
+                user_input, "npc_dialogue", "",
+                narrative or narrative_brief,
+                location=world.current_location,
+                success=True,
+            )
         if _turn_logger:
             _turn_logger.log(
                 player_input=user_input,

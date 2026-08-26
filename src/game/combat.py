@@ -1186,7 +1186,13 @@ class CombatSystem:
 
         enemy_attrs = enemy.attributes if hasattr(enemy, 'attributes') else {}
         dodge_bonus = getattr(enemy, 'dodge_bonus', 0)
-        enemy_skill = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2 + dodge_bonus
+        listed = 0
+        if hasattr(attack, "get"):
+            listed = int(attack.get("skill_value") or 0)
+        else:
+            listed = int(getattr(attack, "skill_value", 0) or 0)
+        fallback = (enemy_attrs.get("DEX", 50) + enemy_attrs.get("POW", 50)) // 2
+        enemy_skill = (listed if listed > 0 else fallback) + dodge_bonus
         action.skill_value = enemy_skill
         action.roll = random.randint(1, 100)
 
