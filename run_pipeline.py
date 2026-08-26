@@ -477,6 +477,76 @@ class PipelineAborted(Exception):
     pass
 
 
+def _apply_step_artifact(runner: "InteractiveRunner", path: Path) -> None:
+    """将磁盘中间产物回灌到 InteractiveRunner 内存字段。"""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    name = path.name
+    if name == "1b_condensed_text.txt":
+        text = path.read_text(encoding="utf-8")
+        runner.step1b = {"condensed_text": text}
+        runner.chapters = _parse_condensed_chapters(text)
+        return
+
+    known = {
+        "1a_structured_extraction.json",
+        "2a_interactions.json",
+        "2b_combined.json",
+        "2c_l1.json",
+        "2c_l3.json",
+        "3a_dedup_conflict.json",
+        "25_npc_profiles.json",
+        "3b_cross_check.json",
+        "35_dependency_graph.json",
+        "phase1_style_preview.json",
+    }
+    if name not in known:
+        raise ValueError(f"无法回灌: {path.name}")
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"中间文件损坏: {path}") from e
+
+    if name == "1a_structured_extraction.json":
+        runner.step1a = data
+        runner.scenes = runner.step1a["scenes"]
+        runner.characters = runner.step1a["characters"]
+    elif name == "2a_interactions.json":
+        runner.interactions = data.get("interactions", [])
+        runner.scene_movements = data.get("scene_movements", {})
+    elif name == "2b_combined.json":
+        runner.events = data.get("events", [])
+        runner.auto_triggers = data.get("auto_triggers", [])
+    elif name == "2c_l1.json":
+        runner.l1_data = data
+    elif name == "2c_l3.json":
+        runner.l3_data = data
+    elif name == "3a_dedup_conflict.json":
+        if "interactions" in data:
+            runner.interactions = data["interactions"]
+        if "events" in data:
+            runner.events = data["events"]
+        if "auto_triggers" in data:
+            runner.auto_triggers = data["auto_triggers"]
+    elif name == "25_npc_profiles.json":
+        if isinstance(data, dict) and "npc_profiles" in data:
+            runner.npc_profiles = data["npc_profiles"]
+        else:
+            runner.npc_profiles = data
+    elif name == "3b_cross_check.json":
+        if "l1_data" in data:
+            runner.l1_data = data["l1_data"]
+        if "l3_data" in data:
+            runner.l3_data = data["l3_data"]
+    elif name == "35_dependency_graph.json":
+        runner.dep_graph = DependencyGraph.from_dict(data)
+    elif name == "phase1_style_preview.json":
+        runner.phase1_clean = data
+
+
 class InteractiveRunner:
     """管线运行器：自动模式（委托 run_pipeline）或手动步进模式。
 
@@ -593,7 +663,11 @@ class InteractiveRunner:
                 print(f"  编辑完成后按 Enter 继续...")
                 os.system(f'{editor} "{path}"')
                 input("  按 Enter 确认已保存...")
-                print(f"  已重新加载: {path}")
+                try:
+                    _apply_step_artifact(self, Path(path))
+                    print(f"  已重新加载: {path}")
+                except Exception as e:
+                    print(f"  [错误] 重新加载失败，runner 仍用内存旧数据: {e}")
         except (ValueError, IndexError):
             print("  无效选择")
 

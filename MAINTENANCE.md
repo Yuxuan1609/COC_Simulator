@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-26 | B17 `_handle_edit` 回灌：新增模块级 `_apply_step_artifact(runner, path)`@480（InteractiveRunner 类前），按文件名把磁盘中间产物写回 runner 字段（1a/1b/2a/2b/2c_l1/2c_l3/3a/25/3b/35/phase1；未知文件名 ValueError「无法回灌」；缺文件 FileNotFoundError；JSON 损坏 ValueError「中间文件损坏」）；`_handle_edit`@643 保存确认后调 `_apply_step_artifact`，失败打印错误不假装已加载。TDD：tests/test_pipeline_resume.py 新建 5 测试（1a scenes/2a interactions/missing/unknown/bad json），RED(ImportError)->GREEN。不实现 `_hydrate_prior_steps`/resume_dir（Task 5）。run_pipeline.py 1474->1548 行 |
 | 2026-08-26 | B16-② Judge.check_auto_triggers 补 time_condition：兜底/AT 点火路径与 keeper parse 路径对齐，list 先 json.dumps 再 check_time_condition(tc, day, tod)，不满足跳过；空 []/"[]" 仍放行。TDD：tests/e2e/test_deterministic.py 增 TestAutoTriggerTimeCondition 2 测试（白天独立 world 凌晨 AT 不触发防 completed 假绿 + 凌晨独立 world 触发；空 time_condition 仍触发），RED(白天仍点火)->GREEN；judge.py 551->556 行 |
 | 2026-08-26 | B16-① GameClock.time_of_day 补凌晨：hour<5 由「夜间」改为「凌晨」（5 时段：凌晨/早晨/白天/黄昏/夜间），与 scenario_core._TIME_CONDITION_TIMES / layered_parser 对齐，times=["凌晨"] 实体可触发；tests/test_clock.py 新建 2 测试（时段边界 + get_time_flags 01:00 出 time:凌晨 不出 time:夜间）；TestTimeFlagHygiene 跨天 hour=0 断言 夜间→凌晨；TDD RED(h=0 得夜间)->GREEN；clock.py 60 行不变 |
 | 2026-08-26 | 测试分层政策：pytest.ini 增 real_llm_smoke marker；S1/S2/S4 + escalation Case A 叠标记；AGENTS.md 增测试验证约定（默认零 API，全量 real_llm 禁单任务后跑） |
@@ -96,7 +97,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 340 |
 | `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem，构造传 spell_lib+world @361，T9 战斗 markup/timed 原子可用；进入战斗打印 san_log 渲染即清 @370-373+命中显示改用 ea.narrative（D100 骰值前缀保留防丢，I1）@504-506） | 355 |
 
-### run_pipeline.py (1474 行) — 模组解析管线 CLI
+### run_pipeline.py (1548 行) — 模组解析管线 CLI
 
 | 函数/类 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -106,18 +107,19 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `PipelineConfig` | dataclass | 管线配置（路径/模型/温度/执行/注入开关），to_dict/to_json/from_dict/from_json/from_wizard | 176 |
 | `LLMLogger` | `(output_dir)` | 包装 llm_json/llm_text，每次调用保存 prompt+response 到 `_llm_calls/<n>/`；wrap_json @371 / wrap_text @423 / call_log @467 | 352 |
 | `PipelineAborted` | exception | 用户中止管线 | 475 |
-| `InteractiveRunner` | `(config)` | 运行器：`_step_dir`@529 `_save_summary`@534 `_prompt_user`@538 `_handle_retry`@552 `_handle_edit`@573 `_handle_config_change`@600 `_interact`@658 | 480 |
-| `_RetryStep` | exception | 重试当前步骤 | 676 |
-| `_do_step1` | `(runner, verbose)` | Step1a 结构化提取 + 1b 精修（并行）；Step1a prompt 含 runner.ilib/runner.slib 双库摘要 | 685 |
-| `_do_step2a` | `(runner, verbose)` | Step2a interactions 提取；技能名白名单经 `load_skill_checks()`（U9 起读 skill_config） | 737 |
-| `_do_step2bc` | `(runner, verbose)` | Step2b+2c: events+AT + L1 + L3（并行） | 773 |
-| `_do_step3a_25` | `(runner, verbose)` | Step3a 去重冲突 + 2.5 NPC 档案（并行）→ 绑定 → Boss 遭遇 → 组装 L2 | 827 |
-| `_do_step3b` | `(runner, verbose)` | L1↔L2 交叉核对 + WR0 注入 | 918 |
-| `_do_step35_phase1` | `(runner, verbose)` | Step3.5 依赖图（含循环重试）+ Phase1 约束 | 952 |
-| `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物；技能名经 `load_skill_checks()`，`stat_names` 已删 SIZ（:1043） | 1017 |
-| `run_interactive` | `(config)` | 手动步进模式（每步 [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出），支持 start_from 断点续跑；统一资源层：经 `library.loader` 加载 Item/SpellLibrary（core+extensions，T2 起管线也扫扩展库）到 runner.ilib/runner.slib | 1163 |
-| `run_auto` | `(config)` | 自动模式：复用同一组 `_do_step*` 全程无交互（同载双库，经 `library.loader` 含 extensions） | 1245 |
-| `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--model/--thinking-off/--weapon-lib 等 | 1344 |
+| `_apply_step_artifact` | `(runner, path)` | 按文件名把磁盘中间产物回灌 InteractiveRunner 字段（1a scenes/characters、1b condensed+chapters、2a/2b/2c/3a/25/3b/35/phase1）；未知名 ValueError、缺文件 FileNotFoundError、JSON 损坏 ValueError。Task 5 `_hydrate_prior_steps` 将复用 | 480 |
+| `InteractiveRunner` | `(config)` | 运行器：`_step_dir`@599 `_save_summary`@604 `_prompt_user`@608 `_handle_retry`@622 `_handle_edit`@643（保存后 `_apply_step_artifact` 回灌，失败不假装已加载） `_handle_config_change`@674 `_interact`@732 | 550 |
+| `_RetryStep` | exception | 重试当前步骤 | 750 |
+| `_do_step1` | `(runner, verbose)` | Step1a 结构化提取 + 1b 精修（并行）；Step1a prompt 含 runner.ilib/runner.slib 双库摘要 | 759 |
+| `_do_step2a` | `(runner, verbose)` | Step2a interactions 提取；技能名白名单经 `load_skill_checks()`（U9 起读 skill_config） | 818 |
+| `_do_step2bc` | `(runner, verbose)` | Step2b+2c: events+AT + L1 + L3（并行） | 852 |
+| `_do_step3a_25` | `(runner, verbose)` | Step3a 去重冲突 + 2.5 NPC 档案（并行）→ 绑定 → Boss 遭遇 → 组装 L2 | 906 |
+| `_do_step3b` | `(runner, verbose)` | L1↔L2 交叉核对 + WR0 注入 | 997 |
+| `_do_step35_phase1` | `(runner, verbose)` | Step3.5 依赖图（含循环重试）+ Phase1 约束 | 1031 |
+| `_do_phase2_finalize` | `(runner, verbose)` | Phase2 精简标准化 → 重组装 → Schema/交叉引用验证 → 保存 l1/l2/l3 最终产物；技能名经 `load_skill_checks()`，`stat_names` 已删 SIZ | 1098 |
+| `run_interactive` | `(config)` | 手动步进模式（每步 [c]继续 [r]重试 [e]编辑 [m]改配置 [q]退出），支持 start_from 断点续跑；统一资源层：经 `library.loader` 加载 Item/SpellLibrary（core+extensions，T2 起管线也扫扩展库）到 runner.ilib/runner.slib | 1237 |
+| `run_auto` | `(config)` | 自动模式：复用同一组 `_do_step*` 全程无交互（同载双库，经 `library.loader` 含 extensions） | 1319 |
+| `main` | `()` | argparse CLI：--auto/--config/--docx/--module/--start-from/--model/--thinking-off/--weapon-lib 等 | 1418 |
 
 ### run_step0.py (184 行) — 小说 → 模组文本转写
 
@@ -609,7 +611,7 @@ core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STON
 | `load_item_library` | `(base_dir=None) -> ItemLibrary` | 物品库统一加载（base_dir 缺省=包相对 data/library 绝对路径，供测试注入） | 26 |
 | `load_spell_library` | `(base_dir=None) -> SpellLibrary` | 法术库统一加载（同上） | 30 |
 
-调用点：game_loop.init_game（@224-226）、run_pipeline.run_interactive/run_auto（@1175-1177 / @1257-1259；管线修复：此前只 load_core 不扫 extensions，用户扩展库管线不可见）。`_DATA_ROOT`@12 = src 上两级 data/library（绝对路径，摆脱 game_loop 旧 cwd 相对路径依赖）；cwd 独立性由 tests/test_library_loader.py test_data_root_cwd_independent 锁定（B12，2026-08-25）。
+调用点：game_loop.init_game（@224-226）、run_pipeline.run_interactive/run_auto（@1249-1253 / @1331-1335；管线修复：此前只 load_core 不扫 extensions，用户扩展库管线不可见）。`_DATA_ROOT`@12 = src 上两级 data/library（绝对路径，摆脱 game_loop 旧 cwd 相对路径依赖）；cwd 独立性由 tests/test_library_loader.py test_data_root_cwd_independent 锁定（B12，2026-08-25）。
 
 ### bosses.py (79 行) — BossLibrary（@48）
 
