@@ -917,6 +917,15 @@ class TestAdvanceTimeHooks:
         world.advance_time(60)
         assert inv.derived.MP == 3, "恢复率读 game_config 的 mp_recovery_per_hour"
 
+    def test_full_mp_does_not_burn_accumulator(self):
+        world, inv = self._world()
+        inv.derived.MP = inv.derived.MP_MAX
+        world.advance_time(5 * 60)
+        assert world._mp_regen_acc == 0
+        inv.derived.MP = inv.derived.MP_MAX - 1
+        world.advance_time(60)
+        assert inv.derived.MP == inv.derived.MP_MAX
+
     def test_mp_regen_zero_rate_disables(self, monkeypatch):
         import investigator.rules as rules_mod
         # F2 后 calc_derived 等消费方也读 config,stub 需给全量(默认表+覆盖单键)

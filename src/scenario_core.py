@@ -774,14 +774,17 @@ class ScenarioWorld:
         # MP 恢复:分钟累计器攒 60 回 1 点/点每小时恢复率
         cfg = get_game_config()
         per_hour = int(cfg["mp_recovery_per_hour"])
-        self._mp_regen_acc = getattr(self, "_mp_regen_acc", 0) + max(0, minutes)
-        if per_hour > 0 and self._mp_regen_acc >= 60:
-            gain = (self._mp_regen_acc // 60) * per_hour
-            self._mp_regen_acc -= (self._mp_regen_acc // 60) * 60
-            before = p.derived.MP
-            p.derived.MP = min(p.derived.MP_MAX, p.derived.MP + gain)
-            if p.derived.MP != before:
-                logger.info("[time] MP 恢复 %d -> %d", before, p.derived.MP)
+        if p.derived.MP >= p.derived.MP_MAX:
+            self._mp_regen_acc = 0
+        else:
+            self._mp_regen_acc = getattr(self, "_mp_regen_acc", 0) + max(0, minutes)
+            if per_hour > 0 and self._mp_regen_acc >= 60:
+                gain = (self._mp_regen_acc // 60) * per_hour
+                self._mp_regen_acc -= (self._mp_regen_acc // 60) * 60
+                before = p.derived.MP
+                p.derived.MP = min(p.derived.MP_MAX, p.derived.MP + gain)
+                if p.derived.MP != before:
+                    logger.info("[time] MP 恢复 %d -> %d", before, p.derived.MP)
         # timed 过期清除(记录被清除的 id)
         now = self.clock.game_time
         expired = [t for t in getattr(p, "timed_effects", [])
