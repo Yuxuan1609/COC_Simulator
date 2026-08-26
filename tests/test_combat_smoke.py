@@ -614,6 +614,18 @@ class TestCombatControl:
         assert "无法动弹" not in act.narrative, "归零后走正常行动路径"
         assert act.success and act.roll >= 1, "恢复正常掷骰且必中(DEX/POW=200)"
 
+    def test_controlled_skip_round_narrative_not_miss(self):
+        cs, state, enemy = self._env(controlled_rounds=2)
+        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        state.log = [act]
+        from game.messages import CombatInit
+        result = cs._build_single_round_result(
+            state, CombatInit(enemies=[enemy], player=_make_investigator(),
+                              scene="测", initiative_context="测"))
+        text = result.get("round_narrative") or result.get("narrative") or str(result)
+        assert "未命中" not in text
+        assert "无法动弹" in text or "无法行动" in text
+
     def test_uncontrolled_enemy_acts_normally(self):
         cs, state, enemy = self._env()   # 无 controlled_rounds 属性的普通敌人
         assert not hasattr(enemy, "controlled_rounds"), "前置:普通敌人无该属性"

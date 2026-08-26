@@ -621,9 +621,13 @@ class CombatSystem:
         for a in state.log:
             actor = "调查员" if a.actor == "player" else a.actor
             if a.action_type == "attack":
-                s = "命中" if a.success else "未命中"
-                dmg = f" 造成{a.damage}点伤害" if a.success and a.damage > 0 else ""
-                lines.append(f"{actor} | {a.weapon} D100={a.roll} {s}{dmg}")
+                if a.weapon == "--" or (not a.success and a.damage <= 0
+                                        and "无法动弹" in (a.narrative or "")):
+                    lines.append(f"{actor} | {a.narrative or '无法行动'}")
+                else:
+                    s = "命中" if a.success else "未命中"
+                    dmg = f" 造成{a.damage}点伤害" if a.success and a.damage > 0 else ""
+                    lines.append(f"{actor} | {a.weapon} D100={a.roll} {s}{dmg}")
             elif a.action_type == "flee":
                 lines.append(f"{actor} | 逃跑 {'成功' if a.success else '失败'}")
             elif a.action_type == "dodge":
