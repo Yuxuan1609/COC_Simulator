@@ -1326,3 +1326,19 @@ class TestAutoTriggerTimeCondition:
             }])}, "room_a")
         out = Judge(world).check_auto_triggers()
         assert len(out) == 1
+
+    def test_list_time_condition_blocked_in_daytime(self):
+        from game.judge import Judge
+        from game.clock import GameClock
+
+        world = make_world({"room_a": make_scene(
+            auto_triggers=[{
+                "id": "AT_DAWN", "entity_type": "auto_trigger",
+                "name": "凌晨低语", "scene": "room_a",
+                "type": "None", "requirement": "", "trigger": "time",
+                "result": "黑暗中传来低语。", "side_effects": [],
+                "difficulty": "None",
+                "time_condition": [{"day": "ALL", "times": ["凌晨"]}],
+            }])}, "room_a")
+        world.clock = GameClock(start_time=12 * 60)
+        assert Judge(world).check_auto_triggers() == []
