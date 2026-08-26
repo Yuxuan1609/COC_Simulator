@@ -156,17 +156,16 @@ _SKILL_CONFIG_CACHE: dict | None = None
 
 def load_skill_config(path: str | None = None) -> dict:
     """加载技能体系配置（技能/属性/legacy_map/attr_aliases/pseudo_skills），缓存。"""
+    import json
     global _SKILL_CONFIG_CACHE
-    if _SKILL_CONFIG_CACHE is None or path is not None:
-        import json
-        if path is None:
-            path = os.path.join(os.path.dirname(__file__), "..", "data", "skill_config.json")
-            path = os.path.normpath(path)
+    if path is not None:
         with open(path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        if path is None:
-            _SKILL_CONFIG_CACHE = cfg
-        return cfg
+            return json.load(f)
+    if _SKILL_CONFIG_CACHE is None:
+        default = os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "data", "skill_config.json"))
+        with open(default, "r", encoding="utf-8") as f:
+            _SKILL_CONFIG_CACHE = json.load(f)
     return _SKILL_CONFIG_CACHE
 
 

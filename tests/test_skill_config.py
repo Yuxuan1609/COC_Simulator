@@ -44,6 +44,24 @@ def test_normalize_empty_and_none():
     assert normalize_skill_name(None) == ("unknown", "")
 
 
+def test_default_path_is_cached(monkeypatch):
+    import json
+    import utils
+    utils._SKILL_CONFIG_CACHE = None
+    calls = {"n": 0}
+    real_load = json.load
+
+    def spy(f):
+        calls["n"] += 1
+        return real_load(f)
+
+    monkeypatch.setattr(json, "load", spy)
+    utils.load_skill_config()
+    utils.load_skill_config()
+    assert calls["n"] == 1
+    utils._SKILL_CONFIG_CACHE = None
+
+
 def test_custom_path_does_not_pollute_cache(tmp_path):
     import json
     alt = tmp_path / "alt_config.json"
@@ -73,6 +91,23 @@ def test_normalize_deprecated_and_unknown():
 def test_skill_names_from_config():
     names = get_coc_skill_names()
     assert len(names) == 20 and "运动" in names
+
+
+def test_fumble_only_when_roll_ge_96_and_above_skill(monkeypatch):
+    from investigator.models import Investigator, Skill
+    inv = Investigator(name="t", age=25, gender="男")
+    inv.skills = [Skill(name="图书馆", base_value=99, value=99)]
+    monkeypatch.setattr("random.randint", lambda a, b: 96)
+    ok, msg, tier = inv.check_skill("图书馆")
+    assert tier != "fumble" and ok is True
+    monkeypatch.setattr("random.randint", lambda a, b: 100)
+    ok, msg, tier = inv.check_skill("图书馆")
+    assert tier == "fumble" and ok is False
+    inv.skills[-1].value = 50
+    inv.skills[-1].base_value = 50
+    monkeypatch.setattr("random.randint", lambda a, b: 96)
+    ok, msg, tier = inv.check_skill("图书馆")
+    assert tier == "fumble"
 
 
 def test_stats_no_siz_derived_no_mov():
