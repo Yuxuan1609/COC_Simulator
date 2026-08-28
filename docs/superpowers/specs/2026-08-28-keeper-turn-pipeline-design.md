@@ -37,7 +37,7 @@ Restart             # 重入：Author 接受 → 落账后从 A 重跑（循环�
 | `TurnContext` | turn_input / raw（pre_parse 可改写）/ author / depth | 输入侧，只读 |
 | `TurnAccumulator` | all_outcomes / enrich_input / pending_side_effects / pending_move / combat_init / standoff / ending / brief / detect_future | 产出侧累积（= 现 process_turn 局部变量显式分组） |
 
-- 跨阶段槽：`detect_future`（A 发射 / B 收割，全程唯一终态槽）；`boss_pending_accounting` 仅存在于 W3–W5 过渡期（记账仍延后时的 C→E 传递），W6 记账提前后删除
+- 跨阶段槽：`detect_future`（A 发射 / B 收割）；`boss_accounting`（C 记账载荷 / E 在 curate 成功后消费——freeze 安全要求，见 §4.1）
 - `world` 共享可变，不进契约
 - 跨回合会话态不进契约，收拢为 `Keeper.session_state`：weapon_offer / standoff_pending / npc_injected_at_ids / combat_result_pending / last_outcomes / last_player_input / recent_intents
 
@@ -49,11 +49,10 @@ A 理解   守卫(offer是/否→Early · 直接拾取→Early · 深度守卫) 
          → NPC对话(纯对话→Early) → use归一 → intent发射(future挂acc)
 B 裁决   judge循环(interaction/event/use/move/search/other) → 依赖图自动触发
          → intent收割 → 作者门(接受─Restart / 拒绝─outcome继续)
-C 遭遇   EncounterProvider有序链 [EnemyCombat → SceneBoss]
-         → 即时记账(register/add_to_combat/set_active/mark_spawned) → 吞对峙
+C 遭遇   EncounterProvider有序链 [EnemyCombat → SceneBoss(记账载荷记入acc)] → 吞对峙
 D 充实   enrich ∥ TA(execute_parallel) → advance_time → ending扫描① → 时压通信
 E 收尾   落账(pending side effects + move) → ending扫描② → warnings
-         → event型Boss(迟发钩子) → 吞对峙② → curate → assemble → TurnResult
+         → event型Boss(迟发钩子) → 吞对峙② → curate → Boss记账消费(curate安全后) → assemble → TurnResult
 ```
 
 编排器示意（`runner.py`，~100 行；真实签名以实施计划为准）：
@@ -94,7 +93,7 @@ class EncounterContribution:
     enrich_entities: list[dict] = field(default_factory=list)
 ```
 
-- R1 链上两个 provider：`EnemyCombatProvider`（敌人上下文 → LLM 判定 → 对峙/CombatInit）、`SceneBossProvider`（at/interaction 检查 + 即时记账）
+- R1 链上两个 provider：`EnemyCombatProvider`（敌人上下文 → LLM 判定 → 对峙/CombatInit）、`SceneBossProvider`（at/interaction 检查，记账载荷记 acc 由 E 消费）
 - event 型 Boss 保留为 E 的「迟发钩子」：同一接口、不同执行点。原因：它现在跑在 enrich 之后（keeper.py:891），挪进 C 会改变 enrich 输入——属行为变更，留 Step3 C 簇收编（带测试）
 - NPC ally provider 随 F28 落地时再新增
 
@@ -102,7 +101,7 @@ class EncounterContribution:
 
 作者门从 enrich 之后（keeper.py:815）迁到 B 尾部。连锁效果：
 
-1. **Boss 记账提前到 C**：现记账延后到返回前（keeper.py:975–983）的唯一理由是防作者门递归吞账；迁移后走到 C 的帧必然发货，延后理由消失，acc 的 boss_pending_accounting 槽删除
+1. **Boss 记账仍延后，但理由变了**：现记账延后到返回前（keeper.py:975–983）有两个理由——防作者门递归吞账 + 防 curate 冻结吞账（冻结时 boss 不该被消耗，下回合可重触发）。作者门迁移只消除第一个理由，**freeze 理由仍在**：记账保持在 curate 成功之后执行。变化仅是形态：C 的 SceneBossProvider 把记账载荷记入 `acc.boss_accounting`，E 收尾在 curate 之后消费（与现行 975–983 位置语义相同）
 2. **修复递归暗伤①**：`advance_time` 双涨（外帧 keeper.py:781 + 内帧重跑，同一玩家动作时间走两格）
 3. **修复递归暗伤②**：`enemies.enter_combat`（keeper.py:648）在被弃帧里改了世界态
 4. 附带收益：递归路径不再白跑 combat-entry LLM / enrich / TA
@@ -147,7 +146,7 @@ Keeper（~700 行）= facade + toolbox：
 | W3 | C 遭遇（provider 化，记账仍延后） | 纯搬运，接口落地 | 同上 |
 | W4 | D 充实 | 纯搬运 | 同上 |
 | W5 | E 收尾 | 纯搬运 | 同上 |
-| W6 | 作者门迁 B 尾 + Boss 记账提前 + Restart 循环化 + 递归语义新测试 | **唯一变更波** | 全绿 + 新测试 |
+| W6 | 作者门迁 B 尾 + Restart 循环化 + 递归语义新测试 | **唯一变更波** | 全绿 + 新测试 |
 | W7 | facade 定型 + MAINTENANCE/ISSUES 收口 | 文档 | 全量回归 |
 
 W1–W5 任一波出问题都是纯搬运错误，好定位；行为变更全部隔离在 W6，diff 小、审查集中。
