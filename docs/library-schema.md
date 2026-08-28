@@ -30,7 +30,7 @@
 | san_loss | str | ✅ | 多情境格式，见 §7 |
 | combat_behavior | str | ✅ | 支持 `[flag]` 前缀，见 §8；剩余文本进判定/叙事 prompt |
 | description | str | ◐ | 叙事展示 |
-| flags | list | ✅ | 运行时 flag 集（如 `boss` 标识）；也可从 combat_behavior `[flag]` 前缀提取 |
+| flags | list | ◐ | 运行时 flag 集（如 `boss` 标识）；**仅能经 combat_behavior `[flag]` 前缀写入**（见 §8），JSON 显式 `flags` 数组不被读取（与 bosses 库相反，见 §3） |
 | multi_attack | int=1 | ✅ | 每轮攻击次数 |
 | damage_multipliers | dict | ✅ | `{"<伤害类型>": 倍率}`，>1 易伤 / <1 抗性 / 0 免疫；按武器 `damage_type` 匹配（combat.py `_apply_damage_multiplier`） |
 | dodge_bonus | int=0 | ✅ | 加在敌人命中技能值上（与 attacks.skill_value 或兜底值相加） |
@@ -62,10 +62,11 @@
      "skill_name": "格斗", "skill_value": 50, "weight": 2, "notes": ""}
   ],
   "san_loss": "0/1D4 (目睹), 1/1D6 (被攻击)",
-  "combat_behavior": "[adjacent_aware] | 优先攻击发出最大声音的目标。",
+  "combat_behavior": "[adjacent_aware] | 优先攻击发出最大声音的目标。若无人出声则随机攻击。被击伤后会狂暴，每轮攻击两次。",
   "phases": [
     {"trigger": "hp_below_pct:0.5", "name": "狂暴",
-     "overrides": {"multi_attack": 2}, "description": "受伤后陷入狂暴"}
+     "overrides": {"multi_attack": 2},
+     "description": "Clicker受伤后陷入狂暴，每轮攻击两次"}
   ]
 }
 ```
@@ -91,9 +92,9 @@
     "name": "深渊之口",
     "type": "神话生物/古神残骸",
     "attributes": {"STR": 300, "CON": 500, "SIZ": 400, "DEX": 5, "POW": 200},
-    "armor": "20点异界物质（常规武器无效；需封印后以仪式武器攻击）",
+    "armor": "20点异界物质（常规武器无效；需以古代封印术式强制压制后，以仪式武器攻击才可造成伤害）",
     "san_loss": "1D10/2D100 (目击雕像本体), 0/1D20 (每轮在雾中停留)",
-    "boss_mechanics": "必须先将铜镜和玉刀夺回，在黑石祭坛逆向封印……",
+    "boss_mechanics": "必须先将铜镜和玉刀从马德胜手中夺回，在矿场深处的黑石祭坛找到雕像本体。……",
     "flags": ["boss"]
   }
 }
@@ -175,7 +176,8 @@ timed 原子示例（SALT 盐袋）：`"effect": [{"type": "timed", "id": "SALT_
 | 字段 | 类型 | 接线 | 说明 |
 |---|---|---|---|
 | id | str | — | 主键 |
-| name / aliases | | ✅ | 匹配/展示 |
+| name | str | ✅ | 匹配/展示 |
+| aliases | list | ✅ | 匹配用别名 |
 | category | str="exploration" | ◐ | combat / exploration |
 | description | str | ◐ | 展示 |
 | impact | str="L1" | ✅ | L0/L1/L2 默认档 |
