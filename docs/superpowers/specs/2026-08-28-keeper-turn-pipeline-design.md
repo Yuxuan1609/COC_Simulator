@@ -37,7 +37,7 @@ Restart             # 重入：Author 接受 → 落账后从 A 重跑（循环�
 | `TurnContext` | turn_input / raw（pre_parse 可改写）/ author / depth | 输入侧，只读 |
 | `TurnAccumulator` | all_outcomes / enrich_input / pending_side_effects / pending_move / combat_init / standoff / ending / brief / detect_future | 产出侧累积（= 现 process_turn 局部变量显式分组） |
 
-- 跨阶段槽唯一：`detect_future`（A 发射 / B 收割）
+- 跨阶段槽：`detect_future`（A 发射 / B 收割，全程唯一终态槽）；`boss_pending_accounting` 仅存在于 W3–W5 过渡期（记账仍延后时的 C→E 传递），W6 记账提前后删除
 - `world` 共享可变，不进契约
 - 跨回合会话态不进契约，收拢为 `Keeper.session_state`：weapon_offer / standoff_pending / npc_injected_at_ids / combat_result_pending / last_outcomes / last_player_input / recent_intents
 
