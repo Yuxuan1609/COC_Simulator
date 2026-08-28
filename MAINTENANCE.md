@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-28 | R1 执行记录：`docs/superpowers/journal/2026-08-28-keeper-turn-pipeline.md`（对照 spec §0–§7）；spec 头部加落地指针。已合入 main `e536bfd..d708f91` |
 | 2026-08-28 | R1 收口 — keeper 回合管线阶段化完成；`process_turn` 薄 facade 委托 `TurnRunner.execute` A–E 循环（Early 早退 / Restart `_apply_pending` 后重入 / `TurnFrozenError` → `_build_frozen_response`）；`Keeper.__init__` session_state 跨回合字段成组（B1 入档单元）；未用 messages import 清理；finalize/encounter 注释改为 freeze-safety（spec §4.1）。keeper.py 855 行。全量 345 passed / 20 deselected |
 | 2026-08-28 | R1-W6 作者门迁入 `phase_b_adjudicate` 尾部；递归 `process_turn(_depth+1)` 改为 `TurnRunner.execute` Restart 循环；外帧不再跑 C/D（combat-entry / enrich / TA / advance_time），TA/enrich 仅完成帧跑一次。`_run_turn_pipeline` 删除；`process_turn` 薄 facade（`_depth` 签名保留不用）；freeze 只在 runner 捕获。TDD：`tests/e2e/test_deterministic.py` 增 `TestAuthorRecursion` 4 测试（TA 单次 / enrich 单次 / 拒绝进 outcomes / 深度守卫 deterministic-only），RED 2 failed 2 passed → GREEN 4 passed。keeper.py 944→855；adjudicate.py 228→293；context.py +Restart @48；runner.py 15→41。全量 345 passed / 20 deselected（基线 341+4）；P0 6 passed（含 TestAuthorRecursionPreservesPending） |
 | 2026-08-28 | R1-W5 抽出 E 收尾阶段：`phase_e_finalize`（落账/ending②/warnings/event型Boss/吞对峙②/curate/Boss记账/assemble）；curate 内层 TurnFrozenError catch 删除改冒泡；作者门仍留 keeper；`_run_turn_pipeline` 现 A→B→C→D→作者门→E；keeper.py 1063→944 |

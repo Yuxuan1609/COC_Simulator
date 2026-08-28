@@ -2,6 +2,8 @@
 
 > 2026-08-28 与用户讨论拍板。来源：roadmap Step2 第 2 项（docs/superpowers/specs/2026-08-26-remaining-issues-roadmap-design.md §2）。
 > 2026-05-30 turnrunner-keeper-split spec 的继任：诊断沿用（god function + 三层混叠），方案不照抄——那份 spec 死于顺手重设计回合协议，本设计除 §4 一处外行为逐字节等价。
+>
+> **落地（2026-08-28）**: 已合入 `main`（`e536bfd..d708f91`）。执行记录见 `docs/superpowers/journal/2026-08-28-keeper-turn-pipeline.md`。
 
 ## 0. 目标 / 非目标
 
