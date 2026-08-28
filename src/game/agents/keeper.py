@@ -11,10 +11,9 @@ from game.side_effects import (
     NPCStateChange, NPCFollow,
 )
 from ..messages import (
-    ActionIntent, ActionOutcome, NarratorBrief,
+    ActionIntent, ActionOutcome,
     StructuralEdit, ModulePatch, TurnInput,
-    StandoffMatch,
-    TurnStatus, TurnResult, PendingInteraction, EndingInfo, TurnDiagnostics,
+    TurnStatus, TurnResult, TurnDiagnostics,
 )
 from ..judge import Judge
 from ..curator import Curator
@@ -110,23 +109,24 @@ class Keeper:
         self.curator = Curator(world)
         self.turn_number = 0
         self._warnings: list[str] = []  # per-turn LLM error warnings surfaced to player
-        self._recent_intents: list[str] = []  # last N intent strings for duplicate suppression
         from monitor.agent_monitor import AgentMonitor
         from monitor.policies import KeeperPolicy
         from llm import _init_sensor
         self._sensor = _init_sensor()
         self.monitor = AgentMonitor("Keeper", self._sensor, KeeperPolicy())
         self._intent_cooldown: int = INTENT_COOLDOWN_WINDOW
-        self._standoff_pending: dict | None = None
-        self._weapon_offer: list | None = None  # pending weapon pickup offers [{weapon_ref, scene}, ...]
-        self._weapon_offer_msg: str = ""  # offer prompt message for current turn's output
         self._npc_events: list[str] = []  # NPC follow/state events collected this turn
-        self._npc_injected_at_ids: set[str] = set()  # track ATs injected from NPC bound_auto_triggers
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
+        # ── session_state（跨回合；B1 存档设计将以此分组为入档单元）──
+        self._weapon_offer: list | None = None  # pending weapon pickup offers [{weapon_ref, scene}, ...]
+        self._weapon_offer_msg: str = ""  # offer prompt message for current turn's output
+        self._standoff_pending: dict | None = None
         self._combat_result_pending: dict | None = None  # {outcome, narrative, is_boss} from last combat
         self._last_outcomes: list = []  # stored outcomes for combat completion replay
         self._last_player_input: str = ""  # original input that triggered combat
+        self._npc_injected_at_ids: set[str] = set()  # track ATs injected from NPC bound_auto_triggers
+        self._recent_intents: list[str] = []  # last N intent strings for duplicate suppression
         self.turn_monitor = TurnMonitor(self._sensor, self.world, keeper=self)
         from game.use_parser import UseParser
         self.use_parser = UseParser(

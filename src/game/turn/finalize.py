@@ -58,7 +58,7 @@ def phase_e_finalize(ctx, acc, tools) -> None:
         acc.standoff_prompt = tools._devour_standoff_for_boss(
             acc.standoff_prompt, acc.combat_init_result, acc.all_outcomes, None)
 
-    # Step 5: Curate — TurnFrozenError 冒泡，depth 0 由 TurnRunner、depth>0 由 facade 兜底
+    # Step 5: Curate — TurnFrozenError 冒泡，由 TurnRunner 兜底
     ambient = [o.message for o in acc.all_outcomes if o.entity_type == "auto_trigger"]
     acc.brief = tools.turn_monitor.execute_step(
         "curate",
@@ -105,8 +105,7 @@ def phase_e_finalize(ctx, acc, tools) -> None:
             interaction_id="weapon_offer",
         )
 
-    # Boss 开战记账（延后至此：只有 combat_init 真正随结果返回才记账，
-    # 保证 Step 4 Author 递归丢弃外层结果时 Boss 战不被吞）
+    # Boss 开战记账（延后至此：curate 成功后才记账；freeze 时 Boss 不被消耗，下回合可重触发；spec §4.1）
     if acc.boss_accounting and acc.combat_init_result:
         boss_engaged_id, boss_enemy = acc.boss_accounting
         if boss_enemy:

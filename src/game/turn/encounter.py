@@ -149,8 +149,8 @@ class EnemyCombatProvider:
 
 class SceneBossProvider:
     def probe(self, ctx, acc, tools) -> EncounterContribution | None:
-        # scene-bound at/interaction：必须在 enrich 之前注入；开战记账延后到最终返回前——
-        # Author 递归会丢弃本帧结果，提前记账会永久吞掉 Boss 战。
+        # scene-bound at/interaction：必须在 enrich 之前注入；开战记账延后到 E curate 成功后——
+        # freeze 时 Boss 不被消耗，下回合可重触发（spec §4.1）。
         boss_combat_init = None
         boss_engaged_id = None
         enrich_entities: list[dict] = []

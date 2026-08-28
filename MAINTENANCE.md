@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-28 | R1 收口 — keeper 回合管线阶段化完成；`process_turn` 薄 facade 委托 `TurnRunner.execute` A–E 循环（Early 早退 / Restart `_apply_pending` 后重入 / `TurnFrozenError` → `_build_frozen_response`）；`Keeper.__init__` session_state 跨回合字段成组（B1 入档单元）；未用 messages import 清理；finalize/encounter 注释改为 freeze-safety（spec §4.1）。keeper.py 855 行。全量 345 passed / 20 deselected |
 | 2026-08-28 | R1-W6 作者门迁入 `phase_b_adjudicate` 尾部；递归 `process_turn(_depth+1)` 改为 `TurnRunner.execute` Restart 循环；外帧不再跑 C/D（combat-entry / enrich / TA / advance_time），TA/enrich 仅完成帧跑一次。`_run_turn_pipeline` 删除；`process_turn` 薄 facade（`_depth` 签名保留不用）；freeze 只在 runner 捕获。TDD：`tests/e2e/test_deterministic.py` 增 `TestAuthorRecursion` 4 测试（TA 单次 / enrich 单次 / 拒绝进 outcomes / 深度守卫 deterministic-only），RED 2 failed 2 passed → GREEN 4 passed。keeper.py 944→855；adjudicate.py 228→293；context.py +Restart @48；runner.py 15→41。全量 345 passed / 20 deselected（基线 341+4）；P0 6 passed（含 TestAuthorRecursionPreservesPending） |
 | 2026-08-28 | R1-W5 抽出 E 收尾阶段：`phase_e_finalize`（落账/ending②/warnings/event型Boss/吞对峙②/curate/Boss记账/assemble）；curate 内层 TurnFrozenError catch 删除改冒泡；作者门仍留 keeper；`_run_turn_pipeline` 现 A→B→C→D→作者门→E；keeper.py 1063→944 |
 | 2026-08-28 | R1-W4 抽出 D 充实阶段：`phase_d_enrich`（enrich∥TA、advance_time、ending扫描①、时压）；作者门仍留 keeper；`_run_turn_pipeline` 现 A→B→C→D→剩余 E；keeper.py 1152→1063 |
@@ -194,20 +195,22 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ## src/game/agents/keeper.py (855 行) — Keeper 回合编配
 
+无 `_run_turn_pipeline`。`process_turn` 为薄 facade，委托 `TurnRunner.execute`（A–E 循环）。toolbox 方法仍驻本文件，供 turn/ 阶段经 `tools` 调用。
+
 ### 模块级函数
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
-| `_describe_time_condition` | 时间条件 → 自然语言 | 30 |
-| `_build_investigator_weapon` | 库武器 → 调查员 Weapon 实例 | 69 |
+| `_describe_time_condition` | 时间条件 → 自然语言 | 29 |
+| `_build_investigator_weapon` | 库武器 → 调查员 Weapon 实例 | 68 |
 
-### Keeper 类（@91）
+### Keeper 类（@90）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor/UseParser（llm_call 晚绑定 call_deepseek） | 97 |
+| `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor/UseParser（llm_call 晚绑定 call_deepseek）；session_state 跨回合字段成组 @121（`_weapon_offer`/`_weapon_offer_msg`/`_standoff_pending`/`_combat_result_pending`/`_last_outcomes`/`_last_player_input`/`_npc_injected_at_ids`/`_recent_intents`；B1 入档单元）。per-turn 字段（`_warnings`/`_npc_events`/`_pending_side_effects`/`_pending_move`）不入组。`_runner` 懒创建于 `process_turn` | 96 |
 | `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 135 |
-| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：懒创建 `TurnRunner(self)` 并 `execute`；`_depth` 仅签名兼容，不再使用（无递归 `process_turn`） | 147 |
+| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：懒创建 `TurnRunner(self)` 并 `execute`（A–E 循环）；`_depth` 仅签名兼容，不再使用（无 `_run_turn_pipeline`、无递归 `process_turn`） | 147 |
 | `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 432 |
 | `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 469 |
 | `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 451 |
@@ -233,9 +236,11 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 774 |
 | `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 828 |
 
-## src/game/turn/ — 回合管线（R1）
+## src/game/turn/ — 回合管线（R1 已收口）
 
-W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部，`TurnRunner.execute` 为五宏阶段 + Restart 循环编排器。`_run_turn_pipeline` 已删。
+W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 facade 定型。`_run_turn_pipeline` 已删。
+
+调用图：`Keeper.process_turn` → `TurnRunner.execute` → A `phase_a_understand` / B `phase_b_adjudicate` / C `phase_c_encounter` / D `phase_d_enrich` / E `phase_e_finalize`；`Early` 直接返回 `r.result`；`Restart` 则 `_apply_pending` 后 `depth+=1` 重入 A；`TurnFrozenError` → `_build_frozen_response`。
 
 ### `__init__.py`
 
@@ -276,7 +281,7 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部，`Tu
 | `EncounterContribution` | dataclass | 单个 provider 产出：combat_init / standoff / outcomes / enrich_entities / boss_accounting | 14 |
 | `EncounterProvider` | Protocol `probe(ctx, acc, tools)` | plugin 接入点；返回 contribution 或 None | 23 |
 | `EnemyCombatProvider` | `probe` | Step 2.5+2.6 敌战入口：无 enemy_ctx 不 LLM；LLM 异常 combat_entry=None；成功即使 enter_combat=False 也写 `acc.combat_entry`；avoidable 对峙播种 `_standoff_pending` / hostile CombatInit；LLM 走 `keeper.call_deepseek`（既有 monkeypatch 目标） | 27 |
-| `SceneBossProvider` | `probe` | at/interaction Boss（非 event）；`_check_boss_requirements(..., ctx.turn_input.raw_text)`；合并 `acc.combat_init_result`；写 `acc.boss_accounting`；不开战记账 | 150 |
+| `SceneBossProvider` | `probe` | at/interaction Boss（非 event）；`_check_boss_requirements(..., ctx.turn_input.raw_text)`；合并 `acc.combat_init_result`；写 `acc.boss_accounting`（E curate 成功后消费，freeze-safety spec §4.1）；不开战记账 | 150 |
 | `_PROVIDERS` | tuple | EnemyCombat → SceneBoss 有序链 | 210 |
 | `phase_c_encounter` | `(ctx, acc, tools) -> None` | 逐 provider 合并 contribution 到 acc；吞对峙①（`acc.boss_accounting and acc.standoff_prompt`） | 213 |
 
@@ -286,11 +291,11 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部，`Tu
 |------|------|------|------|
 | `phase_d_enrich` | `(ctx, acc, tools) -> None` | 战斗结果注入 → enrich∥time_agent（`tools.turn_monitor.execute_parallel`）→ 收集 results + `_scan_ending` 首次扫描写入 `acc.ending_result` → `world.advance_time`（T7）/ time_context → TimePressure comms（best-effort except）；产出 `acc.enrichment` / `acc.ta_result` / `acc.emphasis` / `acc.enriched_summary` / `acc.ending_result` | 7 |
 
-### `finalize.py`（132 行）— E 收尾阶段（R1-W5）
+### `finalize.py`（131 行）— E 收尾阶段（R1-W5）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `phase_e_finalize` | `(ctx, acc, tools) -> None` | 落账 `_apply_pending` → ending 二次扫描（`ctx.author`）→ warnings 注入 outcomes → event 型 Boss（`ctx.turn_input.raw_text`，非 ctx.raw）→ 吞对峙②（enrich_input=None）→ curate（TurnFrozenError 冒泡，写 `acc.brief`）→ memory compress 线程（`keeper.call_deepseek` 晚绑定）→ weapon offer 注入 brief → `_last_outcomes` → standoff/offer PendingInteraction → Boss 开战记账（`acc.boss_accounting`）→ assemble 写 `acc.result`（不返回 TurnResult） | 11 |
+| `phase_e_finalize` | `(ctx, acc, tools) -> None` | 落账 `_apply_pending` → ending 二次扫描（`ctx.author`）→ warnings 注入 outcomes → event 型 Boss（`ctx.turn_input.raw_text`，非 ctx.raw）→ 吞对峙②（enrich_input=None）→ curate（TurnFrozenError 冒泡由 TurnRunner 兜底，写 `acc.brief`）→ memory compress 线程（`keeper.call_deepseek` 晚绑定）→ weapon offer 注入 brief → `_last_outcomes` → standoff/offer PendingInteraction → Boss 开战记账（`acc.boss_accounting`，curate 成功后，freeze-safety spec §4.1）→ assemble 写 `acc.result`（不返回 TurnResult） | 11 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 
