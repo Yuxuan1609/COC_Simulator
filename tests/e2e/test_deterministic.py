@@ -461,6 +461,75 @@ class TestFailureEscalation:  # D9: A5
         assert state.escalated_difficulty == "hard", "难度升级后不得回落"
 
 
+class TestLockKeyFlow:  # F16: 锁-钥匙 infra 链路锁定(不加机制)
+    def _lock_world(self):
+        lock = {
+            "id": "IT_LOCK", "entity_type": "interaction",
+            "name": "撬锁", "scene": "room_a",
+            "type": "锁匠", "requirement": "", "trigger": "撬锁",
+            "result": "##GRADED##",
+            "graded_result": {"on_failure": "锁纹丝不动。",
+                              "on_regular": "锁开了。",
+                              "on_hard": "锁开了。", "on_extreme": "锁开了。"},
+            "side_effects": [], "difficulty": "regular", "time_condition": [],
+        }
+        world = make_world({
+            "room_a": make_scene(
+                interactions=[lock],
+                exits=[{"target": "room_b", "method": "步行",
+                        "requirement": "IT_LOCK"}]),
+            "room_b": make_scene(),
+        }, "room_a")
+        return world
+
+    def test_door_blocked_before_unlock(self, monkeypatch):
+        """开锁前:出口硬条件挡住移动。"""
+        world = self._lock_world()
+        _player(world)
+        blocked = world.move("room_b")
+        assert not blocked.success, "锁未完成前移动必须被挡"
+        assert world.current_location == "room_a"
+
+    def test_lockpick_success_unlocks_door(self, monkeypatch):
+        """撬锁检定成功 → mark_completed → 同一出口即时通过。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = self._lock_world()
+        inv = _player(world)
+        inv.check_skill = lambda skill, diff: (True, f"{skill}检定：D100=10/50", "regular")
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "interaction", "id": "IT_LOCK"}]])
+        game = make_game(keeper)
+
+        r = run_turn(game, "撬锁")
+        assert_player_turn_contract(r)
+        assert world.is_entity_completed("IT_LOCK"), "检定成功必须翻转锁的 completed"
+
+        ok = world.move("room_b")
+        assert ok.success and world.current_location == "room_b", \
+            "锁已开,移动必须即时通过"
+
+    def test_lockpick_failure_keeps_door_shut(self, monkeypatch):
+        """撬锁失败 → 门保持关闭(与 TestFailureEscalation 难度升级不冲突)。"""
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = self._lock_world()
+        inv = _player(world)
+        inv.check_skill = lambda skill, diff: (False, f"{skill}检定：D100=98/10", "failure")
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "interaction", "id": "IT_LOCK"}]])
+        game = make_game(keeper)
+
+        r = run_turn(game, "撬锁")
+        assert_player_turn_contract(r)
+        assert not world.is_entity_completed("IT_LOCK")
+        assert not world.move("room_b").success
+
+
 class TestBossPrespawnEngage:  # D10: B3
     def _boss_world(self, tmp_path):
         import json as _json

@@ -551,7 +551,7 @@ class RequirementResolver:
 #  Requirement string parser (AND/OR logic)
 # ═══════════════════════════════════════════════════════════════
 
-_ENTITY_ID_PATTERN = re.compile(r'^[A-Z][A-Z_]*\d+[a-z]?$')
+_ENTITY_ID_PATTERN = re.compile(r'^[A-Z][A-Z0-9_]+[a-z]?$')
 
 
 def _extract_entity_id(text: str) -> str | None:
