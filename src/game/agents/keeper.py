@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 from scenario_core import ScenarioWorld, Entity
 from game.side_effects import (
@@ -15,7 +14,7 @@ from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
     CombatEntryCheck, StandoffMatch, CombatInit,
-    TimeCommsPacket, EnrichInput,
+    TimeCommsPacket,
     TurnStatus, TurnResult, PendingInteraction, EndingInfo, TurnDiagnostics,
 )
 from ..judge import Judge
@@ -24,7 +23,7 @@ from ..intent_detector import IntentDetector
 from ..pre_parse import PreParseDisambiguator
 from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt
 from llm import call_deepseek
-from config import MAX_ESCALATION_DEPTH, INTENT_COOLDOWN_WINDOW
+from config import INTENT_COOLDOWN_WINDOW
 from config_llm import LLM_FLASH_MODEL, RE_COMBAT_ENTRY, RE_KEEPER_PARSE
 from monitor.turn_monitor import TurnFrozenError, TurnMonitor
 
@@ -149,7 +148,10 @@ class Keeper:
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
         """Facade：委托 TurnRunner。_depth>0 为内部递归路径（W6 前）。"""
         if _depth:
-            return self._run_turn_pipeline(turn_input, author, _depth)
+            try:
+                return self._run_turn_pipeline(turn_input, author, _depth)
+            except TurnFrozenError as e:
+                return self._build_frozen_response(e)
         if not hasattr(self, "_runner"):
             from ..turn.runner import TurnRunner
             self._runner = TurnRunner(self)
@@ -157,197 +159,17 @@ class Keeper:
 
     def _run_turn_pipeline(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
         """Execute full turn: parse → judge → enrich → curate."""
-        raw = turn_input.raw_text
-        at = turn_input.action_type
-
-        # Pending weapon offer check: 只认「是」「否」本身（R2：模糊含"是"不吞回合）
-        offer_expired = False
-        if self._weapon_offer:
-            answer = re.sub(r"[\s，。！？!?,.\、…~～'\"“”]", "", raw)
-            if answer in ("是", "否"):
-                offer_list = self._weapon_offer
-                self._weapon_offer = None
-                if answer == "是" and self.world.weapon_library:
-                    names = self._grant_scene_weapons(offer_list)
-                    return TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。")
-                names = "、".join(w["weapon_ref"] for w in offer_list)
-                return TurnResult(status=TurnStatus.COMPLETED, text=f"你忽略了{names}。")
-            # 非「是/否」输入：作废 offer，按正常回合继续处理
-            self._weapon_offer = None
-            offer_expired = True
-
-        # 直接拾取通路（R1）：明说「捡/拾/拿 + 武器名」直接入包，无需 offer
-        direct_w = self._detect_direct_pickup(raw)
-        if direct_w:
-            names = self._grant_scene_weapons(
-                [{"weapon_ref": direct_w, "scene": self.world.current_location}])
-            return TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。")
-
-        if _depth >= MAX_ESCALATION_DEPTH:
-            # Guard against infinite recursion — re-execute deterministically
-            return self._process_deterministic_only(turn_input)
-        self.turn_number += 1
-        self._warnings.clear()
-        if offer_expired:
-            self._warnings.append(
-                "武器拾取提议已过期：输入非「是/否」，按正常回合处理")
-        self._npc_events.clear()
-        self._pending_side_effects.clear()
-        self._pending_move = None
-        self._standoff_pending = None
-
-        # Inject NPC ATs + interactions before normal parse
-        self._inject_npc_at()
-
-        # U9：LUCK 声明式消耗——「烧/用 N 点幸运」→ spend_luck + pending_luck_bonus
-        # 原子绑定：仅扣减成功时才置加值，失败只记 warning
-        _luck_m = re.search(r"(?:烧|燃烧|用|消耗)\s*(\d{1,2})\s*点?\s*(?:幸运|运气|LUCK|luck)",
-                            raw)
-        if _luck_m and self.world.player:
-            _n = int(_luck_m.group(1))
-            _ok, _msg = self.world.player.spend_luck(_n)
-            if _ok:
-                self.world.player.pending_luck_bonus = _n
-            self._warnings.append(f"LUCK 消耗：{_msg}")
-
-        # ── Pre-parse shortcut: move/search bypass LLM parse entirely ──
-        pre_result = None
-        # UseParser 确定性短路（统一资源层）：使用谓词+素材名命中 -> use 动作，跳过 LLM parse
-        use_hit = None
-        if self.use_parser:
-            use_hit = self.use_parser.resolve(raw, self._material_catalogs())
-        if use_hit:
-            parse_result = [{"type": "use", "material": use_hit}]
-        elif at == "move":
-            target = (turn_input.action_target or "").strip()
-            if not target:
-                return TurnResult(status=TurnStatus.COMPLETED,
-                                  text="（移动目标未指定。）",
-                                  npc_events=list(self._npc_events))
-            exits = self.world.get_possible_exits()
-            valid_targets = {e.target for e in exits}
-            if target not in valid_targets:
-                return TurnResult(status=TurnStatus.COMPLETED,
-                                  text=f"（无法移动到「{target}」。）",
-                                  npc_events=list(self._npc_events))
-            raw = f"移动到{target}"
-            parse_result = [{"type": "move", "target": target}]
-        elif at == "search":
-            raw = "搜索"
-            parse_result = [{"type": "search"}]
-        else:
-            # Step 0: Pre-parse — disambiguation gate
-            pre_result = self.pre_parse.disambiguate(raw, self._build_world_brief())
-            if pre_result.clarity == "ambiguous":
-                return TurnResult(
-                    status=TurnStatus.SUSPENDED,
-                    text=pre_result.question,
-                    pending_interaction=PendingInteraction(
-                        kind="clarify", question=pre_result.question,
-                        interaction_id="clarify"),
-                    diagnostics=TurnDiagnostics(pre_parse=pre_result),
-                )
-            # Use resolved_text as effective input when cross-turn integration happened
-            if pre_result.resolved_text:
-                raw = pre_result.resolved_text
-
-            # Step 1: Parse (LLM) — entity matching + NL requirement evaluation
-            try:
-                parse_result = self.turn_monitor.execute_step(
-                    "parse", lambda: self._parse(raw), is_critical=True)
-            except TurnFrozenError as e:
-                return self._build_frozen_response(e)
-
-        # NPC general conversation: parse returned npc_interact (no matching entity).
-        # Generate dialogue via talk_to(), route follow requests, inject into enrich_input.
-        # Pure-dialogue turns short-circuit return; mixed turns continue through normal pipeline.
-        npc_interact_entries = [e for e in parse_result if e.get("type") == "npc_interact"]
-        non_npc_entries = [e for e in parse_result if e.get("type") != "npc_interact"]
-        _FOLLOW_KEYWORDS = ("跟我", "跟着", "跟随", "一起走", "加入我", "跟我来", "跟我走",
-                           "一起行动", "陪同", "随行", "随我")
-        _has_follow_request = lambda txt: any(kw in txt for kw in _FOLLOW_KEYWORDS)
-
-        all_outcomes = []
-        enrich_input = EnrichInput()
-
-        if npc_interact_entries:
-            for entry in npc_interact_entries:
-                npc_name = entry.get("npc_name", "")
-                npc = self.world.npcs.get(npc_name) if npc_name and self.world.npcs else None
-                if not npc:
-                    self._npc_events.append(f"（没有叫「{npc_name}」的 NPC）")
-                    continue
-                if npc.scene != self.world.current_location:
-                    self._npc_events.append(f"（{npc_name} 不在当前场景）")
-                    continue
-                dialogue = self.world.npcs.talk_to(
-                    npc_name, raw,
-                    lambda prompt, **kw: call_deepseek(prompt, **kw),
-                    world=self.world,
-                )
-                self._npc_events.append(f"{npc_name}：{dialogue}")
-                enrich_input.entities.append({
-                    "entity_type": "npc_dialogue",
-                    "id": f"NPC_{npc_name}",
-                    "name": f"与{npc_name}对话",
-                    "result": f"「{dialogue[:120]}」",
-                    "success": True,
-                    "skill_tier": "",
-                })
-                # Detect follow request via keyword match
-                if _has_follow_request(raw):
-                    ok, reason = self.world.npcs._check_follow_conditions(npc, self.world)
-                    if ok:
-                        self.world.npcs.set_following(npc_name, True)
-                        self._npc_events.append(f"{npc_name} 开始跟随你")
-                    else:
-                        self._npc_events.append(reason)
-            # If ONLY npc_interact, short-circuit — dialogue is the narrative.
-            if not non_npc_entries:
-                dialogue_text = self._npc_events[-1] if self._npc_events else ""
-                return TurnResult(status=TurnStatus.COMPLETED,
-                                  text=dialogue_text,
-                                  npc_events=list(self._npc_events))
-            parse_result = non_npc_entries
-
-        # use 条目归一：LLM 粗识别但确定性层未命中 -> LLM 兜底；仍未命中转 other/creative
-        _normalized = []
-        for e in parse_result:
-            if e.get("type") == "use" and not e.get("material"):
-                _m = (self.use_parser.resolve_llm(raw, self._material_catalogs())
-                      if self.use_parser else None)
-                if _m is not None:
-                    _normalized.append({"type": "use", "material": _m})
-                else:
-                    _normalized.append({"type": "other", "impact": "creative",
-                                        "text": e.get("text") or raw})
-            else:
-                _normalized.append(e)
-        parse_result = _normalized
-
-        # Launch IntentDetector early if there are creative "other" entries.
-        # 门控（flavor 豁免，2026-08-18 spec §1.2 细化）：
-        # - other/impact=flavor：永不触发 detector（氛围动作 enrich 消化）
-        # - other/impact=creative：仅当帧内无【实质性动作】时升级--
-        #   实质性 = interaction/event/move/search/use/NPC 对话（防递归丢帧，硬挡保留）；
-        #   仅氛围 auto_trigger 捎带（如 AT_AMBIENT）不算实质覆盖（escalation C/E 修复）
-        other_entries = [e for e in parse_result if e.get("type") == "other"]
-        other_creative = [e for e in other_entries if e.get("impact") != "flavor"]
-        _SUBSTANTIVE_TYPES = ("interaction", "event", "move", "search", "use")
-        has_substantive = bool(npc_interact_entries) or any(
-            e.get("type") in _SUBSTANTIVE_TYPES for e in parse_result)
-        detect_future = None
-        executor = None
-        if other_creative and author and not has_substantive:
-            other_text = "; ".join(e.get("text", "") for e in other_creative)
-            world_snapshot = self._build_world_snapshot()
-            executor = ThreadPoolExecutor(max_workers=1)
-            detect_future = executor.submit(
-                self.intent_detector.detect, other_text, world_snapshot
-            )
-
+        from ..turn.context import TurnContext, TurnAccumulator, Early
+        from ..turn.understand import phase_a_understand
+        ctx = TurnContext(turn_input=turn_input, author=author, depth=_depth,
+                          raw=turn_input.raw_text)
+        acc = TurnAccumulator()
+        r = phase_a_understand(ctx, acc, self)
+        if isinstance(r, Early):
+            return r.result
+        # ── 以下为尚未搬迁的 B–E 段：已搬走的局部变量改从 acc/ctx 读取
         # Step 2: Judge — iterate over parse result entries
-        for entry in parse_result:
+        for entry in acc.parse_result:
             entry_type = entry.get("type", "")
             if entry_type in ("auto_trigger", "interaction", "event"):
                 eid = entry.get("id", "")
@@ -361,7 +183,7 @@ class Keeper:
                     if not _check_tc(tc, self.world.clock.day, self.world.clock.time_of_day):
                         hint = _describe_time_condition(tc) or "当前时间不满足触发条件"
                         now = f"第{self.world.clock.day}天 {self.world.clock.time_of_day}"
-                        all_outcomes.append(ActionOutcome(
+                        acc.all_outcomes.append(ActionOutcome(
                             intent=ActionIntent(action=entry_type, target=entity.name),
                             success=False,
                             message=f"「{entity.name}」{hint}（当前：{now}）",
@@ -373,19 +195,19 @@ class Keeper:
                     action=entry_type,
                     target=entity.name if entry_type == "interaction" else "",
                 )
-                outcome = self.judge._execute_entity(entity, intent=intent, player_input=raw)
+                outcome = self.judge._execute_entity(entity, intent=intent, player_input=ctx.raw)
                 self._pending_side_effects.extend(outcome.side_effects)
                 if outcome.success:
                     tr = entity.extra.get("time_range") if entity.extra else None
-                    enrich_input.actions.append({
+                    acc.enrich_input.actions.append({
                         "type": entity.entity_type,
                         "name": entity.name,
                         "success": True,
                         "time_range": tr,
                         "time_category": self._infer_time_category(entity),
                     })
-                all_outcomes.append(outcome)
-                enrich_input.entities.append({
+                acc.all_outcomes.append(outcome)
+                acc.enrich_input.entities.append({
                     "entity_type": entity.entity_type,
                     "id": entity.id,
                     "name": entity.name,
@@ -396,9 +218,9 @@ class Keeper:
             elif entry_type == "use":
                 material = entry.get("material")
                 if material is not None:
-                    outcome = self.judge.execute_material(material, raw)
-                    all_outcomes.append(outcome)
-                    enrich_input.entities.append({
+                    outcome = self.judge.execute_material(material, ctx.raw)
+                    acc.all_outcomes.append(outcome)
+                    acc.enrich_input.entities.append({
                         "entity_type": "material",
                         "id": material.material_id,
                         "name": material.name,
@@ -410,18 +232,18 @@ class Keeper:
                 target = entry.get("target", "")
                 origin = self.world.current_location
                 self._pending_move = target  # defer move until Author check passes
-                all_outcomes.append(ActionOutcome(
+                acc.all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="move", target=target),
                     success=True, message=f"从{origin}前往{target}...",
                 ))
-                enrich_input.actions.append({
+                acc.enrich_input.actions.append({
                     "type": "move",
                     "name": f"移动到{target}",
                     "success": True,
                     "time_range": None,
                     "time_category": "move",
                 })
-                enrich_input.entities.append({
+                acc.enrich_input.entities.append({
                     "entity_type": "move",
                     "id": f"MOVE_{target}",
                     "name": f"前往{target}",
@@ -445,7 +267,7 @@ class Keeper:
                     new_tier, enh = apply_trait_enhancement(
                         self.world.player, "侦查", skill_msg,
                         entity_name="搜索", search_context=True,
-                        player_input=raw,
+                        player_input=ctx.raw,
                     )
                     if new_tier and new_tier != tier:
                         skill_detail += f"\n  [特质修正] {tier} → {new_tier}：{enh.get('reason', '') if enh else ''}"
@@ -481,20 +303,20 @@ class Keeper:
                         self._weapon_offer = [{"weapon_ref": sw.weapon_ref, "scene": self.world.current_location} for sw in scene_weps]
                 else:
                     msg = "（仔细查看四周，没有特别的发现）"
-                all_outcomes.append(ActionOutcome(
+                acc.all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="search"), success=True, message=msg,
                     entity_id="SEARCH", entity_type="search",
                     skill_tier=tier if self.world.player else "",
                     skill_detail=skill_detail if self.world.player else "",
                     enhancement=trait_enh))
-                enrich_input.actions.append({
+                acc.enrich_input.actions.append({
                     "type": "search",
                     "name": "搜索",
                     "success": True,
                     "time_range": None,
                     "time_category": "search",
                 })
-                enrich_input.entities.append({
+                acc.enrich_input.entities.append({
                     "entity_type": "search",
                     "id": "SEARCH",
                     "name": "搜索",
@@ -504,17 +326,17 @@ class Keeper:
                 })
             elif entry_type == "other":
                 text = entry.get("text", "")
-                all_outcomes.append(ActionOutcome(
+                acc.all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{text}）"))
-                enrich_input.actions.append({
+                acc.enrich_input.actions.append({
                     "type": "other",
                     "name": text,
                     "success": True,
                     "time_range": None,
                     "time_category": "other",
                 })
-                enrich_input.entities.append({
+                acc.enrich_input.entities.append({
                         "entity_type": "other",
                         "id": "OTHER",
                         "name": text[:40],
@@ -523,17 +345,17 @@ class Keeper:
                         "skill_tier": "",
                     })
             else:
-                all_outcomes.append(ActionOutcome(
+                acc.all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="other"), success=True,
                     message=f"（{entry.get('text', '没有特别的事情发生')}）"))
-                enrich_input.actions.append({
+                acc.enrich_input.actions.append({
                     "type": "other",
                     "name": entry.get("text", ""),
                     "success": True,
                     "time_range": None,
                     "time_category": "other",
                 })
-                enrich_input.entities.append({
+                acc.enrich_input.entities.append({
                     "entity_type": "other",
                     "id": "OTHER",
                     "name": str(entry.get("text", ""))[:40],
@@ -552,10 +374,10 @@ class Keeper:
                     # Source is an event that should auto-fire when target completes
                     source_entity = self.world.graph.events.get(source_id)
                     if source_entity and not self.world.is_event_triggered(source_id):
-                        outcome = self.judge._execute_entity(source_entity, intent=ActionIntent(action="event"), player_input=raw)
+                        outcome = self.judge._execute_entity(source_entity, intent=ActionIntent(action="event"), player_input=ctx.raw)
                         self._pending_side_effects.extend(outcome.side_effects)
-                        all_outcomes.append(outcome)
-                        enrich_input.entities.append({
+                        acc.all_outcomes.append(outcome)
+                        acc.enrich_input.entities.append({
                             "entity_type": "event",
                             "id": source_entity.id,
                             "name": source_entity.name,
@@ -573,11 +395,11 @@ class Keeper:
             )
         if enemy_ctx:
             outcomes_summary = "\n".join(
-                f"[{o.entity_type}] {o.message}" for o in all_outcomes
+                f"[{o.entity_type}] {o.message}" for o in acc.all_outcomes
             )
             from prompts import build_combat_entry_prompt
             combat_prompt = build_combat_entry_prompt(
-                player_input=raw,
+                player_input=ctx.raw,
                 outcomes_summary=outcomes_summary,
                 enemy_context=enemy_ctx,
                 current_scene=self.world.current_location,
@@ -602,7 +424,7 @@ class Keeper:
             except Exception:
                 combat_entry = None
 
-        # Step 2.6: Resolve combat trigger & inject combat narrative into enrich_input
+        # Step 2.6: Resolve combat trigger & inject combat narrative into acc.enrich_input
         standoff_prompt = None
         combat_init_result = None
         if combat_entry and combat_entry.enter_combat:
@@ -634,14 +456,14 @@ class Keeper:
                 }
                 self._standoff_pending = standoff_prompt  # 播种，供 continue_standoff 消费
                 standoff_msg = f"你还有最后一次机会避免与{first_ref}的战斗——你要怎么做？"
-                all_outcomes.append(ActionOutcome(
+                acc.all_outcomes.append(ActionOutcome(
                     intent=ActionIntent(action="standoff"),
                     success=True,
                     message=standoff_msg,
                     entity_id="STANDOFF",
                     entity_type="standoff",
                 ))
-                enrich_input.entities.append({
+                acc.enrich_input.entities.append({
                     "entity_type": "standoff",
                     "id": "STANDOFF",
                     "name": f"对峙：{first_ref}",
@@ -659,7 +481,7 @@ class Keeper:
                     getattr(e, 'enemy_ref', getattr(e, 'name', '未知')) for e in enemies
                 )
                 combat_msg = f"⚔ 你与{enemy_names}进入了战斗！"
-                enrich_input.entities.append({
+                acc.enrich_input.entities.append({
                     "entity_type": "combat",
                     "id": "COMBAT",
                     "name": f"战斗：{enemy_names}",
@@ -676,7 +498,7 @@ class Keeper:
                     player_targets=[],
                     player_extra="",
                 )
-                self._last_player_input = raw  # stored for combat completion replay
+                self._last_player_input = ctx.raw  # stored for combat completion replay
 
         # Boss "at" / "interaction" check: scene-bound bosses — must run BEFORE Step 3 enrich
         # 注意：开战记账（set_active/mark_spawned/add_to_combat）延后到最终返回前执行——
@@ -703,7 +525,7 @@ class Keeper:
                         boss_engaged_id = boss_id
                         boss_name = boss_entity.get("name", boss_entity.get("boss_ref", boss_id))
                         boss_msg = f"⚠ {boss_name}发现了你！退路已断，战斗一触即发——"
-                        enrich_input.entities.append({
+                        acc.enrich_input.entities.append({
                             "entity_type": "boss_encounter",
                             "id": f"BOSS_{boss_id}",
                             "name": f"Boss遭遇：{boss_name}",
@@ -721,24 +543,24 @@ class Keeper:
                     existing_iids = {e.instance_id for e in combat_init_result.enemies}
                     if boss_enemy.instance_id not in existing_iids:
                         combat_init_result.enemies.append(boss_enemy)
-                    self._last_player_input = raw  # stored for combat completion replay
+                    self._last_player_input = ctx.raw  # stored for combat completion replay
                 else:
                     combat_init_result = boss_combat_init
-                    self._last_player_input = raw  # stored for combat completion replay
+                    self._last_player_input = ctx.raw  # stored for combat completion replay
 
         # F3：Boss 强制战吞掉对峙——"退路已断"时回避承诺不成立
         if boss_combat_init and standoff_prompt:
             standoff_prompt = self._devour_standoff_for_boss(
-                standoff_prompt, combat_init_result, all_outcomes, enrich_input)
+                standoff_prompt, combat_init_result, acc.all_outcomes, acc.enrich_input)
 
-        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into enrich_input
+        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into acc.enrich_input
 
         # Inject pending combat result (from frontend combat path, same turn)
         if self._combat_result_pending:
             cr = self._combat_result_pending
             self._combat_result_pending = None
             outcome_label = {"win": "胜利", "loss": "败北", "flee": "逃脱", "draw": "平局"}.get(cr.get("outcome", ""), cr.get("outcome", ""))
-            enrich_input.entities.append({
+            acc.enrich_input.entities.append({
                 "entity_type": "combat_result",
                 "id": "COMBAT_RESULT",
                 "name": f"战斗{outcome_label}",
@@ -750,13 +572,13 @@ class Keeper:
         emphasis = ""
         enrichment = None
         ta_result = None
-        if enrich_input.entities or enrich_input.actions:
-            have_enrich = bool(enrich_input.entities)
-            have_ta = bool(enrich_input.actions)
+        if acc.enrich_input.entities or acc.enrich_input.actions:
+            have_enrich = bool(acc.enrich_input.entities)
+            have_ta = bool(acc.enrich_input.actions)
             steps = []
             if have_enrich:
                 steps.append(("enrich",
-                    lambda: self._enrich(enrich_input.entities, raw),
+                    lambda: self._enrich(acc.enrich_input.entities, ctx.raw),
                     False, 2))
             else:
                 steps.append(("enrich",
@@ -764,7 +586,7 @@ class Keeper:
                     False, 0))
             if have_ta:
                 steps.append(("time_agent",
-                    lambda: self._run_time_agent(enrich_input.actions, raw),
+                    lambda: self._run_time_agent(acc.enrich_input.actions, ctx.raw),
                     False, 2))
             else:
                 steps.append(("time_agent",
@@ -776,7 +598,7 @@ class Keeper:
 
         # Step 3.5: Collect enrich + TA results
         # Scan for endings BEFORE curate/narrate
-        ending_result = self._scan_ending(all_outcomes, author)
+        ending_result = self._scan_ending(acc.all_outcomes, author)
 
         enriched_summary = ""
         if enrichment:
@@ -811,7 +633,7 @@ class Keeper:
                 )
                 tp_result = author.assess_time_pressure(packet)
                 if tp_result.get("should_press") and tp_result.get("signal"):
-                    all_outcomes.append(ActionOutcome(
+                    acc.all_outcomes.append(ActionOutcome(
                         intent=ActionIntent(action="time_pressure"),
                         success=True,
                         message=f"【{tp.get('name', '时间压力')}】{tp_result.get('signal', '')}",
@@ -822,17 +644,17 @@ class Keeper:
                 pass  # Comms is best-effort
 
         # Step 4: IntentDetector decision point (was Escalation check)
-        if detect_future:
+        if acc.detect_future:
             try:
                 intent_result = self.turn_monitor.execute_step(
                     "intent_detect",
-                    lambda: detect_future.result(),
+                    lambda: acc.detect_future.result(),
                     is_critical=False,
                 )
             except TurnFrozenError:
                 intent_result = None
             finally:
-                executor.shutdown(wait=False)
+                acc.executor.shutdown(wait=False)
 
             if intent_result and intent_result.needs_author and author:
                 # Suppress duplicate intents within cooldown window
@@ -841,7 +663,7 @@ class Keeper:
                     self._recent_intents.append(intent_key)
                     self._recent_intents = self._recent_intents[-self._intent_cooldown:]
                     request = AuthorRequest(
-                        other_texts=[e.get("text", "") for e in other_entries],
+                        other_texts=[e.get("text", "") for e in acc.other_entries],
                         intent=intent_result.intent,
                         reasoning=intent_result.reasoning,
                         scene_context=self._build_scene_context_for_author(),
@@ -872,10 +694,10 @@ class Keeper:
                             rejection_msg = response.justification
                             if rejection_msg.startswith("REJECTED:"):
                                 rejection_msg = rejection_msg[9:].strip()
-                            all_outcomes.append(ActionOutcome(
+                            acc.all_outcomes.append(ActionOutcome(
                                 intent=ActionIntent(action="other"), success=True,
                                 message=f"（你尝试了，但{rejection_msg}）"))
-                            enrich_input.entities.append({
+                            acc.enrich_input.entities.append({
                                 "entity_type": "author_response",
                                 "id": "AUTHOR_REJECT",
                                 "name": "作者回应",
@@ -889,11 +711,11 @@ class Keeper:
 
         # Ending detection — already scanned pre-enrich; if not found, scan post-enrich messages as fallback
         if not ending_result:
-            ending_result = self._scan_ending(all_outcomes, author)
+            ending_result = self._scan_ending(acc.all_outcomes, author)
 
         # Inject LLM error warnings as player-visible outcomes
         for w in self._warnings:
-            all_outcomes.append(ActionOutcome(
+            acc.all_outcomes.append(ActionOutcome(
                 intent=ActionIntent(action="other"), success=True,
                 message=f"⚠ {w}"))
 
@@ -915,7 +737,7 @@ class Keeper:
                     if boss_enemy and self.world.enemies:
                         self.world.enemies.register(boss_enemy)
                         self.world.enemies.add_to_combat(boss_enemy.instance_id)
-                        self._last_player_input = raw  # stored for combat completion replay
+                        self._last_player_input = ctx.raw  # stored for combat completion replay
                         if combat_init_result and combat_init_result.enemies:
                             # Merge into existing combat — same as "at"/"interaction" path
                             combat_init_result.enemies.append(boss_enemy)
@@ -926,18 +748,18 @@ class Keeper:
                     break  # only handle one boss per turn; curate + return below
 
         # F3（event 通路）：event 型 Boss 开战同样吞掉本回合对峙。
-        # 此时 enrich 已消费 enrich_input，仍需清 all_outcomes（curate 用）与
+        # 此时 enrich 已消费 acc.enrich_input，仍需清 acc.all_outcomes（curate 用）与
         # standoff_prompt（PendingInteraction 用），并把 avoidable 敌人拖入战斗。
         if standoff_prompt and combat_init_result is not None:
             standoff_prompt = self._devour_standoff_for_boss(
-                standoff_prompt, combat_init_result, all_outcomes, None)
+                standoff_prompt, combat_init_result, acc.all_outcomes, None)
 
         # Step 5: Curate
-        ambient = [o.message for o in all_outcomes if o.entity_type == "auto_trigger"]
+        ambient = [o.message for o in acc.all_outcomes if o.entity_type == "auto_trigger"]
         try:
             brief = self.turn_monitor.execute_step(
                 "curate",
-                lambda: self.curator.assemble(all_outcomes, ambient, emphasis, enriched_summary),
+                lambda: self.curator.assemble(acc.all_outcomes, ambient, emphasis, enriched_summary),
                 is_critical=True,
             )
         except TurnFrozenError as e:
@@ -962,7 +784,7 @@ class Keeper:
             ))
             self._weapon_offer_msg = ""
 
-        self._last_outcomes = list(all_outcomes)  # store for combat resolution replay
+        self._last_outcomes = list(acc.all_outcomes)  # store for combat resolution replay
 
         standoff_pending = None
         if standoff_prompt:
@@ -1003,7 +825,7 @@ class Keeper:
                 combat_entry=combat_entry,
                 time_agent=ta_result,
                 enrich_raw=enrichment,
-                pre_parse=pre_result,
+                pre_parse=acc.pre_result,
             ),
         )
 
