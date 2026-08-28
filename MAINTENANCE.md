@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-28 | R1-W4 抽出 D 充实阶段：`phase_d_enrich`（enrich∥TA、advance_time、ending扫描①、时压）；作者门仍留 keeper；`_run_turn_pipeline` 现 A→B→C→D→剩余 E；keeper.py 1152→1063 |
 | 2026-08-28 | R1-W3 抽出 C 遭遇阶段：`phase_c_encounter`（EnemyCombatProvider + SceneBossProvider 有序链，吞对峙①）；event 型 Boss 仍留 E；`_run_turn_pipeline` 现 A→B→C→剩余 D–E；keeper.py 1317→1152 |
 | 2026-08-28 | R1-W2 抽出 B 裁决阶段：`phase_b_adjudicate`（judge 循环 + 依赖图自动触发）；`_run_turn_pipeline` 现 A→B→剩余 C–E；keeper.py 1533→1317 |
 | 2026-08-28 | R1-W1 抽出 A 理解阶段：`phase_a_understand`（守卫/LUCK/parse/NPC/use归一/intent预发射）；parse 内层 TurnFrozenError catch 删除改冒泡；`_depth>0` facade 捕获 freeze（keeper.py:148） |
@@ -189,51 +190,51 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (1152 行) — Keeper 回合编配
+## src/game/agents/keeper.py (1063 行) — Keeper 回合编配
 
 ### 模块级函数
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
-| `_describe_time_condition` | 时间条件 → 自然语言 | 31 |
-| `_build_investigator_weapon` | 库武器 → 调查员 Weapon 实例 | 70 |
+| `_describe_time_condition` | 时间条件 → 自然语言 | 30 |
+| `_build_investigator_weapon` | 库武器 → 调查员 Weapon 实例 | 69 |
 
-### Keeper 类（@92）
+### Keeper 类（@91）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor/UseParser（llm_call 晚绑定 call_deepseek） | 98 |
-| `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 136 |
-| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：`_depth>0` 直达 `_run_turn_pipeline` 并捕获 `TurnFrozenError`（内部递归，W6 前绕过 TurnRunner）；否则懒创建 `TurnRunner(self)` 并 `execute` | 148 |
-| `_run_turn_pipeline` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：建 TurnContext/TurnAccumulator → `phase_a_understand`（Early 则返回）→ `phase_b_adjudicate` → `phase_c_encounter`（敌战入口 + at/interaction Boss，吞对峙①）；剩余 D–E：enrich/TimeAgent/Author → curate → memory；event 型 Boss 仍在 E；TimeAgent time_delta>0 时走 `world.advance_time` 三合一入口（@231，T7）；内部递归仍 `return self.process_turn(..., _depth+1)`（@301/@310） | 160 |
-| `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 729 |
-| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 766 |
-| `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 748 |
-| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 451 |
-| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 459 |
-| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 476 |
-| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 519 |
-| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 596 |
-| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 621 |
-| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 648 |
-| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入 | 687 |
-| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 791 |
-| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 824 |
-| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 854 |
-| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 867 |
-| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行 | 902 |
-| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 923 |
-| `_build_world_snapshot` | `()` | 构建世界快照 dict | 939 |
-| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 951 |
-| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 958 |
-| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 965 |
-| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 982 |
-| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1071 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1125 |
+| `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor/UseParser（llm_call 晚绑定 call_deepseek） | 97 |
+| `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 135 |
+| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：`_depth>0` 直达 `_run_turn_pipeline` 并捕获 `TurnFrozenError`（内部递归，W6 前绕过 TurnRunner）；否则懒创建 `TurnRunner(self)` 并 `execute` | 147 |
+| `_run_turn_pipeline` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：建 TurnContext/TurnAccumulator → `phase_a_understand`（Early 则返回）→ `phase_b_adjudicate` → `phase_c_encounter`（敌战入口 + at/interaction Boss，吞对峙①）→ `phase_d_enrich`（enrich∥TA + advance_time + ending扫描① + 时压）；剩余 E：Author → curate → memory；event 型 Boss 仍在 E；TimeAgent time_delta>0 时走 `world.advance_time` 三合一入口（enrich.py@66，T7）；内部递归仍 `return self.process_turn(..., _depth+1)`（@212/@221） | 159 |
+| `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 640 |
+| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 677 |
+| `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 659 |
+| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 362 |
+| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 370 |
+| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 387 |
+| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 430 |
+| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 507 |
+| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 532 |
+| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 559 |
+| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入 | 598 |
+| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 702 |
+| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 735 |
+| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 765 |
+| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 778 |
+| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行 | 813 |
+| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 834 |
+| `_build_world_snapshot` | `()` | 构建世界快照 dict | 850 |
+| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 862 |
+| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 869 |
+| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 876 |
+| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 893 |
+| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 982 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1036 |
 
 ## src/game/turn/ — 回合管线（R1）
 
-W0 契约 + 委托壳；W1 抽出 A 理解；W2 抽出 B 裁决；W3 抽出 C 遭遇。无 Restart。
+W0 契约 + 委托壳；W1 抽出 A 理解；W2 抽出 B 裁决；W3 抽出 C 遭遇；W4 抽出 D 充实。无 Restart。
 
 ### `__init__.py`
 
@@ -276,6 +277,12 @@ W0 契约 + 委托壳；W1 抽出 A 理解；W2 抽出 B 裁决；W3 抽出 C �
 | `SceneBossProvider` | `probe` | at/interaction Boss（非 event）；`_check_boss_requirements(..., ctx.turn_input.raw_text)`；合并 `acc.combat_init_result`；写 `acc.boss_accounting`；不开战记账 | 150 |
 | `_PROVIDERS` | tuple | EnemyCombat → SceneBoss 有序链 | 210 |
 | `phase_c_encounter` | `(ctx, acc, tools) -> None` | 逐 provider 合并 contribution 到 acc；吞对峙①（`acc.boss_accounting and acc.standoff_prompt`） | 213 |
+
+### `enrich.py`（98 行）— D 充实阶段（R1-W4）
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `phase_d_enrich` | `(ctx, acc, tools) -> None` | 战斗结果注入 → enrich∥time_agent（`tools.turn_monitor.execute_parallel`）→ 收集 results + `_scan_ending` 首次扫描写入 `acc.ending_result` → `world.advance_time`（T7）/ time_context → TimePressure comms（best-effort except）；产出 `acc.enrichment` / `acc.ta_result` / `acc.emphasis` / `acc.enriched_summary` / `acc.ending_result` | 7 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 

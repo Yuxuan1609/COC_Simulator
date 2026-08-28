@@ -14,7 +14,6 @@ from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
     AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
     StandoffMatch,
-    TimeCommsPacket,
     TurnStatus, TurnResult, PendingInteraction, EndingInfo, TurnDiagnostics,
 )
 from ..judge import Judge
@@ -171,96 +170,8 @@ class Keeper:
         phase_b_adjudicate(ctx, acc, self)
         from ..turn.encounter import phase_c_encounter
         phase_c_encounter(ctx, acc, self)
-
-        # Step 3: [Enrich(LLM) ∥ TimeAgent(LLM)] — combat + boss info already injected into acc.enrich_input
-
-        # Inject pending combat result (from frontend combat path, same turn)
-        if self._combat_result_pending:
-            cr = self._combat_result_pending
-            self._combat_result_pending = None
-            outcome_label = {"win": "胜利", "loss": "败北", "flee": "逃脱", "draw": "平局"}.get(cr.get("outcome", ""), cr.get("outcome", ""))
-            acc.enrich_input.entities.append({
-                "entity_type": "combat_result",
-                "id": "COMBAT_RESULT",
-                "name": f"战斗{outcome_label}",
-                "result": cr.get("narrative", f"战斗结束，结果是{outcome_label}。")[:300],
-                "success": cr.get("outcome") == "win",
-                "skill_tier": "",
-            })
-
-        emphasis = ""
-        enrichment = None
-        ta_result = None
-        if acc.enrich_input.entities or acc.enrich_input.actions:
-            have_enrich = bool(acc.enrich_input.entities)
-            have_ta = bool(acc.enrich_input.actions)
-            steps = []
-            if have_enrich:
-                steps.append(("enrich",
-                    lambda: self._enrich(acc.enrich_input.entities, ctx.raw),
-                    False, 2))
-            else:
-                steps.append(("enrich",
-                    lambda: {"results": {}, "reasoning": "", "emphasis_hint": ""},
-                    False, 0))
-            if have_ta:
-                steps.append(("time_agent",
-                    lambda: self._run_time_agent(acc.enrich_input.actions, ctx.raw),
-                    False, 2))
-            else:
-                steps.append(("time_agent",
-                    lambda: {"time_delta": 0, "narrative_hint": ""},
-                    False, 0))
-            parallel_results = self.turn_monitor.execute_parallel(steps)
-            enrichment = parallel_results.get("enrich")
-            ta_result = parallel_results.get("time_agent")
-
-        # Step 3.5: Collect enrich + TA results
-        # Scan for endings BEFORE curate/narrate
-        ending_result = self._scan_ending(acc.all_outcomes, author)
-
-        enriched_summary = ""
-        if enrichment:
-            emphasis = enrichment.get("emphasis_hint", "")
-            results = enrichment.get("results", "")
-            if isinstance(results, str):
-                enriched_summary = results
-        if ta_result:
-            if ta_result.get("time_delta", 0) > 0:
-                # 走 world.advance_time 三合一入口(T7):时钟 + MP 恢复 + timed 过期清除
-                self.world.advance_time(ta_result["time_delta"])
-            narrative = (ta_result.get("narrative_hint", "") or "")
-            if narrative:
-                self.world.clock.time_context = narrative
-
-        # TimePressure comms dispatch (at most 1 per turn)
-        tp = author.time_pressure if author else None
-        if tp and self.world.clock.game_time - self._last_comms_time >= self.world.comms_interval:
-            self._last_comms_time = self.world.clock.game_time
-            try:
-                recent = self.world.memory.raw_history[-5:] if self.world.memory.raw_history else []
-                packet = TimeCommsPacket(
-                    game_time=self.world.clock.game_time,
-                    day=self.world.clock.day,
-                    time_of_day=self.world.clock.time_of_day,
-                    current_scene=self.world.current_location,
-                    player_actions="; ".join(
-                        (r.get("user_input", "") or "")[:60] for r in recent[-3:]
-                    ),
-                    world_state=f"场景:{self.world.current_location}, "
-                               f"NPC:{self.world.npcs.all_names()[:3]}",
-                )
-                tp_result = author.assess_time_pressure(packet)
-                if tp_result.get("should_press") and tp_result.get("signal"):
-                    acc.all_outcomes.append(ActionOutcome(
-                        intent=ActionIntent(action="time_pressure"),
-                        success=True,
-                        message=f"【{tp.get('name', '时间压力')}】{tp_result.get('signal', '')}",
-                        entity_id="TIME_PRESS",
-                        entity_type="time_pressure",
-                    ))
-            except Exception:
-                pass  # Comms is best-effort
+        from ..turn.enrich import phase_d_enrich
+        phase_d_enrich(ctx, acc, self)
 
         # Step 4: IntentDetector decision point (was Escalation check)
         if acc.detect_future:
@@ -329,8 +240,8 @@ class Keeper:
         self._apply_pending()
 
         # Ending detection — already scanned pre-enrich; if not found, scan post-enrich messages as fallback
-        if not ending_result:
-            ending_result = self._scan_ending(acc.all_outcomes, author)
+        if not acc.ending_result:
+            acc.ending_result = self._scan_ending(acc.all_outcomes, author)
 
         # Inject LLM error warnings as player-visible outcomes
         for w in self._warnings:
@@ -378,7 +289,7 @@ class Keeper:
         try:
             brief = self.turn_monitor.execute_step(
                 "curate",
-                lambda: self.curator.assemble(acc.all_outcomes, ambient, emphasis, enriched_summary),
+                lambda: self.curator.assemble(acc.all_outcomes, ambient, acc.emphasis, acc.enriched_summary),
                 is_critical=True,
             )
         except TurnFrozenError as e:
@@ -437,13 +348,13 @@ class Keeper:
             brief=brief,
             pending_interaction=standoff_pending or offer_pending,
             combat_init=acc.combat_init_result,
-            ending=EndingInfo(**ending_result) if ending_result else None,
+            ending=EndingInfo(**acc.ending_result) if acc.ending_result else None,
             npc_events=list(self._npc_events),
             warnings=list(self._warnings),
             diagnostics=TurnDiagnostics(
                 combat_entry=acc.combat_entry,
-                time_agent=ta_result,
-                enrich_raw=enrichment,
+                time_agent=acc.ta_result,
+                enrich_raw=acc.enrichment,
                 pre_parse=acc.pre_result,
             ),
         )
