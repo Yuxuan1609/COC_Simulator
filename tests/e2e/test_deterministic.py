@@ -1457,3 +1457,101 @@ class TestSanSeenPersistence:  # F9 入档
         graph = DirectedGraph(scenes={"room_a": make_scene()}, events=[])
         world = ScenarioWorld.from_dict({"current_location": "room_a"}, graph)
         assert world.san_seen_sources == set()
+
+
+class TestAuthorRecursion:
+    """W6：作者门迁至 B 尾部后的递归语义锁定。"""
+
+    def _recursion_world(self):
+        from helpers import make_world, make_scene
+        world = make_world({"room_a": make_scene()}, start_node="room_a")
+        from investigator import Investigator
+        world.set_player(Investigator(name="测试员", age=25, gender="男"))
+        return world
+
+    def _accept_author(self):
+        from types import SimpleNamespace
+        from game.messages import ModulePatch
+        patch = ModulePatch(
+            entities=[{"id": "NEW1", "entity_type": "interaction", "name": "墙壁回音",
+                       "scene": "room_a", "type": "无", "requirement": "",
+                       "trigger": "听回音", "result": "墙回应了你。",
+                       "side_effects": [], "difficulty": "None"}],
+            scene_descriptions={}, justification="作者补充了墙壁回音")
+        return SimpleNamespace(time_pressure=None, l3_data={},
+                               handle_request=lambda req, turn: patch)
+
+    def _stub_creative_other(self, keeper, monkeypatch, time_delta=0):
+        from helpers import stub_keeper_llm
+        stub_keeper_llm(keeper, monkeypatch, time_delta=time_delta,
+                        parse_results=[[{"type": "other", "impact": "creative",
+                                         "text": "对着墙打一套拳"}]])
+        from types import SimpleNamespace
+        keeper.intent_detector.detect = lambda *a, **k: SimpleNamespace(
+            needs_author=True, intent="练拳", reasoning="r")
+
+    def test_recursion_advances_time_once(self, monkeypatch):
+        """递归路径 TA 只运行一次（旧行为：外帧+内帧双涨）。"""
+        from game.agents.keeper import Keeper
+        from game.messages import TurnInput
+        world = self._recursion_world()
+        keeper = Keeper(world)
+        self._stub_creative_other(keeper, monkeypatch, time_delta=60)
+        t0 = world.clock.game_time
+        keeper.process_turn(TurnInput(raw_text="对着墙打一套拳"),
+                            author=self._accept_author())
+        assert world.clock.game_time - t0 == 60, (
+            f"期望推进 60（TA 单次），实际 {world.clock.game_time - t0}")
+
+    def test_recursion_runs_enrich_once(self, monkeypatch):
+        """递归路径 enrich 只运行一次（旧行为：外帧白跑一次）。"""
+        from game.agents.keeper import Keeper
+        from game.messages import TurnInput
+        world = self._recursion_world()
+        keeper = Keeper(world)
+        self._stub_creative_other(keeper, monkeypatch)
+        calls = {"n": 0}
+        def counting_enrich(e, r):
+            calls["n"] += 1
+            return {"results": "", "reasoning": "", "emphasis_hint": ""}
+        keeper._enrich = counting_enrich
+        keeper.process_turn(TurnInput(raw_text="对着墙打一套拳"),
+                            author=self._accept_author())
+        assert calls["n"] == 1, f"期望 enrich 1 次，实际 {calls['n']}"
+
+    def test_author_rejection_outcome_present(self, monkeypatch):
+        """作者拒绝 → 拒绝信息进 outcomes（新旧行为一致，回归锁）。"""
+        from types import SimpleNamespace
+        from game.agents.keeper import Keeper
+        from game.messages import TurnInput, ModulePatch
+        world = self._recursion_world()
+        keeper = Keeper(world)
+        self._stub_creative_other(keeper, monkeypatch)
+        author = SimpleNamespace(
+            time_pressure=None, l3_data={},
+            handle_request=lambda req, turn: ModulePatch(
+                entities=[], scene_descriptions={},
+                justification="REJECTED: 不合理"))
+        result = keeper.process_turn(TurnInput(raw_text="对着墙打一套拳"),
+                                     author=author)
+        assert any("你尝试了" in o.message for o in result.brief.action_outcomes)
+
+    def test_escalation_depth_guard(self, monkeypatch):
+        """intent 每次不同（绕过冷却）→ 深度守卫触发 deterministic-only。"""
+        from types import SimpleNamespace
+        from game.agents.keeper import Keeper
+        from game.messages import TurnInput
+        world = self._recursion_world()
+        keeper = Keeper(world)
+        self._stub_creative_other(keeper, monkeypatch)
+        counter = {"n": 0}
+        def detect(*a, **k):
+            counter["n"] += 1
+            return SimpleNamespace(needs_author=True,
+                                   intent=f"练拳{counter['n']}", reasoning="r")
+        keeper.intent_detector.detect = detect
+        result = keeper.process_turn(TurnInput(raw_text="对着墙打一套拳"),
+                                     author=self._accept_author())
+        assert result.brief is not None
+        assert any("没有什么特别的事情发生" in o.message
+                   for o in result.brief.action_outcomes)

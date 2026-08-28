@@ -12,7 +12,7 @@ from game.side_effects import (
 )
 from ..messages import (
     ActionIntent, ActionOutcome, NarratorBrief,
-    AuthorRequest, StructuralEdit, ModulePatch, TurnInput,
+    StructuralEdit, ModulePatch, TurnInput,
     StandoffMatch,
     TurnStatus, TurnResult, PendingInteraction, EndingInfo, TurnDiagnostics,
 )
@@ -145,100 +145,11 @@ class Keeper:
         return cats
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
-        """Facade：委托 TurnRunner。_depth>0 为内部递归路径（W6 前）。"""
-        if _depth:
-            try:
-                return self._run_turn_pipeline(turn_input, author, _depth)
-            except TurnFrozenError as e:
-                return self._build_frozen_response(e)
+        """Facade：委托 TurnRunner（_depth 参数保留兼容，不再使用）。"""
         if not hasattr(self, "_runner"):
             from ..turn.runner import TurnRunner
             self._runner = TurnRunner(self)
         return self._runner.execute(turn_input, author)
-
-    def _run_turn_pipeline(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
-        """Execute full turn: parse → judge → enrich → curate."""
-        from ..turn.context import TurnContext, TurnAccumulator, Early
-        from ..turn.understand import phase_a_understand
-        from ..turn.adjudicate import phase_b_adjudicate
-        ctx = TurnContext(turn_input=turn_input, author=author, depth=_depth,
-                          raw=turn_input.raw_text)
-        acc = TurnAccumulator()
-        r = phase_a_understand(ctx, acc, self)
-        if isinstance(r, Early):
-            return r.result
-        phase_b_adjudicate(ctx, acc, self)
-        from ..turn.encounter import phase_c_encounter
-        phase_c_encounter(ctx, acc, self)
-        from ..turn.enrich import phase_d_enrich
-        phase_d_enrich(ctx, acc, self)
-
-        # Step 4: IntentDetector decision point (was Escalation check)
-        if acc.detect_future:
-            try:
-                intent_result = self.turn_monitor.execute_step(
-                    "intent_detect",
-                    lambda: acc.detect_future.result(),
-                    is_critical=False,
-                )
-            except TurnFrozenError:
-                intent_result = None
-            finally:
-                acc.executor.shutdown(wait=False)
-
-            if intent_result and intent_result.needs_author and author:
-                # Suppress duplicate intents within cooldown window
-                intent_key = intent_result.intent.strip().lower()
-                if intent_key not in [i.lower() for i in self._recent_intents[-self._intent_cooldown:]]:
-                    self._recent_intents.append(intent_key)
-                    self._recent_intents = self._recent_intents[-self._intent_cooldown:]
-                    request = AuthorRequest(
-                        other_texts=[e.get("text", "") for e in acc.other_entries],
-                        intent=intent_result.intent,
-                        reasoning=intent_result.reasoning,
-                        scene_context=self._build_scene_context_for_author(),
-                    )
-                    response = author.handle_request(request, self.turn_number)
-
-                    if isinstance(response, StructuralEdit):
-                        response = self._integrate_supplement(
-                            response, author,
-                            intent=request.intent, reasoning=request.reasoning,
-                        )
-                        if response.supplement_path:
-                            # Flush outer turn's pending effects BEFORE recursion —
-                            # inner process_turn() clears pending state on entry.
-                            self._apply_pending()
-                            return self.process_turn(turn_input, author, _depth + 1)
-                    elif isinstance(response, ModulePatch):
-                        if response.entities:
-                            self._integrate_patch(response)
-                            self._warnings.append(
-                                f"模组已动态扩展：{response.justification[:60]}")
-                            # Flush outer turn's pending effects BEFORE recursion —
-                            # inner process_turn() clears pending state on entry.
-                            self._apply_pending()
-                            return self.process_turn(turn_input, author, _depth + 1)
-                        else:
-                            # Author rejected — inject player-visible narrative hint
-                            rejection_msg = response.justification
-                            if rejection_msg.startswith("REJECTED:"):
-                                rejection_msg = rejection_msg[9:].strip()
-                            acc.all_outcomes.append(ActionOutcome(
-                                intent=ActionIntent(action="other"), success=True,
-                                message=f"（你尝试了，但{rejection_msg}）"))
-                            acc.enrich_input.entities.append({
-                                "entity_type": "author_response",
-                                "id": "AUTHOR_REJECT",
-                                "name": "作者回应",
-                                "result": rejection_msg[:120],
-                                "success": False,
-                                "skill_tier": "",
-                            })
-
-        from ..turn.finalize import phase_e_finalize
-        phase_e_finalize(ctx, acc, self)
-        return acc.result
 
     def _build_frozen_response(self, exc: TurnFrozenError) -> TurnResult:
         return TurnResult(

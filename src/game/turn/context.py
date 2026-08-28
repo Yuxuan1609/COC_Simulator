@@ -43,3 +43,7 @@ class TurnAccumulator:
 class Early:
     """阶段早退信号：携带完整 TurnResult，编排器直接返回。"""
     result: TurnResult
+
+
+class Restart:
+    """作者门接受 → 编排器落账后从 A 重跑（循环，非递归调用）。"""

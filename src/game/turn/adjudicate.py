@@ -1,14 +1,20 @@
 """B 裁决：judge 循环 + 依赖图自动触发。W6 起尾部吞入作者门。"""
 from __future__ import annotations
 
+from monitor.turn_monitor import TurnFrozenError
+
 from ..agents.keeper import _describe_time_condition
-from ..messages import ActionIntent, ActionOutcome
+from ..messages import (
+    ActionIntent, ActionOutcome, AuthorRequest, StructuralEdit, ModulePatch,
+)
+from .context import Restart
 
 
-def phase_b_adjudicate(ctx, acc, tools) -> None:
+def phase_b_adjudicate(ctx, acc, tools) -> Restart | None:
     """judge 各 entry 类型(interaction/event/use/move/search/other) + 依赖自动触发。
     产出: acc.all_outcomes / acc.enrich_input / tools._pending_side_effects /
-    tools._pending_move / tools._weapon_offer(search 发现)。"""
+    tools._pending_move / tools._weapon_offer(search 发现)。
+    作者门：接受补丁/结构编辑 → Restart；拒绝写入 outcomes 后 fall through。"""
     # Step 2: Judge — iterate over parse result entries
     for entry in acc.parse_result:
         entry_type = entry.get("type", "")
@@ -226,3 +232,62 @@ def phase_b_adjudicate(ctx, acc, tools) -> None:
                         "success": outcome.success,
                         "skill_tier": outcome.skill_tier,
                     })
+
+    # Author gate: harvest intent detector; accept → Restart (runner 落账后从 A 重跑)
+    if not acc.detect_future:
+        return None
+    try:
+        intent_result = tools.turn_monitor.execute_step(
+            "intent_detect",
+            lambda: acc.detect_future.result(),
+            is_critical=False,
+        )
+    except TurnFrozenError:
+        intent_result = None
+    finally:
+        acc.executor.shutdown(wait=False)
+
+    if intent_result and intent_result.needs_author and ctx.author:
+        # Suppress duplicate intents within cooldown window
+        intent_key = intent_result.intent.strip().lower()
+        if intent_key not in [i.lower() for i in tools._recent_intents[-tools._intent_cooldown:]]:
+            tools._recent_intents.append(intent_key)
+            tools._recent_intents = tools._recent_intents[-tools._intent_cooldown:]
+            request = AuthorRequest(
+                other_texts=[e.get("text", "") for e in acc.other_entries],
+                intent=intent_result.intent,
+                reasoning=intent_result.reasoning,
+                scene_context=tools._build_scene_context_for_author(),
+            )
+            response = ctx.author.handle_request(request, tools.turn_number)
+
+            if isinstance(response, StructuralEdit):
+                response = tools._integrate_supplement(
+                    response, ctx.author,
+                    intent=request.intent, reasoning=request.reasoning,
+                )
+                if response.supplement_path:
+                    return Restart()
+            elif isinstance(response, ModulePatch):
+                if response.entities:
+                    tools._integrate_patch(response)
+                    tools._warnings.append(
+                        f"模组已动态扩展：{response.justification[:60]}")
+                    return Restart()
+                else:
+                    # Author rejected — inject player-visible narrative hint
+                    rejection_msg = response.justification
+                    if rejection_msg.startswith("REJECTED:"):
+                        rejection_msg = rejection_msg[9:].strip()
+                    acc.all_outcomes.append(ActionOutcome(
+                        intent=ActionIntent(action="other"), success=True,
+                        message=f"（你尝试了，但{rejection_msg}）"))
+                    acc.enrich_input.entities.append({
+                        "entity_type": "author_response",
+                        "id": "AUTHOR_REJECT",
+                        "name": "作者回应",
+                        "result": rejection_msg[:120],
+                        "success": False,
+                        "skill_tier": "",
+                    })
+    return None
