@@ -33,7 +33,7 @@ class TestExploreSideDegrade:
         assert any("damage" in r.message for r in caplog.records)
 
     def test_buff_atom_degrades_to_text_in_exploration(self):
-        """buff 原子探索侧降级为文本行,不进 temporary_effects。"""
+        """buff 原子探索侧降级为文本行。"""
         world = make_world({"room_a": make_scene()}, "room_a")
         inv = _player(world)
         msgs = _judge(world)._execute_effect_atoms(

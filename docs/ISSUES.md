@@ -45,19 +45,15 @@
 |---|------|------|
 | F1 | **物品转移**(丢弃/给予 NPC/交易) | use 大类剩余的最后一块通路:"把钥匙递给 NPC"类叙事接不住。范围裁决时未选,按需排期 |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
-| F4 | timed 缺 expire_at 渲染兜底测试 / buff 探索侧降级等边界 | 已修主体,防御分支断言零散(T8/T12 review 记录) |
 | F5 | **疯狂体系**(COC 核心) | 单次 SAN 损失>=5->临时疯狂(INT 检定);当日累计>=SAN/5->总结性疯狂;恐惧症/躁狂症标记。timed_effects 基建可承载;依赖 SAN check 通路(已接通)。模组高频写法"失败则疯狂" |
 | F6 | **重伤/濒死/急救** | 当前 HP 0 直接 loss+game_over(combat.py:_build_single_round_result);缺:单次伤害>=HP/2->重伤 CON 检定(失败昏迷)/HP 0 濒死(每轮-1,可急救稳定)/急救+医学技能用途。剧情依赖(被俘/被救)会卡 |
 | F7 | **战斗反应与骰子表达** | 闪避自动成功(玩家 dodge->敌方下次攻击必 miss,无对抗检定,策略退化);反击 fight back 选项无;奖励骰/惩罚骰(bonus/penalty dice)无--模组文本高频;push roll(孤注一掷)无 |
 | F8 | **恢复生态+mythos 增长** | HP 每日自然恢复无(多日模组卡);SAN 恢复(安全环境/心理治疗)无;克苏鲁神话增长通路无(SAN_MAX=99-神话公式与技能列表已就位,@grant_spell 有而 mythos 加值无);advance_time 钩子现成(MP 已走此路) |
-| F9 | **SAN check 遭遇去重** | 当前实现(2026-08-26 接线)每场战斗对每个 enemy_ref check 一次(场内同 ref 多实例只一次);COC 规则是同恐怖源全局首次目睹才 check--需玩家 seen 集合入档。用户拍板:先接链路不去重,之后统一优化。设计注记(2026-08-26 I1 review):每轮情境组(如'0/1D20 (每轮在雾中停留)')当前无触发点消费,静默;multi_attack 敌每命中各一检,叠加不去重会加速 SAN 流失--与去重一并优化 |
 | F10 | **周期性/环境效应**(表达力缺口) | timed/effect 原子只有"到期清除",无周期 tick payload;毒每轮掉 HP/雾中每轮 SAN/诅咒每日发作类模组写法无结构化通道(F9 注记"每轮在雾中停留"即此例)。钩子现成:_tick_time_effects(小时粒度,MP 恢复已走)/_tick_temporary_effects(轮末,buff 递减已走)。方向:effect 原子加 interval(round/hour/day)+payload 原子数组,8 原子体系自然延伸(2026-08-26 机制层思考) |
-| F11 | **库 schema 作者参考文档** | 定位前提"素材能表达"需要作者知道怎么写;五库全字段(enemies/bosses/spells/items/weapons)+san_loss 多情境格式+combat_behavior [flag] 前缀+effect 原子+扩展库放置约定散在 readme 各节与代码。建议 docs/library-schema.md 集中(半天量级,素材生态前置) |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 
 | F14 | **技能成长标记** | Skill 无 checked 标记,check_skill 成功不记录;"成功使用→幕末成长检定"循环断裂,角色永远停留在车卡(依赖 U4 战役化才有意义) |
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
-| F16 | **锁-钥匙关联** | judge `item:` 只查持有同名物品,任意"钥匙"开任意门;LOCKPICKS 检定成功不翻转任何锁状态;解锁/永久开锁等解谜核心落空 |
 | F17 | **场景物品放置/拾取/容器** | 只有武器能放场景(scene_weapons),无 drop API、无容器嵌套;"抽屉里的东西""把物品藏回现场"接不住 |
 | F18 | **时间触发世界事件调度器** | clock 纯计数器;"22:00 凶手行动"玩家不动永不发生;钩子现成(_tick_time_effects) |
 | F19 | **环境状态进检定** | 光照/天气/噪音无修正源(难度只来自 entity.difficulty);手电筒/火柴 L0 无 effect,黑暗侦查无机械支撑 |
@@ -122,6 +118,10 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-28 | **F16 锁-钥匙关联** | 降级为测试锁定+文档配方,未加机制(06ba6cc);若 Step2/3 真实模组需要更强锁语义再开新项。测试发现 `_ENTITY_ID_PATTERN` 强制数字,IT_LOCK 类无数字 ID 被当自然语言优雅放行;pattern 改为 `^[A-Z][A-Z0-9_]+[a-z]?$`(I1/I12a/AT2 仍匹配;中文 NL 仍优雅放行) |
+| 2026-08-28 | **F9 SAN check 遭遇去重** | 目睹组全局去重入档;被攻击组场内去重解 multi_attack 叠加(76264df);F5/F8 联动仍跟踪 |
+| 2026-08-28 | **F4 timed/effect 边界测试** | 补齐 expire_at 渲染兜底 / buff 探索侧降级等防御分支断言(d7113d5) |
+| 2026-08-28 | **F11 库 schema 作者参考文档** | docs/library-schema.md(ca83ff8)+review 修 flags 接线(cb2b5a8) |
 | 2026-08-26 | **F13 敌人 attack.skill_value 断链 + F24 纯对话 memory 漏记** | combat 优先读 skill_value（>0）否则 (DEX+POW)//2+dodge_bonus；game_loop 早退路径 npc_events 时 add_record。F13 其余①②⑤⑥ 入 §4 长期 TODO、③非目标。五域 F14–F43 回登 ISSUES |
 | 2026-08-26 | **B13 三库裸 json.load / B14 skill_config 缓存死代码 / B15 fumble 边界 / B6 被支配渲染未命中 / B8 满 MP 仍耗累计器** | load_json_object 五库收敛；load_skill_config 默认路径真正缓存；_roll_d100 `roll>=96 and roll>target`；跳过叙事不写未命中；满 MP acc 清零 |
 | 2026-08-26 | **B17 `_handle_edit` 编辑回路无效 + B18 断点续跑不回灌中间状态** | d209787 `_apply_step_artifact` 回灌；本 commit `_hydrate_prior_steps` + resume_dir + launcher 校验改查 debug 中间目录 |
