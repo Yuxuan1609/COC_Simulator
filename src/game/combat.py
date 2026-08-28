@@ -199,6 +199,7 @@ class CombatState:
     full_log: list[CombatAction] = field(default_factory=list)
     temporary_effects: list = field(default_factory=list)   # 玩家侧 buff [{id, reduce, rounds}]（2026-08-21 spec §3）
     san_log: list[str] = field(default_factory=list)   # 开局目睹 SAN check 叙事行(2026-08-26 遭遇通路)
+    san_attacked_refs: set = field(default_factory=set)  # F9: 被攻击组场内去重(同场同 ref 只首命中 check)
     _player_dodging: bool = False
     _player_concealed: bool = False
     _player_aim_counter: int = 0
@@ -784,12 +785,14 @@ class CombatSystem:
             if not hasattr(e, 'hp_max') or not getattr(e, 'hp_max', 0):
                 e.hp_max = getattr(e, 'hp', 10)
 
-        # 遭遇 SAN check(目睹):开战对每个 enemy_ref 一次(群组多实例去重;
-        # 跨场不去重--现状记录,全局去重见 ISSUES F9)
+        # 遭遇 SAN check(目睹,F9 收口):开战对每个 enemy_ref 一次,按
+        # world.san_seen_sources 全局去重入档(跨场跨档同恐怖源只首次目睹 check;
+        # world=None 旧调用方退化为场内去重;群组多实例展开后同 ref 只一次)
         seen_refs = set()
+        global_seen = getattr(self.world, "san_seen_sources", None) if self.world is not None else None
         for e in expanded_enemies:
             ref = getattr(e, 'enemy_ref', '') or e.instance_id
-            if ref in seen_refs:
+            if ref in seen_refs or (global_seen is not None and ref in global_seen):
                 continue
             seen_refs.add(ref)
             groups = parse_san_loss(getattr(e, 'san_loss', '') or '')
@@ -801,6 +804,8 @@ class CombatSystem:
                 state.player_san, witness[0], witness[1])
             state.player_san = max(0, state.player_san - loss)
             state.san_log.append(f"你遭遇{ref}：{text}。")
+            if global_seen is not None:
+                global_seen.add(ref)
         return state
 
     def _match_action(self, raw_input: str, available: list[dict]) -> str:
@@ -1222,10 +1227,13 @@ class CombatSystem:
             state.player_hp = max(0, state.player_hp - damage)
             action.hp_after = state.player_hp
             action.narrative = f"{enemy_label}用{attack_name}击中了你！造成{damage}点伤害。"
-            # 被攻击情境 SAN check(库 san_loss 含"被攻击"组时;2026-08-26 遭遇通路)
+            # 被攻击情境 SAN check(库 san_loss 含"被攻击"组时;2026-08-26 遭遇通路;
+            # F9 收口:同场同 enemy_ref 只首次命中 check,multi_attack 不再叠加)
             groups = parse_san_loss(getattr(enemy, "san_loss", "") or "")
             attacked = next((g for g in groups if "攻击" in g[2]), None)
-            if attacked:
+            attacked_ref = getattr(enemy, 'enemy_ref', '') or getattr(enemy, 'instance_id', '')
+            if attacked and attacked_ref not in state.san_attacked_refs:
+                state.san_attacked_refs.add(attacked_ref)
                 loss, text = _san_check_and_lose(
                     state.player_san, attacked[0], attacked[1])
                 state.player_san = max(0, state.player_san - loss)

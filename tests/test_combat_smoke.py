@@ -879,6 +879,68 @@ class TestEnemyAttackSkillValue:
         assert act.success is True
 
 
+class TestSanWitnessDedup:  # F9: 目睹全局去重 + 被攻击场内去重
+    """san_seen_sources 入档全局去重;被攻击组同场同 ref 只首命中 check。"""
+
+    class _SeenWorld:
+        """最小 world stub:combat 仅读 san_seen_sources。"""
+        def __init__(self, seen):
+            self.san_seen_sources = set(seen)
+
+    def _witness_init(self, monkeypatch, world, roll=99):
+        import game.combat as combat_mod
+        from game.messages import CombatInit
+        monkeypatch.setattr(combat_mod.random, "randint", lambda a, b: roll)
+        enemy = _TestEnemy("深潜者", hp=10, armor="0", instance_id="E_DS_1",
+                           san_loss="0/2 (目睹), 1/3 (被攻击)")
+        player = _make_investigator(san=60)
+        cs = CombatSystem(world=world)
+        state = cs._init_combat(CombatInit(
+            enemies=[enemy], player=player,
+            scene="测试房间", initiative_context=""))
+        return state
+
+    def test_witness_first_time_checks_and_records(self, monkeypatch):
+        """首次目睹:check 发生(roll=99>60 失败掉 2),ref 写入 seen 集。"""
+        world = self._SeenWorld(set())
+        state = self._witness_init(monkeypatch, world)
+        assert any("深潜者" in line for line in state.san_log), "首次目睹必须记 san_log"
+        assert state.player_san == 58, f"失败掉 2,实际 {state.player_san}"
+        assert "深潜者" in world.san_seen_sources, "目睹后必须写入全局 seen"
+
+    def test_witness_skipped_when_ref_seen_globally(self, monkeypatch):
+        """enemy_ref 已在 san_seen_sources -> 不再 check,SAN 不变。"""
+        world = self._SeenWorld({"深潜者"})
+        state = self._witness_init(monkeypatch, world)
+        assert state.san_log == [], f"已目睹不得再 check,实际 {state.san_log}"
+        assert state.player_san == 60
+
+    def test_witness_without_world_still_checks_per_combat(self, monkeypatch):
+        """world=None(旧调用方)-> 退化为场内去重,不炸。"""
+        state = self._witness_init(monkeypatch, None)
+        assert any("深潜者" in line for line in state.san_log)
+
+    def test_attacked_group_deduped_per_combat(self, monkeypatch):
+        """同场同 ref 多次命中,'被攻击'组只首命中 check 一次。"""
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod.random, "randint", lambda a, b: 50)
+        enemy = _TestEnemy("深潜者", hp=20, armor="0", instance_id="E_DS_2",
+                           san_loss="0/2 (目睹), 1/3 (被攻击)",
+                           attacks=[{"name": "爪击", "skill_name": "格斗",
+                                     "skill_value": 99, "damage": "1D3"}])
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        state.player_san = 60
+        cs = CombatSystem()
+        player = _make_investigator(san=60)
+        a1 = cs._resolve_enemy_action(state, enemy, player)
+        a2 = cs._resolve_enemy_action(state, enemy, player)
+        assert "恐惧侵蚀" in a1.narrative, "首次命中必须触发被攻击 check"
+        assert "恐惧侵蚀" not in a2.narrative, "同场同 ref 第二次命中不得再 check"
+        assert state.player_san == 59, \
+            f"被攻击组成功掉 1 且只掉一次,实际 {state.player_san}"
+
+
 if __name__ == "__main__":
     print("=== Combat Smoke Tests ===")
     test_combat_basic_win()

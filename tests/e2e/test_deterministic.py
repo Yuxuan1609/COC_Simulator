@@ -1368,3 +1368,23 @@ class TestAutoTriggerTimeCondition:
             }])}, "room_a")
         world.clock = GameClock(start_time=12 * 60)
         assert Judge(world).check_auto_triggers() == []
+
+
+class TestSanSeenPersistence:  # F9 入档
+    def test_san_seen_sources_roundtrip(self):
+        """san_seen_sources 经 to_dict/from_dict 回环保持。"""
+        from scenario_core import DirectedGraph, ScenarioWorld
+        graph = DirectedGraph(scenes={"room_a": make_scene()}, events=[])
+        world = ScenarioWorld(graph, start_node="room_a")
+        world.san_seen_sources = {"深潜者", "食尸鬼"}
+        data = world.to_dict()
+        graph2 = DirectedGraph(scenes={"room_a": make_scene()}, events=[])
+        world2 = ScenarioWorld.from_dict(data, graph2)
+        assert world2.san_seen_sources == {"深潜者", "食尸鬼"}
+
+    def test_san_seen_sources_default_empty_on_old_save(self):
+        """旧档无该字段 -> 默认空集,不炸。"""
+        from scenario_core import DirectedGraph, ScenarioWorld
+        graph = DirectedGraph(scenes={"room_a": make_scene()}, events=[])
+        world = ScenarioWorld.from_dict({"current_location": "room_a"}, graph)
+        assert world.san_seen_sources == set()

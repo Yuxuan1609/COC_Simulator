@@ -697,6 +697,7 @@ class ScenarioWorld:
         self.item_library = item_library      # 统一资源层：物品库（可选，init_game 注入）
         self.spell_library = spell_library    # 统一资源层：法术库
         self._mp_regen_acc = 0        # MP 恢复分钟累计器(时间钩子)
+        self.san_seen_sources: set[str] = set()   # F9: 目睹 SAN 全局去重(入档)
 
         # 从 graph nodes 加载 L2 定义的 scene_weapons → world.scene_weapons
         for node_id, node in graph.nodes.items():
@@ -1137,6 +1138,7 @@ class ScenarioWorld:
             },
             "memory": self.memory.to_dict(),
             "chronicle": self.chronicle.to_dict(),
+            "san_seen_sources": sorted(self.san_seen_sources),
         }
 
     @classmethod
@@ -1165,6 +1167,7 @@ class ScenarioWorld:
                 graph.nodes[nid].description = desc
         world.memory = MemoryManager.from_dict(data.get("memory", {}))
         world.chronicle = WorldChronicle.from_dict(data.get("chronicle", {}))
+        world.san_seen_sources = set(data.get("san_seen_sources", []))
         # 恢复 clock（无外部依赖）
         clock_data = data.get("clock")
         if clock_data:
