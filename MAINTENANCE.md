@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-28 | R1-W2 抽出 B 裁决阶段：`phase_b_adjudicate`（judge 循环 + 依赖图自动触发）；`_run_turn_pipeline` 现 A→B→剩余 C–E；keeper.py 1533→1317 |
 | 2026-08-28 | R1-W1 抽出 A 理解阶段：`phase_a_understand`（守卫/LUCK/parse/NPC/use归一/intent预发射）；parse 内层 TurnFrozenError catch 删除改冒泡；`_depth>0` facade 捕获 freeze（keeper.py:148） |
 | 2026-08-28 | R1-W0 turn/ 包骨架；process_turn→_run_turn_pipeline 改名委托 TurnRunner(keeper.py:149) |
 | 2026-08-28 | F16 锁-钥匙 infra 链路测试锁定（Step1 快修批 Task4，不加新机制）：tests/e2e/test_deterministic.py 增 TestLockKeyFlow 3 测试（开锁前出口硬条件挡住移动 / 撬锁检定成功 mark_completed 后同一出口即时通过 / 撬锁失败门保持关闭）。RED 2 failed：`_ENTITY_ID_PATTERN` 原 `^[A-Z][A-Z_]*\d+[a-z]?$` 强制数字，裸 ID `IT_LOCK` 不被 `_extract_entity_id` 识别，`parse_hard_requirement` 走 LLM 自然语言优雅放行，出口硬门失效（成功路径因 mark_completed 后 move 本就通而直接绿=假绿）。最小修：pattern 改为 `^[A-Z][A-Z0-9_]+[a-z]?$`（保留 I1/I12a/AT2 数字 ID，兼识别 IT_LOCK 类无数字测试 ID；单字母仍不匹配，中文自然语言仍优雅放行）。GREEN 3 passed；scenario_core.py 行数不变（1777），`_ENTITY_ID_PATTERN`@554 / `_extract_entity_id`@557 / `parse_hard_requirement`@563 / `move`@1017 行号不变 |
@@ -187,7 +188,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (1533 行) — Keeper 回合编配
+## src/game/agents/keeper.py (1317 行) — Keeper 回合编配
 
 ### 模块级函数
 
@@ -203,35 +204,35 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor/UseParser（llm_call 晚绑定 call_deepseek） | 98 |
 | `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 136 |
 | `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：`_depth>0` 直达 `_run_turn_pipeline` 并捕获 `TurnFrozenError`（内部递归，W6 前绕过 TurnRunner）；否则懒创建 `TurnRunner(self)` 并 `execute` | 148 |
-| `_run_turn_pipeline` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：建 TurnContext/TurnAccumulator → `phase_a_understand`（Early 则返回）；剩余 B–E：judge/combat/enrich/TimeAgent/Author → curate → memory；TimeAgent time_delta>0 时走 `world.advance_time` 三合一入口（@612，T7）；内部递归仍 `return self.process_turn(..., _depth+1)`（@682/@691） | 160 |
-| `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 1110 |
-| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用） | 1147 |
-| `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 1129 |
-| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 832 |
-| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 840 |
-| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 857 |
-| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 900 |
-| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 977 |
-| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 1002 |
-| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 1029 |
-| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入 | 1068 |
-| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 1172 |
-| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 1205 |
-| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 1235 |
-| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 1248 |
-| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行 | 1283 |
-| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 1304 |
-| `_build_world_snapshot` | `()` | 构建世界快照 dict | 1320 |
-| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 1332 |
-| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 1339 |
-| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 1346 |
-| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 1363 |
-| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1452 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1506 |
+| `_run_turn_pipeline` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：建 TurnContext/TurnAccumulator → `phase_a_understand`（Early 则返回）→ `phase_b_adjudicate`（judge + 依赖自动触发）；剩余 C–E：combat/enrich/TimeAgent/Author → curate → memory；TimeAgent time_delta>0 时走 `world.advance_time` 三合一入口（@396，T7）；内部递归仍 `return self.process_turn(..., _depth+1)`（@466/@475） | 160 |
+| `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 894 |
+| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用） | 931 |
+| `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 913 |
+| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 616 |
+| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 624 |
+| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 641 |
+| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 684 |
+| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 761 |
+| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 786 |
+| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 813 |
+| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入 | 852 |
+| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 956 |
+| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 989 |
+| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 1019 |
+| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 1032 |
+| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行 | 1067 |
+| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 1088 |
+| `_build_world_snapshot` | `()` | 构建世界快照 dict | 1104 |
+| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 1116 |
+| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 1123 |
+| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 1130 |
+| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 1147 |
+| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1236 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1290 |
 
 ## src/game/turn/ — 回合管线（R1）
 
-W0 契约 + 委托壳；W1 抽出 A 理解阶段。无 Restart。
+W0 契约 + 委托壳；W1 抽出 A 理解；W2 抽出 B 裁决。无 Restart。
 
 ### `__init__.py`
 
@@ -257,6 +258,12 @@ W0 契约 + 委托壳；W1 抽出 A 理解阶段。无 Restart。
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `phase_a_understand` | `(ctx, acc, tools) -> Early \| None` | 入口守卫（武器 offer 是/否、直接拾取、深度保护）→ 回合初始化 → NPC AT 注入 → LUCK 声明式消耗 → use/move/search 短路 / pre-parse 消歧 / LLM parse（TurnFrozenError 冒泡，不在此捕获）→ NPC 对话分流（纯对话 Early；talk_to 走 `keeper.call_deepseek` 以保留既有 monkeypatch）→ use 归一 → intent 预发射；产出写入 `acc`/`ctx.raw`/`tools` 会话态 | 14 |
+
+### `adjudicate.py`（228 行）— B 裁决阶段（R1-W2）
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `phase_b_adjudicate` | `(ctx, acc, tools) -> None` | judge 各 entry 类型(interaction/event/use/move/search/other) + 依赖图自动触发；产出写入 `acc.all_outcomes` / `acc.enrich_input` / `tools._pending_side_effects` / `tools._pending_move` / `tools._weapon_offer`（search 发现） | 8 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 
