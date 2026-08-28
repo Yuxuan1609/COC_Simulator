@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-28 | R1-W0 turn/ 包骨架；process_turn→_run_turn_pipeline 改名委托 TurnRunner(keeper.py:149) |
 | 2026-08-28 | F16 锁-钥匙 infra 链路测试锁定（Step1 快修批 Task4，不加新机制）：tests/e2e/test_deterministic.py 增 TestLockKeyFlow 3 测试（开锁前出口硬条件挡住移动 / 撬锁检定成功 mark_completed 后同一出口即时通过 / 撬锁失败门保持关闭）。RED 2 failed：`_ENTITY_ID_PATTERN` 原 `^[A-Z][A-Z_]*\d+[a-z]?$` 强制数字，裸 ID `IT_LOCK` 不被 `_extract_entity_id` 识别，`parse_hard_requirement` 走 LLM 自然语言优雅放行，出口硬门失效（成功路径因 mark_completed 后 move 本就通而直接绿=假绿）。最小修：pattern 改为 `^[A-Z][A-Z0-9_]+[a-z]?$`（保留 I1/I12a/AT2 数字 ID，兼识别 IT_LOCK 类无数字测试 ID；单字母仍不匹配，中文自然语言仍优雅放行）。GREEN 3 passed；scenario_core.py 行数不变（1777），`_ENTITY_ID_PATTERN`@554 / `_extract_entity_id`@557 / `parse_hard_requirement`@563 / `move`@1017 行号不变 |
 | 2026-08-28 | F9 SAN 遭遇全局去重（Step1 快修批 Task3）：① `ScenarioWorld.__init__` 增 `san_seen_sources: set[str]`（@700，目睹 SAN 全局去重集）；`to_dict` 序列化 sorted list（@1141）/`from_dict` 恢复（@1170，旧档缺省空集）；② `CombatState` 增 `san_attacked_refs: set`（@202，被攻击组场内去重）；③ `_init_combat` 目睹循环（@788-807）升级：去重键从局部 seen_refs 扩为「局部 ∪ world.san_seen_sources」（world 非 None 且有该属性时 check 后回写 ref 入全局集，跨场跨档同恐怖源只首次目睹 check；world=None 旧调用方退化为场内去重，群组多实例同 ref 仍只一次）；④ `_resolve_enemy_action` 被攻击 check（@1231-1240）增场内去重：同场同 enemy_ref 只首次命中触发（`san_attacked_refs` 首命中写入），multi_attack 每命中叠加不再发生。TDD：tests/test_combat_smoke.py 增 TestSanWitnessDedup 4 测试（_SeenWorld 最小 stub：首次目睹 check+写入全局集 roll=99 失败掉 2/已在全局集跳过 SAN 不变/world=None 退化场内去重/同场二次命中被攻击组只首命中掉 1），tests/e2e/test_deterministic.py 增 TestSanSeenPersistence 2 测试（to_dict/from_dict 回环保持/旧档缺省空集）。RED：5 failed（首次目睹未写全局集+已目睹仍 check+二次命中仍叠加+2×AttributeError）+1 直接绿（world=None 负向守卫，旧代码不触 world 本就通过，守护新 global_seen 路径）->GREEN；全量回归 338 passed / 20 deselected（基线 332+6）；docs/library-schema.md §7 同步：目睹组改「全局首次目睹才 check（san_seen_sources 入档）」、被攻击组改「同场同 enemy_ref 只首次命中触发（场内去重不入档）」、每轮情境组跟踪引用 F9/F10 收敛为 F10（§3 同步）；combat.py 1515->1523 行（CombatState @187 增 san_attacked_refs @202/_init_combat 735->740/_match_action 802->811/_get_player_actions 834->843/_skill_value 887->896/_resolve_player_action 898->907(effect 遍历 @954-1030)/_get_tier 1136->1145/_select_enemy_attack 1148->1157/_select_enemy_target 1156->1165/_resolve_enemy_action 1164->1169/_tick_temporary_effects 1238->1246(调用点 @406/@595/run_game @521)/_check_phase 1251->1259/_apply_phase 1275->1283/_any_special_rules 1296->1304/_build_battle_snapshot 1306->1314/_build_round_result 1325->1333/_llm_correct_round 1353->1361/_llm_correct_enemy_round 1460->1468/san_log 渲染点 @639-641 与 @420-422/_generate_combat_narrative 654->659，grep 实测含既有漂移顺手修正）、scenario_core.py 1771->1777 行（to_dict 1099->1103/from_dict 1140->1145/save_state 1172->1178/load_state 1191->1197） |
 | 2026-08-28 | F4 timed/effect 边界测试补齐（Step1 快修批 Task2，纯测试零产品代码改动）：新建 `tests/test_effect_edge_cases.py`（65 行，sys.path 注入 src+tests/e2e，复用 helpers.make_scene/make_world）4 测试锁定既有防御分支——TestExploreSideDegrade：damage 原子探索侧跳过（HP 不变+msgs 空+logger "game.judge" warning 含 "damage"，judge.py@236-238）/buff 原子降级文本（msgs==["力量涌现"]，judge.py@239-243）/未知 type 降级进结果（msgs==["[unknown:teleport] 瞬移"] 标识符前缀+warning，judge.py@246-251）；TestTimedRenderFallback：render_for_author 缺 expire_at 条目按 0 兜底渲染「亢奋（剩0分钟）」+缺 description 条目（expire_at=+60）不渲染（scenario_core.py@1665-1668）。与计划稿差异：unknown type 测试在计划 warning 断言基础上补 msgs 精确断言（锁定降级文本本身，非弱化）。预期直接绿（防御分支未漂移）：单文件 4 passed；全量 tests/ 332 passed / 20 deselected（基线 328+4） |
@@ -82,7 +83,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
        └─ src/prompts.py    全部 prompt 构建
        └─ src/config.py / src/config_llm.py  配置
        └─ src/utils.py      文件解析 / token 估算 / 掷骰 / 技能配置与归一
-  ├─ src/game/              Keeper 回合系统 (agents/ + combat + judge + npc/enemy/boss manager + clock)
+  ├─ src/game/              Keeper 回合系统 (agents/ + turn/ + combat + judge + npc/enemy/boss manager + clock)
   ├─ src/scenario_core.py   数据模型 + 世界状态 (DirectedGraph / ScenarioWorld / MemoryManager / WorldChronicle)
   ├─ src/investigator/      调查员系统 (COC 7th 车卡/检定)
   ├─ src/library/           武器/敌人/Boss 资源库 + 注入器 + 判定引擎
@@ -185,7 +186,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (1702 行) — Keeper 回合编配
+## src/game/agents/keeper.py (1711 行) — Keeper 回合编配
 
 ### 模块级函数
 
@@ -200,31 +201,55 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 |------|------|------|------|
 | `__init__` | `(world, phase1=None)` | 初始化 Judge/Curator/IntentDetector/PreParse/AgentMonitor/TurnMonitor/UseParser（llm_call 晚绑定 call_deepseek） | 99 |
 | `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 137 |
-| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**：weapon_offer 应答（严格只认「是/否」，其他输入作废 offer 走正常回合）-> 直接拾取通路（捡/拾/拿+武器名直接入包）-> 深度保护 -> NPC AT 注入 -> LUCK 声明式消耗识别（「烧/用 N 点幸运」-> spend_luck，成功才置 pending_luck_bonus，原子绑定）-> pre-parse 消歧/动作捷径 -> LLM parse -> NPC 对话分流 -> 后续 parse/judge/enrich/combat/TimeAgent/Author -> curate -> memory；TimeAgent time_delta>0 时走 `world.advance_time` 三合一入口（@781，T7：时钟+MP 恢复+timed 过期清除，原直调 clock 绕过钩子） | 149 |
-| `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 1278 |
-| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用） | 1315 |
-| `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 1297 |
-| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 1000 |
-| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 957 |
-| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 1025 |
-| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 1068 |
-| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 1145 |
-| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 1170 |
-| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 1197 |
-| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入 | 1236 |
-| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 1340 |
-| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 1373 |
-| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 1403 |
-| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 1416 |
-| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行 | 1451 |
-| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 1472 |
-| `_build_world_snapshot` | `()` | 构建世界快照 dict | 1488 |
-| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 1500 |
-| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 1507 |
-| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 1514 |
-| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 1531 |
-| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1620 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1674 |
+| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：`_depth>0` 直达 `_run_turn_pipeline`（内部递归，W6 前绕过 TurnRunner）；否则懒创建 `TurnRunner(self)` 并 `execute` | 149 |
+| `_run_turn_pipeline` | `(turn_input, author=None, _depth=0) -> TurnResult` | **主流程**（原 process_turn 函数体）：weapon_offer 应答（严格只认「是/否」，其他输入作废 offer 走正常回合）-> 直接拾取通路（捡/拾/拿+武器名直接入包）-> 深度保护 -> NPC AT 注入 -> LUCK 声明式消耗识别（「烧/用 N 点幸运」-> spend_luck，成功才置 pending_luck_bonus，原子绑定）-> pre-parse 消歧/动作捷径 -> LLM parse -> NPC 对话分流 -> 后续 parse/judge/enrich/combat/TimeAgent/Author -> curate -> memory；TimeAgent time_delta>0 时走 `world.advance_time` 三合一入口（@790，T7：时钟+MP 恢复+timed 过期清除，原直调 clock 绕过钩子）；内部递归仍 `return self.process_turn(..., _depth+1)`（@860/@869） | 158 |
+| `_detect_direct_pickup` | `(raw) -> str \| None` | 直接拾取意图：拾取动词+场景武器名（场景仅一件可不点名），含否定词/已持有时不触发 | 1288 |
+| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用） | 1325 |
+| `_grant_scene_weapons` | `(offer_list) -> str` | 发放武器入包并从场景移除，返回「、」连接名串（offer 应答与直接拾取共用） | 1307 |
+| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 1010 |
+| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 1018 |
+| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 1035 |
+| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100 → 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 1078 |
+| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 1155 |
+| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 1180 |
+| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 1207 |
+| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入 | 1246 |
+| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 1350 |
+| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 1383 |
+| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 1413 |
+| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 1426 |
+| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行 | 1461 |
+| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 1482 |
+| `_build_world_snapshot` | `()` | 构建世界快照 dict | 1498 |
+| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 1510 |
+| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 1517 |
+| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 1524 |
+| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 1541 |
+| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 1630 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 1684 |
+
+## src/game/turn/ — 回合管线骨架（R1-W0）
+
+W0 为契约 + 委托壳，阶段抽取在 W1–W5。无 Restart。
+
+### `__init__.py`
+
+模块 docstring：`Turn pipeline stages (R1).`
+
+### `context.py`（45 行）— 管线契约
+
+| 类 | 字段/说明 | 作用 | 行号 |
+|----|-----------|------|------|
+| `TurnContext` | `turn_input, author, depth, raw` | 输入侧（只读）；raw 可被 pre_parse 改写 | 10 |
+| `TurnAccumulator` | parse/npc/outcomes/enrich_input/combat/boss_accounting/enrichment/ta_result/brief/result 等 | 产出侧累积（= 原 process_turn 局部变量显式分组） | 19 |
+| `Early` | `result: TurnResult` | 阶段早退信号：编排器直接返回完整 TurnResult | 43 |
+
+### `runner.py`（15 行）— TurnRunner 委托壳
+
+| 方法 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `__init__` | `(keeper)` | 持有 Keeper 引用 | 8 |
+| `execute` | `(turn_input, author=None)` | 调 `keeper._run_turn_pipeline(..., 0)`；捕获 `TurnFrozenError` → `_build_frozen_response` | 11 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 

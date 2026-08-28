@@ -147,6 +147,15 @@ class Keeper:
         return cats
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
+        """Facade：委托 TurnRunner。_depth>0 为内部递归路径（W6 前）。"""
+        if _depth:
+            return self._run_turn_pipeline(turn_input, author, _depth)
+        if not hasattr(self, "_runner"):
+            from ..turn.runner import TurnRunner
+            self._runner = TurnRunner(self)
+        return self._runner.execute(turn_input, author)
+
+    def _run_turn_pipeline(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
         """Execute full turn: parse → judge → enrich → curate."""
         raw = turn_input.raw_text
         at = turn_input.action_type
