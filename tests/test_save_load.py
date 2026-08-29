@@ -121,3 +121,58 @@ class TestLoadRebindsReferences:
         assert restored.time_costs == {"move": 5}
         assert restored.comms_interval == 42
 
+
+class TestNpcInjectionNoDuplicate:
+    def test_injection_ids_survive_load(self, tmp_path, monkeypatch):
+        """B1③：_npc_injected_at_ids 入档，读档后不重复注入。"""
+        from helpers import make_world, make_scene
+        from game_loop import save_game, load_game
+        from game.agents.keeper import Keeper
+        from helpers import StubNarrator
+
+        profile = {"name": "列车员", "scene": "room_a", "can_interact": True,
+                   "bound_auto_triggers": [{
+                       "id": "AT_NPC1", "entity_type": "auto_trigger",
+                       "name": "列车员的提醒", "type": "无", "requirement": "",
+                       "trigger": "玩家进入车厢时", "result": "列车员低声提醒你。",
+                       "difficulty": "None"}]}
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           npc_profiles={"列车员": profile})
+        keeper = Keeper(world)
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": None}
+        keeper._inject_npc_at()
+        node = world.graph.nodes["room_a"]
+        assert sum(1 for e in node.auto_triggers if e.id == "AT_NPC1") == 1
+
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+        load_game(game, path)
+
+        keeper._inject_npc_at()
+        node2 = keeper.world.graph.nodes["room_a"]
+        ids = [e.id for e in node2.auto_triggers if e.id == "AT_NPC1"]
+        assert len(ids) == 1, f"读档后 AT_NPC1 不得重复注入，实际 {len(ids)} 个"
+
+    def test_session_state_roundtrip_minimal(self, tmp_path, monkeypatch):
+        """session_state 最小集回环：注入集合/最近意图/上次通信时间。"""
+        from helpers import make_world, make_scene, StubNarrator
+        from game_loop import save_game, load_game
+        from game.agents.keeper import Keeper
+        world = make_world({"room_a": make_scene()}, "room_a")
+        keeper = Keeper(world)
+        keeper._npc_injected_at_ids.add("AT_X")
+        keeper._recent_intents.append("练拳")
+        keeper._last_comms_time = 42
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": None}
+
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+        keeper._npc_injected_at_ids.clear()
+        keeper._recent_intents.clear()
+        keeper._last_comms_time = 0
+        load_game(game, path)
+
+        assert keeper._npc_injected_at_ids == {"AT_X"}
+        assert keeper._recent_intents == ["练拳"]
+        assert keeper._last_comms_time == 42
+
