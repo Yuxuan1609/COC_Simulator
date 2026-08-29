@@ -1481,9 +1481,11 @@ class TestAuthorRecursion:
         return SimpleNamespace(time_pressure=None, l3_data={},
                                handle_request=lambda req, turn: patch)
 
-    def _stub_creative_other(self, keeper, monkeypatch, time_delta=0):
+    def _stub_creative_other(self, keeper, monkeypatch, time_delta=0,
+                             combat_entry=None):
         from helpers import stub_keeper_llm
         stub_keeper_llm(keeper, monkeypatch, time_delta=time_delta,
+                        combat_entry=combat_entry,
                         parse_results=[[{"type": "other", "impact": "creative",
                                          "text": "对着墙打一套拳"}]])
         from types import SimpleNamespace
@@ -1555,3 +1557,90 @@ class TestAuthorRecursion:
         assert result.brief is not None
         assert any("没有什么特别的事情发生" in o.message
                    for o in result.brief.action_outcomes)
+
+    def test_recursion_combat_init_survives_restart(self, monkeypatch):
+        """被弃帧零遭遇副作用（直接断言，替代 enrich 次数代理）：
+        enter_combat 仅在发货帧执行一次，且 combat_init 随结果返回。
+        旧行为：外帧先 enter_combat → _combat_active=True → 内帧跳过
+        战斗判定 → combat_init 被吞（敌人进了战斗态但玩家收不到）。"""
+        from game.agents.keeper import Keeper
+        from game.messages import TurnInput
+        lib = _enemy_lib_with()
+        world = make_world({"room_a": make_scene()}, start_node="room_a",
+                           enemy_library=lib)
+        _player(world)
+        world.enemies.spawn("测试巡游者", "room_a", 1)
+        keeper = Keeper(world)
+        self._stub_creative_other(
+            keeper, monkeypatch,
+            combat_entry={"enter_combat": True, "enemy_instance_ids": [],
+                          "reasoning": "遭遇"})
+        calls = {"n": 0}
+        orig_enter = world.enemies.enter_combat
+        def counting_enter(iids):
+            calls["n"] += 1
+            return orig_enter(iids)
+        world.enemies.enter_combat = counting_enter
+
+        result = keeper.process_turn(TurnInput(raw_text="对着墙打一套拳"),
+                                     author=self._accept_author())
+        assert calls["n"] == 1, \
+            f"enter_combat 应只在发货帧执行一次，实际 {calls['n']}"
+        assert result.combat_init is not None, \
+            "递归后 combat_init 必须随发货帧返回（旧行为被吞）"
+        assert result.combat_init.enemies, "combat_init 必须携带敌人"
+
+    def test_recursion_boss_accounting_exactly_once(self, monkeypatch, tmp_path):
+        """被弃帧零 Boss 记账：mark_spawned/set_active 恰好一次，不重复造实例。
+        （新旧行为一致的回归锁——把 deferral 保证从隐式变显式）"""
+        import json as _json
+        from game.agents.keeper import Keeper
+        from game.messages import TurnInput
+        from library.bosses import BossLibrary
+        boss_data = {"测试魔像": {
+            "type": "神话造物",
+            "attributes": {"STR": 120, "CON": 140, "SIZ": 130, "DEX": 30, "POW": 80},
+            "armor": "4点石壳", "attacks": [], "special_abilities": [],
+            "san_loss": "1/1D6", "description": "测试用",
+            "boss_mechanics": "两阶段测试",
+            "flags": ["boss"], "multi_attack": 1,
+            "phases": [{"trigger": "hp_below_pct:0.5", "name": "崩解",
+                        "overrides": {"multi_attack": 2},
+                        "description": "外壳碎裂"}],
+        }}
+        p = tmp_path / "bosses.json"
+        p.write_text(_json.dumps(boss_data, ensure_ascii=False), encoding="utf-8")
+        bl = BossLibrary(str(p))
+        enc = {"id": "BOSS_T1", "type": "boss_encounter", "engage_type": "at",
+               "boss_ref": "测试魔像", "scene": "room_a",
+               "requirements": "", "description": "测试遭遇"}
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           enemy_library=_enemy_lib_with(), boss_library=bl,
+                           boss_encounters=[enc])
+        _player(world)
+        inst = world.bosses.spawn_instance(enc)
+        world.enemies.register(inst)
+        keeper = Keeper(world)
+        self._stub_creative_other(keeper, monkeypatch)
+
+        calls = {"mark": 0, "active": 0}
+        orig_mark = world.bosses.mark_spawned
+        orig_active = world.bosses.set_active
+        def counting_mark(boss_id):
+            calls["mark"] += 1
+            return orig_mark(boss_id)
+        def counting_active(boss_id):
+            calls["active"] += 1
+            return orig_active(boss_id)
+        world.bosses.mark_spawned = counting_mark
+        world.bosses.set_active = counting_active
+
+        result = keeper.process_turn(TurnInput(raw_text="对着墙打一套拳"),
+                                     author=self._accept_author())
+        assert result.combat_init is not None, "Boss 战必须随发货帧返回"
+        assert calls["mark"] == 1, \
+            f"mark_spawned 应恰好一次，实际 {calls['mark']}"
+        assert calls["active"] == 1, \
+            f"set_active 应恰好一次，实际 {calls['active']}"
+        assert world.bosses.has_spawned("BOSS_T1")
+        assert len(world.enemies._instances) == 1, "不得产生重复 Boss 实例"
