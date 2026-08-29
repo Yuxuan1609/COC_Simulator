@@ -176,3 +176,41 @@ class TestNpcInjectionNoDuplicate:
         assert keeper._recent_intents == ["练拳"]
         assert keeper._last_comms_time == 42
 
+
+class TestFormatV2:
+    def test_placeholder_containers_present(self, tmp_path):
+        """E 簇占坑：存档含 clues/narrative_memory 空容器，回环保持。"""
+        from helpers import make_world, make_scene
+        world = make_world({"room_a": make_scene()}, "room_a")
+        path = str(tmp_path / "save.json")
+        world.save_state(path)
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data["version"] == 2
+        assert data["world"]["clues"] == []
+        assert data["world"]["narrative_memory"] == []
+
+        from scenario_core import ScenarioWorld
+        restored = ScenarioWorld.load_state(path)
+        assert restored.clues == []
+        assert restored.narrative_memory == []
+
+    def test_v1_save_loads_with_defaults(self, tmp_path):
+        """v1 旧档可读：缺 session_state/clues/checked 一律默认值。"""
+        from helpers import make_world, make_scene
+        world = make_world({"room_a": make_scene()}, "room_a")
+        path = tmp_path / "save.json"
+        world.save_state(str(path))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["version"] = 1                      # 模拟旧档
+        data.pop("_meta", None)
+        data["world"].pop("clues", None)
+        data["world"].pop("narrative_memory", None)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+        from scenario_core import ScenarioWorld
+        restored = ScenarioWorld.load_state(str(path))
+        assert restored.clues == []
+        assert restored.narrative_memory == []
+        assert restored.current_location == "room_a"
+

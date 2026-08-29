@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-29 | E 簇占坑 + v1 兼容：`ScenarioWorld.__init__` 增 `clues`/`narrative_memory` 空 list（@703/@704）；`to_dict` 写两键（@1146/@1147）；`from_dict` `data.get(..., [])` 缺省空 list（@1177/@1178，additive-default）。TDD：`tests/test_save_load.py` 增 `TestFormatV2` 2 测试（占坑容器入档回环 / v1 旧档缺键默认空）。RED KeyError+AttributeError → GREEN。scenario_core.py 1786→1792 / test_save_load.py 178→216。单文件 10 passed；全量 361 passed / 20 deselected（基线 359+2）。 |
 | 2026-08-29 | B1③ session_state 入档锁测：`dump_session_state`/`load_session_state` 已由 Task 3 落地（keeper.py @142/@149），本任务零产品改动。TDD：`tests/test_save_load.py` 增 `TestNpcInjectionNoDuplicate` 2 测试（`test_injection_ids_survive_load` 读档后 `_inject_npc_at` 不重复注入 AT_NPC1；`test_session_state_roundtrip_minimal` 锁定 npc_injected_at_ids/recent_intents/last_comms_time 回环）。两测直接绿（方法预落地，锁测）。test_save_load.py 123→178。单文件 8 passed；全量 359 passed / 20 deselected（基线 357+2）。 |
 | 2026-08-29 | B1② 补丁：`load_game` 在 `set_world` 前从当前会话 world 拷贝不入档字段到 restored（`weapon_library`/`item_library`/`spell_library`/`time_costs`/`comms_interval` @663-667）。`from_dict` 建裸 world，session 库否则为 None。TDD：`TestLoadRebindsReferences.test_load_copies_session_libraries`。RED（item_library is None）→ GREEN。game_loop.py 919→924 / test_save_load.py 98→123。 |
 | 2026-08-29 | B1② set_world 重绑 + save/load 唯一入口：`Keeper.set_world`（@135）统一切 world/judge/curator/turn_monitor；`dump_session_state`/`load_session_state`（@142/@149）入档 npc 注入集/recent_intents/last_comms_time；`save_state(path, extra_meta=None)` version 2 一次写入 `_meta`（@1180）；`save_game`/`load_game` 为唯一入口（库透传 `_library` + set_world + turn_number/session_state 恢复）；`run_game.py` /save /load 改道。TDD：tests/test_save_load.py 增 TestLoadRebindsReferences 2 测试。RED（旧 load 原地 setattr，world is old_world）→ GREEN 5 passed。keeper.py 855->874 / game_loop.py 917->919 / scenario_core.py 1785->1786。全量 356 passed / 20 deselected（基线 354+2） |
@@ -560,7 +561,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles, item_library, spell_library)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager/WorldChronicle（统一资源层：item_library/spell_library 挂载，init_game 注入；时间钩子：`_mp_regen_acc` MP 恢复分钟累计器 @701，不序列化；F9 增 `san_seen_sources: set[str]` @702，目睹 SAN 全局去重集，入档（to_dict 序列化/from_dict 恢复）；B1① 存 `_npc_profiles` @692 + `load_warnings: list[str]` @693） | 663 |
+| `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles, item_library, spell_library)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager/WorldChronicle（统一资源层：item_library/spell_library 挂载，init_game 注入；时间钩子：`_mp_regen_acc` MP 恢复分钟累计器 @701，不序列化；F9 增 `san_seen_sources: set[str]` @702，目睹 SAN 全局去重集，入档（to_dict 序列化/from_dict 恢复）；B1① 存 `_npc_profiles` @692 + `load_warnings: list[str]` @693；E 簇占坑 `clues`/`narrative_memory` 空 list @703/@704） | 663 |
 | `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 730–750 |
 | `advance_time` | `(minutes)` | **三合一**（spec §2.2/§4）：推进时钟 + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2，旧档下次推进自动清理无需迁移） + 调 `_tick_time_effects` 时间钩子（keeper 每回合经 TimeAgent time_delta 走此单一入口） | 753 |
 | `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；timed_effects 到期清除 | 769 |
@@ -576,8 +577,8 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端 | 1056 |
 | `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1089 / 1092 |
 | `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1096 / 1100 |
-| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list @1143，from_dict @1172 恢复、旧档缺省空集） | 1105 / 1147 |
-| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1180 / 1200 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list @1145，from_dict @1176 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory` @1146/@1147，from_dict @1177/@1178 `data.get(..., [])`） | 1107 / 1151 |
+| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1186 / 1206 |
 
 ### MemoryManager（@1432）
 
