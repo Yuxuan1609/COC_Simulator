@@ -19,9 +19,7 @@
 
 ### 🔴 功能性(高,排最后修)
 
-| # | 问题 | 细节 |
-|---|------|------|
-| B1 | **存读档 3 连**(队列 6) | ① EnemyManager.from_dict 无 library 静默吞异常 -> enemies 变 None;② 两条读档路径不一致(run_game 替换 world 但 judge/curator 持旧引用);③ `_npc_injected_at_ids` 不入档 -> 重复注入。注意 v2.2(timed_effects)后档格式又增字段,越晚修迁移越多 |
+（无）
 
 ### 🟡 有影响(待修)
 
@@ -52,7 +50,7 @@
 | F10 | **周期性/环境效应**(表达力缺口) | timed/effect 原子只有"到期清除",无周期 tick payload;毒每轮掉 HP/雾中每轮 SAN/诅咒每日发作类模组写法无结构化通道(F9 注记"每轮在雾中停留"即此例)。钩子现成:_tick_time_effects(小时粒度,MP 恢复已走)/_tick_temporary_effects(轮末,buff 递减已走)。方向:effect 原子加 interval(round/hour/day)+payload 原子数组,8 原子体系自然延伸(2026-08-26 机制层思考) |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 
-| F14 | **技能成长标记** | Skill 无 checked 标记,check_skill 成功不记录;"成功使用→幕末成长检定"循环断裂,角色永远停留在车卡(依赖 U4 战役化才有意义) |
+| F14 | **技能成长标记** | checked 标记已落（fce8f7a）；幕末成长检定循环仍 Step3/U4 |
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
 | F17 | **场景物品放置/拾取/容器** | 只有武器能放场景(scene_weapons),无 drop API、无容器嵌套;"抽屉里的东西""把物品藏回现场"接不住 |
 | F18 | **时间触发世界事件调度器** | clock 纯计数器;"22:00 凶手行动"玩家不动永不发生;钩子现成(_tick_time_effects) |
@@ -117,6 +115,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-29 | **B1 存读档 3 连** | 三连修法：① load_state 库透传 + load_warnings（1a9d43d）；② set_world 重绑 + save/load 唯一入口 + 会话库拷贝（260580e+a755c5a）；③ session_state 最小集入档（npc_injected_at_ids/recent_intents/last_comms_time），注入不重复（bfbda33）。存档 version 2；v1 additive-default。 |
 | 2026-08-28 | **R1 C1 process_turn 拆分** | keeper 阶段化完成（5 宏阶段 + TurnRunner）；combat.py / scenario_core.py 拆分另排 |
 | 2026-08-28 | **F16 锁-钥匙关联** | 降级为测试锁定+文档配方,未加机制(06ba6cc);若 Step2/3 真实模组需要更强锁语义再开新项。测试发现 `_ENTITY_ID_PATTERN` 强制数字,IT_LOCK 类无数字 ID 被当自然语言优雅放行;pattern 改为 `^[A-Z][A-Z0-9_]+[a-z]?$`(I1/I12a/AT2 仍匹配;中文 NL 仍优雅放行) |
 | 2026-08-28 | **F9 SAN check 遭遇去重** | 目睹组全局去重入档;被攻击组场内去重解 multi_attack 叠加(76264df);F5/F8 联动仍跟踪 |
