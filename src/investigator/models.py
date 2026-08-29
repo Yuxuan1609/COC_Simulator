@@ -45,6 +45,7 @@ class Skill:
     value: int = 0           # 当前值（初始 = 基础值，分配技能点后增长）
     category: str = "通用"    # U9：属性归属拼接（如 "INT、EDU"）
     is_occupation: bool = False
+    checked: bool = False
 
     def __post_init__(self):
         if self.value == 0:
@@ -242,7 +243,10 @@ class Investigator:
             self.check_warnings.append(
                 f"未掌握技能[{skill_name}]（归一={kind}:{value}），默认成功放行")
             return True, f"{skill_name}（未掌握，默认判定成功）", "regular"
-        return self._roll_d100(skill_name, skill.value)
+        ok, msg, tier = self._roll_d100(skill_name, skill.value)
+        if ok:
+            skill.checked = True
+        return ok, msg, tier
 
     def _roll_d100(self, name: str, target: int) -> tuple:
         roll = random.randint(1, 100)

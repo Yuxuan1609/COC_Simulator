@@ -72,6 +72,7 @@ def to_dict(inv: Investigator) -> dict:
                 "value": s.value,
                 "category": s.category,
                 "is_occupation": s.is_occupation,
+                "checked": s.checked,
             }
             for s in inv.skills
         ],
@@ -144,6 +145,7 @@ def from_dict(data: dict) -> Investigator:
             value=s.get("value", s.get("base", 0)),
             category=s.get("category", "通用"),
             is_occupation=s.get("is_occupation", False),
+            checked=s.get("checked", False),
         )
         for s in skills_data
     ]

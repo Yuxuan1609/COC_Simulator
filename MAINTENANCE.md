@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-29 | F14 Skill.checked 标记：Skill 增 `checked: bool = False`（models.py@48）；`check_skill` skill 分支成功时写 `skill.checked=True`（@245-249，attr/pseudo/ignore 不标）；serialization to_dict skills 条目增 `"checked"`（@75）/ from_dict `checked=s.get("checked", False)`（@148，旧卡缺省 False）。TDD：tests/test_skill_checked.py 4 测试（成功标 True / 失败保持 False / 未掌握默认放行不报错 / 序列化回环+旧卡缺省）。RED AttributeError → GREEN 4 passed。models.py 448->452 / serialization.py 195->203 |
 | 2026-08-29 | R1 后续补测（journal §后续）：`TestAuthorRecursion` 增 2 条被弃帧零副作用直接断言（test_deterministic.py @1558 起）——`test_recursion_combat_init_survives_restart`（spy `enemies.enter_combat` 恰好 1 次 + combat_init 随发货帧返回；对 W5 前代码验证为 RED，旧行为外帧先 enter_combat 致内帧跳过判定、combat_init 被吞）+ `test_recursion_boss_accounting_exactly_once`（spy `mark_spawned`/`set_active` 恰好 1 次 + 不重复造实例，新旧均绿的回归锁）；`_stub_creative_other` 增 `combat_entry` 透传参数。零产品代码。全量 347 passed / 20 deselected（基线 345+2） |
 | 2026-08-28 | R1 执行记录：`docs/superpowers/journal/2026-08-28-keeper-turn-pipeline.md`（对照 spec §0–§7）；spec 头部加落地指针。已合入 main `e536bfd..d708f91` |
 | 2026-08-28 | R1 收口 — keeper 回合管线阶段化完成；`process_turn` 薄 facade 委托 `TurnRunner.execute` A–E 循环（Early 早退 / Restart `_apply_pending` 后重入 / `TurnFrozenError` → `_build_frozen_response`）；`Keeper.__init__` session_state 跨回合字段成组（B1 入档单元）；未用 messages import 清理；finalize/encounter 注释改为 freeze-safety（spec §4.1）。keeper.py 855 行。全量 345 passed / 20 deselected |
@@ -595,25 +596,25 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ## src/investigator/ — 调查员系统（COC 7th）
 
-### models.py (448 行)
+### models.py (452 行)
 
 | 类/方法 | 说明 | 行号 |
 |---------|------|------|
-| `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3；统一资源层增 MP_MAX=floor(POW/5)；Skill.category=属性归属拼接如 "INT、EDU"） | 14–81 |
-| `_carry_current` | `(current, old_max, new_max)` | 模块级：上限变化携带当前值（涨上限同步涨差值，降上限 clamp） | 148 |
-| `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 89–139 |
-| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at}]`，2026-08-21 spec §2） | 160 |
-| `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 205 / 211 / 220 |
-| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行 | 226 |
-| `_roll_d100` | `(name, target)` 骰点+等级判定；fumble = roll>=96 且 roll>target；消费 pending_luck_bonus（一次性 -N） | 247 |
-| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 268 |
-| `check_skills` | `(skill_names)` 批量检定 | 277 |
-| `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 295 |
-| `_recalc_derived` | 重算衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）经 _carry_current 携带或 clamp，SAN 永不重置 | 315 |
-| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ->CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 326 |
-| `modify_skill` / `has_item` / `list_items` | - | 410 / 417 / 421 |
-| `add_weapon` / `remove_weapon` | 武器管理 | 425 / 428 |
-| `save` / `load` | JSON 存档 | 435 / 441 |
+| `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3；统一资源层增 MP_MAX=floor(POW/5)；Skill.category=属性归属拼接如 "INT、EDU"；F14：Skill.checked 成功使用标记 @48） | 14–82 |
+| `_carry_current` | `(current, old_max, new_max)` | 模块级：上限变化携带当前值（涨上限同步涨差值，降上限 clamp） | 149 |
+| `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 90–140 |
+| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at}]`，2026-08-21 spec §2） | 161 |
+| `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 206 / 212 / 221 |
+| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行；F14：真实技能成功时 skill.checked=True（attr/pseudo/ignore 不标） | 227 |
+| `_roll_d100` | `(name, target)` 骰点+等级判定；fumble = roll>=96 且 roll>target；消费 pending_luck_bonus（一次性 -N） | 251 |
+| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 272 |
+| `check_skills` | `(skill_names)` 批量检定 | 281 |
+| `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 299 |
+| `_recalc_derived` | 重算衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）经 _carry_current 携带或 clamp，SAN 永不重置 | 319 |
+| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ->CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 330 |
+| `modify_skill` / `has_item` / `list_items` | - | 414 / 421 / 425 |
+| `add_weapon` / `remove_weapon` | 武器管理 | 429 / 432 |
+| `save` / `load` | JSON 存档 | 439 / 445 |
 
 ### rules.py (370 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import copy/json/math/os/random；F2：六函数数值参数收编读 game_config；T8：roll_stats 骰面读 skill_config.dice）
 
@@ -638,13 +639,13 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_cfg_shape_ok` | `(v, dv) -> bool` | 嵌套配置形状校验（F2，T8 升级行深校验）：顶层/嵌套 dict 必需键齐全递归校验；list 非空且按首元素模板深校验行结构（行内 dict 键齐全+标量类型匹配或 None 特赦——db_build_table.max_key 兜底行合法；list 行等长逐位类型；标量行类型一致）；标量 `type is` 严格（bool 不混入 int） | 327 |
 | `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段校验走 `_cfg_shape_ok`（dict 嵌套与 list 行结构坏值均整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。MP 恢复/timed 默认时长/buff 减伤下限/F2 衍生查表等统一从此读取 | 353 |
 
-### serialization.py (195 行) — v2.2：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载；v2.2 增 timed_effects
+### serialization.py (203 行) — v2.2：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载；v2.2 增 timed_effects；F14 skills 条目含 checked
 
 | 函数 | 说明 | 行号 |
 |------|------|------|
 | `_occupation_dict_to_obj` | 职业 dict→对象 | 15 |
-| `to_dict` / `to_json` | Investigator → dict/JSON（meta.version="2.2"，personal 含 label，known_spells 列表拷贝 / timed_effects 元素级拷贝 @96） | 27 / 100 |
-| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建；timed_effects 缺省 []，过滤非 dict / expire_at 非数字（int/float，防 str/None 炸 Task 7 的 `<=` 比较）坏元素 @186，丢弃数>0 时记 logging.warning；无版本白名单（仅结构校验），旧档 v2.0/v2.1 继续可加载 | 107 / 191 |
+| `to_dict` / `to_json` | Investigator → dict/JSON（meta.version="2.2"，personal 含 label，known_spells 列表拷贝 / timed_effects 元素级拷贝 @97；skills 条目含 checked @75） | 27 / 101 |
+| `from_dict` / `from_json` | dict/JSON → Investigator；stats 含 SIZ 即抛 ValueError 提示重建；timed_effects 缺省 []，过滤非 dict / expire_at 非数字（int/float，防 str/None 炸 Task 7 的 `<=` 比较）坏元素 @194，丢弃数>0 时记 logging.warning；skills `checked=s.get("checked", False)` 旧卡缺省 False @148；无版本白名单（仅结构校验），旧档 v2.0/v2.1 继续可加载 | 108 / 199 |
 
 ---
 
