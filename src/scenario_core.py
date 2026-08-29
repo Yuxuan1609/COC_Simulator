@@ -689,6 +689,8 @@ class ScenarioWorld:
         self.npcs = NPCManager()
         if npc_profiles:
             self.npcs.init_from_profiles(npc_profiles)
+        self._npc_profiles = npc_profiles or {}
+        self.load_warnings: list[str] = []
         self.bosses = BossManager(boss_library, boss_encounters or []) if boss_library else None
 
         # 本体状态
@@ -1194,56 +1196,62 @@ class ScenarioWorld:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     @classmethod
-    def load_state(cls, path: str) -> "ScenarioWorld":
-        """从存档恢复（自包含，不需要外部传 graph）"""
+    def load_state(cls, path: str, enemy_lib=None, boss_lib=None,
+                   npc_profiles: dict | None = None) -> "ScenarioWorld":
+        """从存档恢复。库由调用方（当前会话）透传——库是模组资产，不入档。
+        结构性损坏 raise；单条引用失败/库缺失 → 跳过 + load_warnings。"""
+        import logging
+        log = logging.getLogger("scenario_core.load")
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        if data.get("version") != 1:
+        if data.get("version") not in (1, 2):
             raise ValueError(f"不支持的存档版本: {data.get('version')}")
         graph = DirectedGraph.from_dict(data["graph"])
         world_data = data["world"]
         world_data["memory"] = data.get("memory", {})
         world = cls.from_dict(world_data, graph)
-        # 恢复子系统
-        clock_data = world_data.get("clock")
-        if clock_data:
-            from game.clock import GameClock
-            world.clock = GameClock.from_dict(clock_data)
+        world.load_warnings = []
+        if npc_profiles is not None:
+            world._npc_profiles = npc_profiles
+
+        def _warn(msg):
+            log.warning(msg)
+            world.load_warnings.append(msg)
+
         enemies_data = world_data.get("enemies")
         if enemies_data:
-            try:
+            if enemy_lib is None:
+                _warn("存档含敌人数据但当前会话无敌人库，敌人状态未恢复")
+            else:
                 from game.enemy_manager import EnemyManager
-                if world.enemy_manager and world.enemy_manager.library:
-                    world.enemy_manager = EnemyManager.from_dict(enemies_data, world.enemy_manager.library)
-                else:
-                    world.enemy_manager = EnemyManager.from_dict(enemies_data, None)
-            except Exception:
-                pass
+                try:
+                    world.enemies = EnemyManager.from_dict(enemies_data, enemy_lib)
+                except Exception as e:
+                    _warn(f"敌人状态恢复失败（{e}），敌人状态未恢复")
         npcs_data = world_data.get("npcs")
         if npcs_data:
+            from game.npc_manager import NPCManager
             try:
-                from game.npc_manager import NPCManager
                 world.npcs = NPCManager()
-                world.npcs.from_dict(npcs_data, getattr(world, '_npc_profiles', {}))
-            except Exception:
-                pass
+                world.npcs.from_dict(npcs_data, world._npc_profiles)
+            except Exception as e:
+                _warn(f"NPC 状态恢复失败（{e}）")
         bosses_data = world_data.get("bosses")
         if bosses_data:
-            try:
+            if boss_lib is None:
+                _warn("存档含 Boss 数据但当前会话无 Boss 库，Boss 状态未恢复")
+            else:
                 from game.boss_manager import BossManager
-                if world.bosses and world.bosses.library:
-                    world.bosses = BossManager.from_dict(bosses_data, world.bosses.library)
-                else:
-                    world.bosses = BossManager.from_dict(bosses_data, None)
-            except Exception:
-                pass
+                try:
+                    world.bosses = BossManager.from_dict(bosses_data, boss_lib)
+                except Exception as e:
+                    _warn(f"Boss 状态恢复失败（{e}）")
         scene_weapons_data = world_data.get("scene_weapons", {})
         for scene, weps in scene_weapons_data.items():
             world.scene_weapons[scene] = [
                 SceneWeapon(weapon_ref=w["weapon_ref"], scene=scene, quantity=w.get("quantity", 1))
                 for w in weps
             ]
-        # 恢复调查员
         ps = data.get("player_snapshot")
         if ps is not None:
             from investigator.serialization import from_dict as inv_from_dict
