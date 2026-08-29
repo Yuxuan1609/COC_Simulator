@@ -57,3 +57,42 @@ class TestEnemyRestoreWithLibrary:
         import pytest
         with pytest.raises(ValueError):
             ScenarioWorld.load_state(str(path))
+
+
+class TestLoadRebindsReferences:
+    def _keeper_game(self, monkeypatch):
+        from helpers import make_world, make_scene, stub_keeper_llm, StubNarrator
+        from game.agents.keeper import Keeper
+        world = make_world({"room_a": make_scene()}, "room_a")
+        from investigator import Investigator
+        world.set_player(Investigator(name="测试员", age=25, gender="男"))
+        keeper = Keeper(world)
+        return {"keeper": keeper, "narrator": StubNarrator(), "author": None}
+
+    def test_load_rebinds_judge_curator_monitor(self, tmp_path, monkeypatch):
+        """load_game 后 judge/curator/turn_monitor 持新 world（旧 CLI 路径丢引用）。"""
+        from game_loop import save_game, load_game
+        game = self._keeper_game(monkeypatch)
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+        old_world = game["keeper"].world
+
+        load_game(game, path)
+        keeper = game["keeper"]
+        assert keeper.world is not old_world
+        assert keeper.judge.world is keeper.world
+        assert keeper.curator.world is keeper.world
+        assert keeper.turn_monitor._world is keeper.world
+
+    def test_meta_turn_number_restored(self, tmp_path, monkeypatch):
+        """_meta.turn_number 随 load_game 恢复。"""
+        from game_loop import save_game, load_game
+        game = self._keeper_game(monkeypatch)
+        game["keeper"].turn_number = 7
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+        game["keeper"].turn_number = 0
+
+        load_game(game, path)
+        assert game["keeper"].turn_number == 7
+

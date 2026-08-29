@@ -1177,19 +1177,20 @@ class ScenarioWorld:
             world.clock = GameClock.from_dict(clock_data)
         return world
 
-    def save_state(self, path: str):
-        """全量快照存档（图 + 世界 + 记忆 + 调查员快照）"""
+    def save_state(self, path: str, extra_meta: dict | None = None):
+        """全量快照存档（图 + 世界 + 记忆 + 调查员快照）。version 2。"""
         from investigator.serialization import to_dict as inv_to_dict
         from datetime import datetime
         import os
 
         data = {
-            "version": 1,
+            "version": 2,
             "timestamp": datetime.now().isoformat(),
             "graph": self.graph.to_dict(),
             "world": self.to_dict(),
             "memory": self.memory.to_dict(),
             "player_snapshot": inv_to_dict(self.player) if self.player else None,
+            "_meta": extra_meta or {},
         }
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, 'w', encoding='utf-8') as f:

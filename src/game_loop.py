@@ -636,35 +636,37 @@ def run_turn(game: dict, user_input: str,
 # ── Save / Load ──
 
 def save_game(game: dict, path: str) -> None:
-    world = game["keeper"].world
+    """唯一保存入口（B1②）：一次性写出版本 2 存档 + _meta。"""
     keeper = game["keeper"]
-    author = game.get("author")
-
-    world.save_state(path)
-    import json as _json
-    with open(path, "r", encoding="utf-8") as f:
-        data = _json.load(f)
-    data["_meta"] = {
+    keeper.world.save_state(path, extra_meta={
         "turn_number": keeper.turn_number,
-    }
-    with open(path, "w", encoding="utf-8") as f:
-        _json.dump(data, f, ensure_ascii=False, indent=2)
+        "session_state": keeper.dump_session_state(),
+    })
 
 
 def load_game(game: dict, path: str) -> None:
-    world = game["keeper"].world
+    """唯一读档入口（B1②）：load_state(库透传) → set_world 重绑 → _meta 恢复。"""
     import json as _json
-
-    restored = world.__class__.load_state(path)
+    keeper = game["keeper"]
+    cur = keeper.world
+    enemy_lib = (
+        (getattr(cur.enemies, "library", None) or getattr(cur.enemies, "_library", None))
+        if cur.enemies else None
+    )
+    boss_lib = cur.bosses.library if cur.bosses else None
+    restored = ScenarioWorld.load_state(
+        path,
+        enemy_lib=enemy_lib,
+        boss_lib=boss_lib,
+        npc_profiles=getattr(cur, "_npc_profiles", {}),
+    )
+    keeper.set_world(restored)
     with open(path, "r", encoding="utf-8") as f:
-        data = _json.load(f)
-    meta = data.get("_meta", {})
-
-    for attr in list(world.__dict__.keys()):
-        if hasattr(restored, attr):
-            setattr(world, attr, getattr(restored, attr))
-
-    game["keeper"].turn_number = meta.get("turn_number", 0)
+        meta = _json.load(f).get("_meta", {})
+    keeper.turn_number = meta.get("turn_number", 0)
+    keeper.load_session_state(meta.get("session_state", {}))
+    for w in restored.load_warnings:
+        print(f"[warn] {w}")
 
 
 # ── Autosave ──

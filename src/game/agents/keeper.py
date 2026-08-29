@@ -132,6 +132,25 @@ class Keeper:
         self.use_parser = UseParser(
             llm_call=lambda prompt, **kw: call_deepseek(prompt, **kw))
 
+    def set_world(self, new_world: ScenarioWorld) -> None:
+        """B1②：读档重绑——所有持 world 引用的内部组件统一切换。"""
+        self.world = new_world
+        self.judge.world = new_world
+        self.curator.world = new_world
+        self.turn_monitor._world = new_world
+
+    def dump_session_state(self) -> dict:
+        return {
+            "npc_injected_at_ids": sorted(self._npc_injected_at_ids),
+            "recent_intents": list(self._recent_intents),
+            "last_comms_time": self._last_comms_time,
+        }
+
+    def load_session_state(self, data: dict) -> None:
+        self._npc_injected_at_ids = set(data.get("npc_injected_at_ids", []))
+        self._recent_intents = list(data.get("recent_intents", []))
+        self._last_comms_time = data.get("last_comms_time", 0)
+
     def _material_catalogs(self):
         """统一资源层：从世界与玩家构建 use 可解析目录（持有物 + 已知法术）。"""
         from game.use_parser import ItemCatalog, SpellCatalog

@@ -137,17 +137,17 @@ def run_game(character_path: str = None):
         elif cmd.startswith("/save"):
             slot = cmd.split(maxsplit=1)[1] if len(cmd.split()) > 1 else "quick"
             path = f"data/saves/{slot}.json"
-            world.save_state(path)
+            from game_loop import save_game
+            save_game(game, path)
             print(f"[info] 存档已保存至 {path}")
             continue
         elif cmd.startswith("/load"):
             slot = cmd.split(maxsplit=1)[1] if len(cmd.split()) > 1 else "quick"
             path = f"data/saves/{slot}.json"
             if _os.path.exists(path):
-                from scenario_core import ScenarioWorld
-                new_world = ScenarioWorld.load_state(path)
-                keeper.world = new_world
-                world = new_world
+                from game_loop import load_game
+                load_game(game, path)
+                world = game["keeper"].world
                 print(f"[info] 已从 {path} 读档")
                 print(_scene_text(world))
             else:
