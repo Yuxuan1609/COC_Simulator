@@ -96,3 +96,28 @@ class TestLoadRebindsReferences:
         load_game(game, path)
         assert game["keeper"].turn_number == 7
 
+    def test_load_copies_session_libraries(self, tmp_path, monkeypatch):
+        """load_game 后 session 注入的库/字段从当前 world 拷到 restored（不入档）。"""
+        from types import SimpleNamespace
+        from game_loop import save_game, load_game
+        game = self._keeper_game(monkeypatch)
+        dummy_items = SimpleNamespace(name="item_lib")
+        dummy_weapons = SimpleNamespace(name="weapon_lib")
+        dummy_spells = SimpleNamespace(name="spell_lib")
+        world = game["keeper"].world
+        world.item_library = dummy_items
+        world.weapon_library = dummy_weapons
+        world.spell_library = dummy_spells
+        world.time_costs = {"move": 5}
+        world.comms_interval = 42
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+
+        load_game(game, path)
+        restored = game["keeper"].world
+        assert restored.item_library is dummy_items
+        assert restored.weapon_library is dummy_weapons
+        assert restored.spell_library is dummy_spells
+        assert restored.time_costs == {"move": 5}
+        assert restored.comms_interval == 42
+

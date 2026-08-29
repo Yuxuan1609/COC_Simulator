@@ -660,6 +660,11 @@ def load_game(game: dict, path: str) -> None:
         boss_lib=boss_lib,
         npc_profiles=getattr(cur, "_npc_profiles", {}),
     )
+    restored.weapon_library = cur.weapon_library
+    restored.item_library = cur.item_library
+    restored.spell_library = cur.spell_library
+    restored.time_costs = cur.time_costs
+    restored.comms_interval = cur.comms_interval
     keeper.set_world(restored)
     with open(path, "r", encoding="utf-8") as f:
         meta = _json.load(f).get("_meta", {})
