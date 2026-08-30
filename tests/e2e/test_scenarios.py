@@ -632,3 +632,51 @@ class TestS15ExtensionSpell:  # effect 表达力：扩展库法术游戏内施�
                 f"宽断言：叙事须含结果语义: {r.narrative[:120]}"
         finally:
             stop()
+
+
+class TestS16SaveLoadContinue:  # 统一存档批：真实 LLM 下 save→load→继续回合
+    """S16：搜索回合（真实 enrich/time_agent/narrator，action_type=search 跳过
+    parse，骰点钉死保证 checked 确定性）→ save_game → load_game → 普通回合
+    全真实 LLM（pre_parse/parse/enrich/time_agent/narrator）。锁读档后 restored
+    world 走完整管线的完整性 + F14 checked 随 player_snapshot 持久化。"""
+
+    @retry_once
+    def test_save_load_then_turn_continues(self, monkeypatch):
+        from game_loop import run_turn, save_game, load_game
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s16_save_load_continue")
+        stop = setup_llm_logging(log_dir)
+        try:
+            world = make_world({"room_a": make_scene()}, "room_a")
+            inv = _player(world, skills={"侦查": 50})
+            game = _real_game(world, _l1("room_a"))
+            keeper = game["keeper"]
+            # 骰点非 LLM：钉死保证 checked 确定性置位
+            monkeypatch.setattr("investigator.models.random.randint",
+                                lambda a, b: 30)
+
+            r1 = run_turn(game, "搜索", action_type="search")
+            assert_player_turn_contract(r1)
+            assert r1.status == TurnStatus.COMPLETED, f"status={r1.status}"
+            assert inv.get_skill("侦查").checked is True, "搜索成功必须置 checked"
+
+            path = os.path.join(log_dir, "save.json")
+            save_game(game, path)
+            old_world = keeper.world
+            load_game(game, path)
+
+            assert keeper.world is not old_world, "load_game 必须重绑 world"
+            assert keeper.world.current_location == "room_a"
+            restored_inv = keeper.world.player
+            assert restored_inv is not None, "player_snapshot 必须恢复"
+            assert restored_inv.get_skill("侦查").checked is True, \
+                "checked 必须随 player_snapshot 持久化"
+
+            r2 = run_turn(game, "我仔细检查这个房间的墙壁，看有没有暗门")
+            assert_player_turn_contract(r2)
+            assert r2.status == TurnStatus.COMPLETED, \
+                f"读档后回合应正常完成，实际 status={r2.status}"
+            assert r2.narrative and len(r2.narrative) > 20, \
+                f"宽断言：读档后 narrative 非空且长度>20: {r2.narrative[:80]}"
+        finally:
+            stop()

@@ -1644,3 +1644,42 @@ class TestAuthorRecursion:
             f"set_active 应恰好一次，实际 {calls['active']}"
         assert world.bosses.has_spawned("BOSS_T1")
         assert len(world.enemies._instances) == 1, "不得产生重复 Boss 实例"
+
+
+class TestSaveLoadContinue:  # 统一存档批回归：turn→save→load→turn
+    def test_save_load_then_turn_continues(self, monkeypatch, tmp_path):
+        """读档后 stub 管线继续跑通；F14 checked 随 player_snapshot 持久化。"""
+        from game_loop import run_turn, save_game, load_game
+        from game.messages import TurnStatus
+        from game.agents.keeper import Keeper
+        from investigator.models import Skill
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = _player(world)
+        inv.skills.append(Skill(name="侦查", base_value=50))
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch)
+        game = make_game(keeper)
+        monkeypatch.setattr("investigator.models.random.randint",
+                            lambda a, b: 30)
+
+        r1 = run_turn(game, "搜索", action_type="search")
+        assert_player_turn_contract(r1)
+        assert r1.status == TurnStatus.COMPLETED, f"status={r1.status}"
+        assert inv.get_skill("侦查").checked is True, "搜索成功必须置 checked"
+
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+        old_world = keeper.world
+        load_game(game, path)
+
+        assert keeper.world is not old_world, "load_game 必须重绑 world"
+        assert keeper.world.current_location == "room_a"
+        restored = keeper.world.player
+        assert restored is not None, "player_snapshot 必须恢复"
+        assert restored.get_skill("侦查").checked is True, \
+            "checked 必须随 player_snapshot 持久化"
+
+        r2 = run_turn(game, "继续探索")
+        assert_player_turn_contract(r2)
+        assert r2.status == TurnStatus.COMPLETED, \
+            f"读档后回合应正常完成，实际 status={r2.status}"
