@@ -36,7 +36,7 @@
 | 项 | 倾向 | 难度 | 数据模型改动 | 依据 / 讨论点 |
 |---|---|---|---|---|
 | F23 实体可重复策略 | 做 | 中 | Entity 增 repeatable 策略位；schema + 管线 + prompt 同步 | one-shot 硬挡单点（judge.py:271-276），加策略位后「重读文件/复查现场」解锁。讨论点：策略取值集（once / repeatable / repeatable_with_diminishing？）；完成后 prompt 呈现（prompts.py:356-370 已完成段）同步 |
-| F1 物品转移 | 做（最小版） | 中 | markup 加 `@give_item`/`@drop_item`；最小版 NPC 不持物（给予=从玩家扣+叙事确认） | NPC 无 inventory 字段（npc_manager.py:10-30）；最小版丢弃入场景依赖 F17 的场景物品容器。真「NPC 持物/还回」需 NPC inventory = 另一个台阶。**依赖 F17 或降级为纯叙事** |
+| F1 物品转移 | **延后**（2026-08-31 二次拍板：与 F17 一起出方案） | 中 | markup 加 `@give_item`/`@drop_item`；最小版 NPC 不持物 | NPC 无 inventory 字段（npc_manager.py:10-30）；丢弃入场景依赖 F17 场景物品容器。真「NPC 持物/还回」需 NPC inventory = 另一个台阶。无 F17 容器则丢弃无处落，故不单做 |
 | F17 场景物品/容器 | 做 | 中高 | 泛化 `scene_weapons` → `scene_items`；拾取链路泛化；容器嵌套另议 | scene_weapons 端到端已通（声明 l2_keeper.py:47 → 运行时 scenario_core.py:697 → 发现 adjudicate.py:141-150 → offer understand.py:19-33 → 授予 keeper.py:470-486），但**全链绑 weapon_library**（understand.py:35-40 直接拾取、offer 应答都只认武器）。泛化到任意物品需 LibraryItem 介入（无库物品放场景？自由文本物品？）。容器嵌套建议**缓**，先做平面场景物品 |
 | F21 组合/耐久 | **缓** | 中 | LibraryItem 加耐久/配方；InventoryItem 加字段 | materials 只检持有不扣（judge.py:105-107）；无真实模组需求驱动，等内容需求出现再做 |
 | F15 金钱 | **缓** | 中 | 从零概念 | 信用评级只产文字标签（models.py:61-62）；无真实模组需求 |
@@ -47,8 +47,8 @@
 
 | 项 | 倾向 | 难度 | 数据模型改动 | 依据 / 讨论点 |
 |---|---|---|---|---|
-| F27 NPC 度量层 | 做（先行） | 中 | NPC 加 favorability/mood 数值字段，入档；`set_attitude` 接线或重写 | `set_attitude`（npc_manager.py:244）/`process_npc_turn`（:315）确认死代码（全 src 零调用，现行对话走 understand.py:117-163 内联路径）。attitude 现是自由字符串唯一消费在 talk_to prompt（:223）。**U1 前置**。讨论点：度量维度集（好感单轴？+瞬态情绪？）；检定/事件如何改度量 |
-| F29 死亡剧情连锁 | 做 | 中 | 无新结构；死亡钩子广播 | `set_state` 单点（scenario_core.py:1390），目击者反应可走现有 AT/事件系统触发。讨论点：连锁的载体（自动事件 vs keeper 检测注入） |
+| F27 NPC 度量层 | **缓**（2026-08-31 二次拍板：归 NPC 系统重检专项） | 中 | NPC 加 favorability/mood 数值字段，入档；`set_attitude` 接线或重写 | `set_attitude`（npc_manager.py:244）/`process_npc_turn`（:315）确认死代码（全 src 零调用，现行对话走 understand.py:117-163 内联路径）。attitude 唯一消费在 talk_to prompt（:223）——**好感度当前无实际作用**。用户倾向：将来整个 NPC 系统重检时一并做，而非单独铺度量层 |
+| F29 死亡剧情连锁 | **缓**（2026-08-31 二次拍板：归 NPC 系统重检专项） | 中 | 无新结构；死亡钩子广播 | `set_state` 单点（scenario_core.py:1390）。无多人体系，死亡连锁意义不大；将来若做降级为「NPC 特殊互动模式」（死亡触发个别 NPC 反应分支，非广播式连锁） |
 | F20 探索侧潜行/躲藏 | 做 | 中 | 玩家/场景隐蔽状态位 | 潜行现在只在对峙（keeper.py:275-302）与战斗 conceal（combat.py:1054-1066）。探索侧需 understand 识别潜行意图 → 检定 → 隐蔽态影响后续遭遇判定（EncounterProvider 可读）。讨论点：隐蔽态的消费点范围（只影响遭遇？还是也影响 AT/NPC 感知） |
 | F28 友方 NPC 参战 | 做（最后） | **最高** | combat 玩家侧多方化：CombatState 标量→列表 | 单数假设遍布：`state.player_hp/player_san` 标量（combat.py:191-194）、initiative 固定 `"player"` id、`_select_enemy_target` 硬编码 return "player"（:1165）、`CombatInit.player` 单对象。等于战斗引擎半重写。EncounterProvider 只解决进场不解决战斗内。建议 P4 单独立项 |
 | F26 谎言/欺骗 | **缓** | 高 | memory 加真伪标记 + NPC 事实校验 | 玩家陈述无条件写入 npc.memory（npc_manager.py:237）且 system prompt 明示"如实告知"（:227）。依赖 F27 度量层落地后再评估 |
@@ -102,23 +102,24 @@ S3-P1 快赢批（低难度，各自独立收口）
   4. U4 幕末成长检定（消费 checked）
   5. F25 narrator 长期记忆注入（改 narrator prompt → real_llm_smoke）
 
-S3-P2 中项批（顺序可换；F31/F32 与游戏零耦合可穿插）
-  6. F5 疯狂体系
-  7. F23 实体可重复策略 + F1 最小转移
-  8. F18 时刻事件触发（降级版）+ F10 周期效应
-  9. F27 NPC 度量层 + F29 死亡连锁
- 10. F31 lint / F32 试玩报告
+S3-P2 中项批（2026-08-31 二次拍板收敛为 4 项，设计见 2026-08-31-s3-p2-design.md）
+  6. F5 疯狂体系（先做；LLM 现场生成文本；施法 SAN 计入累计）
+  7. F23 实体可重复策略（F1 拆出，延后与 F17 一起出方案）
+  8. F18 时刻事件触发（降级版；payload=markup 文本）+ F10 周期效应
+  9. F31 lint / F32 试玩报告（零耦合，可穿插）
 
 S3-P3 结构项（建议各自独立 spec/plan）
- 11. F17 场景物品泛化（B 簇重心）
- 12. F19 环境修正（P0-1 已铺路）
- 13. F20 探索潜行 + F22 线索结构
+  10. F17 场景物品泛化（B 簇重心）+ F1 物品转移（随同出方案）
+  11. F19 环境修正（P0-1 已铺路）
+  12. F20 探索潜行 + F22 线索结构
 
 S3-P4 大改
- 14. F28 友方 NPC 参战（combat 多方化）——随「战斗专项优化」一并立项（用户 2026-08-31：战斗系统先保持现状）
+  13. F28 友方 NPC 参战（combat 多方化）——随「战斗专项优化」一并立项（用户 2026-08-31：战斗系统先保持现状）
 ```
 
-维持缓：F6 / F7 / F15 / F21 / F26 / F33 / F34 / F35（同步回 ISSUES 活跃区标注）。
+NPC 系统重检专项（2026-08-31 拍板，单独立项）：F27 度量层 / F29 死亡连锁（降级为 NPC 特殊互动模式）/ F26 谎言欺骗。理由：好感度当前无实际消费、无多人体系死亡连锁无承载。
+
+维持缓：F6 / F7 / F15 / F21 / F26 / F27 / F29 / F33 / F34 / F35（同步回 ISSUES 活跃区标注）。
 
 ## 8. 待讨论问题清单（细化讨论用）
 
@@ -140,6 +141,15 @@ S3-P4 大改
 14. ~~**U4 幕末成长范围**~~ **已拍板**：只成长 checked 技能（attr/pseudo 不处理）；结算后清零；败北不触发；版本化副本导出不覆盖原卡；独立隐藏函数、结局自动触发
 15. ~~**P0-1 平衡影响**~~ **已拍板**：不做既有模组普查；改为维护 §10「模组生成管线影响清单」（长期备注），随 Step3 各项落地补充，回查模组生成管线时对照
 16. ~~**F8 恢复数值规则**~~ **已拍板（2026-08-31）**：HP 日恢复 +1（COC7）；SAN 恢复机制做但**默认 0**（不自然恢复，COC7 本无；恢复只由模组事件给）；**两者速率进 `game_config` 集中参数**（现阶段只跑通流程，不碰数值平衡）；结算时机=`advance_time` 跨日界（` _tick_time_effects` 检测）
+
+### S3-P2 二次拍板（2026-08-31，详见 2026-08-31-s3-p2-design.md）
+
+17. **F5 疯狂文本来源**：LLM 现场生成（触发时一次 flash 调用，≤100 字自由文本）
+18. **施法 SAN 计入疯狂累计**：计入（COC7 任何 SAN 损失均累计；judge.py:122 / combat.py:930 两个出口也接钩子）
+19. **F18 payload 载体**：markup 文本（复用 apply_side_effects，零新执行器）
+20. **F1 延后**：与 F17 一起出方案（无 F17 容器则丢弃无处落）
+21. **F27/F29 缓**：归将来「NPC 系统重检专项」（含 F26 重评）；F29 降级为 NPC 特殊互动模式
+22. **S3-P2 收敛为 4 项**：F5 → F23 → F18+F10 → F31/F32
 
 ## 9. 既有架构资产清单（避免重复设计）
 
