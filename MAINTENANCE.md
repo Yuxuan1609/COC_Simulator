@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-31 | F25 叙事记忆蒸馏 + narrator 注入：`ScenarioWorld.distill_narrative_memory`（@1112，raw_history 蒸为 `{turn_range, notes}` 入 `narrative_memory` 5 条滚动，空历史不调 LLM）；`build_snapshot` 加 `narrative_memory` 渲染行；`finalize.py` 压缩线程先蒸后压（`_bg_memory`）；`build_narrator_prompt` 注入【叙事记忆】段（空则无）。TDD：tests/test_narrative_memory.py 6 测试。RED 6 failed（AttributeError + 无记忆段）→ GREEN。scenario_core.py 1811→1838 / finalize.py 131→138 / prompts.py 1145→1152。 |
 | 2026-08-31 | F8 恢复生态：跨日界结算 HP+1/日、SAN 默认 0、速率 game_config 化。`_GAME_CONFIG_DEFAULTS` 增 `hp_recovery_per_day=1` / `san_recovery_per_day=0`（data/game_config.json 镜像，锁测 `test_shipped_json_matches_defaults`）；`advance_time` 捕获 old_day，末尾调 `_apply_daily_recovery`（无 player / 未跨日 return；函数内 import get_game_config，HP/SAN clamp 各自 MAX）。TDD：tests/test_recovery.py 6 测试。RED 3 failed（HP 不涨）→ GREEN。scenario_core.py 1792→1811 / rules.py 370→372。全量 380 passed / 21 deselected（基线 374+6）。 |
 | 2026-08-31 | P0-2 end 钩子 + U4 幕末成长与导出：新建 `src/investigator/growth.py`（41 行）`settle_growth`（checked 技能 roll>value → +1d10，结算后清零）+ `export_grown_card`（版本化副本 `<卡名>_after_<模组>_<日期>.json` 不覆盖原卡）；`game_loop.on_scenario_end`（@638）结局钩子结算+有 character_path 才导出；`run_game.py` 仅 `if ending:` 分支调用（战斗败北不触发）；`llm_player.py` 结局只结算不导出。TDD：tests/test_growth.py 6 测试。RED 6 failed（ModuleNotFoundError/ImportError）→ GREEN。game_loop.py 924→942 / run_game.py 606→617 / llm_player.py 482→484。 |
 | 2026-08-31 | P0-1 difficulty 死参数修复：`check_skill` 三处 `_roll_d100` 转发 difficulty；`_roll_d100` 签名增 `difficulty="regular"`，COC7 阈值 hard=半值/extreme=1/5，未知难度串 `.get(..., target)` 回退 regular。judge.py:346-350 的 entity.difficulty / escalated_difficulty 从无效变有效。TDD：tests/test_difficulty.py 6 测试（regular 满值 / hard 半值失败 / hard 成功 tier=hard / extreme 1/5 / 未知串回退 / attr 转发）。RED 3 failed（difficulty 被忽略 roll 40 仍成功）→ GREEN。models.py 452→457。 |
@@ -310,11 +311,11 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 
 |------|------|------|------|
 | `phase_d_enrich` | `(ctx, acc, tools) -> None` | 战斗结果注入 → enrich∥time_agent（`tools.turn_monitor.execute_parallel`）→ 收集 results + `_scan_ending` 首次扫描写入 `acc.ending_result` → `world.advance_time`（T7）/ time_context → TimePressure comms（best-effort except）；产出 `acc.enrichment` / `acc.ta_result` / `acc.emphasis` / `acc.enriched_summary` / `acc.ending_result` | 7 |
 
-### `finalize.py`（131 行）— E 收尾阶段（R1-W5）
+### `finalize.py`（138 行）— E 收尾阶段（R1-W5）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `phase_e_finalize` | `(ctx, acc, tools) -> None` | 落账 `_apply_pending` → ending 二次扫描（`ctx.author`）→ warnings 注入 outcomes → event 型 Boss（`ctx.turn_input.raw_text`，非 ctx.raw）→ 吞对峙②（enrich_input=None）→ curate（TurnFrozenError 冒泡由 TurnRunner 兜底，写 `acc.brief`）→ memory compress 线程（`keeper.call_deepseek` 晚绑定）→ weapon offer 注入 brief → `_last_outcomes` → standoff/offer PendingInteraction → Boss 开战记账（`acc.boss_accounting`，curate 成功后，freeze-safety spec §4.1）→ assemble 写 `acc.result`（不返回 TurnResult） | 11 |
+| `phase_e_finalize` | `(ctx, acc, tools) -> None` | 落账 `_apply_pending` → ending 二次扫描（`ctx.author`）→ warnings 注入 outcomes → event 型 Boss（`ctx.turn_input.raw_text`，非 ctx.raw）→ 吞对峙②（enrich_input=None）→ curate（TurnFrozenError 冒泡由 TurnRunner 兜底，写 `acc.brief`）→ memory 线程先 `distill_narrative_memory` 再 `compress`（`keeper.call_deepseek` 晚绑定，F25）→ weapon offer 注入 brief → `_last_outcomes` → standoff/offer PendingInteraction → Boss 开战记账（`acc.boss_accounting`，curate 成功后，freeze-safety spec §4.1）→ assemble 写 `acc.result`（不返回 TurnResult） | 11 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 
@@ -584,31 +585,32 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 968 / 1017 |
 | `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1040 |
 | `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1065 / 1068 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端 | 1077 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1110 / 1113 |
-| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1117 / 1121 |
-| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`） | 1126 / 1170 |
-| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1205 / 1225 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`） | 1077 |
+| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1112 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1137 / 1140 |
+| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1144 / 1148 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`） | 1153 / 1197 |
+| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1232 / 1252 |
 
-### MemoryManager（@1458）
-
-| 方法 | 签名 | 作用 | 行号 |
-|------|------|------|------|
-| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1473–1533 |
-| `to_dict` / `from_dict` | — | 序列化 | 1555 / 1565 |
-
-### WorldChronicle（@1582）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+### MemoryManager（@1485）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1601 |
-| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1642 |
-| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1664 |
-| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1675 |
-| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1685 |
-| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1691 |
-| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1772 |
-| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1792 / 1803 |
+| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1500–1560 |
+| `to_dict` / `from_dict` | — | 序列化 | 1582 / 1592 |
+
+### WorldChronicle（@1610）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+
+| 方法 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1628 |
+| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1669 |
+| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1691 |
+| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1702 |
+| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1712 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1718 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1799 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1819 / 1830 |
 
 ---
 
@@ -917,18 +919,18 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@312 / `_fmt_inter`@332 / `_fmt_at`@341 / `_parse_req`@376 / `_split_req_str`@390 辅助） | 297 |
 | `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带） | 465 |
 | `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合 | 552 |
-| `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事 | 601 |
-| `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 661 |
-| `build_author_prompt` | `(request, l3_data, persona)` patch/structural 判定（prompt 含【世界编年史】块） | 741 |
-| `build_combat_entry_prompt` | 战斗入口判定 | 925 |
-| `build_standoff_match_prompt` | 对峙技能匹配 | 950 |
-| `build_combat_narrative_prompt` | 战斗叙事 | 973 |
-| `build_stat_narrative_prompt` | 属性变化 → 个人描述增量更新 | 999 |
-| `build_material_fuzzy_prompt` | `(target, catalog_text, quantity=1)` **统一资源层**素材模糊匹配（物品/法术通用，输出 {matched, material, reason}） | 1020 |
-| `build_consume_item_fuzzy_prompt` | 旧消耗品模糊匹配兼容包装（scenario_core 通路，读 material 或 item_name 双键） | 1039 |
-| `build_time_pressure_assess_prompt` | 时间压力介入判定 | 1042 |
-| `build_npc_intent_detect_prompt` | 是否在和 NPC 对话 | 1084 |
-| `build_npc_parse_prompt` | NPC 互动解析 | 1105 |
+| `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事；F25 有 `snap.narrative_memory` 时插【叙事记忆】段（呼应/回收不复述） | 603 |
+| `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 670 |
+| `build_author_prompt` | `(request, l3_data, persona)` patch/structural 判定（prompt 含【世界编年史】块） | 750 |
+| `build_combat_entry_prompt` | 战斗入口判定 | 934 |
+| `build_standoff_match_prompt` | 对峙技能匹配 | 959 |
+| `build_combat_narrative_prompt` | 战斗叙事 | 982 |
+| `build_stat_narrative_prompt` | 属性变化 → 个人描述增量更新 | 1008 |
+| `build_material_fuzzy_prompt` | `(target, catalog_text, quantity=1)` **统一资源层**素材模糊匹配（物品/法术通用，输出 {matched, material, reason}） | 1027 |
+| `build_consume_item_fuzzy_prompt` | 旧消耗品模糊匹配兼容包装（scenario_core 通路，读 material 或 item_name 双键） | 1046 |
+| `build_time_pressure_assess_prompt` | 时间压力介入判定 | 1057 |
+| `build_npc_intent_detect_prompt` | 是否在和 NPC 对话 | 1099 |
+| `build_npc_parse_prompt` | NPC 互动解析 | 1120 |
 
 ## src/llm_player.py (484 行) - LLM 自动玩家（模组自动化测试）
 

@@ -617,13 +617,20 @@ def build_narrator_prompt(brief, l1_scene=None, snap: dict | None = None, user_i
 
     inv_info = _build_investigator_info(snap) if snap else ""
 
+    memory_block = ""
+    nm = (snap or {}).get("narrative_memory") or []
+    if nm:
+        lines = "\n".join(f"  · {n}" for n in nm)
+        memory_block = (f"【叙事记忆】（前期要点：伏笔/基调/NPC 关系。"
+                        f"可呼应与回收，但不要复述原文）\n{lines}\n\n")
+
     enriched_block = ""
     if getattr(brief, "enriched_summary", ""):
         enriched_block = f"【合并叙事（enrich 产出，叙事主素材）】\n{brief.enriched_summary}\n\n"
 
     prompt = f"""{l1_ctx}
 
-{inv_info}
+{inv_info}{memory_block}
 【玩家输入】{user_input or '（无）'}
 
 【当前场景】{brief.scene_snapshot.location}

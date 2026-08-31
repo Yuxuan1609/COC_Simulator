@@ -70,11 +70,18 @@ def phase_e_finalize(ctx, acc, tools) -> None:
     if tools.world.memory.should_compress():
         from threading import Thread
         from ..agents import keeper as keeper_mod
-        t = Thread(target=tools.world.memory.compress, args=(
-            lambda p: keeper_mod.call_deepseek(p, json_mode=False, model=LLM_FLASH_MODEL,
-                                    system="你是一个擅长总结和提炼信息的助手。请将游戏历史压缩为简洁摘要，"
-                                           "保留关键事件、重要细节和当前状态，去除冗余对话。"),
-        ), daemon=True)
+
+        def _bg_memory():
+            distill_llm = lambda p: keeper_mod.call_deepseek(
+                p, json_mode=False, model=LLM_FLASH_MODEL,
+                system="你是叙事要点提炼助手，输出简洁中文要点。")
+            tools.world.distill_narrative_memory(distill_llm)
+            tools.world.memory.compress(lambda p: keeper_mod.call_deepseek(
+                p, json_mode=False, model=LLM_FLASH_MODEL,
+                system="你是一个擅长总结和提炼信息的助手。请将游戏历史压缩为简洁摘要，"
+                       "保留关键事件、重要细节和当前状态，去除冗余对话。"))
+
+        t = Thread(target=_bg_memory, daemon=True)
         t.start()
 
     # Inject weapon offer prompt if direct grant is pending

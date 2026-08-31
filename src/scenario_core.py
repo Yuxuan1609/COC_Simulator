@@ -1103,7 +1103,34 @@ class ScenarioWorld:
                     eid for eid, t in self.triggered_events.items() if t
                 ],
             },
+            "narrative_memory": [
+                f"{e['turn_range']}：{e['notes']}"
+                for e in getattr(self, "narrative_memory", [])
+            ],
         }
+
+    def distill_narrative_memory(self, llm_call, max_entries: int = 5):
+        """F25：把 memory.raw_history 蒸馏为一条叙事要点（伏笔/基调/NPC 关系），
+        入 narrative_memory（5 条滚动）。与 memory.compress 同点触发、先蒸后压。"""
+        records = self.memory.raw_history
+        if not records:
+            return
+        history_text = "\n".join(
+            f"[T{r['turn']}][{r['location']}] {r['user_input']} → {r['result']}"
+            for r in records)
+        prompt = f"""将以下 TRPG 近期回合记录蒸馏为一条「叙事要点」，供叙事者长期记忆。
+保留：未回收的伏笔 / 情绪基调变化 / NPC 关系变化 / 对玩家承诺过的后续。
+只写要点本身，不超过 250 字中文，不要复述行动流水。
+
+记录：
+{history_text}"""
+        notes = (llm_call(prompt) or "").strip()[:250]
+        if not notes:
+            return
+        first, last = records[0]["turn"], records[-1]["turn"]
+        self.narrative_memory.append(
+            {"turn_range": f"T{first}-T{last}", "notes": notes})
+        del self.narrative_memory[:-max_entries]
 
     # ── NPC 运行时状态 ──
 
