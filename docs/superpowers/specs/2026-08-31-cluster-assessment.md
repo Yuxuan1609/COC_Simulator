@@ -18,6 +18,7 @@
 - 事实：`run_game.py:205` 结局 break 后无任何钩子；战斗败北 break（:180-183）同；`llm_player.py:435` 同。无结算/成长/自动存档点。
 - 影响面：U4 幕末成长、结局结算叙事的公共挂点。
 - 范围：`game_loop` 或 run_game/llm_player 双挂点加 `on_scenario_end(game)` 回调骨架（默认空实现）。
+- **已拍板（2026-08-31）**：钩子触发的成长结算+角色卡导出封装为**独立函数**（可独立测试），结局触发时自动调用；不作为玩家可见命令；战斗败北结束不触发。
 
 ## 1. A 簇 — COC 核心规则
 
@@ -68,8 +69,8 @@
 
 | 项 | 倾向 | 难度 | 数据模型改动 | 依据 / 讨论点 |
 |---|---|---|---|---|
-| U4 幕末成长检定 | 做 | **低** | 无新结构（checked 已落入档） | COC7：roll > skill → +1d10；`modify_skill` 现成。**前置 P0-2**（end 钩子）。注意 attr/pseudo 检定不标 checked（models.py:236-240）——幕末只处理 Skill 列表 |
-| F25 Narrator 长期记忆 | 做 | 低-中 | 消费 `narrative_memory` 占位；Chronicle 压缩接线 | WorldChronicle/MemoryManager 已入档且 narrator 完全不消费（build_narrator_prompt prompts.py:603-658 只收 brief+snapshot）。`chronicle.events_summary` 字段预留但 `compress_events` raise NotImplementedError（scenario_core.py:1666-1668）——压缩策略是实现主体。改 narrator prompt → 触发 real_llm_smoke。讨论点：注入哪份（memory.get_context vs chronicle 蒸馏）、token 预算 |
+| U4 幕末成长检定 | 做 | **低** | 无新结构（checked 已落入档） | COC7：roll > skill → +1d10；`modify_skill` 现成。**前置 P0-2**（end 钩子）。attr/pseudo 检定不标 checked（models.py:236-240）——幕末只处理 Skill 列表。**已拍板（2026-08-31）**：① 成长结算+角色卡导出=独立隐藏函数，结局自动触发、可独立测试；② 导出=版本化副本 `<卡名>_after_<模组>_<日期>.json`，不覆盖原卡；③ checked 只打标（现状即如此，无实时结算），幕末统一 roll，结算后 checked 清零 |
+| F25 Narrator 长期记忆 | 做 | 低-中 | 消费 `narrative_memory` 占位；Chronicle 压缩接线 | **方案已拍板（2026-08-31）：方案 2 叙事蒸馏**。`narrative_memory: list[dict]` 条目 `{turn_range, notes}`，5 条滚动；**蒸馏时机与 `memory.compress` 对齐**（同点触发，注意两边压缩节奏一致性）；注入 `build_narrator_prompt` 加【叙事记忆】段，容量放宽（5 条 × ~250 字，总 ~1200 字），指令明示「呼应/回收，不复述原文」。改 narrator prompt → 触发 real_llm_smoke |
 | F22 线索系统结构化 | 做 | 中 | 消费 `clues` 占位：线索实体 + 关联边 + 集齐判定 | note_item 现只 append flat 字符串（scenario_core.py:1470-1472）。结构全新但纯数据+消费端（prompt/模组判定）。讨论点：集齐判定的执行者（keeper 机械判定 vs Author LLM）；与 key_items 的迁移关系 |
 
 簇内排序建议：U4 → F25 → F22。
@@ -133,10 +134,10 @@ S3-P4 大改
 8. **F29 连锁载体**：自动事件系统 vs keeper 检测注入
 9. **F20 隐蔽态消费范围**：只影响遭遇判定，还是也影响 AT/NPC 感知
 10. **F22 集齐判定执行者**：keeper 机械判定 vs Author LLM；与 MemoryManager.key_items 的迁移关系
-11. **F25 记忆注入源与 token 预算**：memory.get_context() vs chronicle 蒸馏；压缩阈值
+11. ~~**F25 记忆注入源与 token 预算**~~ **已拍板（2026-08-31）**：方案 2 叙事蒸馏；`narrative_memory` 5 条滚动 `{turn_range, notes}`；蒸馏时机与 `memory.compress` 对齐；注入预算 ~1200 字（5×~250）；「呼应不复述」
 12. **F19 环境字段挂 L1 还是 L2**；修正幅度表
 13. **F32 单次报告 vs 多次试玩汇总**的范围切分
-14. **U4 幕末成长范围**：只成长 checked 技能？失败检定（COC7 不成长）；attr 类不处理确认
+14. ~~**U4 幕末成长范围**~~ **已拍板（2026-08-31）**：只成长 checked 技能（attr/pseudo 不处理）；结算后清零；败北不触发；版本化副本导出不覆盖原卡；独立隐藏函数、结局自动触发
 15. **P0-1 平衡影响**：修复后既有模组的难度实体是否需要普查一遍 difficulty 标注
 
 ## 9. 既有架构资产清单（避免重复设计）
