@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-31 | S3-P0+P1 收口：ISSUES F14/F8/F25 入 §5；函数表行号对齐（scenario_core 1811→1838 / prompts 1137→1152 / apply_side_effects 1279→1325 / build_keeper_enrich_prompt 552→554）。零产品代码。 |
 | 2026-08-31 | F25 review：`_bg_memory` distill 异常隔离（log+continue，compress 仍跑）；`distill_narrative_memory` 对 `raw_history` 先 `list()` 快照再蒸，避免 LLM 期间 add_record 污染 turn_range。 |
 | 2026-08-31 | F25 叙事记忆蒸馏 + narrator 注入：`ScenarioWorld.distill_narrative_memory`（@1112，raw_history 蒸为 `{turn_range, notes}` 入 `narrative_memory` 5 条滚动，空历史不调 LLM）；`build_snapshot` 加 `narrative_memory` 渲染行；`finalize.py` 压缩线程先蒸后压（`_bg_memory`）；`build_narrator_prompt` 注入【叙事记忆】段（空则无）。TDD：tests/test_narrative_memory.py 6 测试。RED 6 failed（AttributeError + 无记忆段）→ GREEN。scenario_core.py 1811→1838 / finalize.py 131→138 / prompts.py 1145→1152。 |
 | 2026-08-31 | F8 恢复生态：跨日界结算 HP+1/日、SAN 默认 0、速率 game_config 化。`_GAME_CONFIG_DEFAULTS` 增 `hp_recovery_per_day=1` / `san_recovery_per_day=0`（data/game_config.json 镜像，锁测 `test_shipped_json_matches_defaults`）；`advance_time` 捕获 old_day，末尾调 `_apply_daily_recovery`（无 player / 未跨日 return；函数内 import get_game_config，HP/SAN clamp 各自 MAX）。TDD：tests/test_recovery.py 6 测试。RED 3 failed（HP 不涨）→ GREEN。scenario_core.py 1792→1811 / rules.py 370→372。全量 380 passed / 21 deselected（基线 374+6）。 |
@@ -524,7 +525,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (1811 行) — 数据模型 + 世界状态
+## src/scenario_core.py (1838 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -550,7 +551,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具 | 213 / 228 |
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@554 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 557 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 563 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予） | 1279 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予） | 1325 |
 
 ### DirectedGraph（@290）
 
@@ -909,7 +910,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
 | `evaluate_combat_round_narrative` | `(round_log, enemies_desc, player_name, scene)` | 战斗叙事（走 build_combat_narrative_prompt） | 502 |
 
-## src/prompts.py (1137 行) — Prompt 构建（所有 build_* 只构建不调用）
+## src/prompts.py (1152 行) — Prompt 构建（所有 build_* 只构建不调用）
 
 | 函数 | 签名/作用 | 行号 |
 |------|-----------|------|
@@ -919,7 +920,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `parse_narrative_output` | Narrator 输出解析 | 263 |
 | `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@312 / `_fmt_inter`@332 / `_fmt_at`@341 / `_parse_req`@376 / `_split_req_str`@390 辅助） | 297 |
 | `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带） | 465 |
-| `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合 | 552 |
+| `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合 | 554 |
 | `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事；F25 有 `snap.narrative_memory` 时插【叙事记忆】段（呼应/回收不复述） | 603 |
 | `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 670 |
 | `build_author_prompt` | `(request, l3_data, persona)` patch/structural 判定（prompt 含【世界编年史】块） | 750 |

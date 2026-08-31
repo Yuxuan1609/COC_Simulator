@@ -46,11 +46,8 @@
 | F5 | **疯狂体系**(COC 核心) | 单次 SAN 损失>=5->临时疯狂(INT 检定);当日累计>=SAN/5->总结性疯狂;恐惧症/躁狂症标记。timed_effects 基建可承载;依赖 SAN check 通路(已接通)。模组高频写法"失败则疯狂" |
 | F6 | **重伤/濒死/急救** | **缓（2026-08-31 拍板）**：无队友体系濒死救援无承载，等 F27/F28 后重评。原定位：当前 HP 0 直接 loss+game_over；缺重伤 CON 检定/濒死每轮-1/急救稳定 |
 | F7 | **战斗反应与骰子表达** | **缓（2026-08-31 拍板）**：战斗系统保持现状，随将来「战斗专项优化」（含 R2 中断机制、F28 多方化）一并立项。原定位：闪避自动成功无对抗/反击无/奖励惩罚骰无/push roll 无 |
-| F8 | **恢复生态+mythos 增长** | HP 每日自然恢复无(多日模组卡);SAN 恢复(安全环境/心理治疗)无;克苏鲁神话增长通路无(SAN_MAX=99-神话公式与技能列表已就位,@grant_spell 有而 mythos 加值无);advance_time 钩子现成(MP 已走此路) |
 | F10 | **周期性/环境效应**(表达力缺口) | timed/effect 原子只有"到期清除",无周期 tick payload;毒每轮掉 HP/雾中每轮 SAN/诅咒每日发作类模组写法无结构化通道(F9 注记"每轮在雾中停留"即此例)。钩子现成:_tick_time_effects(小时粒度,MP 恢复已走)/_tick_temporary_effects(轮末,buff 递减已走)。方向:effect 原子加 interval(round/hour/day)+payload 原子数组,8 原子体系自然延伸(2026-08-26 机制层思考) |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
-
-| F14 | **技能成长标记** | checked 标记已落（fce8f7a）；幕末成长检定循环仍 Step3/U4 |
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
 | F17 | **场景物品放置/拾取/容器** | 只有武器能放场景(scene_weapons),无 drop API、无容器嵌套;"抽屉里的东西""把物品藏回现场"接不住 |
 | F18 | **时间触发世界事件调度器** | clock 纯计数器;"22:00 凶手行动"玩家不动永不发生;钩子现成(_tick_time_effects) |
@@ -59,8 +56,6 @@
 | F21 | **物品组合/合成 + 耐久/次数** | 无 combine/split;InventoryItem 只有 quantity,tool 类永不损耗 |
 | F22 | **线索系统结构化** | note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
 | F23 | **场景状态演化 + 实体可重复策略** | 已成功实体一刀切不可重复;场景描述只有 Author 补丁能改;重读文件/复查现场被硬挡 |
-
-| F25 | **Narrator 长期记忆** | build_narrator_prompt 只注入当前 brief+快照,无历史;伏笔回收/多轮呼应无锚点 |
 | F26 | **谎言/欺骗机制** | 玩家陈述无条件采信并写入 memory,伪装身份套情报无支撑 |
 | F27 | **NPC 度量层缺口**(U1 前置) | `set_attitude` 与 `process_npc_turn` 定义后零调用=死代码;好感/瞬态情绪/自主日程连度量字段都不存在 |
 | F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
@@ -116,6 +111,9 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-08-31 | **F25 Narrator 长期记忆** | narrative_memory 5 条滚动蒸馏 + narrator 注入（46b764f）；蒸馏失败隔离 compress（1a4a6e0）。 |
+| 2026-08-31 | **F8 恢复生态+mythos 增长** | HP 日恢复 +1 / SAN 默认 0 / 速率进 game_config；跨日界结算（939a68e）；mythos 增长通路=既有 `@stat_change(克苏鲁神话)` markup（无新机制）。 |
+| 2026-08-31 | **F14 技能成长标记** | checked 标记（fce8f7a）+ 幕末成长检定与版本化导出（9182190）。 |
 | 2026-08-29 | **B1 存读档 3 连** | 三连修法：① load_state 库透传 + load_warnings（1a9d43d）；② set_world 重绑 + save/load 唯一入口 + 会话库拷贝（260580e+a755c5a）；③ session_state 最小集入档（npc_injected_at_ids/recent_intents/last_comms_time），注入不重复（bfbda33）。存档 version 2；v1 additive-default。 |
 | 2026-08-28 | **R1 C1 process_turn 拆分** | keeper 阶段化完成（5 宏阶段 + TurnRunner）；combat.py / scenario_core.py 拆分另排 |
 | 2026-08-28 | **F16 锁-钥匙关联** | 降级为测试锁定+文档配方,未加机制(06ba6cc);若 Step2/3 真实模组需要更强锁语义再开新项。测试发现 `_ENTITY_ID_PATTERN` 强制数字,IT_LOCK 类无数字 ID 被当自然语言优雅放行;pattern 改为 `^[A-Z][A-Z0-9_]+[a-z]?$`(I1/I12a/AT2 仍匹配;中文 NL 仍优雅放行) |
