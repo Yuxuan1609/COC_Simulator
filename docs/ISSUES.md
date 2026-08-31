@@ -44,8 +44,8 @@
 | F1 | **物品转移**(丢弃/给予 NPC/交易) | use 大类剩余的最后一块通路:"把钥匙递给 NPC"类叙事接不住。范围裁决时未选,按需排期 |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
 | F5 | **疯狂体系**(COC 核心) | 单次 SAN 损失>=5->临时疯狂(INT 检定);当日累计>=SAN/5->总结性疯狂;恐惧症/躁狂症标记。timed_effects 基建可承载;依赖 SAN check 通路(已接通)。模组高频写法"失败则疯狂" |
-| F6 | **重伤/濒死/急救** | 当前 HP 0 直接 loss+game_over(combat.py:_build_single_round_result);缺:单次伤害>=HP/2->重伤 CON 检定(失败昏迷)/HP 0 濒死(每轮-1,可急救稳定)/急救+医学技能用途。剧情依赖(被俘/被救)会卡 |
-| F7 | **战斗反应与骰子表达** | 闪避自动成功(玩家 dodge->敌方下次攻击必 miss,无对抗检定,策略退化);反击 fight back 选项无;奖励骰/惩罚骰(bonus/penalty dice)无--模组文本高频;push roll(孤注一掷)无 |
+| F6 | **重伤/濒死/急救** | **缓（2026-08-31 拍板）**：无队友体系濒死救援无承载，等 F27/F28 后重评。原定位：当前 HP 0 直接 loss+game_over；缺重伤 CON 检定/濒死每轮-1/急救稳定 |
+| F7 | **战斗反应与骰子表达** | **缓（2026-08-31 拍板）**：战斗系统保持现状，随将来「战斗专项优化」（含 R2 中断机制、F28 多方化）一并立项。原定位：闪避自动成功无对抗/反击无/奖励惩罚骰无/push roll 无 |
 | F8 | **恢复生态+mythos 增长** | HP 每日自然恢复无(多日模组卡);SAN 恢复(安全环境/心理治疗)无;克苏鲁神话增长通路无(SAN_MAX=99-神话公式与技能列表已就位,@grant_spell 有而 mythos 加值无);advance_time 钩子现成(MP 已走此路) |
 | F10 | **周期性/环境效应**(表达力缺口) | timed/effect 原子只有"到期清除",无周期 tick payload;毒每轮掉 HP/雾中每轮 SAN/诅咒每日发作类模组写法无结构化通道(F9 注记"每轮在雾中停留"即此例)。钩子现成:_tick_time_effects(小时粒度,MP 恢复已走)/_tick_temporary_effects(轮末,buff 递减已走)。方向:effect 原子加 interval(round/hour/day)+payload 原子数组,8 原子体系自然延伸(2026-08-26 机制层思考) |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
@@ -104,6 +104,7 @@
 | F13-⑥ 极难贯穿差异化 | 长期 TODO:`_get_tier` 已算只进文本,伤害不变;需贯穿/最大伤害公式 |
 | F13-③ 玩家护甲 | 非目标(统一资源层 spec:equip 无机制加成;护甲只作用敌方) |
 | 输入格式扩展(epub/html/URL)/Step0 只认 txt | 有真实内容源需求再动(2026-08-26 盘点) |
+| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10；回查/优化生成管线时对照(2026-08-31 拍板) |
 | 多语言模组/i18n | 叙事文本与结构键混存,远期 |
 | 模组素材附件(地图/立绘/handout) | schema 无 image 字段,远期生态 |
 | 多人混战目标选择/队友误伤/掩体 | 依赖 F28 先行;掩体等防御向机制随 F13 批次评估 |
