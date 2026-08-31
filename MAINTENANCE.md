@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-31 | F25 review：`_bg_memory` distill 异常隔离（log+continue，compress 仍跑）；`distill_narrative_memory` 对 `raw_history` 先 `list()` 快照再蒸，避免 LLM 期间 add_record 污染 turn_range。 |
 | 2026-08-31 | F25 叙事记忆蒸馏 + narrator 注入：`ScenarioWorld.distill_narrative_memory`（@1112，raw_history 蒸为 `{turn_range, notes}` 入 `narrative_memory` 5 条滚动，空历史不调 LLM）；`build_snapshot` 加 `narrative_memory` 渲染行；`finalize.py` 压缩线程先蒸后压（`_bg_memory`）；`build_narrator_prompt` 注入【叙事记忆】段（空则无）。TDD：tests/test_narrative_memory.py 6 测试。RED 6 failed（AttributeError + 无记忆段）→ GREEN。scenario_core.py 1811→1838 / finalize.py 131→138 / prompts.py 1145→1152。 |
 | 2026-08-31 | F8 恢复生态：跨日界结算 HP+1/日、SAN 默认 0、速率 game_config 化。`_GAME_CONFIG_DEFAULTS` 增 `hp_recovery_per_day=1` / `san_recovery_per_day=0`（data/game_config.json 镜像，锁测 `test_shipped_json_matches_defaults`）；`advance_time` 捕获 old_day，末尾调 `_apply_daily_recovery`（无 player / 未跨日 return；函数内 import get_game_config，HP/SAN clamp 各自 MAX）。TDD：tests/test_recovery.py 6 测试。RED 3 failed（HP 不涨）→ GREEN。scenario_core.py 1792→1811 / rules.py 370→372。全量 380 passed / 21 deselected（基线 374+6）。 |
 | 2026-08-31 | P0-2 end 钩子 + U4 幕末成长与导出：新建 `src/investigator/growth.py`（41 行）`settle_growth`（checked 技能 roll>value → +1d10，结算后清零）+ `export_grown_card`（版本化副本 `<卡名>_after_<模组>_<日期>.json` 不覆盖原卡）；`game_loop.on_scenario_end`（@638）结局钩子结算+有 character_path 才导出；`run_game.py` 仅 `if ending:` 分支调用（战斗败北不触发）；`llm_player.py` 结局只结算不导出。TDD：tests/test_growth.py 6 测试。RED 6 failed（ModuleNotFoundError/ImportError）→ GREEN。game_loop.py 924→942 / run_game.py 606→617 / llm_player.py 482→484。 |
@@ -311,11 +312,11 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 
 |------|------|------|------|
 | `phase_d_enrich` | `(ctx, acc, tools) -> None` | 战斗结果注入 → enrich∥time_agent（`tools.turn_monitor.execute_parallel`）→ 收集 results + `_scan_ending` 首次扫描写入 `acc.ending_result` → `world.advance_time`（T7）/ time_context → TimePressure comms（best-effort except）；产出 `acc.enrichment` / `acc.ta_result` / `acc.emphasis` / `acc.enriched_summary` / `acc.ending_result` | 7 |
 
-### `finalize.py`（138 行）— E 收尾阶段（R1-W5）
+### `finalize.py`（142 行）— E 收尾阶段（R1-W5）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `phase_e_finalize` | `(ctx, acc, tools) -> None` | 落账 `_apply_pending` → ending 二次扫描（`ctx.author`）→ warnings 注入 outcomes → event 型 Boss（`ctx.turn_input.raw_text`，非 ctx.raw）→ 吞对峙②（enrich_input=None）→ curate（TurnFrozenError 冒泡由 TurnRunner 兜底，写 `acc.brief`）→ memory 线程先 `distill_narrative_memory` 再 `compress`（`keeper.call_deepseek` 晚绑定，F25）→ weapon offer 注入 brief → `_last_outcomes` → standoff/offer PendingInteraction → Boss 开战记账（`acc.boss_accounting`，curate 成功后，freeze-safety spec §4.1）→ assemble 写 `acc.result`（不返回 TurnResult） | 11 |
+| `phase_e_finalize` | `(ctx, acc, tools) -> None` | 落账 `_apply_pending` → ending 二次扫描（`ctx.author`）→ warnings 注入 outcomes → event 型 Boss（`ctx.turn_input.raw_text`，非 ctx.raw）→ 吞对峙②（enrich_input=None）→ curate（TurnFrozenError 冒泡由 TurnRunner 兜底，写 `acc.brief`）→ memory 线程先 `distill_narrative_memory` 再 `compress`（distill try/except 隔离，失败 log 后仍 compress；`keeper.call_deepseek` 晚绑定，F25）→ weapon offer 注入 brief → `_last_outcomes` → standoff/offer PendingInteraction → Boss 开战记账（`acc.boss_accounting`，curate 成功后，freeze-safety spec §4.1）→ assemble 写 `acc.result`（不返回 TurnResult） | 11 |
 
 ## src/game/agents/narrator.py (57 行) — 叙事者
 
@@ -586,7 +587,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1040 |
 | `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1065 / 1068 |
 | `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`） | 1077 |
-| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1112 |
+| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1112 |
 | `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1137 / 1140 |
 | `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1144 / 1148 |
 | `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`） | 1153 / 1197 |

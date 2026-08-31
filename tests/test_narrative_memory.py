@@ -48,6 +48,26 @@ class TestDistill:
         world.distill_narrative_memory(lambda p: "长" * 300)
         assert len(world.narrative_memory[0]["notes"]) == 250
 
+    def test_turn_range_uses_snapshot_not_live_alias(self):
+        """LLM 期间 add_record 不得扩大 turn_range（快照而非 live 引用）。"""
+        world = _world_with_history()
+
+        def llm(_p):
+            world.memory.add_record(
+                user_input="during", action="other",
+                target="", result="r", location="room_a")
+            return "要点"
+
+        world.distill_narrative_memory(llm)
+        assert world.narrative_memory[0]["turn_range"] == "T1-T3"
+
+    def test_empty_llm_return_no_entry(self):
+        """空/空白 LLM 返回 → 不加条目。"""
+        world = _world_with_history()
+        world.distill_narrative_memory(lambda p: "")
+        world.distill_narrative_memory(lambda p: "  ")
+        assert world.narrative_memory == []
+
 
 class TestNarratorInjection:
     def test_snapshot_carries_memory(self):

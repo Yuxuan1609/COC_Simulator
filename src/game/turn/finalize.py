@@ -75,7 +75,11 @@ def phase_e_finalize(ctx, acc, tools) -> None:
             distill_llm = lambda p: keeper_mod.call_deepseek(
                 p, json_mode=False, model=LLM_FLASH_MODEL,
                 system="你是叙事要点提炼助手，输出简洁中文要点。")
-            tools.world.distill_narrative_memory(distill_llm)
+            try:
+                tools.world.distill_narrative_memory(distill_llm)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("narrative memory distill failed")
             tools.world.memory.compress(lambda p: keeper_mod.call_deepseek(
                 p, json_mode=False, model=LLM_FLASH_MODEL,
                 system="你是一个擅长总结和提炼信息的助手。请将游戏历史压缩为简洁摘要，"

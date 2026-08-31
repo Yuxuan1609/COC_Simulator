@@ -1112,7 +1112,7 @@ class ScenarioWorld:
     def distill_narrative_memory(self, llm_call, max_entries: int = 5):
         """F25：把 memory.raw_history 蒸馏为一条叙事要点（伏笔/基调/NPC 关系），
         入 narrative_memory（5 条滚动）。与 memory.compress 同点触发、先蒸后压。"""
-        records = self.memory.raw_history
+        records = list(self.memory.raw_history)
         if not records:
             return
         history_text = "\n".join(
