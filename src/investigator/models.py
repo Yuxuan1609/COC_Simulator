@@ -235,20 +235,20 @@ class Investigator:
             return True, f"{skill_name}（已废弃技能，跳过检定）", "regular"
         if kind == "attr":
             target = getattr(self.stats, value, 0)
-            return self._roll_d100(skill_name, target)
+            return self._roll_d100(skill_name, target, difficulty)
         if kind == "pseudo":
-            return self._roll_d100(skill_name, self.derived.DODGE)
+            return self._roll_d100(skill_name, self.derived.DODGE, difficulty)
         skill = self.get_skill(skill_name)  # kind=="skill" 时 get_skill 已归一
         if skill is None:
             self.check_warnings.append(
                 f"未掌握技能[{skill_name}]（归一={kind}:{value}），默认成功放行")
             return True, f"{skill_name}（未掌握，默认判定成功）", "regular"
-        ok, msg, tier = self._roll_d100(skill_name, skill.value)
+        ok, msg, tier = self._roll_d100(skill_name, skill.value, difficulty)
         if ok:
             skill.checked = True
         return ok, msg, tier
 
-    def _roll_d100(self, name: str, target: int) -> tuple:
+    def _roll_d100(self, name: str, target: int, difficulty: str = "regular") -> tuple:
         roll = random.randint(1, 100)
         if self.pending_luck_bonus:
             roll = max(1, roll - self.pending_luck_bonus)
@@ -259,6 +259,8 @@ class Investigator:
             return True, f"{name}检定：D100=1/{target} 大成功！", "extreme"
         extreme_threshold = max(1, target // 5)
         hard_threshold = max(1, target // 2)
+        required = {"regular": target, "hard": hard_threshold,
+                    "extreme": extreme_threshold}.get(difficulty, target)
         if roll <= extreme_threshold:
             tier = "extreme"
         elif roll <= hard_threshold:
@@ -267,6 +269,9 @@ class Investigator:
             tier = "regular"
         else:
             return False, f"{name}检定：D100={roll}/{target} > 失败", "failure"
+        if roll > required:
+            return False, (f"{name}检定：D100={roll}/{target} 未达难度"
+                           f"（{difficulty} 需≤{required}）"), "failure"
         return True, f"{name}检定：D100={roll}/{target} ≤ {target} 成功（{tier}级）", tier
 
     def spend_luck(self, n: int) -> tuple[bool, str]:

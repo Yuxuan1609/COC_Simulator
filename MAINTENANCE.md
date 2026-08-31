@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-31 | P0-1 difficulty 死参数修复：`check_skill` 三处 `_roll_d100` 转发 difficulty；`_roll_d100` 签名增 `difficulty="regular"`，COC7 阈值 hard=半值/extreme=1/5，未知难度串 `.get(..., target)` 回退 regular。judge.py:346-350 的 entity.difficulty / escalated_difficulty 从无效变有效。TDD：tests/test_difficulty.py 6 测试（regular 满值 / hard 半值失败 / hard 成功 tier=hard / extreme 1/5 / 未知串回退 / attr 转发）。RED 3 failed（difficulty 被忽略 roll 40 仍成功）→ GREEN。models.py 452→457。 |
 | 2026-08-31 | 簇评估文档 §8 讨论全收口 + §10 新增：① F6/F7 拍板缓（无队友体系/战斗系统保持现状随将来专项），F28 随战斗专项后移；② F5 定稿轻方案+提示词联动调整（关注疯狂类事件）；③ F8 mythos 触发点=事件驱动 `@stat_change(克苏鲁神话)`，SAN 联动不做；④ §8 十五项拍板回写（#5-#10/#12/#13 按推荐通过），新增 #16 F8 恢复数值规则为唯一开放项；⑤ 新增 §10「模组生成管线影响清单」长期备注（9 条机制→生成管线对应关系），ISSUES §4 加锚点行；⑥ S3-P3 移除 F6/F7，方案收敛为 14 步。ISSUES F6/F7 行更新为缓。零产品代码。 |
 | 2026-08-31 | 簇评估文档拍板回写（P0-2/U4/F25）：① P0-2 end 钩子+成长导出=独立隐藏函数、结局自动触发、败北不触发；② U4 成长=版本化副本 `<卡名>_after_<模组>_<日期>.json` 不覆盖原卡、checked 只打标幕末统一 roll、结算后清零；③ F25 定稿方案 2 叙事蒸馏——`narrative_memory` 5 条滚动 `{turn_range, notes}`、蒸馏时机与 `memory.compress` 对齐、注入 `build_narrator_prompt`【叙事记忆】段 ~1200 字、「呼应不复述」。§8 待讨论清单 #11/#14 标记已拍板。零产品代码。 |
 | 2026-08-31 | Step2 收尾：`docs/superpowers/specs/2026-08-31-cluster-assessment.md` 簇→架构需求评估文档落盘（六路代码探索交叉评估）。要点：① 两跨簇隐藏前置——`check_skill` difficulty 死参数（models.py:227 接受不用，judge 传的 hard/extreme 全无效，用户拍板必修）+ scenario-end 钩子缺失（run_game.py:205 break 后无结算点）；② 六簇逐项 做/缓/非目标 + 难度定级（F8/U4 低，F5/F23/F10/F18/F27/F29/F31/F32 中，F17/F6/F19 中高，F7 高，F28 最高）；③ 跨簇多步骤方案 S3-P0~P4 替代按簇滚动；④ F18 按用户拍板降级（玩家不动时间不走 OK，改 advance_time 跨越触发）；⑤ §8 十五项待讨论问题清单。零产品代码。 |
@@ -609,7 +610,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ## src/investigator/ — 调查员系统（COC 7th）
 
-### models.py (452 行)
+### models.py (457 行)
 
 | 类/方法 | 说明 | 行号 |
 |---------|------|------|
@@ -618,16 +619,16 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 90–140 |
 | `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at}]`，2026-08-21 spec §2） | 161 |
 | `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 206 / 212 / 221 |
-| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行；F14：真实技能成功时 skill.checked=True（attr/pseudo/ignore 不标） | 227 |
-| `_roll_d100` | `(name, target)` 骰点+等级判定；fumble = roll>=96 且 roll>target；消费 pending_luck_bonus（一次性 -N） | 251 |
-| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 272 |
-| `check_skills` | `(skill_names)` 批量检定 | 281 |
-| `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 299 |
-| `_recalc_derived` | 重算衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）经 _carry_current 携带或 clamp，SAN 永不重置 | 319 |
-| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ->CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 330 |
-| `modify_skill` / `has_item` / `list_items` | - | 414 / 421 / 425 |
-| `add_weapon` / `remove_weapon` | 武器管理 | 429 / 432 |
-| `save` / `load` | JSON 存档 | 439 / 445 |
+| `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行；attr/pseudo/skill 三路转发 difficulty；F14：真实技能成功时 skill.checked=True（attr/pseudo/ignore 不标） | 227 |
+| `_roll_d100` | `(name, target, difficulty="regular")` 骰点+等级判定；fumble = roll>=96 且 roll>target；消费 pending_luck_bonus（一次性 -N）；P0-1：hard 需≤半值、extreme 需≤1/5，未知难度串回退满值 | 251 |
+| `spend_luck` | `(n)` 声明式消耗 LUCK，余额不足/N≤0 拒绝 | 277 |
+| `check_skills` | `(skill_names)` 批量检定 | 286 |
+| `build_snapshot` | 玩家状态快照（统一资源层增 mp_max / known_spells 字段） | 304 |
+| `_recalc_derived` | 重算衍生属性：只重算上限/DB/BUILD/DODGE，当前值（HP/MP/SAN）经 _carry_current 携带或 clamp，SAN 永不重置 | 324 |
+| `modify_stat` | `(stat_name, delta)` 支持骰子公式；SIZ->CON 映射（spec 7.2 旧模组兼容）；CON 变化按 HP_MAX=max(1,CON//3) 重算并压 HP | 335 |
+| `modify_skill` / `has_item` / `list_items` | - | 419 / 426 / 430 |
+| `add_weapon` / `remove_weapon` | 武器管理 | 434 / 437 |
+| `save` / `load` | JSON 存档 | 444 / 450 |
 
 ### rules.py (370 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import copy/json/math/os/random；F2：六函数数值参数收编读 game_config；T8：roll_stats 骰面读 skill_config.dice）
 
