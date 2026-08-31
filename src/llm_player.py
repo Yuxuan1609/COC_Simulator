@@ -434,6 +434,8 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
 
         if ending and ending.game_over:
             print(f"  Game Over: {ending.name}")
+            from game_loop import on_scenario_end
+            on_scenario_end(game)   # 无 character_path：只结算不导出
             break
 
         # goal 模式：success_checks 全部满足则提前终止

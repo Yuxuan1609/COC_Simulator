@@ -42,8 +42,9 @@ print(f"[info] 武器库：{len(weapon_lib)} 件 | 敌人库：{len(enemy_lib)} 
 # ═══════════════════════════════════════════════════════════════
 
 def run_game(character_path: str = None):
+    l2_path = "data/modules/测试模组0528v2/l2_keeper_test.json"
     game = init_game(
-        l2_path="data/modules/测试模组0528v2/l2_keeper_test.json",
+        l2_path=l2_path,
         l1_path="data/modules/测试模组0528v2/l1_player.json",
         l3_path="data/modules/测试模组0528v2/l3_designer.json",
         start_node="6号车厢",
@@ -204,6 +205,16 @@ def run_game(character_path: str = None):
 
         if result.game_over or ending:
             print("[info] 游戏结束。")
+            if ending:
+                from game_loop import on_scenario_end
+                module_name = _os.path.basename(_os.path.dirname(l2_path))
+                report = on_scenario_end(game, character_path=character_path,
+                                         module_name=module_name)
+                for e in report:
+                    if e["grown"]:
+                        print(f"[成长] {e['skill']}: {e['value']} → "
+                              f"{e['value'] + e['gain']}"
+                              f"（roll {e['roll']} > {e['value']}，+{e['gain']}）")
             break
 
 

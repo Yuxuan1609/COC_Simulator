@@ -635,6 +635,24 @@ def run_turn(game: dict, user_input: str,
 
 # ── Save / Load ──
 
+def on_scenario_end(game: dict, character_path: str | None = None,
+                    module_name: str = "unknown",
+                    out_dir: str | None = None) -> list[dict]:
+    """scenario-end 钩子（P0-2/U4）：幕末成长结算 + 版本化导出。
+    仅结局通路调用；战斗败北勿调。无 character_path 只结算不导出（llm_player）。"""
+    from investigator.growth import settle_growth, export_grown_card
+    keeper = game.get("keeper")
+    player = keeper.world.player if keeper and keeper.world else None
+    if player is None:
+        return []
+    report = settle_growth(player)
+    if character_path:
+        path = export_grown_card(player, character_path, module_name,
+                                 out_dir=out_dir)
+        print(f"[info] 成长后角色卡已导出：{path}")
+    return report
+
+
 def save_game(game: dict, path: str) -> None:
     """唯一保存入口（B1②）：一次性写出版本 2 存档 + _meta。"""
     keeper = game["keeper"]

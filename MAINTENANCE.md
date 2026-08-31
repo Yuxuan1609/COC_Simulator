@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-31 | P0-2 end 钩子 + U4 幕末成长与导出：新建 `src/investigator/growth.py`（41 行）`settle_growth`（checked 技能 roll>value → +1d10，结算后清零）+ `export_grown_card`（版本化副本 `<卡名>_after_<模组>_<日期>.json` 不覆盖原卡）；`game_loop.on_scenario_end`（@638）结局钩子结算+有 character_path 才导出；`run_game.py` 仅 `if ending:` 分支调用（战斗败北不触发）；`llm_player.py` 结局只结算不导出。TDD：tests/test_growth.py 6 测试。RED 6 failed（ModuleNotFoundError/ImportError）→ GREEN。game_loop.py 924→942 / run_game.py 606→617 / llm_player.py 482→484。 |
 | 2026-08-31 | P0-1 difficulty 死参数修复：`check_skill` 三处 `_roll_d100` 转发 difficulty；`_roll_d100` 签名增 `difficulty="regular"`，COC7 阈值 hard=半值/extreme=1/5，未知难度串 `.get(..., target)` 回退 regular。judge.py:346-350 的 entity.difficulty / escalated_difficulty 从无效变有效。TDD：tests/test_difficulty.py 6 测试（regular 满值 / hard 半值失败 / hard 成功 tier=hard / extreme 1/5 / 未知串回退 / attr 转发）。RED 3 failed（difficulty 被忽略 roll 40 仍成功）→ GREEN。models.py 452→457。 |
 | 2026-08-31 | 簇评估文档 §8 讨论全收口 + §10 新增：① F6/F7 拍板缓（无队友体系/战斗系统保持现状随将来专项），F28 随战斗专项后移；② F5 定稿轻方案+提示词联动调整（关注疯狂类事件）；③ F8 mythos 触发点=事件驱动 `@stat_change(克苏鲁神话)`，SAN 联动不做；④ §8 十五项拍板回写（#5-#10/#12/#13 按推荐通过），新增 #16 F8 恢复数值规则为唯一开放项；⑤ 新增 §10「模组生成管线影响清单」长期备注（9 条机制→生成管线对应关系），ISSUES §4 加锚点行；⑥ S3-P3 移除 F6/F7，方案收敛为 14 步。ISSUES F6/F7 行更新为缓。零产品代码。 |
 | 2026-08-31 | 簇评估文档拍板回写（P0-2/U4/F25）：① P0-2 end 钩子+成长导出=独立隐藏函数、结局自动触发、败北不触发；② U4 成长=版本化副本 `<卡名>_after_<模组>_<日期>.json` 不覆盖原卡、checked 只打标幕末统一 roll、结算后清零；③ F25 定稿方案 2 叙事蒸馏——`narrative_memory` 5 条滚动 `{turn_range, notes}`、蒸馏时机与 `memory.compress` 对齐、注入 `build_narrator_prompt`【叙事记忆】段 ~1200 字、「呼应不复述」。§8 待讨论清单 #11/#14 标记已拍板。零产品代码。 |
@@ -119,17 +120,17 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ## 入口脚本
 
-### run_game.py (606 行) — CLI 文字跑团主入口
+### run_game.py (617 行) — CLI 文字跑团主入口
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `run_game` | `(character_path=None)` | 主循环：init_game → 加载调查员 → 开场回合 → 命令分发（/scene /info /events /flags /char /save /load 走 `save_game`/`load_game` 唯一入口 @137-155 /help /spawn）→ 普通回合 → 战斗交互子循环 → 结局判定 | 44 |
-| `_build_scene_snapshot` | `(world) -> dict\|None` | 从 world 构建 PlayerFacingSnapshot 格式 dict（场景/出口/时间/NPC/敌人） | 210 |
-| `_scene_text` | `(world)` | `/scene` 命令：快照 → Markdown 场景文本 | 227 |
-| `_g` | `(obj, key, default=None)` | dict 与 dataclass 通用安全取值 | 234 |
-| `_format_snapshot_chapters` | `(snap) -> str` | 快照格式化为半结构化 Markdown（场景/角色/时间/技能） | 241 |
-| `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 340 |
-| `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem，构造传 spell_lib+world @361，T9 战斗 markup/timed 原子可用；进入战斗打印 san_log 渲染即清 @370-373+命中显示改用 ea.narrative（D100 骰值前缀保留防丢，I1）@504-506） | 355 |
+| `run_game` | `(character_path=None)` | 主循环：init_game（l2_path 局部变量供幕末 module_name）→ 加载调查员 → 开场回合 → 命令分发（/scene /info /events /flags /char /save /load 走 `save_game`/`load_game` 唯一入口 @137-155 /help /spawn）→ 普通回合 → 战斗交互子循环 → 结局判定；`if ending:` 调 `on_scenario_end` 成长结算+导出版本化卡（战斗败北 break 更早不触发）@205-217 | 44 |
+| `_build_scene_snapshot` | `(world) -> dict\|None` | 从 world 构建 PlayerFacingSnapshot 格式 dict（场景/出口/时间/NPC/敌人） | 221 |
+| `_scene_text` | `(world)` | `/scene` 命令：快照 → Markdown 场景文本 | 238 |
+| `_g` | `(obj, key, default=None)` | dict 与 dataclass 通用安全取值 | 245 |
+| `_format_snapshot_chapters` | `(snap) -> str` | 快照格式化为半结构化 Markdown（场景/角色/时间/技能） | 252 |
+| `_print_turn_output` | `(snap, brief, narrative)` | 打印回合输出 | 351 |
+| `_run_interactive_combat` | `(game, combat_init)` | CLI 回合制战斗子循环（调用 CombatSystem，构造传 spell_lib+world @361，T9 战斗 markup/timed 原子可用；进入战斗打印 san_log 渲染即清 @370-373+命中显示改用 ea.narrative（D100 骰值前缀保留防丢，I1）@504-506） | 366 |
 
 ### run_pipeline.py (1548 行) — 模组解析管线 CLI
 
@@ -502,7 +503,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/game_loop.py (924 行) — 游戏主循环
+## src/game_loop.py (942 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -511,11 +512,12 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 46 |
 | `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载（物品/法术经 library.loader 统一加载 core+extensions，@224-226）→ ScenarioWorld → world 节点 AT 执行（延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
 | `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史 → SUSPENDED/FROZEN 短路 → Narrator 叙事（无 brief 早退且有 npc_events 时 add_record，F24）→ 场景更新 → PlayerFacingSnapshot | 328 |
-| `save_game` | `(game, path)` | B1② 唯一保存入口：`save_state(..., extra_meta={turn_number, session_state})` 一次写入 version 2 | 638 |
-| `load_game` | `(game, path)` | B1② 唯一读档入口：`load_state` 库透传 → 拷贝 session 库/字段（weapon/item/spell_library + time_costs/comms_interval @663-667）→ `set_world` 重绑 → `_meta` 恢复 turn_number/session_state；打印 load_warnings | 647 |
-| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换）；`_check_autosave` 走 `save_game` | 687 / 696 / 707 |
-| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world @786，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 724 |
-| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 842 |
+| `on_scenario_end` | `(game, character_path=None, module_name="unknown", out_dir=None) -> list[dict]` | P0-2/U4 scenario-end 钩子：幕末成长结算 + 有 character_path 才版本化导出；无玩家空报告；战斗败北勿调 | 638 |
+| `save_game` | `(game, path)` | B1② 唯一保存入口：`save_state(..., extra_meta={turn_number, session_state})` 一次写入 version 2 | 656 |
+| `load_game` | `(game, path)` | B1② 唯一读档入口：`load_state` 库透传 → 拷贝 session 库/字段（weapon/item/spell_library + time_costs/comms_interval @681-685）→ `set_world` 重绑 → `_meta` 恢复 turn_number/session_state；打印 load_warnings | 665 |
+| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换）；`_check_autosave` 走 `save_game` | 705 / 714 / 725 |
+| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world @804，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 742 |
+| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 860 |
 
 ---
 
@@ -652,6 +654,13 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 321 |
 | `_cfg_shape_ok` | `(v, dv) -> bool` | 嵌套配置形状校验（F2，T8 升级行深校验）：顶层/嵌套 dict 必需键齐全递归校验；list 非空且按首元素模板深校验行结构（行内 dict 键齐全+标量类型匹配或 None 特赦——db_build_table.max_key 兜底行合法；list 行等长逐位类型；标量行类型一致）；标量 `type is` 严格（bool 不混入 int） | 327 |
 | `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段校验走 `_cfg_shape_ok`（dict 嵌套与 list 行结构坏值均整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。MP 恢复/timed 默认时长/buff 减伤下限/F2 衍生查表等统一从此读取 | 353 |
+
+### growth.py (41 行) — U4 幕末成长检定 + 版本化导出
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `settle_growth` | `(inv, rng=random) -> list[dict]` | 对 Skill.checked=True 逐一 D100；roll>value → +1d10（GROWTH_DIE=10）；结算后清零；rng 可注入钉骰 | 11 |
+| `export_grown_card` | `(inv, source_path, module_name, out_dir=None) -> str` | 导出成长后角色卡为版本化副本 `<卡名>_after_<模组>_<日期>.json`，不覆盖原卡 | 30 |
 
 ### serialization.py (203 行) — v2.2：删 SIZ/MOV 字段，旧卡（含 SIZ）拒绝加载；v2.2 增 timed_effects；F14 skills 条目含 checked
 
@@ -919,7 +928,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `build_npc_intent_detect_prompt` | 是否在和 NPC 对话 | 1084 |
 | `build_npc_parse_prompt` | NPC 互动解析 | 1105 |
 
-## src/llm_player.py (482 行) - LLM 自动玩家（模组自动化测试）
+## src/llm_player.py (484 行) - LLM 自动玩家（模组自动化测试）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -928,7 +937,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `compress_memory` | `(short_history) -> str` | LLM 压缩短期记忆 | 101 |
 | `_eval_success_checks` | `(names, entries) -> bool` | 按 tests/e2e/scenario_predicates.py 谓词注册表评估是否全部满足 | 115 |
 | `_collect_mech_line` | `(game, result, turn_no, action, dt, prev_loc, prev_boss_state) -> str` | 采集单回合机制事件时间线（frozen/outcomes/move/tier/boss 状态 diff），格式对齐 tests/e2e/scenarios/audit_guide.md 第三节 | 138 |
-| `run_llm_player` | `(profile_path, module_name, max_turns, max_duration_s, post_init_hook, log_dir) -> {log_dir, summary, goal_achieved}` | **主循环**：init_game -> 玩家 prompt -> call_deepseek -> run_turn -> 机制时间线 -> 摘要日志 `_summary.json` -> 结局/目标提前终止 -> 定期记忆压缩；含 goal 注入/播种 hook/谓词判定（场景 runner 三层判定用） | 225 |
+| `run_llm_player` | `(profile_path, module_name, max_turns, max_duration_s, post_init_hook, log_dir) -> {log_dir, summary, goal_achieved}` | **主循环**：init_game -> 玩家 prompt -> call_deepseek -> run_turn -> 机制时间线 -> 摘要日志 `_summary.json` -> 结局/目标提前终止（`on_scenario_end(game)` 只结算不导出 @435）-> 定期记忆压缩；含 goal 注入/播种 hook/谓词判定（场景 runner 三层判定用） | 225 |
 | `_log_player_call` | `(turn, system_prompt, user_prompt, response)` | 玩家 LLM 交互全文写入 `player_llm.txt`（现为 run_llm_player 内嵌套函数） | 嵌套@296 |
 
 ## src/llm_player_prompts.py (81 行)
