@@ -1,5 +1,7 @@
 {
   "mp_recovery_per_hour": 1,
+  "hp_recovery_per_day": 1,
+  "san_recovery_per_day": 0,
   "timed_default_minutes": 30,
   "buff_damage_floor": 0,
   "stat_roll_multiplier": 5,

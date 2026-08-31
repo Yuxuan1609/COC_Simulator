@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-08-31 | F8 恢复生态：跨日界结算 HP+1/日、SAN 默认 0、速率 game_config 化。`_GAME_CONFIG_DEFAULTS` 增 `hp_recovery_per_day=1` / `san_recovery_per_day=0`（data/game_config.json 镜像，锁测 `test_shipped_json_matches_defaults`）；`advance_time` 捕获 old_day，末尾调 `_apply_daily_recovery`（无 player / 未跨日 return；函数内 import get_game_config，HP/SAN clamp 各自 MAX）。TDD：tests/test_recovery.py 6 测试。RED 3 failed（HP 不涨）→ GREEN。scenario_core.py 1792→1811 / rules.py 370→372。全量 380 passed / 21 deselected（基线 374+6）。 |
 | 2026-08-31 | P0-2 end 钩子 + U4 幕末成长与导出：新建 `src/investigator/growth.py`（41 行）`settle_growth`（checked 技能 roll>value → +1d10，结算后清零）+ `export_grown_card`（版本化副本 `<卡名>_after_<模组>_<日期>.json` 不覆盖原卡）；`game_loop.on_scenario_end`（@638）结局钩子结算+有 character_path 才导出；`run_game.py` 仅 `if ending:` 分支调用（战斗败北不触发）；`llm_player.py` 结局只结算不导出。TDD：tests/test_growth.py 6 测试。RED 6 failed（ModuleNotFoundError/ImportError）→ GREEN。game_loop.py 924→942 / run_game.py 606→617 / llm_player.py 482→484。 |
 | 2026-08-31 | P0-1 difficulty 死参数修复：`check_skill` 三处 `_roll_d100` 转发 difficulty；`_roll_d100` 签名增 `difficulty="regular"`，COC7 阈值 hard=半值/extreme=1/5，未知难度串 `.get(..., target)` 回退 regular。judge.py:346-350 的 entity.difficulty / escalated_difficulty 从无效变有效。TDD：tests/test_difficulty.py 6 测试（regular 满值 / hard 半值失败 / hard 成功 tier=hard / extreme 1/5 / 未知串回退 / attr 转发）。RED 3 failed（difficulty 被忽略 roll 40 仍成功）→ GREEN。models.py 452→457。 |
 | 2026-08-31 | 簇评估文档 §8 讨论全收口 + §10 新增：① F6/F7 拍板缓（无队友体系/战斗系统保持现状随将来专项），F28 随战斗专项后移；② F5 定稿轻方案+提示词联动调整（关注疯狂类事件）；③ F8 mythos 触发点=事件驱动 `@stat_change(克苏鲁神话)`，SAN 联动不做；④ §8 十五项拍板回写（#5-#10/#12/#13 按推荐通过），新增 #16 F8 恢复数值规则为唯一开放项；⑤ 新增 §10「模组生成管线影响清单」长期备注（9 条机制→生成管线对应关系），ISSUES §4 加锚点行；⑥ S3-P3 移除 F6/F7，方案收敛为 14 步。ISSUES F6/F7 行更新为缓。零产品代码。 |
@@ -521,7 +522,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (1792 行) — 数据模型 + 世界状态
+## src/scenario_core.py (1811 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -570,43 +571,44 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles, item_library, spell_library)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager/WorldChronicle（统一资源层：item_library/spell_library 挂载，init_game 注入；时间钩子：`_mp_regen_acc` MP 恢复分钟累计器 @701，不序列化；F9 增 `san_seen_sources: set[str]` @702，目睹 SAN 全局去重集，入档（to_dict 序列化/from_dict 恢复）；B1① 存 `_npc_profiles` @692 + `load_warnings: list[str]` @693；E 簇占坑 `clues`/`narrative_memory` 空 list @703/@704） | 663 |
-| `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 730–750 |
-| `advance_time` | `(minutes)` | **三合一**（spec §2.2/§4）：推进时钟 + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2，旧档下次推进自动清理无需迁移） + 调 `_tick_time_effects` 时间钩子（keeper 每回合经 TimeAgent time_delta 走此单一入口） | 753 |
-| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；timed_effects 到期清除 | 769 |
-| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 815 |
-| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 844 / 850 / 855 |
-| `mark_completed` / `is_entity_completed` | — | 完成标记 | 875 / 882 |
-| `set_background` / `set_player` / `load_player` | — | 状态设置 | 891–901 |
-| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 911–918 |
-| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 928 / 932 |
-| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 947 / 996 |
-| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1019 |
-| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1044 / 1047 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端 | 1056 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1089 / 1092 |
-| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1096 / 1100 |
-| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list @1145，from_dict @1176 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory` @1146/@1147，from_dict @1177/@1178 `data.get(..., [])`） | 1107 / 1151 |
-| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1186 / 1206 |
+| `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 732–753 |
+| `advance_time` | `(minutes)` | **三合一 + F8 日界恢复**：推进时钟 + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2，旧档下次推进自动清理无需迁移） + 调 `_tick_time_effects` 时间钩子 + `_apply_daily_recovery(old_day)`（keeper 每回合经 TimeAgent time_delta 走此单一入口） | 755 |
+| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；timed_effects 到期清除 | 773 |
+| `_apply_daily_recovery` | `(old_day)` | F8：跨日界恢复。无 player / days≤0 return；速率读 game_config（`hp_recovery_per_day` 默认 1 / `san_recovery_per_day` 默认 0）；HP/SAN 分别 clamp HP_MAX/SAN_MAX。函数内 import get_game_config（monkeypatch 可达） | 805 |
+| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 836 |
+| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 865 / 871 / 876 |
+| `mark_completed` / `is_entity_completed` | — | 完成标记 | 896 / 903 |
+| `set_background` / `set_player` / `load_player` | — | 状态设置 | 912–922 |
+| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 932–939 |
+| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 949 / 953 |
+| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 968 / 1017 |
+| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1040 |
+| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1065 / 1068 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端 | 1077 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1110 / 1113 |
+| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1117 / 1121 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`） | 1126 / 1170 |
+| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1205 / 1225 |
 
-### MemoryManager（@1439）
-
-| 方法 | 签名 | 作用 | 行号 |
-|------|------|------|------|
-| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1454–1514 |
-| `to_dict` / `from_dict` | — | 序列化 | 1536 / 1546 |
-
-### WorldChronicle（@1563）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+### MemoryManager（@1458）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1582 |
-| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1623 |
-| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1645 |
-| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1656 |
-| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1666 |
-| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1672 |
-| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1753 |
-| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1773 / 1784 |
+| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1473–1533 |
+| `to_dict` / `from_dict` | — | 序列化 | 1555 / 1565 |
+
+### WorldChronicle（@1582）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+
+| 方法 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1601 |
+| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1642 |
+| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1664 |
+| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1675 |
+| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1685 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1691 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1772 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1792 / 1803 |
 
 ---
 
@@ -632,7 +634,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `add_weapon` / `remove_weapon` | 武器管理 | 434 / 437 |
 | `save` / `load` | JSON 存档 | 444 / 450 |
 
-### rules.py (370 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import copy/json/math/os/random；F2：六函数数值参数收编读 game_config；T8：roll_stats 骰面读 skill_config.dice）
+### rules.py (372 行) — 纯函数规则引擎（U9：衍生公式 + 属性池分配；头部模块级 import copy/json/math/os/random；F2：六函数数值参数收编读 game_config；T8：roll_stats 骰面读 skill_config.dice）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -650,10 +652,10 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 231 |
 | `opposed_check` | `(att_value, def_value) -> ("win"/"lose"/"tie", detail)` | **统一资源层对抗检定纯函数**：等级>技能值>平局；战斗/探索两侧复用 | 267 |
 | `_opposed_roll` / `_TIER_RANK` | - | 单侧掷骰+四级判定 / 等级序表 | 252 / 249 |
-| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表 10 键（F2：mp_recovery_per_hour/timed_default_minutes/buff_damage_floor/stat_roll_multiplier/skill_value_cap/unarmed_damage/derived/db_build_table/age_modifiers/credit_rating_table，与 data/game_config.json 逐键镜像）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 287 / 316 |
-| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 321 |
-| `_cfg_shape_ok` | `(v, dv) -> bool` | 嵌套配置形状校验（F2，T8 升级行深校验）：顶层/嵌套 dict 必需键齐全递归校验；list 非空且按首元素模板深校验行结构（行内 dict 键齐全+标量类型匹配或 None 特赦——db_build_table.max_key 兜底行合法；list 行等长逐位类型；标量行类型一致）；标量 `type is` 严格（bool 不混入 int） | 327 |
-| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段校验走 `_cfg_shape_ok`（dict 嵌套与 list 行结构坏值均整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。MP 恢复/timed 默认时长/buff 减伤下限/F2 衍生查表等统一从此读取 | 353 |
+| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表 12 键（F2 10 键 + F8 `hp_recovery_per_day=1` / `san_recovery_per_day=0`，与 data/game_config.json 逐键镜像）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 287 / 318 |
+| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 323 |
+| `_cfg_shape_ok` | `(v, dv) -> bool` | 嵌套配置形状校验（F2，T8 升级行深校验）：顶层/嵌套 dict 必需键齐全递归校验；list 非空且按首元素模板深校验行结构（行内 dict 键齐全+标量类型匹配或 None 特赦——db_build_table.max_key 兜底行合法；list 行等长逐位类型；标量行类型一致）；标量 `type is` 严格（bool 不混入 int） | 329 |
+| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段校验走 `_cfg_shape_ok`（dict 嵌套与 list 行结构坏值均整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。MP 恢复/HP·SAN 日界恢复/timed 默认时长/buff 减伤下限/F2 衍生查表等统一从此读取 | 355 |
 
 ### growth.py (41 行) — U4 幕末成长检定 + 版本化导出
 

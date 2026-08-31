@@ -753,6 +753,7 @@ class ScenarioWorld:
         self.clock.time_context = value
 
     def advance_time(self, minutes: int):
+        old_day = self.clock.day
         self.clock.advance_time(minutes)
         # Auto-inject time flags into runtime_state
         # (先清旧 day:/time: flag 防长期局累积进 prompt/存档 -- ISSUES B2)
@@ -767,6 +768,7 @@ class ScenarioWorld:
             state.completed = value
         # 时间钩子(2026-08-21 spec §2.2/§4)
         self._tick_time_effects(minutes)
+        self._apply_daily_recovery(old_day)
 
     def _tick_time_effects(self, minutes: int):
         """MP 恢复(余数累计) + timed_effects 过期清除。"""
@@ -799,6 +801,23 @@ class ScenarioWorld:
                                if t.get("expire_at", 0) > now]
             for t in expired:
                 logger.info("[time] timed 效果过期: %s", t.get("id"))
+
+    def _apply_daily_recovery(self, old_day: int):
+        """F8：跨日界恢复结算（速率 game_config 集中参数）。"""
+        if not self.player:
+            return
+        days = self.clock.day - old_day
+        if days <= 0:
+            return
+        from investigator.rules import get_game_config
+        cfg = get_game_config()
+        hp_rate = cfg.get("hp_recovery_per_day", 1)
+        san_rate = cfg.get("san_recovery_per_day", 0)
+        d = self.player.derived
+        if hp_rate:
+            d.HP = min(d.HP_MAX, d.HP + hp_rate * days)
+        if san_rate:
+            d.SAN = min(d.SAN_MAX, d.SAN + san_rate * days)
 
     def get_time_flags(self) -> dict:
         return self.clock.get_time_flags()

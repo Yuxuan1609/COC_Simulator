@@ -286,6 +286,8 @@ def opposed_check(att_value: int, def_value: int) -> tuple[str, str]:
 
 _GAME_CONFIG_DEFAULTS = {
     "mp_recovery_per_hour": 1,     # MP 每小时恢复点数
+    "hp_recovery_per_day": 1,      # HP 每日自然恢复（跨日界结算，COC7）
+    "san_recovery_per_day": 0,     # SAN 每日自然恢复（默认 0=不恢复；COC7 无自然恢复）
     "timed_default_minutes": 30,   # timed 原子缺省持续分钟
     "buff_damage_floor": 0,        # 战斗 buff 减伤后伤害下限
     "stat_roll_multiplier": 5,     # 属性掷骰总乘数(U9: 3D6*5 / (2D6+6)*5)
