@@ -819,8 +819,24 @@ class ScenarioWorld:
                 p.derived.MP = min(p.derived.MP_MAX, p.derived.MP + gain)
                 if p.derived.MP != before:
                     logger.info("[time] MP 恢复 %d -> %d", before, p.derived.MP)
-        # timed 过期清除(记录被清除的 id)
+        # F10 周期效应：hour/day interval 按跨越次数结算 payload
         now = self.clock.game_time
+        old = now - max(0, minutes)
+        for t in getattr(p, "timed_effects", []):
+            interval = t.get("interval")
+            if interval not in ("hour", "day"):
+                continue
+            span = 60 if interval == "hour" else 1440
+            start_at = int(t.get("start_at", old))
+            expire = int(t.get("expire_at", 0))
+            fired = int(t.get("_fired", 0))
+            total = max(0, (min(now, expire) - start_at) // span)
+            if total > fired:
+                for _ in range(total - fired):
+                    apply_effect_payload(self, t.get("payload") or [],
+                                         source=f"{t.get('id', '')}：")
+                t["_fired"] = total
+        # timed 过期清除(记录被清除的 id)
         expired = [t for t in getattr(p, "timed_effects", [])
                    if t.get("expire_at", 0) <= now]
         if expired:
@@ -1400,6 +1416,32 @@ class ScenarioWorld:
             f"interactions_done={interactions_done}, "
             f"background={'set' if self.background_story else 'none'})"
         )
+
+
+def apply_effect_payload(world, payload: list, source: str = "") -> list:
+    """F10：结算 payload 原子子集（heal/mp_change/markup）。返回描述行。"""
+    msgs = []
+    p = world.player
+    if p is None:
+        return msgs
+    for atom in payload or []:
+        t = atom.get("type", "")
+        if t == "heal":
+            delta = max(0, int(atom.get("delta", 0) or 0))
+            if delta:
+                before = p.derived.HP
+                p.derived.HP = min(p.derived.HP_MAX, p.derived.HP + delta)
+                msgs.append(f"（{source}恢复 {p.derived.HP - before} 点 HP。）")
+        elif t == "mp_change":
+            delta = int(atom.get("delta", 0) or 0)
+            if delta:
+                p.derived.MP = max(0, min(p.derived.MP_MAX, p.derived.MP + delta))
+        elif t == "markup":
+            from game.side_effects import parse_markup_all
+            effs = parse_markup_all(str(atom.get("text", "")))
+            if effs:
+                msgs.extend(apply_side_effects(world, effs))
+    return msgs
 
 
 def apply_side_effects(world: 'ScenarioWorld', side_effects: list,

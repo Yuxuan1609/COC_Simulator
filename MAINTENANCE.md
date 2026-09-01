@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F10 周期效应（S3-P2 Task 5，spec §4）：timed_effects 扩 `interval`(round/hour/day)+`payload` 原子数组；缺 interval=旧计时只到期清除。① 模块级 `apply_effect_payload`（scenario_core.py@1421）结算 heal/mp_change/markup 子集（markup 走 parse_markup_all+apply_side_effects，SAN 汇入 F5）；② `_tick_time_effects` 过期清除前按 `_fired`/`start_at` 公式 `(min(now,expire)-start_at)//span` 跨越次数循环结算 hour(span=60)/day(span=1440)；③ combat `_tick_temporary_effects` buff 递减后对 interval=round 条目每轮结算一次。计划稿只调 payload 一次，测试锁 150min→2 次 / 120min SAN -2×2，实现按 `total-fired` 循环。日界测试叠加 F8 HP+2：2880min 断言 HP==14（非计划稿 12）。TDD：tests/test_periodic_effects.py 5 测试 RED（HP 不变 / KeyError san_lost_today）→ GREEN。全量 426 passed / 21 deselected（基线 421+5）。未改 prompts，跳过 real_llm_smoke。scenario_core 1928→1970 / combat 1537→1544。 |
 | 2026-09-01 | F18 Task 4 review：① `_fire_scheduled_events` 每事件 try/except 隔离，结算失败记 exception 日志仍出队（防首事件炸后后续永不触发）；② `test_multiple_events_in_one_advance` spy `scenario_core.apply_side_effects` 锁 at_minutes 升序 `['ev0','ev1','ev2']`；③ `advance_time` fire 调用点注释：F8 恢复后再 fire，供 F10 见恢复后 HP/SAN。TDD：tests/test_scheduled_events.py 4→5（83→108 行），RED ValueError 未隔离 → GREEN。scenario_core 1923→1928。 |
 | 2026-09-01 | F18 时刻事件触发降级版（S3-P2 Task 4，spec §3）：`world.scheduled_events: list[dict]` 入档 `[{id, at_minutes, markup, description}]`。`advance_time` 捕获 `old_time` 后调 `_fire_scheduled_events`：`old_time < at_minutes ≤ now` 按时刻排序触发，payload=markup 走 `parse_markup_all`+`apply_side_effects`，触发后按对象 id 出队（一次性）。parser 无 `@set_flag`，测试用真实 `@stat_change(stat_name="SAN", delta=-1)`。存档 API=`save_state`/`ScenarioWorld.load_state`（`to_dict`/`from_dict` 透传）。TDD：tests/test_scheduled_events.py 4 测试 RED（SAN 不变 / AttributeError）→ GREEN。全量 420 passed / 21 deselected（基线 416+4）。未改 prompts，跳过 real_llm_smoke。scenario_core 1895→1923。 |
 | 2026-09-01 | F23 spec-review（Task 3 复审 2 项）：① `DirectedGraph.to_dict` 实体条目写入 `repeatable`/`extra`/`time_condition`（interactions@410 / auto_triggers@425 / events@444）；`from_dict` auto_triggers 删 raw `Entity(...)` 覆盖，统一走 `Entity.from_dict`（@471）——修 save/load 后 `repeatable` 默认 False 误触 once-gate。② Keeper `_inject_npc_at`（@388/@401）与 `_find_entity_by_id`（@610）completed skip 改为 `completed and not repeatable`（顶层键或 extra.repeatable）。TDD：tests/test_repeatable.py 3→5（70→111 行）：save/load 后仍可再执行 / 完成后 NPC bound lookup+inject 放行。RED 2 failed（repeatable=False / lookup None）→ GREEN。全量 416 passed / 21 deselected（基线 414+2）。未改 prompts，跳过 real_llm_smoke。scenario_core 1903→1895 / keeper 875→881。 |
@@ -385,13 +386,13 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1165 |
 | `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1173 |
 | `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 control 检查跳过；命中技能优先读 attack.skill_value（>0），否则 (DEX+POW)//2，再加 dodge_bonus（F13）；buff 减伤；被攻击 SAN check @1240-1254（F9 收口：同场同 enemy_ref 只首次命中触发，state.san_attacked_refs 场内去重不入档，multi_attack 不叠加）；F5：loss>0 时经 getattr 防御式调 world.on_san_loss @1248-1253（触发疯狂 text 追加「（疯狂侵袭）」进 narrative） | 1177 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；调用点 run_combat @406 / run_single_round @595 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1260 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1273 / 1297 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1318 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1328 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1347 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1375 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1482 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；F10：world.player.timed_effects 中 `interval==round` 条目每轮调 `apply_effect_payload`；调用点 run_combat @406 / run_single_round @595 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1260 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1280 / 1304 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1325 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1335 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1354 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1382 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1489 |
 
 ## src/game/judge.py (562 行) — 确定性闸门（无 LLM 依赖）
 
@@ -560,7 +561,8 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具 | 213 / 228 |
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@554 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 557 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 563 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` 触发 markup 亦走此入口） | 1405 |
+| `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1421 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口） | 1447 |
 
 ### DirectedGraph（@290）
 
@@ -584,48 +586,48 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 |------|------|------|------|
 | `__init__` | `(graph, start_node, background_story, wr0_enabled, enemy_library, weapon_library, boss_library, boss_encounters, npc_profiles, item_library, spell_library)` | 初始化世界 + Clock/EnemyManager/NPCManager/BossManager/MemoryManager/WorldChronicle（统一资源层：item_library/spell_library 挂载，init_game 注入；时间钩子：`_mp_regen_acc` MP 恢复分钟累计器 @696，不序列化；F9 增 `san_seen_sources: set[str]` @697，目睹 SAN 全局去重集，入档（to_dict 序列化/from_dict 恢复）；F18 增 `scheduled_events: list[dict]` @698，时刻事件队列入档；F5 增 `_insanity_llm` @699 疯狂文本生成器（set_insanity_llm 注入，不入档）；B1① 存 `_npc_profiles` + `load_warnings: list[str]`；E 簇占坑 `clues`/`narrative_memory` 空 list @700/@701） | 658 |
 | `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 729–749 |
-| `advance_time` | `(minutes)` | **三合一 + F8 日界恢复 + F18 时刻事件**：推进时钟前捕获 `old_day`/`old_time` + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2） + `_tick_time_effects` + `_apply_daily_recovery(old_day)` + `_fire_scheduled_events(old_time)`（F8 恢复后再 fire，供 F10 见恢复后 HP/SAN；keeper 每回合经 TimeAgent time_delta 走此单一入口） | 752 |
+| `advance_time` | `(minutes)` | **三合一 + F8 日界恢复 + F18 时刻事件 + F10 周期效应**：推进时钟前捕获 `old_day`/`old_time` + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2） + `_tick_time_effects`（含 F10 hour/day payload） + `_apply_daily_recovery(old_day)` + `_fire_scheduled_events(old_time)`（F8 恢复后再 fire；keeper 每回合经 TimeAgent time_delta 走此单一入口） | 752 |
 | `_fire_scheduled_events` | `(old_time)` | F18：`old_time < at_minutes ≤ now` 的事件按 `at_minutes` 排序触发；payload=markup 走 `parse_markup_all`+`apply_side_effects`；每事件 try/except 隔离（失败记 `[F18] 时刻事件结算失败` exception 仍出队）；触发后按对象 id 出队（一次性）；空队列/未跨越 no-op | 773 |
-| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；timed_effects 到期清除 | 800 |
-| `_apply_daily_recovery` | `(old_day)` | F8：跨日界恢复。无 player / days≤0 return；速率读 game_config（`hp_recovery_per_day` 默认 1 / `san_recovery_per_day` 默认 0）；HP/SAN 分别 clamp HP_MAX/SAN_MAX。函数内 import get_game_config（monkeypatch 可达） | 832 |
-| `set_insanity_llm` | `(llm_call)` | F5：注入疯狂文本生成器 callable(prompt)->str（Task 2 由 game_loop 注入）；None=回退固定文案 | 849 |
-| `on_san_loss` | `(loss, source="") -> dict` | F5 统一疯狂判定钩子（所有 SAN 损失出口汇入）：无 player / loss≤0 no-op 返回 {temporary:False, indefinite:False}；惰性跨日清零（san_day≠clock.day → san_lost_today=0、san_day=day、san_at_day_start=当前 SAN）；单次损失≥5 且未 temporary → `check_skill("INT")` 失败置 temporary（一次，文本经 _gen_insanity_text）；当日累计 ≥ max(1, san_at_day_start//5) 且未 indefinite → 置 indefinite（一次）；返回触发标志供调用方追加叙事 | 853 |
-| `_gen_insanity_text` | `(kind, source) -> str` | F5 疯狂文本：`_insanity_llm` 已注入则现场生成（60 字内表现描述，截 100 字，空回退）；异常回退「（{kind}）」固定文案 + warning 日志（`[F5] 疯狂文本生成失败，回退固定文案`+exc_info，不静默吞）；未注入回退固定文案 | 884 |
-| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 909 |
-| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 938 / 944 / 949 |
-| `mark_completed` / `is_entity_completed` | — | 完成标记 | 969 / 976 |
-| `set_background` / `set_player` / `load_player` | — | 状态设置 | 985–995 |
-| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 1005–1012 |
-| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 1022 / 1026 |
-| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 1041 / 1090 |
-| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1113 |
-| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1138 / 1141 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`） | 1150 |
-| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1185 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1210 / 1213 |
-| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1217 / 1221 |
-| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []） | 1226 / 1271 |
-| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1307 / 1327 |
+| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；F10：hour/day interval 按 `_fired`/`start_at`（缺省 0/`now-minutes`）跨越次数循环结算 payload，然后 timed_effects 到期清除 | 800 |
+| `_apply_daily_recovery` | `(old_day)` | F8：跨日界恢复。无 player / days≤0 return；速率读 game_config（`hp_recovery_per_day` 默认 1 / `san_recovery_per_day` 默认 0）；HP/SAN 分别 clamp HP_MAX/SAN_MAX。函数内 import get_game_config（monkeypatch 可达） | 848 |
+| `set_insanity_llm` | `(llm_call)` | F5：注入疯狂文本生成器 callable(prompt)->str（Task 2 由 game_loop 注入）；None=回退固定文案 | 865 |
+| `on_san_loss` | `(loss, source="") -> dict` | F5 统一疯狂判定钩子（所有 SAN 损失出口汇入）：无 player / loss≤0 no-op 返回 {temporary:False, indefinite:False}；惰性跨日清零（san_day≠clock.day → san_lost_today=0、san_day=day、san_at_day_start=当前 SAN）；单次损失≥5 且未 temporary → `check_skill("INT")` 失败置 temporary（一次，文本经 _gen_insanity_text）；当日累计 ≥ max(1, san_at_day_start//5) 且未 indefinite → 置 indefinite（一次）；返回触发标志供调用方追加叙事 | 869 |
+| `_gen_insanity_text` | `(kind, source) -> str` | F5 疯狂文本：`_insanity_llm` 已注入则现场生成（60 字内表现描述，截 100 字，空回退）；异常回退「（{kind}）」固定文案 + warning 日志（`[F5] 疯狂文本生成失败，回退固定文案`+exc_info，不静默吞）；未注入回退固定文案 | 900 |
+| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 930 |
+| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 959 / 965 / 970 |
+| `mark_completed` / `is_entity_completed` | — | 完成标记 | 990 / 997 |
+| `set_background` / `set_player` / `load_player` | — | 状态设置 | 1006–1016 |
+| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 1026–1033 |
+| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 1043 / 1047 |
+| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 1062 / 1111 |
+| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1134 |
+| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1159 / 1162 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`） | 1171 |
+| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1206 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1231 / 1234 |
+| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1238 / 1242 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []） | 1247 / 1292 |
+| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1328 / 1348 |
 
-### MemoryManager（@1573）
-
-| 方法 | 签名 | 作用 | 行号 |
-|------|------|------|------|
-| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1585 / 1601 / 1607 / 1611 / 1645 |
-| `to_dict` / `from_dict` | — | 序列化 | 1667 / 1677 |
-
-### WorldChronicle（@1703）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+### MemoryManager（@1620）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1713 |
-| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1754 |
-| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1776 |
-| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1787 |
-| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1797 |
-| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1803 |
-| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1884 |
-| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1904 / 1915 |
+| `add_record` / `note_item` / `should_compress` / `compress` / `get_context` | — | 交互记录 / 物品记忆 / LLM 压缩 / 上下文构建 | 1632 / 1648 / 1654 / 1658 / 1692 |
+| `to_dict` / `from_dict` | — | 序列化 | 1714 / 1724 |
+
+### WorldChronicle（@1750）— 世界状态摘要层（LLM 饲料，本期消费者=Author；挂载于 ScenarioWorld.chronicle）
+
+| 方法 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `record_turn` | `(turn_number, raw_input, result, world)` | 每回合末记录事件（窗口15）+ entity_results（截断100）；通道：intent/entities/at/spawn(SpawnEnemy 副作用)/pending/combat start/ending/npc/boss diff | 1760 |
+| `_diff_boss` | `(world) -> list[str]` | Boss 增量 diff（engage/defeated），基准集 `_boss_seen_spawned/_boss_seen_dead` 入档防读档重报；逻辑同 llm_player._collect_mech_line | 1801 |
+| `record_combat_end` | `(outcome, world)` | 战斗结算后标注当回合 combat_end + 同回合补 boss defeated（由 keeper.complete_combat_turn 统一调用） | 1823 |
+| `record_patch` | `(turn, level, entity_ids, new_scenes, justification)` | 补丁清单（append-only，justification 截断100）；entity_ids 为集成后真实 id（含 NEW_xxx 回退） | 1834 |
+| `compress_events` | `(llm_call)` | LLM 蒸馏预留接口，本期不接线（NotImplementedError） | 1844 |
+| `render_for_author` | `(world) -> str` | 渲染【世界真值】（玩家行含 HP/SAN/MP_MAX、武器+关键物品+已知法术、timed_effects 生效中块（描述+剩X分钟，空则不渲染，LLM 可见性 2026-08-21 spec §2.3）、敌人、Boss 块：已开战状态/阶段 + 未遭遇清单）+【已注入内容】+【编年史】 | 1850 |
+| `_render_event` | `(e) -> str` | 单条事件紧凑渲染（含 combat=end(outcome)） | 1931 |
+| `to_dict` / `from_dict` | — | 序列化（events 转 list + boss_seen 两集合） | 1951 / 1962 |
 
 ---
 
@@ -638,7 +640,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Stats` / `DerivedStats` / `Skill` / `Occupation` / `Weapon` / `InventoryItem` | 数据类（U9：Stats 删 SIZ、DerivedStats 删 MOV，HP_MAX=CON//3；统一资源层增 MP_MAX=floor(POW/5)；Skill.category=属性归属拼接如 "INT、EDU"；F14：Skill.checked 成功使用标记 @48） | 14–82 |
 | `_carry_current` | `(current, old_max, new_max)` | 模块级：上限变化携带当前值（涨上限同步涨差值，降上限 clamp） | 149 |
 | `ItemManager` | 背包：add/remove/has/get/list_all/describe/to_dict/from_dict | 90–140 |
-| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at}]`，2026-08-21 spec §2；F5 `insanity: dict` @202 疯狂状态 {temporary, indefinite, san_lost_today, san_day, san_at_day_start}，S3-P2 spec §1，经 serialization 入档） | 161 |
+| `Investigator.__init__` | 构造调查员（含 check_warnings / pending_luck_bonus / label / known_spells 已知法术列表 / timed_effects 定时效果软状态 `[{id, description, expire_at, interval?, payload?}]`，2026-08-21 spec §2；F10 扩 interval+payload，`_fired`/`start_at` 运行时键随列表入档；F5 `insanity: dict` @202 疯狂状态 {temporary, indefinite, san_lost_today, san_day, san_at_day_start}，S3-P2 spec §1，经 serialization 入档） | 161 |
 | `skills_dict` / `get_skill` / `get_skill_value` | 技能查询（get_skill 经 normalize_skill_name 归一） | 206 / 212 / 221 |
 | `check_skill` | `(skill_name, difficulty="regular")` D100 检定：五路归一（skill/attr/pseudo/ignore/unknown），未掌握记 check_warnings 默认放行；attr/pseudo/skill 三路转发 difficulty；F14：真实技能成功时 skill.checked=True（attr/pseudo/ignore 不标） | 227 |
 | `_roll_d100` | `(name, target, difficulty="regular")` 骰点+等级判定；fumble = roll>=96 且 roll>target；消费 pending_luck_bonus（一次性 -N）；P0-1：hard 需≤半值、extreme 需≤1/5，未知难度串回退满值 | 251 |

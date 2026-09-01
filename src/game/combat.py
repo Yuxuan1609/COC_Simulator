@@ -1267,6 +1267,13 @@ class CombatSystem:
         for e in state.enemies:
             if getattr(e, "controlled_rounds", 0) > 0:
                 e.controlled_rounds -= 1
+        if self.world is not None and getattr(self.world, "player", None) is not None:
+            from scenario_core import apply_effect_payload
+            wp = self.world.player
+            for t in getattr(wp, "timed_effects", []):
+                if t.get("interval") == "round":
+                    apply_effect_payload(self.world, t.get("payload") or [],
+                                         source=f"{t.get('id', '')}：")
 
     # ── Phase system ──
 
