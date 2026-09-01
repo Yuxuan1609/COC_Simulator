@@ -150,6 +150,9 @@ NPC 系统重检专项（2026-08-31 拍板，单独立项）：F27 度量层 / F
 20. **F1 延后**：与 F17 一起出方案（无 F17 容器则丢弃无处落）
 21. **F27/F29 缓**：归将来「NPC 系统重检专项」（含 F26 重评）；F29 降级为 NPC 特殊互动模式
 22. **S3-P2 收敛为 4 项**：F5 → F23 → F18+F10 → F31/F32
+23. **F31 扩而不建**：新检查扩进 `cross_validate_layers` + `DependencyGraph.reachable_from`，管线内自动生效；CLI 仅薄壳事后入口
+24. **F32 纯聚合无 rubric**：零 LLM 判定，报告给人看；e2e 测引擎正确性 vs F32 测模组内容
+25. **F32 试玩 goal 来源**：L3 `module_meta.player_goal` 新字段（管线 L3 prompt 加一处，本批唯一生成端改动），profile 缺省自动读取，回退 driving_force；并行试玩本批不做（等 F34）
 
 ## 9. 既有架构资产清单（避免重复设计）
 
