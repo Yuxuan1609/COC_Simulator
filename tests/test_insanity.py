@@ -244,17 +244,13 @@ class TestInsanityLoadGame:
         assert game["keeper"].world._insanity_llm is marker, \
             "load_game 重绑 world 后须重注 _insanity_llm（读档局不得回退固定文案）"
 
-    def test_keeper_parse_prompt_system_mentions_madness(self, monkeypatch):
-        """Issue 1：疯狂联动规则入 keeper parse 系统 prompt（Author prompt 无【调查员】块）。"""
-        import prompts
-        captured = {}
+    def test_keeper_parse_prompt_system_mentions_madness(self):
+        """Issue 1：疯狂联动规则须进入 live Keeper._parse system=（非仅 _show_prompt 日志）。"""
+        import inspect
+        from game.agents.keeper import Keeper
+        from prompts import KEEPER_PARSE_MADNESS_RULE
 
-        def _capture(label, content, log_dir=None, system=None):
-            captured["system"] = system or ""
-
-        monkeypatch.setattr(prompts, "_show_prompt", _capture)
-        world, inv = _world_with_player()
-        inv.insanity = {"temporary": "幻觉丛生"}
-        prompts.build_keeper_parse_prompt(world, "看看四周")
-        assert "疯狂" in captured["system"], \
-            "keeper parse 系统 prompt 应含疯狂联动规则"
+        assert "若调查员信息中显示疯狂状态，条件评估与检定相关描述应体现疯狂的影响。" == KEEPER_PARSE_MADNESS_RULE
+        src = inspect.getsource(Keeper._parse)
+        assert "KEEPER_PARSE_MADNESS_RULE" in src, \
+            "Keeper._parse live system= 必须引用 KEEPER_PARSE_MADNESS_RULE（日志副本不够）"

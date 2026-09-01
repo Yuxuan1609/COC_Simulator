@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F5 Important：疯狂规则入 live Keeper._parse system=（非仅 `_show_prompt` 日志）。`KEEPER_PARSE_MADNESS_RULE` 常量（prompts @472）供 log 副本与 keeper.py `_parse` @526 共用；test_insanity 锁 live 引用。 |
 | 2026-09-01 | F5 表现层 spec-review 修复（Task 2 复审 2 项）：① 疯狂联动 bullet 错位归位——原加在 build_author_prompt Entity 字段规则（@926，其 prompt 无【调查员】块，永不生效）删除，等效规则「若调查员信息中显示疯狂状态，条件评估与检定相关描述应体现疯狂的影响。」移入 build_keeper_parse_prompt 系统 prompt（@550，条件评估句后一行，匹配其段落风格）；② load_game 读档重注 `_insanity_llm`（game_loop @694，`restored.set_insanity_llm(getattr(cur, "_insanity_llm", None))`，set_world 前——修读档局新疯狂触发回退固定文案，关闭 Task 2 已知缺口）。TDD：tests/test_insanity.py 增 TestInsanityLoadGame 2 测试（21→23，224→261 行）：RED 2 failed（`_insanity_llm is None` / 系统 prompt 无「疯狂」）→ GREEN。real_llm_smoke 4 passed（改 prompt 必跑）。全量 411 passed / 21 deselected（基线 409+2）。prompts 1160→1159 / game_loop 950→951。 |
 | 2026-09-01 | F5 表现层（S3-P2 Task 2，spec §1.4）：① game_loop `init_game` 注入 `_insanity_llm` 闭包（@253-258，lazy import call_deepseek+LLM_FLASH_MODEL，world 创建后 `set_insanity_llm` 接线——疯狂文本 LLM 现场生成，异常回退 Task 1 固定文案）；② `Investigator.build_snapshot`（models.py@305）dict 构造改 snap 变量，增 insanity 段：四文本键（temporary/indefinite/phobia/mania）非空才携带，ledger 键（san_lost_today/san_day/san_at_day_start）不入 prompt；③ prompts `_build_investigator_info`（@139）渲染「疯狂状态：临时疯狂=…；恐惧症=…（叙事与检定演绎其影响，不机械复述）」行，keeper parse（@472 消费）与 narrator（@610 消费）共用单一注入点；④ build_author_prompt Entity 字段规则加疯狂联动 bullet（@926：疯狂状态时相关检定与结果描述应体现其影响）——计划稿称"keeper parse prompt 规则段 :912-918"实为 Author prompt 的字段规则段（keeper parse prompt 无 difficulty bullet），按行号锚点落位。TDD：tests/test_insanity.py 增 TestInsanityPresentation 4 测试（17→21，192→224 行）：RED 2 failed（snapshot 无 insanity 段/无疯狂状态行）+2 直绿（LLM 注入机制 Task 1 已落地为回归锁测/无疯狂无行负向守卫）→ GREEN。已知缺口：load_game 读档 set_world 重绑后未重注 _insanity_llm（读档局回退固定文案，待后续任务）。real_llm_smoke 4 passed（改 prompt 必跑）。全量 409 passed / 21 deselected（基线 405+4）。game_loop 942→950 / models 458→464 / prompts 1152→1160。 |
 | 2026-09-01 | F5 review follow-ups（Task 1 复审 4 项）：① apply_side_effects [疯狂] 行按 trig 标志选文本（temporary 新触发优先，否则 indefinite，@1505-1510；修旧 temporary set-once 残留文案冒充新触发）；② `_gen_insanity_text` 异常回退加 warning（`[F5] 疯狂文本生成失败，回退固定文案`+exc_info，@870-871；本地 import logging 镜像 on_san_loss 风格，不再静默吞）；③ tests/test_insanity.py 11→17（105→192 行）：indefinite set-once 锁测 / LLM 失败 warning+固定文案回退（RED→GREEN）/ markup [疯狂] 选型（RED→GREEN）/ **combat 目睹接线**（CombatSystem(world=world)._init_combat+CombatInit，断言 san_lost_today=6+temporary+san_log「（疯狂侵袭）」）/ **judge 施法两测**（成功计 san_lost_today=5；refund_on_fail 退款不计）；④ ISSUES §1 🟡 增 B20（战斗 SAN 双轨不同步预存问题：施法直扣 derived.SAN vs witness/attacked 记 state.player_san，game_loop 写回覆盖致施法 SAN 隐式退还）。scenario_core 1894→1900；test_insanity 函数表/行号见下。全量 405 passed / 21 deselected（基线 399+6）。 |
@@ -216,7 +217,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (874 行) — Keeper 回合编配
+## src/game/agents/keeper.py (875 行) — Keeper 回合编配
 
 无 `_run_turn_pipeline`。`process_turn` 为薄 facade，委托 `TurnRunner.execute`（A–E 循环）。toolbox 方法仍驻本文件，供 turn/ 阶段经 `tools` 调用。
 
@@ -248,7 +249,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 343 |
 | `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node | 370 |
 | `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入；Restart 时由 runner 在重入 A 前调用（A 入口会 clear pending） | 409 |
-| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表 | 513 |
+| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表（live system= 含 `KEEPER_PARSE_MADNESS_RULE` @526） | 513 |
 | `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 546 |
 | `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 576 |
 | `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找 | 589 |
@@ -917,7 +918,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
 | `evaluate_combat_round_narrative` | `(round_log, enemies_desc, player_name, scene)` | 战斗叙事（走 build_combat_narrative_prompt） | 502 |
 
-## src/prompts.py (1160 行) — Prompt 构建（所有 build_* 只构建不调用）
+## src/prompts.py (1162 行) — Prompt 构建（所有 build_* 只构建不调用）
 
 | 函数 | 签名/作用 | 行号 |
 |------|-----------|------|
@@ -926,7 +927,8 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点） | 127–212 |
 | `parse_narrative_output` | Narrator 输出解析 | 270 |
 | `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@319 / `_fmt_inter`@339 / `_fmt_at`@348 / `_parse_req`@383 / `_split_req_str`@397 辅助） | 304 |
-| `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @550 加疯狂联动规则——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 472 |
+| `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 472 |
+| `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @553 用 `KEEPER_PARSE_MADNESS_RULE`——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 475 |
 | `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合 | 561 |
 | `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事；F25 有 `snap.narrative_memory` 时插【叙事记忆】段（呼应/回收不复述） | 610 |
 | `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 677 |

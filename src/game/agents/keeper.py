@@ -19,7 +19,7 @@ from ..judge import Judge
 from ..curator import Curator
 from ..intent_detector import IntentDetector
 from ..pre_parse import PreParseDisambiguator
-from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt
+from prompts import build_keeper_parse_prompt, build_keeper_enrich_prompt, KEEPER_PARSE_MADNESS_RULE
 from llm import call_deepseek
 from config import INTENT_COOLDOWN_WINDOW
 from config_llm import LLM_FLASH_MODEL, RE_KEEPER_PARSE
@@ -523,6 +523,7 @@ class Keeper:
                        "\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/other/npc_interact)。"
                        "\n只考虑可触发的entity，包括场景实体、NPC 专属实体和全局事件。"
                        "\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。"
+                       "\n" + KEEPER_PARSE_MADNESS_RULE +
                        "\n\n行为优先级："
                        "\n- 有明确对应实体时优先返回实体（[NPC_INTERACT]/[NPC_AT] 标记的 NPC 专属实体也按 interaction/auto_trigger 类型匹配）"
                        "\n- 玩家行为泛指搜索整个场景时返回 search，玩家想要明确移动到另一个场景时返回 move"
