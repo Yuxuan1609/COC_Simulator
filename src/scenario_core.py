@@ -101,6 +101,7 @@ class Entity:
     difficulty: str = ""           # None/regular/hard/extreme
     extra: dict | None = None      # time_range, etc.
     time_condition: str = ""      # JSON list of {"day": ">=N|<=N|N|ALL", "times": ["时段",...]}, e.g. [{"day":">=2","times":["夜间","早晨"]}]. [] = no constraint
+    repeatable: bool = False      # F23: True = 完成后可再触发；默认 once
 
     def summary(self) -> str:
         return f"[{self.type}] {self.name}"
@@ -128,6 +129,8 @@ class Entity:
             difficulty=d.get("difficulty", ""),
             extra=d.get("extra"),
             time_condition=d.get("time_condition", ""),
+            repeatable=bool(d.get("repeatable", False)
+                            or (d.get("extra") or {}).get("repeatable", False)),
         )
 
 

@@ -360,7 +360,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         for at in node.auto_triggers:
             _, _, met = _split_req(at)
             line = _fmt_at(at, "[AUTO_TRIGGER]")
-            if world.is_entity_completed(at.id):
+            if world.is_entity_completed(at.id) and not getattr(at, "repeatable", False):
                 completed_scene.append(line)
             elif met:
                 trig_scene.append(line)
@@ -369,7 +369,7 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
         for inter in node.interactions:
             _, _, met = _split_req(inter)
             line = _fmt_inter(inter, "[INTERACT]")
-            if world.is_entity_completed(inter.id):
+            if world.is_entity_completed(inter.id) and not getattr(inter, "repeatable", False):
                 completed_scene.append(line)
             elif met:
                 trig_scene.append(line)
@@ -415,7 +415,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             # Bound interactions
             for ent in npc.bound_interactions:
                 eid = ent.get("id", "")
-                if not eid or world.is_entity_completed(eid):
+                extra = ent.get("extra") or {}
+                if not eid or (world.is_entity_completed(eid)
+                               and not (ent.get("repeatable") or extra.get("repeatable"))):
                     continue
                 req = ent.get("requirement", "") or ""
                 met, soft = _parse_req(req)
@@ -431,7 +433,9 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
             # Bound auto_triggers
             for at in npc.bound_auto_triggers:
                 eid = at.get("id", "")
-                if not eid or world.is_entity_completed(eid):
+                extra = at.get("extra") or {}
+                if not eid or (world.is_entity_completed(eid)
+                               and not (at.get("repeatable") or extra.get("repeatable"))):
                     continue
                 req = at.get("requirement", "") or ""
                 hard, soft, met = _split_req_str(req, world)

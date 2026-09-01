@@ -272,11 +272,14 @@ class Judge:
     def _execute_entity(self, entity: Entity, intent: ActionIntent | None = None, player_input: str = "") -> ActionOutcome:
         """Run entity through gate and execute."""
         if self._is_entity_completed(entity):
-            return ActionOutcome(
-                intent=intent or ActionIntent(action="other"),
-                success=False, message="（该实体已触发过，无法重复执行）",
-                entity_id=entity.id, entity_type=entity.entity_type,
-            )
+            repeatable = bool((entity.extra or {}).get("repeatable")
+                              or getattr(entity, "repeatable", False))
+            if not repeatable:
+                return ActionOutcome(
+                    intent=intent or ActionIntent(action="other"),
+                    success=False, message="（该实体已触发过，无法重复执行）",
+                    entity_id=entity.id, entity_type=entity.entity_type,
+                )
 
         # ── NPC Special entities: follow_unlock / interact_unlock ──
         # Hard requirements already evaluated by _build_entity_lines before parse;

@@ -47,6 +47,7 @@ L2_INTERACTION_SCHEMA = {
     "difficulty": {"required": False, "values": L2_DIFFICULTIES},
     "based_on": {"required": False},
     "graded_result": {"required": False},
+    "repeatable": {"required": False},
 }
 
 L2_AUTO_TRIGGER_SCHEMA = L2_INTERACTION_SCHEMA  # 统一字段模型
@@ -63,6 +64,7 @@ L2_EVENT_SCHEMA = {
     "based_on": {"required": False},
     "graded_result": {"required": False},
     "extra": {"required": False},
+    "repeatable": {"required": False},
 }
 
 L2_NPC_PROFILE_SCHEMA = {

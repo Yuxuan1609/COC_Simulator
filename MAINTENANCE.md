@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F23 实体可重复策略（S3-P2 Task 3，spec §2）：两档 once/repeatable，默认 once 保持现状。① `Entity` 增 `repeatable: bool = False`（scenario_core.py@104），`from_dict`@132 读顶层键或 `extra.repeatable`；② `Judge._execute_entity` 门前（@274）：completed 且非 repeatable 仍挡「已触发过」，repeatable 放行重跑结算，`mark_completed` 照常幂等；③ `_build_entity_lines` completed 分类排除 repeatable（场景 AT/INTERACT @363/@372 不进 completed_scene，留可触发段；NPC bound 同口径 @418/@434 完成后仍可见）；④ L2 schema interaction/event 加 `"repeatable": {"required": False}`（auto_trigger 共用 INTERACTION schema）。TDD：tests/test_repeatable.py 3 测试 RED（二次执行被挡 / 进 completed 段）→ GREEN。全量 414 passed / 21 deselected（基线 411+3；`test_unresolved_use_becomes_creative` 首跑 flaky 复跑过）。real_llm_smoke 4 passed（改 prompt 必跑）。judge 559→562 / prompts 1159→1166 / scenario_core 1900→1903 / layered_schema 361→363。 |
 | 2026-09-01 | F5 Important：疯狂规则入 live Keeper._parse system=（非仅 `_show_prompt` 日志）。`KEEPER_PARSE_MADNESS_RULE` 常量（prompts @472）供 log 副本与 keeper.py `_parse` @526 共用；test_insanity 锁 live 引用。 |
 | 2026-09-01 | F5 表现层 spec-review 修复（Task 2 复审 2 项）：① 疯狂联动 bullet 错位归位——原加在 build_author_prompt Entity 字段规则（@926，其 prompt 无【调查员】块，永不生效）删除，等效规则「若调查员信息中显示疯狂状态，条件评估与检定相关描述应体现疯狂的影响。」移入 build_keeper_parse_prompt 系统 prompt（@550，条件评估句后一行，匹配其段落风格）；② load_game 读档重注 `_insanity_llm`（game_loop @694，`restored.set_insanity_llm(getattr(cur, "_insanity_llm", None))`，set_world 前——修读档局新疯狂触发回退固定文案，关闭 Task 2 已知缺口）。TDD：tests/test_insanity.py 增 TestInsanityLoadGame 2 测试（21→23，224→261 行）：RED 2 failed（`_insanity_llm is None` / 系统 prompt 无「疯狂」）→ GREEN。real_llm_smoke 4 passed（改 prompt 必跑）。全量 411 passed / 21 deselected（基线 409+2）。prompts 1160→1159 / game_loop 950→951。 |
 | 2026-09-01 | F5 表现层（S3-P2 Task 2，spec §1.4）：① game_loop `init_game` 注入 `_insanity_llm` 闭包（@253-258，lazy import call_deepseek+LLM_FLASH_MODEL，world 创建后 `set_insanity_llm` 接线——疯狂文本 LLM 现场生成，异常回退 Task 1 固定文案）；② `Investigator.build_snapshot`（models.py@305）dict 构造改 snap 变量，增 insanity 段：四文本键（temporary/indefinite/phobia/mania）非空才携带，ledger 键（san_lost_today/san_day/san_at_day_start）不入 prompt；③ prompts `_build_investigator_info`（@139）渲染「疯狂状态：临时疯狂=…；恐惧症=…（叙事与检定演绎其影响，不机械复述）」行，keeper parse（@472 消费）与 narrator（@610 消费）共用单一注入点；④ build_author_prompt Entity 字段规则加疯狂联动 bullet（@926：疯狂状态时相关检定与结果描述应体现其影响）——计划稿称"keeper parse prompt 规则段 :912-918"实为 Author prompt 的字段规则段（keeper parse prompt 无 difficulty bullet），按行号锚点落位。TDD：tests/test_insanity.py 增 TestInsanityPresentation 4 测试（17→21，192→224 行）：RED 2 failed（snapshot 无 insanity 段/无疯狂状态行）+2 直绿（LLM 注入机制 Task 1 已落地为回归锁测/无疯狂无行负向守卫）→ GREEN。已知缺口：load_game 读档 set_world 重绑后未重注 _insanity_llm（读档局回退固定文案，待后续任务）。real_llm_smoke 4 passed（改 prompt 必跑）。全量 409 passed / 21 deselected（基线 405+4）。game_loop 942→950 / models 458→464 / prompts 1152→1160。 |
@@ -389,7 +390,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1375 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1482 |
 
-## src/game/judge.py (559 行) — 确定性闸门（无 LLM 依赖）
+## src/game/judge.py (562 行) — 确定性闸门（无 LLM 依赖）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -398,7 +399,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 68 |
 | `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@181-184；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@110）；F5：need_san 且 `success or not refund_on_fail`（未退款）时调 world.on_san_loss @163-165（施法损失计疯狂，退款不计） | 83 |
 | `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 193 |
-| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截 → NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 269 |
+| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 272 |
 | `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 477 |
 | `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 488 / 499 |
 | `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 510 |
@@ -530,7 +531,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (1894 行) — 数据模型 + 世界状态
+## src/scenario_core.py (1903 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -540,7 +541,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Requirement` | `raw, entity_id, negated, flags` — 条件解析结果 | 49 |
 | `Interaction` | 互动摘要模型 | 57 |
 | `ActionResult` | `success, message, ...` | 71 |
-| `Entity` | `id, entity_type, name, scene, type, requirement, trigger, result, side_effects, graded_result, difficulty, extra, time_condition` — 统一实体；`from_dict` 工厂 @109 | 89 |
+| `Entity` | `id, entity_type, name, scene, type, requirement, trigger, result, side_effects, graded_result, difficulty, extra, time_condition, repeatable` — 统一实体；`from_dict` 工厂 @110（F23：`repeatable` 默认 False=once，读顶层键或 extra.repeatable） | 89 |
 | `Node` | `node_id, description, edges, to_here, interactions, auto_triggers, encounters, scene_weapons, extra`；`get_interaction`@264 `get_auto_trigger`@270 | 253 |
 | `NodeRuntimeState` | `completed, result_tier, retries, escalated_difficulty` | 278 |
 
@@ -550,8 +551,8 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 |------|------|------|------|
 | `read_json_file` | `(file_path)` | 读 JSON | 29 |
 | `find_entity_by_id` | `(world, entity_id)` | 场景+事件+NPC 联合查找 | 77 |
-| `resolve_graded_result` | `(entity, tier) -> str` | 解析 `##GRADED##` 四档结果 | 138 |
-| `has_ending` | `(text) -> (name, narrative)` | 检测 `##END_*:desc##` | 162 |
+| `resolve_graded_result` | `(entity, tier) -> str` | 解析 `##GRADED##` 四档结果 | 141 |
+| `has_ending` | `(text) -> (name, narrative)` | 检测 `##END_*:desc##` | 165 |
 | `check_time_condition` | `(time_condition, day, time_of_day)` | 时间条件检查 | 173 |
 | `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具 | 213 / 228 |
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@554 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 557 |
@@ -815,11 +816,11 @@ core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STON
 
 re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。
 
-### layered_schema.py (361 行) — Schema 定义 + 验证
+### layered_schema.py (363 行) — Schema 定义 + 验证
 
 | 项 | 说明 | 行号 |
 |----|------|------|
-| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of） | 10–182 |
+| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of；F23：L2_INTERACTION_SCHEMA/L2_EVENT_SCHEMA 含 optional `repeatable`） | 10–184 |
 | `SchemaViolation` / `SchemaReport` | 违规/报告（add/errors/warnings/is_valid/summary） | 183 / 194 |
 | `_validate_value` / `_validate_object` | 递归校验 | 226 / 258 |
 | `validate_l1` / `validate_l2` / `validate_l3` / `validate_all` / `is_valid` | 各层验证入口 | 267–358 |
@@ -918,7 +919,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
 | `evaluate_combat_round_narrative` | `(round_log, enemies_desc, player_name, scene)` | 战斗叙事（走 build_combat_narrative_prompt） | 502 |
 
-## src/prompts.py (1162 行) — Prompt 构建（所有 build_* 只构建不调用）
+## src/prompts.py (1166 行) — Prompt 构建（所有 build_* 只构建不调用）
 
 | 函数 | 签名/作用 | 行号 |
 |------|-----------|------|
@@ -926,9 +927,9 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `apply_trait_enhancement` | `(player, skill_name, skill_detail, entity_name, search_context, player_input, graded_tiers) -> (new_tier, enhancement)` judge/search/standoff 三处复用 | 90 |
 | `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点） | 127–212 |
 | `parse_narrative_output` | Narrator 输出解析 | 270 |
-| `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@319 / `_fmt_inter`@339 / `_fmt_at`@348 / `_parse_req`@383 / `_split_req_str`@397 辅助） | 304 |
-| `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 472 |
-| `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @553 用 `KEEPER_PARSE_MADNESS_RULE`——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 475 |
+| `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@319 / `_fmt_inter`@339 / `_fmt_at`@348 / `_parse_req`@383 / `_split_req_str`@397 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段） | 304 |
+| `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 476 |
+| `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @557 用 `KEEPER_PARSE_MADNESS_RULE`——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 479 |
 | `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合 | 561 |
 | `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事；F25 有 `snap.narrative_memory` 时插【叙事记忆】段（呼应/回收不复述） | 610 |
 | `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 677 |
