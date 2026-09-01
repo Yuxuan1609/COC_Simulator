@@ -87,8 +87,6 @@ def run_lint(module_dir: str) -> int:
     if isinstance(raw_graph, dict) and raw_graph.get("nodes"):
         eg = DependencyGraph.from_dict(raw_graph)
         seeds: set[str] = set()
-        if start in eg.nodes:
-            seeds.add(start)
         for scene_name, _kind, ent in _iter_l2_entities(l2):
             eid = ent.get("id") or ""
             if eid in eg.nodes and (scene_name == start or ent.get("scene") == start):

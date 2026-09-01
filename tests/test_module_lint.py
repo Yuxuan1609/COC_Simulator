@@ -156,6 +156,47 @@ class TestLintChecks:
         assert report_bad.errors
         assert "BOSS_X" in joined
 
+    def test_npc_profiles_scene_refs(self):
+        """npc_profiles.scene 不存在 → error；真实场景不报该 error。"""
+        from module_designer.layered_pipeline import cross_validate_layers
+        l1 = _l1()
+        l3 = _l3()
+        bad = cross_validate_layers(
+            l1,
+            _l2({"s1": [_entity("I1")]}, npc_profiles={"路人": {"scene": "不存在的房间"}}),
+            l3,
+        )
+        joined = " ".join(str(i) for i in bad.issues)
+        assert bad.errors, "未知 npc_profiles.scene 必须是 error"
+        assert "不存在的房间" in joined
+        ok = cross_validate_layers(
+            l1,
+            _l2({"s1": [_entity("I1")]}, npc_profiles={"路人": {"scene": "s1"}}),
+            l3,
+        )
+        assert not any("不存在的房间" in i.message or (
+            "npc_profiles" in i.path and "不存在的场景" in i.message
+        ) for i in ok.errors)
+
+    def test_npc_bound_interaction_duplicate_id_is_error(self):
+        """npc_profiles.bound_interactions 与场景 interaction 同 id → error。"""
+        from module_designer.layered_pipeline import cross_validate_layers
+        l1 = _l1()
+        l2 = _l2(
+            {"s1": [_entity("I_DUP")]},
+            npc_profiles={
+                "路人": {
+                    "scene": "s1",
+                    "bound_interactions": [_entity("I_DUP", name="NPC互动")],
+                },
+            },
+        )
+        l3 = _l3()
+        report = cross_validate_layers(l1, l2, l3)
+        joined = " ".join(str(i) for i in report.issues)
+        assert report.errors, "NPC bound 与场景重复 entity id 必须是 error"
+        assert "I_DUP" in joined
+
     def test_cli_exit_code(self, tmp_path):
         """CLI：有 error → exit 1；干净模组 → exit 0。"""
         from module_designer.lint import run_lint

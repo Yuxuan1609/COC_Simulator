@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F31 lint 复审 Important：① `_iter_l2_entities` 纳入 `npc_profiles.bound_interactions`/`bound_auto_triggers`（唯一性、markup known_entities、ending refs、难度统计、可达种子均覆盖 NPC-bound）；② 锁测 `npc_profiles.scene` 不存在→error / 真实场景不报；③ 删 `lint.py` 死代码 `if start in eg.nodes`（场景名∉ entity 图）。TDD：tests/test_module_lint.py 7→9：`test_npc_profiles_scene_refs` / `test_npc_bound_interaction_duplicate_id_is_error`。layered_pipeline 1062→1071 / lint 124→122。 |
 | 2026-09-01 | F31 spec-review（Task 6 复审 2 项）：① 实体可达性不再用 `start_scene` 当图节点（场景名∉ entity id，原 `if start in eg.nodes` 恒假）。改为以起点场景内实体 id（含 `boss_encounters.scene==start`）为多种子 BFS，不可达节点 warning；起点无图内实体则跳过。② `cross_validate_layers` 将 `l2.boss_encounters[].id` 纳入 `known_entities`，结局 condition 提及现有 `BOSS_*` 不再误报。TDD：tests/test_module_lint.py 5→7：`test_entity_reachability_from_start_scene_seeds` / `test_ending_ref_known_boss_ok_unknown_errors`。RED 2 failed → GREEN。lint.py 106→124 / layered_pipeline 1059→1062。 |
 | 2026-09-01 | F31 模组体检 lint（S3-P2 Task 6，spec §5，扩而不建）：① `DependencyGraph.reachable_from(start)` BFS 沿 source→target，返回不可达节点 id（空图=[]）；② `cross_validate_layers` 扩 4 项 error：entity id 跨场景唯一性 / markup `flag=` `ref=` 引用存在性 / npc_profiles.scene\|all_scenes 场景存在 / ending_conditions 结构化字段+condition 内 IT_/AT_/I_/E_/END_/BOSS_ token 引用；③ 薄 CLI `python -m module_designer.lint <模组目录>`（`lint.py` + `__main__.py`）：validate_all+cross_validate + 场景 from_here 可达性/孤立场景 warning + L2 `check.difficulty`/`difficulty` 分档 info；exit 1 仅 error。TDD：tests/test_module_lint.py 5 测试 RED（AttributeError / 空 errors / ModuleNotFoundError）→ GREEN。全量 435 passed / 21 deselected（基线 430+5）。未改 prompts，跳过 real_llm_smoke。e2e_testbed 冒烟 exit 0（1 schema warning：IT_END difficulty=""；info regular×1）。layered_pipeline 956→1059 / dependency_graph 138→156。 |
 | 2026-09-01 | F10 spec-review（Task 5 复审 3 项）：① `apply_effect_payload` 每原子 try/except 隔离，失败记 `[F10] payload 结算失败` exception 仍结算后续原子；② `_tick_time_effects` hour/day 循环 try/except 后**始终** `t["_fired"]=total`（防中途抛后重放已结算 tick）；③ combat `_tick_temporary_effects` round 循环 try/except+log 继续下条 timed_effect。TDD：tests/test_periodic_effects.py 7→9（103→133 行）：`test_payload_atom_failure_isolates_later_atoms`（坏 markup 后 heal 仍 +1）/ `test_round_interval_fires_on_combat_tick`（CombatSystem(world)+CombatState 两次 `_tick_temporary_effects` → HP+2）。RED 1 failed（ValueError 未隔离；round 路径本已绿）→ GREEN。scenario_core 1972→1981 / combat 1549→1554。 |
@@ -886,23 +887,23 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `parse_step35` | 依赖图提取 | 1295 |
 | `parse_step4` | Phase2：@markup 标准化（STEP4_SYSTEM 含 @grant_spell 语法说明；Step2A 约束 prompt 同步） | 1493 |
 
-### layered_pipeline.py (1062 行) — 管线编排
+### layered_pipeline.py (1071 行) — 管线编排
 
 | 函数/类 | 作用 | 行号 |
 |---------|------|------|
 | `CrossRefIssue` / `CrossRefReport` | 交叉引用问题/报告 | 34 / 46 |
 | `cross_validate_layers` | `(l1, l2, l3, weapon_lib, enemy_lib, spell_lib, item_lib)` 跨层引用验证。原 6 项 + F31：entity id 跨场景唯一 / markup flag\|ref 存在 / npc_profiles 场景 / ending_conditions 引用（均 error）；`known_entities` 含 `boss_encounters[].id`（防 BOSS_* 误报）；@grant_spell 未知仍 warning | 97 |
-| `_iter_l2_entities` | yield `(scene, kind, ent)`：interactions+auto_triggers+events（不含 boss_encounters） | 314 |
-| `_bind_npc_entities` | 扫描 entity NPC 归属 → 剥离+绑定 | 353 |
-| `_extract_entity_bindings` | 从 npc_profiles 提取绑定 | 415 |
-| `_inject_step1a_meta` | Step1a 角色 → NPC scene 注入 | 424 |
-| `_inject_npc_special_entities` | 注入 follow_unlock + interact_unlock entity | 443 |
-| `_assemble_l2` | 所有 entity 组装为 L2 JSON | 493 |
-| `PipelineResult` | 结果容器（all_valid/summary） | 533 |
-| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 565 |
-| `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 1025 |
+| `_iter_l2_entities` | yield `(scene, kind, ent)`：interactions+auto_triggers+events+npc_profiles.bound_interactions/bound_auto_triggers（不含 boss_encounters） | 314 |
+| `_bind_npc_entities` | 扫描 entity NPC 归属 → 剥离+绑定 | 365 |
+| `_extract_entity_bindings` | 从 npc_profiles 提取绑定 | 427 |
+| `_inject_step1a_meta` | Step1a 角色 → NPC scene 注入 | 436 |
+| `_inject_npc_special_entities` | 注入 follow_unlock + interact_unlock entity | 455 |
+| `_assemble_l2` | 所有 entity 组装为 L2 JSON | 505 |
+| `PipelineResult` | 结果容器（all_valid/summary） | 545 |
+| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 577 |
+| `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 1037 |
 
-### lint.py (124 行) — F31 模组体检 CLI
+### lint.py (122 行) — F31 模组体检 CLI
 
 | 函数 | 作用 | 行号 |
 |------|------|------|

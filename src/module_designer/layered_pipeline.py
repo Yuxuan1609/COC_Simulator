@@ -312,7 +312,7 @@ def cross_validate_layers(
 
 
 def _iter_l2_entities(l2_data: dict):
-    """Yield (scene_name, kind, entity_dict) for interactions/auto_triggers/events."""
+    """Yield (scene_name, kind, entity_dict) for interactions/auto_triggers/events/NPC-bound."""
     for scene_name, scene_data in l2_data.get("scenes", {}).items():
         if not isinstance(scene_data, dict):
             continue
@@ -323,6 +323,15 @@ def _iter_l2_entities(l2_data: dict):
     for ent in l2_data.get("events") or []:
         if isinstance(ent, dict):
             yield "", "events", ent
+    npc_profiles = l2_data.get("npc_profiles") or {}
+    if isinstance(npc_profiles, dict):
+        for profile in npc_profiles.values():
+            if not isinstance(profile, dict):
+                continue
+            for kind in ("bound_interactions", "bound_auto_triggers"):
+                for ent in profile.get(kind) or []:
+                    if isinstance(ent, dict):
+                        yield "", kind, ent
 
 
 def _get_pipeline_version() -> str:
