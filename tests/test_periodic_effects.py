@@ -101,3 +101,33 @@ class TestPeriodicEffects:
         assert te.get("payload") == [{"type": "heal", "delta": 1}]
         world.advance_time(150)
         assert inv.derived.HP == 12
+
+    def test_payload_atom_failure_isolates_later_atoms(self):
+        """坏 markup 原子不阻断后续 heal（per-atom 隔离）。"""
+        world, inv = _world_with_player(hp=10)
+        inv.timed_effects.append({
+            "id": "混杂", "description": "", "interval": "hour",
+            "expire_at": world.clock.game_time + 300,
+            "payload": [
+                {"type": "markup",
+                 "text": '@item_gain(item_name="x", quantity="garbage")'},
+                {"type": "heal", "delta": 1},
+            ],
+        })
+        world.advance_time(60)
+        assert inv.derived.HP == 11
+
+    def test_round_interval_fires_on_combat_tick(self):
+        """interval=round 在战斗轮末 tick 各结算一次，两次 tick → HP+2。"""
+        from game.combat import CombatSystem, CombatState
+        world, inv = _world_with_player(hp=10)
+        inv.timed_effects.append({
+            "id": "毒雾", "description": "", "interval": "round",
+            "expire_at": world.clock.game_time + 9999,
+            "payload": [{"type": "heal", "delta": 1}],
+        })
+        cs = CombatSystem(world=world)
+        state = CombatState()
+        cs._tick_temporary_effects(state)
+        cs._tick_temporary_effects(state)
+        assert inv.derived.HP == 12

@@ -834,9 +834,13 @@ class ScenarioWorld:
             fired = int(t.get("_fired", 0))
             total = max(0, (min(now, expire) - start_at) // span)
             if total > fired:
-                for _ in range(total - fired):
-                    apply_effect_payload(self, t.get("payload") or [],
-                                         source=f"{t.get('id', '')}：")
+                try:
+                    for _ in range(total - fired):
+                        apply_effect_payload(self, t.get("payload") or [],
+                                             source=f"{t.get('id', '')}：")
+                except Exception:
+                    logging.getLogger("scenario_core").exception(
+                        "[F10] payload 结算失败: %s", t.get("id"))
                 t["_fired"] = total
         # timed 过期清除(记录被清除的 id)
         expired = [t for t in getattr(p, "timed_effects", [])
@@ -1422,27 +1426,32 @@ class ScenarioWorld:
 
 def apply_effect_payload(world, payload: list, source: str = "") -> list:
     """F10：结算 payload 原子子集（heal/mp_change/markup）。返回描述行。"""
+    import logging
     msgs = []
     p = world.player
     if p is None:
         return msgs
     for atom in payload or []:
-        t = atom.get("type", "")
-        if t == "heal":
-            delta = max(0, int(atom.get("delta", 0) or 0))
-            if delta:
-                before = p.derived.HP
-                p.derived.HP = min(p.derived.HP_MAX, p.derived.HP + delta)
-                msgs.append(f"（{source}恢复 {p.derived.HP - before} 点 HP。）")
-        elif t == "mp_change":
-            delta = int(atom.get("delta", 0) or 0)
-            if delta:
-                p.derived.MP = max(0, min(p.derived.MP_MAX, p.derived.MP + delta))
-        elif t == "markup":
-            from game.side_effects import parse_markup_all
-            effs = parse_markup_all(str(atom.get("text", "")))
-            if effs:
-                msgs.extend(apply_side_effects(world, effs))
+        try:
+            t = atom.get("type", "")
+            if t == "heal":
+                delta = max(0, int(atom.get("delta", 0) or 0))
+                if delta:
+                    before = p.derived.HP
+                    p.derived.HP = min(p.derived.HP_MAX, p.derived.HP + delta)
+                    msgs.append(f"（{source}恢复 {p.derived.HP - before} 点 HP。）")
+            elif t == "mp_change":
+                delta = int(atom.get("delta", 0) or 0)
+                if delta:
+                    p.derived.MP = max(0, min(p.derived.MP_MAX, p.derived.MP + delta))
+            elif t == "markup":
+                from game.side_effects import parse_markup_all
+                effs = parse_markup_all(str(atom.get("text", "")))
+                if effs:
+                    msgs.extend(apply_side_effects(world, effs))
+        except Exception:
+            logging.getLogger("scenario_core").exception(
+                "[F10] payload 结算失败: %s", source)
     return msgs
 
 

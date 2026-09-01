@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F10 spec-review（Task 5 复审 3 项）：① `apply_effect_payload` 每原子 try/except 隔离，失败记 `[F10] payload 结算失败` exception 仍结算后续原子；② `_tick_time_effects` hour/day 循环 try/except 后**始终** `t["_fired"]=total`（防中途抛后重放已结算 tick）；③ combat `_tick_temporary_effects` round 循环 try/except+log 继续下条 timed_effect。TDD：tests/test_periodic_effects.py 7→9（103→133 行）：`test_payload_atom_failure_isolates_later_atoms`（坏 markup 后 heal 仍 +1）/ `test_round_interval_fires_on_combat_tick`（CombatSystem(world)+CombatState 两次 `_tick_temporary_effects` → HP+2）。RED 1 failed（ValueError 未隔离；round 路径本已绿）→ GREEN。scenario_core 1972→1981 / combat 1549→1554。 |
 | 2026-09-01 | F10 spec-review（Task 5 复审 2 项）：① `_tick_time_effects` 首次 tick 持久化 `start_at=old`（缺则写入后再读），修分段 `advance_time` 每拍重基到本拍 `old` 导致 `_fired` 余数永不累计（50+50+50 hourly 原 HP 不变，现 HP+2）；② judge/combat timed 原子挂载同步拷 `interval`/`payload`（有则写入，同 id refresh 不叠条）。TDD：tests/test_periodic_effects.py 5→7（75→103 行）：`test_hourly_split_advances_accumulate` / `test_timed_atom_mounts_interval_payload`（Judge._execute_effect_atoms 挂载后 advance 150→HP 12）。RED 2 failed（HP 10 / interval 丢失）→ GREEN。scenario_core 1970→1972 / judge 562→567 / combat 1544→1549。 |
 | 2026-09-01 | F10 周期效应（S3-P2 Task 5，spec §4）：timed_effects 扩 `interval`(round/hour/day)+`payload` 原子数组；缺 interval=旧计时只到期清除。① 模块级 `apply_effect_payload`（scenario_core.py@1421）结算 heal/mp_change/markup 子集（markup 走 parse_markup_all+apply_side_effects，SAN 汇入 F5）；② `_tick_time_effects` 过期清除前按 `_fired`/`start_at` 公式 `(min(now,expire)-start_at)//span` 跨越次数循环结算 hour(span=60)/day(span=1440)；③ combat `_tick_temporary_effects` buff 递减后对 interval=round 条目每轮结算一次。计划稿只调 payload 一次，测试锁 150min→2 次 / 120min SAN -2×2，实现按 `total-fired` 循环。日界测试叠加 F8 HP+2：2880min 断言 HP==14（非计划稿 12）。TDD：tests/test_periodic_effects.py 5 测试 RED（HP 不变 / KeyError san_lost_today）→ GREEN。全量 426 passed / 21 deselected（基线 421+5）。未改 prompts，跳过 real_llm_smoke。scenario_core 1928→1970 / combat 1537→1544。 |
 | 2026-09-01 | F18 Task 4 review：① `_fire_scheduled_events` 每事件 try/except 隔离，结算失败记 exception 日志仍出队（防首事件炸后后续永不触发）；② `test_multiple_events_in_one_advance` spy `scenario_core.apply_side_effects` 锁 at_minutes 升序 `['ev0','ev1','ev2']`；③ `advance_time` fire 调用点注释：F8 恢复后再 fire，供 F10 见恢复后 HP/SAN。TDD：tests/test_scheduled_events.py 4→5（83→108 行），RED ValueError 未隔离 → GREEN。scenario_core 1923→1928。 |
@@ -354,7 +355,7 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 
 | `build_prompt` | `(actions, current_input, time_costs=None)` | 构建时间评估 prompt | 29 |
 | `assess` | `(actions=None, current_input="", time_costs=None, **kwargs) -> {time_delta, narrative_hint}` | LLM 评估本轮时间消耗 | 64 |
 
-## src/game/combat.py (1537 行) — 战斗系统 v2
+## src/game/combat.py (1554 行) — 战斗系统 v2
 
 CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: int = 99`（@194，SAN bar 分母，_init_combat 从 player.derived.SAN_MAX 接线）；T9 增 `temporary_effects: list`（@200，玩家侧 buff `[{id, reduce, rounds}]`，spec §3；T10 消费：受击减伤 + 轮末递减）；2026-08-26 增 `san_log: list[str]`（@201，开局目睹 SAN check 叙事行；_init_combat 写入，三处一次性渲染后清空：_build_single_round_result 首轮 @639-641/run_combat 终局前置 @420-422/run_game CLI 进入战斗打印 @370-373）；F9 增 `san_attacked_refs: set`（@202，被攻击组场内去重：同场同 enemy_ref 只首命中 check，_resolve_enemy_action 写入）。
 
@@ -387,13 +388,13 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1165 |
 | `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1173 |
 | `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 control 检查跳过；命中技能优先读 attack.skill_value（>0），否则 (DEX+POW)//2，再加 dodge_bonus（F13）；buff 减伤；被攻击 SAN check @1240-1254（F9 收口：同场同 enemy_ref 只首次命中触发，state.san_attacked_refs 场内去重不入档，multi_attack 不叠加）；F5：loss>0 时经 getattr 防御式调 world.on_san_loss @1248-1253（触发疯狂 text 追加「（疯狂侵袭）」进 narrative） | 1177 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；F10：world.player.timed_effects 中 `interval==round` 条目每轮调 `apply_effect_payload`；调用点 run_combat @406 / run_single_round @595 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1265 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1280 / 1304 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1325 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1335 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1354 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1382 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1489 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；F10：world.player.timed_effects 中 `interval==round` 条目每轮调 `apply_effect_payload`（单条 try/except 隔离，失败记 `[F10] payload 结算失败` 继续下条）；调用点 run_combat @406 / run_single_round @595 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1265 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1290 / 1314 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1335 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1345 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1364 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1392 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1499 |
 
 ## src/game/judge.py (562 行) — 确定性闸门（无 LLM 依赖）
 
@@ -536,7 +537,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (1923 行) — 数据模型 + 世界状态
+## src/scenario_core.py (1981 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -562,8 +563,8 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具 | 213 / 228 |
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@554 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 557 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 563 |
-| `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1421 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口） | 1447 |
+| `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；每原子 try/except 隔离（失败记 `[F10] payload 结算失败` 仍返回已积累 msgs）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1427 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口） | 1458 |
 
 ### DirectedGraph（@290）
 
@@ -589,7 +590,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `game_time` / `day` / `hour` / `time_of_day` / `time_context` | property | 时钟透出 | 729–749 |
 | `advance_time` | `(minutes)` | **三合一 + F8 日界恢复 + F18 时刻事件 + F10 周期效应**：推进时钟前捕获 `old_day`/`old_time` + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2） + `_tick_time_effects`（含 F10 hour/day payload） + `_apply_daily_recovery(old_day)` + `_fire_scheduled_events(old_time)`（F8 恢复后再 fire；keeper 每回合经 TimeAgent time_delta 走此单一入口） | 752 |
 | `_fire_scheduled_events` | `(old_time)` | F18：`old_time < at_minutes ≤ now` 的事件按 `at_minutes` 排序触发；payload=markup 走 `parse_markup_all`+`apply_side_effects`；每事件 try/except 隔离（失败记 `[F18] 时刻事件结算失败` exception 仍出队）；触发后按对象 id 出队（一次性）；空队列/未跨越 no-op | 773 |
-| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；F10：hour/day interval 按 `_fired`/`start_at`（首次 tick 持久化 `start_at=old`，后续跨拍累计）跨越次数循环结算 payload，然后 timed_effects 到期清除 | 800 |
+| `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；F10：hour/day interval 按 `_fired`/`start_at`（首次 tick 持久化 `start_at=old`，后续跨拍累计）跨越次数循环结算 payload（循环 try/except 后**始终** `_fired=total` 防重放），然后 timed_effects 到期清除 | 800 |
 | `_apply_daily_recovery` | `(old_day)` | F8：跨日界恢复。无 player / days≤0 return；速率读 game_config（`hp_recovery_per_day` 默认 1 / `san_recovery_per_day` 默认 0）；HP/SAN 分别 clamp HP_MAX/SAN_MAX。函数内 import get_game_config（monkeypatch 可达） | 850 |
 | `set_insanity_llm` | `(llm_call)` | F5：注入疯狂文本生成器 callable(prompt)->str（Task 2 由 game_loop 注入）；None=回退固定文案 | 867 |
 | `on_san_loss` | `(loss, source="") -> dict` | F5 统一疯狂判定钩子（所有 SAN 损失出口汇入）：无 player / loss≤0 no-op 返回 {temporary:False, indefinite:False}；惰性跨日清零（san_day≠clock.day → san_lost_today=0、san_day=day、san_at_day_start=当前 SAN）；单次损失≥5 且未 temporary → `check_skill("INT")` 失败置 temporary（一次，文本经 _gen_insanity_text）；当日累计 ≥ max(1, san_at_day_start//5) 且未 indefinite → 置 indefinite（一次）；返回触发标志供调用方追加叙事 | 871 |
