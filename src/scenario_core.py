@@ -857,6 +857,7 @@ class ScenarioWorld:
 
     def _gen_insanity_text(self, kind: str, source: str) -> str:
         """LLM 现场生成（Task 2 注入）；未注入时回退固定文案。"""
+        import logging
         if self._insanity_llm is None:
             return f"（{kind}）"
         try:
@@ -866,6 +867,8 @@ class ScenarioWorld:
             text = (self._insanity_llm(prompt) or "").strip()
             return text[:100] if text else f"（{kind}）"
         except Exception:
+            logging.getLogger("scenario_core").warning(
+                "[F5] 疯狂文本生成失败，回退固定文案", exc_info=True)
             return f"（{kind}）"
 
     def get_time_flags(self) -> dict:
@@ -1501,7 +1504,10 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                     if loss > 0:
                         trig = world.on_san_loss(loss, "事件冲击")
                         if trig["temporary"] or trig["indefinite"]:
-                            msgs.append(f"[疯狂] {world.player.insanity.get('temporary') or world.player.insanity.get('indefinite')}")
+                            kind_text = (world.player.insanity.get("temporary")
+                                         if trig["temporary"]
+                                         else world.player.insanity.get("indefinite"))
+                            msgs.append(f"[疯狂] {kind_text}")
                 # Apply narrative description via LLM if present
                 if effect.narrative and hasattr(world.player, 'personal_description'):
                     try:

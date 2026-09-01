@@ -26,6 +26,7 @@
 | # | 问题 | 修法/备注 |
 |---|------|----------|
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
+| B20 | **战斗 SAN 双轨不同步**(F5 联动) | 战斗内施法 SAN 直扣 derived.SAN,但 witness/attacked 损失记在战斗局部 state.player_san,战斗结束 game_loop 写回覆盖 -> 施法 SAN 被隐式退还;F5 on_san_loss 已累计该损失,造成疯狂账目与 SAN 值不一致(20c98cb 暴露,预存问题)。修法方向:战斗侧 SAN 收敛单轨(施法扣减改走战斗局部,或结束时两轨合并) |
 
 ### 🟢 Minor(攒一批顺手清)
 
