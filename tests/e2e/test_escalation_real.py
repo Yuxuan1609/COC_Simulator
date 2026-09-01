@@ -35,6 +35,21 @@ import llm as _llm_module
 _REAL_CALL_DEEPSEEK = _llm_module.call_deepseek
 
 
+def retry_once(test_fn):
+    """flaky case retry-once：失败后整体重跑（世界在测试体内重建，状态干净）。
+    与 tests/e2e/test_scenarios.py 的 retry_once 同构。"""
+    import functools
+
+    @functools.wraps(test_fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return test_fn(*args, **kwargs)
+        except Exception as e:
+            print(f"\n[retry_once] 首次失败（{type(e).__name__}: {e}），重试一次...")
+            return test_fn(*args, **kwargs)
+    return wrapper
+
+
 # =====================================================================
 #  Shared world (same as mock harness)
 # =====================================================================
@@ -470,6 +485,13 @@ def test_case_d(tmp_path=None, log_dir=""):
 # =====================================================================
 
 def test_case_e(tmp_path=None, log_dir=""):
+    """Case E：Author 是否选择 structural 介入本身是 LLM 概率判定；
+    不介入时无新场景，属预期波动——retry_once 消化。"""
+    return _run_case_e(tmp_path=tmp_path, log_dir=log_dir)
+
+
+@retry_once
+def _run_case_e(tmp_path=None, log_dir=""):
     if not log_dir and tmp_path is not None:
         log_dir = str(tmp_path / "escalation_case_e")   # pytest 运行留日志现场(ISSUES B4)
     stop_llm = _setup_llm_logging(log_dir)

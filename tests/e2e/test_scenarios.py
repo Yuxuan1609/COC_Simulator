@@ -680,3 +680,156 @@ class TestS16SaveLoadContinue:  # 统一存档批：真实 LLM 下 save→load�
                 f"宽断言：读档后 narrative 非空且长度>20: {r2.narrative[:80]}"
         finally:
             stop()
+
+
+class TestS17InsanityRealLLM:  # F5 疯狂体系：真实 LLM 生成疯狂文本 + 下回合 prompt 注入
+    """S17：交互 markup 单次 SAN-6 → on_san_loss → INT 检定（骰点钉死 100 必败）
+    → 临时疯狂，文本由真实 _insanity_llm 生成（非回退固定文案）；随后普通回合
+    全真实 LLM（疯狂状态注入 keeper parse/narrator prompt，管线不崩）。
+    enrich/time_agent/narrator 真实；LLM 波动由 retry_once 消化。"""
+
+    @retry_once
+    def test_san_loss_triggers_llm_madness_text(self, monkeypatch):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        from llm import call_deepseek
+        from config_llm import LLM_FLASH_MODEL
+        log_dir = _scenario_log_dir("s17_insanity")
+        stop = setup_llm_logging(log_dir)
+        try:
+            statue = {
+                "id": "IT_STATUE", "entity_type": "interaction",
+                "name": "凝视邪异雕像", "scene": "room_a",
+                "type": "无", "requirement": "",
+                "trigger": "凝视那面邪异的雕像",
+                "result": "雕像的眼睛似乎在跟着你移动，理智被寒意侵蚀。",
+                "side_effects": ['@stat_change(stat_name="SAN", delta=-6)'],
+                "difficulty": "None",
+            }
+            world = make_world(
+                {"room_a": make_scene(interactions=[statue])}, "room_a")
+            inv = _player(world)
+            inv.derived.SAN = 50
+            world.set_insanity_llm(lambda p: call_deepseek(
+                p, json_mode=False, model=LLM_FLASH_MODEL,
+                system="你是 COC 7th KP 助理，用简洁中文描写调查员的疯狂表现。"))
+            game = _real_game(world, _l1("room_a"))
+            # INT 检定骰点钉死必败（随机数非 LLM，同 S16 模式）
+            monkeypatch.setattr("investigator.models.random.randint",
+                                lambda a, b: 100)
+
+            r1 = run_turn(game, "我走上前，凝视那面邪异的雕像")
+            assert_player_turn_contract(r1)
+            assert r1.status == TurnStatus.COMPLETED, f"status={r1.status}"
+            assert inv.derived.SAN == 44, f"SAN 应 50-6=44，实际 {inv.derived.SAN}"
+            madness = inv.insanity.get("temporary", "")
+            assert madness, "单次损失≥5 且 INT 失败必须置临时疯狂"
+            assert madness != "（临时疯狂）", \
+                f"疯狂文本必须由真实 LLM 生成，实际回退文案: {madness}"
+            assert len(madness) <= 100, f"疯狂文本超长（cap 100）: {len(madness)}"
+            assert "insanity" in inv.build_snapshot(), \
+                "疯狂状态必须进入 player snapshot"
+
+            # 下回合：疯狂状态注入 keeper/narrator prompt，全真实管线不崩
+            r2 = run_turn(game, "我深吸一口气，环顾这个房间")
+            assert_player_turn_contract(r2)
+            assert r2.status == TurnStatus.COMPLETED, \
+                f"疯狂状态下回合应正常完成，实际 status={r2.status}"
+            assert r2.narrative and len(r2.narrative) > 20
+        finally:
+            stop()
+
+
+class TestS18RepeatableEntity:  # F23 可重复实体：真实 parse 二刷不被硬挡
+    """S18：repeatable=true 交互实体，真实 parse 两次映射同一实体；
+    第二次执行不得返回「已触发过」硬挡。enrich/time_agent/narrator 真实。"""
+
+    @retry_once
+    def test_repeatable_entity_reruns_real_parse(self):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s18_repeatable")
+        stop = setup_llm_logging(log_dir)
+        try:
+            diary = {
+                "id": "IT_DIARY", "entity_type": "interaction",
+                "name": "阅读桌上的日记", "scene": "room_a",
+                "type": "无", "requirement": "",
+                "trigger": "阅读桌上的日记",
+                "result": "你翻阅日记，泛黄的纸页记录着主人最后的日子。",
+                "side_effects": [], "difficulty": "None",
+                "repeatable": True,
+            }
+            world = make_world(
+                {"room_a": make_scene(interactions=[diary])}, "room_a")
+            _player(world)
+            game = _real_game(world, _l1("room_a"))
+
+            r1 = run_turn(game, "我阅读桌上的日记")
+            assert_player_turn_contract(r1)
+            assert r1.status == TurnStatus.COMPLETED, f"T1 status={r1.status}"
+            assert world.is_entity_completed("IT_DIARY"), "首刷后实体必须 completed"
+
+            r2 = run_turn(game, "我再仔细读一遍桌上的日记")
+            assert_player_turn_contract(r2)
+            assert r2.status == TurnStatus.COMPLETED, f"T2 status={r2.status}"
+            text = f"{r2.brief}\n{r2.narrative}"
+            assert "已触发过" not in text, \
+                f"repeatable 实体二刷不得硬挡: {text[:200]}"
+            assert any(kw in text for kw in ("日记", "纸页", "读")), \
+                f"宽断言：二刷叙事须含日记语义: {text[:200]}"
+        finally:
+            stop()
+
+
+class TestS19TimeEffects:  # F18 时刻事件 + F10 周期效应：共用 advance_time 跨越
+    """S19：time_agent 单点 stub 钉 150 分钟（时间推进非本场景断言目标）；
+    其余 parse/enrich/narrator 全真实。跨越结算：
+    - F18：at=60 的时刻事件 markup（SAN-2）触发并出队
+    - F10：hourly heal+1 timed 条目结算 2 次（150//60）"""
+
+    @retry_once
+    def test_scheduled_event_and_periodic_payload(self):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s19_time_effects")
+        stop = setup_llm_logging(log_dir, stubs={
+            "time_agent": {"time_delta": 150, "narrative_hint": "时间流逝"},
+        })
+        try:
+            from investigator import Investigator
+            from investigator.models import Stats
+            from investigator.rules import calc_derived
+            world = make_world({"room_a": make_scene()}, "room_a")
+            inv = Investigator(name="测试员", stats=Stats(
+                STR=50, CON=60, DEX=50, APP=50, INT=70, POW=60, EDU=70, LUCK=50))
+            inv.derived = calc_derived(inv.stats)
+            world.set_player(inv)
+            inv.derived.HP = max(1, inv.derived.HP_MAX - 3)
+            inv.derived.SAN = 50
+            now = world.clock.game_time
+            world.scheduled_events.append({
+                "id": "ev_chill", "at_minutes": now + 60,
+                "markup": '@stat_change(stat_name="SAN", delta=-2)',
+                "description": "寒意侵袭",
+            })
+            inv.timed_effects.append({
+                "id": "营地休养", "description": "", "interval": "hour",
+                "expire_at": now + 600,
+                "payload": [{"type": "heal", "delta": 1}],
+            })
+            game = _real_game(world, _l1("room_a"))
+            hp0, san0 = inv.derived.HP, inv.derived.SAN
+
+            r = run_turn(game, "我在房间里静坐休息，等待体力恢复")
+            assert_player_turn_contract(r)
+            assert r.status == TurnStatus.COMPLETED, f"status={r.status}"
+            assert world.clock.game_time == now + 150, \
+                f"时钟应推进 150 分钟，实际 {world.clock.game_time - now}"
+            assert world.scheduled_events == [], "时刻事件触发后必须出队"
+            assert inv.derived.SAN == san0 - 2, \
+                f"F18 事件 markup 须结算 SAN-2，实际 {inv.derived.SAN - san0}"
+            assert inv.derived.HP == hp0 + 2, \
+                f"F10 hourly payload 须结算 2 次（+2 HP），实际 {inv.derived.HP - hp0}"
+        finally:
+            stop()
