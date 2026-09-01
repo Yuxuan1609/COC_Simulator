@@ -231,6 +231,9 @@ def cross_validate_layers(
             known_entities.add(eid)
         if ename:
             known_entities.add(ename)
+    for be in l2_data.get("boss_encounters") or []:
+        if isinstance(be, dict) and be.get("id"):
+            known_entities.add(be["id"])
     for eid, places in id_places.items():
         if len(places) > 1:
             report.add(

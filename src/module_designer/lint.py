@@ -86,9 +86,27 @@ def run_lint(module_dir: str) -> int:
     raw_graph = l2.get("dependency_graph")
     if isinstance(raw_graph, dict) and raw_graph.get("nodes"):
         eg = DependencyGraph.from_dict(raw_graph)
+        seeds: set[str] = set()
         if start in eg.nodes:
-            for nid in eg.reachable_from(start):
-                _add("warning", f"实体「{nid}」从起点不可达（依赖图 BFS）")
+            seeds.add(start)
+        for scene_name, _kind, ent in _iter_l2_entities(l2):
+            eid = ent.get("id") or ""
+            if eid in eg.nodes and (scene_name == start or ent.get("scene") == start):
+                seeds.add(eid)
+        for be in l2.get("boss_encounters") or []:
+            if not isinstance(be, dict):
+                continue
+            eid = be.get("id") or ""
+            if eid in eg.nodes and be.get("scene") == start:
+                seeds.add(eid)
+        if seeds:
+            reached: set[str] = set()
+            for seed in seeds:
+                unreach = set(eg.reachable_from(seed))
+                reached |= set(eg.nodes) - unreach
+            for nid in eg.nodes:
+                if nid not in reached:
+                    _add("warning", f"实体「{nid}」从起点不可达（依赖图 BFS）")
 
     counts = _difficulty_counts(l2)
     if counts:

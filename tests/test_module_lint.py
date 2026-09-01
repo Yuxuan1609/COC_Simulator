@@ -106,6 +106,56 @@ class TestLintChecks:
         assert report.errors, "未知 flag/实体引用必须是 error"
         assert "ghost_flag" in joined
 
+    def test_entity_reachability_from_start_scene_seeds(self, tmp_path, capsys):
+        """start_scene 实体作种子；图中不可达实体 id 报 warning。"""
+        from module_designer.lint import run_lint
+
+        graph = {
+            "nodes": {
+                "IT_A": {"entity_id": "IT_A", "entity_type": "interaction", "name": "a"},
+                "IT_B": {"entity_id": "IT_B", "entity_type": "interaction", "name": "b"},
+                "IT_ISOLATED": {"entity_id": "IT_ISOLATED", "entity_type": "interaction", "name": "iso"},
+            },
+            "edges": [
+                {"source": "IT_A", "target": "IT_B", "dep_type": "interaction"},
+            ],
+        }
+        mod = tmp_path / "reach"
+        mod.mkdir()
+        (mod / "l1_player.json").write_text(
+            json.dumps(_l1(("s1", "s2")), ensure_ascii=False), encoding="utf-8")
+        (mod / "l2_keeper.json").write_text(
+            json.dumps(_l2({
+                "s1": [_entity("IT_A", scene="s1")],
+                "s2": [_entity("IT_ISOLATED", scene="s2")],
+            }, graph=graph), ensure_ascii=False), encoding="utf-8")
+        (mod / "l3_designer.json").write_text(
+            json.dumps(_l3(("s1", "s2")), ensure_ascii=False), encoding="utf-8")
+        run_lint(str(mod))
+        out = capsys.readouterr().out
+        assert "实体「IT_ISOLATED」从起点不可达" in out
+        assert "实体「IT_A」从起点不可达" not in out
+        assert "实体「IT_B」从起点不可达" not in out
+
+    def test_ending_ref_known_boss_ok_unknown_errors(self):
+        """结局提到已有 boss id 不报错；未知 BOSS_X 报 error。"""
+        from module_designer.layered_pipeline import cross_validate_layers
+        l1 = _l1()
+        l2 = _l2({"s1": [_entity("I1")]})
+        l2["boss_encounters"] = [{
+            "id": "BOSS_T1",
+            "boss_ref": "测试魔像",
+            "scene": "s1",
+        }]
+        report_ok = cross_validate_layers(
+            l1, l2, _l3(endings=[{"id": "END_1", "condition": "击败 BOSS_T1 后"}]))
+        assert not any("BOSS_T1" in i.message for i in report_ok.errors)
+        report_bad = cross_validate_layers(
+            l1, l2, _l3(endings=[{"id": "END_1", "condition": "击败 BOSS_X 后"}]))
+        joined = " ".join(str(i) for i in report_bad.issues)
+        assert report_bad.errors
+        assert "BOSS_X" in joined
+
     def test_cli_exit_code(self, tmp_path):
         """CLI：有 error → exit 1；干净模组 → exit 0。"""
         from module_designer.lint import run_lint
