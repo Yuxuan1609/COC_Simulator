@@ -318,14 +318,24 @@ def _setup_llm_logging(log_dir):
     return stop
 
 
+def _case_log_dir(name, tmp_path, log_dir):
+    """B4 修复：pytest 不给带默认值的参数注入 tmp_path（=None），
+    原 `tmp_path / ...` 分支从不触发，log_dir="" 导致日志全丢。
+    兜底：tmp_path 缺失时落 OUT_ROOT 持久目录。"""
+    if log_dir:
+        return log_dir
+    if tmp_path is not None:
+        return str(tmp_path / f"escalation_{name}")
+    return os.path.join(OUT_ROOT, name)
+
+
 # =====================================================================
 #  Case A: normal entity match
 # =====================================================================
 
 @pytest.mark.real_llm_smoke
 def test_case_a(tmp_path=None, log_dir=""):
-    if not log_dir and tmp_path is not None:
-        log_dir = str(tmp_path / "escalation_case_a")   # pytest 运行留日志现场(ISSUES B4)
+    log_dir = _case_log_dir("case_a", tmp_path, log_dir)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     keeper = Keeper(world)
@@ -359,8 +369,7 @@ def test_case_a(tmp_path=None, log_dir=""):
 # =====================================================================
 
 def test_case_b(tmp_path=None, log_dir=""):
-    if not log_dir and tmp_path is not None:
-        log_dir = str(tmp_path / "escalation_case_b")   # pytest 运行留日志现场(ISSUES B4)
+    log_dir = _case_log_dir("case_b", tmp_path, log_dir)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     keeper = Keeper(world)
@@ -392,8 +401,7 @@ def test_case_b(tmp_path=None, log_dir=""):
 # =====================================================================
 
 def test_case_c(tmp_path=None, log_dir=""):
-    if not log_dir and tmp_path is not None:
-        log_dir = str(tmp_path / "escalation_case_c")   # pytest 运行留日志现场(ISSUES B4)
+    log_dir = _case_log_dir("case_c", tmp_path, log_dir)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     keeper = Keeper(world)
@@ -440,8 +448,7 @@ def test_case_c(tmp_path=None, log_dir=""):
 # =====================================================================
 
 def test_case_d(tmp_path=None, log_dir=""):
-    if not log_dir and tmp_path is not None:
-        log_dir = str(tmp_path / "escalation_case_d")   # pytest 运行留日志现场(ISSUES B4)
+    log_dir = _case_log_dir("case_d", tmp_path, log_dir)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     world.wr0_enabled = False
@@ -492,8 +499,7 @@ def test_case_e(tmp_path=None, log_dir=""):
 
 @retry_once
 def _run_case_e(tmp_path=None, log_dir=""):
-    if not log_dir and tmp_path is not None:
-        log_dir = str(tmp_path / "escalation_case_e")   # pytest 运行留日志现场(ISSUES B4)
+    log_dir = _case_log_dir("case_e", tmp_path, log_dir)
     stop_llm = _setup_llm_logging(log_dir)
     world = _make_world()
     world.wr0_enabled = True  # Enable WR0 so Author can choose structural
