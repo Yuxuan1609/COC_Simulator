@@ -700,6 +700,7 @@ class ScenarioWorld:
         self.spell_library = spell_library    # 统一资源层：法术库
         self._mp_regen_acc = 0        # MP 恢复分钟累计器(时间钩子)
         self.san_seen_sources: set[str] = set()   # F9: 目睹 SAN 全局去重(入档)
+        self._insanity_llm = None   # F5 疯狂文本生成器（Task 2 由 game_loop 注入）
         self.clues: list = []
         self.narrative_memory: list = []
 
@@ -818,6 +819,54 @@ class ScenarioWorld:
             d.HP = min(d.HP_MAX, d.HP + hp_rate * days)
         if san_rate:
             d.SAN = min(d.SAN_MAX, d.SAN + san_rate * days)
+
+    def set_insanity_llm(self, llm_call):
+        """注入疯狂文本生成器 callable(prompt)->str。None=回退固定文案。"""
+        self._insanity_llm = llm_call
+
+    def on_san_loss(self, loss: int, source: str = "") -> dict:
+        """F5 疯狂判定钩子：所有 SAN 损失出口统一汇入（S3-P2 spec §1）。
+        返回 {"temporary": bool, "indefinite": bool} 供调用方追加叙事。"""
+        import logging
+        result = {"temporary": False, "indefinite": False}
+        p = self.player
+        if p is None or loss <= 0:
+            return result
+        ins = p.insanity
+        day = self.clock.day
+        if ins.get("san_day") != day:  # 惰性跨日清零
+            ins["san_lost_today"] = 0
+            ins["san_day"] = day
+            ins["san_at_day_start"] = p.derived.SAN
+        ins["san_lost_today"] = int(ins.get("san_lost_today", 0)) + loss
+        if loss >= 5 and not ins.get("temporary"):
+            ok, msg, tier = p.check_skill("INT")
+            if not ok:
+                ins["temporary"] = self._gen_insanity_text("临时疯狂", source)
+                result["temporary"] = True
+                logging.getLogger("scenario_core").info(
+                    "[F5] 临时疯狂触发（单次损失 %d，%s）", loss, source)
+        start = int(ins.get("san_at_day_start", 0) or 0)
+        if (start and not ins.get("indefinite")
+                and ins["san_lost_today"] >= max(1, start // 5)):
+            ins["indefinite"] = self._gen_insanity_text("总结性疯狂", source)
+            result["indefinite"] = True
+            logging.getLogger("scenario_core").info(
+                "[F5] 总结性疯狂触发（当日累计 %d/%d）", ins["san_lost_today"], start)
+        return result
+
+    def _gen_insanity_text(self, kind: str, source: str) -> str:
+        """LLM 现场生成（Task 2 注入）；未注入时回退固定文案。"""
+        if self._insanity_llm is None:
+            return f"（{kind}）"
+        try:
+            p = self.player
+            prompt = (f"调查员{p.name}因{source or '理智冲击'}陷入{kind}。"
+                      f"用不超过 60 字中文描述其疯狂表现（如幻觉/偏执/歇斯底里），只写表现本身。")
+            text = (self._insanity_llm(prompt) or "").strip()
+            return text[:100] if text else f"（{kind}）"
+        except Exception:
+            return f"（{kind}）"
 
     def get_time_flags(self) -> dict:
         return self.clock.get_time_flags()
@@ -1444,8 +1493,15 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                 npc_events.append(f"{effect.npc_name} {status}你")
         elif isinstance(effect, StatChange):
             if world.player:
+                before_san = world.player.derived.SAN
                 new_val, detail = world.player.modify_stat(effect.stat_name, effect.delta)
                 msgs.append(f"[属性变化] {detail}")
+                if effect.stat_name.strip().upper() == "SAN":
+                    loss = before_san - world.player.derived.SAN
+                    if loss > 0:
+                        trig = world.on_san_loss(loss, "事件冲击")
+                        if trig["temporary"] or trig["indefinite"]:
+                            msgs.append(f"[疯狂] {world.player.insanity.get('temporary') or world.player.insanity.get('indefinite')}")
                 # Apply narrative description via LLM if present
                 if effect.narrative and hasattr(world.player, 'personal_description'):
                     try:

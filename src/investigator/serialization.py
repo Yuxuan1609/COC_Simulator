@@ -95,6 +95,7 @@ def to_dict(inv: Investigator) -> dict:
         "avatar_url": inv.avatar_url,
         "known_spells": list(getattr(inv, 'known_spells', [])),
         "timed_effects": [dict(t) for t in getattr(inv, 'timed_effects', [])],
+        "insanity": dict(getattr(inv, 'insanity', {}) or {}),
     }
 
 
@@ -193,6 +194,7 @@ def from_dict(data: dict) -> Investigator:
         import logging
         logging.getLogger("investigator.serialization").warning(
             "timed_effects 过滤 %d 个坏元素", _dropped)
+    inv.insanity = dict(data.get("insanity", {}) or {})
     return inv
 
 

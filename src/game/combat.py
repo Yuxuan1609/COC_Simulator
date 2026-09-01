@@ -147,14 +147,14 @@ def parse_san_loss(san_loss: str) -> list:
 def _san_check_and_lose(san: int, success_formula: str, fail_formula: str) -> tuple:
     """COC 7th 遭遇理智检定:D100 <= 当前 SAN 为成功;成功掉 success、失败掉 fail。
 
-    返回 (损失点数, 叙事文本)。单次损失>=5 记 log(临时疯狂条件,F5 未实现)。"""
+    返回 (损失点数, 叙事文本)。单次损失>=5 记 log;疯狂判定由调用方经 world.on_san_loss 收口(F5)。"""
     import logging
     roll = random.randint(1, 100)
     ok = roll <= san
     loss = max(0, _san_loss_roll(success_formula if ok else fail_formula))
     if loss >= 5:
         logging.getLogger("combat").info(
-            "[san] 单次损失 %d >= 5(临时疯狂条件;疯狂体系 ISSUES F5 未实现)", loss)
+            "[san] 单次损失 %d >= 5(临时疯狂条件;F5 由调用方 on_san_loss 判定)", loss)
     tier_txt = "成功" if ok else "失败"
     text = (f"理智检定{tier_txt}(D100={roll}/{san})"
             + (f"，失去 {loss} 点 SAN" if loss else "，未失去 SAN"))
@@ -803,6 +803,12 @@ class CombatSystem:
             loss, text = _san_check_and_lose(
                 state.player_san, witness[0], witness[1])
             state.player_san = max(0, state.player_san - loss)
+            if loss and self.world is not None:
+                _on_san = getattr(self.world, "on_san_loss", None)
+                if callable(_on_san):
+                    trig = _on_san(loss, "战斗遭遇")
+                    if trig["temporary"] or trig["indefinite"]:
+                        text += "（疯狂侵袭）"
             state.san_log.append(f"你遭遇{ref}：{text}。")
             if global_seen is not None:
                 global_seen.add(ref)
@@ -928,6 +934,8 @@ class CombatSystem:
             player.derived.MP -= need_mp
             if need_san:
                 player.derived.SAN = max(0, player.derived.SAN - need_san)
+                if self.world is not None:
+                    self.world.on_san_loss(need_san, "施法")
 
             target = None
             for e in state.enemies:
@@ -1237,6 +1245,12 @@ class CombatSystem:
                 loss, text = _san_check_and_lose(
                     state.player_san, attacked[0], attacked[1])
                 state.player_san = max(0, state.player_san - loss)
+                if loss and self.world is not None:
+                    _on_san = getattr(self.world, "on_san_loss", None)
+                    if callable(_on_san):
+                        trig = _on_san(loss, "战斗遭遇")
+                        if trig["temporary"] or trig["indefinite"]:
+                            text += "（疯狂侵袭）"
                 action.narrative += f" 恐惧侵蚀：{text}。"
         else:
             action.narrative = f"{enemy_label}的{attack_name}未能命中你。"

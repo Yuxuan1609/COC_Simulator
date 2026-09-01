@@ -199,6 +199,7 @@ class Investigator:
         self.label: str = ""                  # 职业标签名（U9 标签制）
         self.known_spells: list[str] = []     # 已知法术 spell_id 列表（U6 统一资源层）
         self.timed_effects: list[dict] = []   # timed 原子软状态 [{id, description, expire_at}]（2026-08-21 spec §2）
+        self.insanity: dict = {}              # F5 疯狂状态 {temporary, indefinite, san_lost_today, san_day, san_at_day_start}（S3-P2 spec §1）
 
     # ── 兼容旧 Player 接口 ──
 

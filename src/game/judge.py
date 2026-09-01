@@ -160,6 +160,9 @@ class Judge:
                 player.derived.SAN += need_san
             if consumed_item:
                 player.item_manager.add(consumed_item, quantity=1)
+        if need_san and (success or not material.refund_on_fail):
+            if getattr(self, "world", None) is not None:
+                self.world.on_san_loss(need_san, "施法")
 
         # 结果槽（tier 选用）
         slots = material.result_slots or {}
