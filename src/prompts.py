@@ -144,6 +144,13 @@ def _build_investigator_info(snap: dict) -> str:
     parts = [f"  姓名：{p['name']}"]
     if p.get("description"):
         parts.append(f"  描述：{p['description']}")
+    ins = p.get("insanity") or {}
+    label_map = {"temporary": "临时疯狂", "indefinite": "总结性疯狂",
+                 "phobia": "恐惧症", "mania": "躁狂症"}
+    active = [f"{label_map[k]}={v}" for k, v in ins.items() if k in label_map and v]
+    if active:
+        parts.append("  疯狂状态：" + "；".join(active)
+                     + "（叙事与检定演绎其影响，不机械复述）")
     return "【调查员】\n" + "\n".join(parts) + "\n"
 
 
@@ -916,6 +923,7 @@ Entity 字段规则：
 - side_effects: 间接后果——与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
 - difficulty: None / regular / hard / extreme；不涉及检定则为 None
 - graded_result: type 不为"无"时填写。四等级：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功（≤技能值/2）、on_extreme=极难成功（≤技能值/5）。若原文未区分等级，各等级可描述相同内容
+- 若调查员处于疯狂状态（见【调查员】块），相关检定与结果描述应体现疯狂的影响
 - entities 的 result/side_effects 不涉及进入与怪物的战斗/对抗/追捕（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - @标记可嵌入 result / side_effects / graded_result 任意字段中，与普通文本混合。间接/附带影响使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true) / @grant_spell(spell_ref="法术库名称或id"). @grant_weapon 若 scene 为空，表示直接授予调查员（等价于搜索拾取武器的流程，只是触发条件不同）
 

@@ -190,3 +190,35 @@ class TestSanLossOutletWiring:
         assert not out.success
         assert inv.derived.SAN == 50, "refund_on_fail 退回 SAN"
         assert not inv.insanity.get("san_lost_today"), "退款不计当日疯狂累计"
+
+
+class TestInsanityPresentation:
+    def test_llm_generator_used_when_injected(self, monkeypatch):
+        world, inv = _world_with_player(int_val=60)
+        world.set_insanity_llm(lambda p: "他开始对着空气低语")
+        monkeypatch.setattr("investigator.models.random.randint", lambda a, b: 100)
+        world.on_san_loss(5, "markup")
+        assert inv.insanity["temporary"] == "他开始对着空气低语"
+
+    def test_snapshot_carries_insanity_only_when_active(self):
+        world, inv = _world_with_player()
+        assert "insanity" not in inv.build_snapshot()
+        inv.insanity = {"temporary": "幻觉丛生"}
+        assert inv.build_snapshot()["insanity"]["temporary"] == "幻觉丛生"
+        inv.insanity = {"san_lost_today": 9, "san_day": 1}
+        assert "insanity" not in inv.build_snapshot()
+
+    def test_investigator_info_renders_insanity(self):
+        from prompts import _build_investigator_info
+        world, inv = _world_with_player()
+        inv.insanity = {"temporary": "幻觉丛生", "phobia": "幽闭恐惧"}
+        text = _build_investigator_info(world.build_snapshot())
+        assert "疯狂状态" in text
+        assert "幻觉丛生" in text
+        assert "幽闭恐惧" in text
+        assert "演绎" in text
+
+    def test_investigator_info_no_insanity_no_line(self):
+        from prompts import _build_investigator_info
+        world, inv = _world_with_player()
+        assert "疯狂状态" not in _build_investigator_info(world.build_snapshot())

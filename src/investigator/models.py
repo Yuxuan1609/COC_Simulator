@@ -304,7 +304,7 @@ class Investigator:
 
     def build_snapshot(self) -> dict:
         """Return a lightweight dict of player state for prompt contexts."""
-        return {
+        snap = {
             "name": self.name,
             "hp": self.derived.HP,
             "max_hp": self.derived.HP_MAX,
@@ -319,6 +319,12 @@ class Investigator:
             ),
             "description": self.personal_description or "",
         }
+        ins = getattr(self, "insanity", None) or {}
+        active = {k: v for k, v in ins.items()
+                  if k in ("temporary", "indefinite", "phobia", "mania") and v}
+        if active:
+            snap["insanity"] = active
+        return snap
 
     # ── 修改（供未来游戏循环使用）──
 

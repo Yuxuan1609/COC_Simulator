@@ -250,6 +250,14 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     dep_graph = l2.get("dependency_graph", {})
     world.load_dependency_graph(dep_graph)
 
+    def _insanity_llm(prompt: str) -> str:
+        from llm import call_deepseek
+        from config_llm import LLM_FLASH_MODEL
+        return call_deepseek(
+            prompt, json_mode=False, model=LLM_FLASH_MODEL,
+            system="你是 COC 7th KP 助理，用简洁中文描写调查员的疯狂表现。")
+    world.set_insanity_llm(_insanity_llm)
+
     # 显式执行 world 场景的 auto_triggers（world 不是玩家可达场景）
     world_node = graph.nodes.get("world")
     _pending_world_items: list[ItemGain] = []  # 延后：玩家尚未设置时暂存
