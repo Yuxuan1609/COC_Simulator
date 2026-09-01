@@ -680,7 +680,7 @@ STEP2C_L3_SYSTEM = f"""你是一个优秀的 TRPG 模组设计师，专门提取
 {json.dumps(L3_TEMPLATE, ensure_ascii=False, indent=2)}
 
 要求：
-1. module_meta：模组元信息。优先使用 Step 1a 已提取的值（title/era/theme），仅补充 Step 1a 中为空的字段（author/expected_duration/player_count）
+1. module_meta：模组元信息。优先使用 Step 1a 已提取的值（title/era/theme），仅补充 Step 1a 中为空的字段（author/expected_duration/player_count）；另填 player_goal（一句话玩家目标，如「调查古宅真相并活着离开」）
 2. world_rules：描述世界运行规则列表，每个含 id (WR1, WR2...), name, rule, scope, is_absolute
     - 例如: 当前模组基于梦境展开，所以使用现代科技对抗是不可能的
 3. scene_intents：每个场景的设计意图，key 为已知场景列表，value 含 purpose / key_threat (可选) / notes (可选)

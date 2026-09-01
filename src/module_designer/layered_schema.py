@@ -116,6 +116,7 @@ L3_MODULE_META_SCHEMA = {
     "theme": {"required": False},
     "expected_duration": {"required": False},
     "player_count": {"required": False},
+    "player_goal": {"required": False},
 }
 
 L3_WORLD_RULE_SCHEMA = {

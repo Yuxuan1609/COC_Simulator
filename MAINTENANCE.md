@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F32 试玩报告（S3-P2 Task 7，spec §6）：纯聚合零 rubric 零 LLM。新建 `playtest_report.py`（215 行）：`build_report`/`render_markdown`/`run_report`/`resolve_player_goal`。场景覆盖=turns_detail.location 去重；结局=ending 字段+回合；实体触发=skill_results.entity_id ∪ mech `entities=`/`at=` ∩ `_iter_l2_entities`（含 NPC-bound）；检定分布=skill_results × L2 `difficulty`/`check.difficulty`（未知 entity_id→unknown）；耗时=summary.total_elapsed_s+turns。goal 缺省：profile.goal → L3 `module_meta.player_goal` → driving_force[:80]；`run_llm_player` 仅 test_mode==goal 时回填，不改 PLAYER_SYSTEM。生成端：L3 schema/ModuleMeta/`l3_template.json` 加 optional `player_goal`；STEP2C_L3_SYSTEM 加一句字段说明。TDD：tests/test_playtest_report.py 14 测 RED（ModuleNotFoundError）→ GREEN。全量 453 passed / 21 deselected（基线 438+14；1 既有用例）。未改 PLAYER_SYSTEM，跳过 real_llm_smoke。 |
 | 2026-09-01 | F31 lint 复审 Important：① `_iter_l2_entities` 纳入 `npc_profiles.bound_interactions`/`bound_auto_triggers`（唯一性、markup known_entities、ending refs、难度统计、可达种子均覆盖 NPC-bound）；② 锁测 `npc_profiles.scene` 不存在→error / 真实场景不报；③ 删 `lint.py` 死代码 `if start in eg.nodes`（场景名∉ entity 图）。TDD：tests/test_module_lint.py 7→9：`test_npc_profiles_scene_refs` / `test_npc_bound_interaction_duplicate_id_is_error`。layered_pipeline 1062→1071 / lint 124→122。 |
 | 2026-09-01 | F31 spec-review（Task 6 复审 2 项）：① 实体可达性不再用 `start_scene` 当图节点（场景名∉ entity id，原 `if start in eg.nodes` 恒假）。改为以起点场景内实体 id（含 `boss_encounters.scene==start`）为多种子 BFS，不可达节点 warning；起点无图内实体则跳过。② `cross_validate_layers` 将 `l2.boss_encounters[].id` 纳入 `known_entities`，结局 condition 提及现有 `BOSS_*` 不再误报。TDD：tests/test_module_lint.py 5→7：`test_entity_reachability_from_start_scene_seeds` / `test_ending_ref_known_boss_ok_unknown_errors`。RED 2 failed → GREEN。lint.py 106→124 / layered_pipeline 1059→1062。 |
 | 2026-09-01 | F31 模组体检 lint（S3-P2 Task 6，spec §5，扩而不建）：① `DependencyGraph.reachable_from(start)` BFS 沿 source→target，返回不可达节点 id（空图=[]）；② `cross_validate_layers` 扩 4 项 error：entity id 跨场景唯一性 / markup `flag=` `ref=` 引用存在性 / npc_profiles.scene\|all_scenes 场景存在 / ending_conditions 结构化字段+condition 内 IT_/AT_/I_/E_/END_/BOSS_ token 引用；③ 薄 CLI `python -m module_designer.lint <模组目录>`（`lint.py` + `__main__.py`）：validate_all+cross_validate + 场景 from_here 可达性/孤立场景 warning + L2 `check.difficulty`/`difficulty` 分档 info；exit 1 仅 error。TDD：tests/test_module_lint.py 5 测试 RED（AttributeError / 空 errors / ModuleNotFoundError）→ GREEN。全量 435 passed / 21 deselected（基线 430+5）。未改 prompts，跳过 real_llm_smoke。e2e_testbed 冒烟 exit 0（1 schema warning：IT_END difficulty=""；info regular×1）。layered_pipeline 956→1059 / dependency_graph 138→156。 |
@@ -827,11 +828,11 @@ core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STON
 
 re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。`python -m module_designer` 走 `__main__.py` → `lint.run_lint`（F31）。
 
-### layered_schema.py (363 行) — Schema 定义 + 验证
+### layered_schema.py (364 行) — Schema 定义 + 验证
 
 | 项 | 说明 | 行号 |
 |----|------|------|
-| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of；F23：L2_INTERACTION_SCHEMA/L2_EVENT_SCHEMA 含 optional `repeatable`） | 10–184 |
+| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of；F23：L2_INTERACTION_SCHEMA/L2_EVENT_SCHEMA 含 optional `repeatable`；F32：L3_MODULE_META_SCHEMA 含 optional `player_goal`） | 10–184 |
 | `SchemaViolation` / `SchemaReport` | 违规/报告（add/errors/warnings/is_valid/summary） | 183 / 194 |
 | `_validate_value` / `_validate_object` | 递归校验 | 226 / 258 |
 | `validate_l1` / `validate_l2` / `validate_l3` / `validate_all` / `is_valid` | 各层验证入口 | 267–358 |
@@ -862,11 +863,11 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_normalize_npc_profile` | NPC profile 字段归一化 | 162 |
 | `load_l2` / `save_l2` | L2 JSON 读写 | 184 / 198 |
 
-### l3_designer.py (245 行) — L3 设计层模型
+### l3_designer.py (247 行) — L3 设计层模型
 
-`ModuleMeta`@8 `WorldRule`@32 `SceneIntent`@54 `EndingCondition`@77 `ToneConstraints`@95 `NarrativeLine`@118 `TimePressureConfig`@144 `CharacterDesign`@173 `L3Designer`@192（to_dict/from_dict）；`load_l3`@232 `save_l3`@240。
+`ModuleMeta`@8（含 optional `player_goal`）`WorldRule`@32 `SceneIntent`@54 `EndingCondition`@77 `ToneConstraints`@95 `NarrativeLine`@118 `TimePressureConfig`@144 `CharacterDesign`@173 `L3Designer`@192（to_dict/from_dict）；`load_l3`@234 `save_l3`@242。
 
-### layered_parser.py (1497 行) — 管线 LLM 解析（每步含 build_*_prompt + parse_*）
+### layered_parser.py (1511 行) — 管线 LLM 解析（每步含 build_*_prompt + parse_*）
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
@@ -910,6 +911,18 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_scene_graph` | L1/L2 场景名 + `from_here.target` 建成 DependencyGraph | 14 |
 | `_difficulty_counts` | 遍历 L2 实体 `check.difficulty`/`difficulty`，跳过 None/空 | 34 |
 | `run_lint` | `(module_dir) -> int` 加载三件套 → validate_all + cross_validate_layers + 场景可达/孤立 warning + 实体可达（起点场景实体多种子 BFS，无种子跳过）+ 难度 info；有 error 返回 1 | 48 |
+
+### playtest_report.py (215 行) — F32 单次试玩纯聚合报告
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `resolve_player_goal` | `(profile, l3) -> str` | profile.goal 非空 → 用之；否则 L3 `module_meta.player_goal`；再否则 `driving_force` 截断 80 字；皆空则 `""` | 11 |
+| `_entity_difficulty` | `(ent) -> str` | L2 `check.difficulty` 优先，否则顶层 `difficulty`；空/None→`none` | 23 |
+| `_collect_entities` | `(module_l2) -> {id: difficulty}` | 复用 `_iter_l2_entities`（interactions/AT/events/NPC-bound） | 34 |
+| `_parse_mech_ids` | `(mech) -> set[str]` | 解析 mech 行 `entities=`/`at=`（`eid:tier` 只取 eid） | 43 |
+| `build_report` | `(summary, module_l2, module_l3=None) -> dict` | 场景覆盖/结局/实体触发/检定分布/耗时。触发=skill_results.entity_id ∪ mech ids ∩ 模组实体；未知检定 entity→difficulty `unknown` | 65 |
+| `render_markdown` | `(report) -> str` | 四指标段 + 耗时行，对齐 spec §6 示例 | 146 |
+| `run_report` | `(summary_path, module_dir, out_path=None) -> dict` | 读 `_summary.json`+l2/l3，写 json+同名 md | 193 |
 
 ### __main__.py (4 行)
 
@@ -969,17 +982,17 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `build_npc_intent_detect_prompt` | 是否在和 NPC 对话 | 1107 |
 | `build_npc_parse_prompt` | NPC 互动解析 | 1128 |
 
-## src/llm_player.py (484 行) - LLM 自动玩家（模组自动化测试）
+## src/llm_player.py (488 行) - LLM 自动玩家（模组自动化测试）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `load_profile` | `(path) -> dict` | 加载测试 profile JSON | 26 |
-| `build_player_prompt` | `(world, narrative_result, short_history, long_memory, profile, player_snapshot) -> (system, user)` | 构建玩家 prompt（快照/时间/背包/NPC/出口/敌人 + 4 种测试模式段落） | 31 |
+| `build_player_prompt` | `(world, narrative_result, short_history, long_memory, profile, player_snapshot) -> (system, user)` | 构建玩家 prompt（快照/时间/背包/NPC/出口/敌人 + 4 种测试模式段落）；goal 模式读 `profile["goal"]`（由 run_llm_player 回填） | 31 |
 | `compress_memory` | `(short_history) -> str` | LLM 压缩短期记忆 | 101 |
 | `_eval_success_checks` | `(names, entries) -> bool` | 按 tests/e2e/scenario_predicates.py 谓词注册表评估是否全部满足 | 115 |
 | `_collect_mech_line` | `(game, result, turn_no, action, dt, prev_loc, prev_boss_state) -> str` | 采集单回合机制事件时间线（frozen/outcomes/move/tier/boss 状态 diff），格式对齐 tests/e2e/scenarios/audit_guide.md 第三节 | 138 |
-| `run_llm_player` | `(profile_path, module_name, max_turns, max_duration_s, post_init_hook, log_dir) -> {log_dir, summary, goal_achieved}` | **主循环**：init_game -> 玩家 prompt -> call_deepseek -> run_turn -> 机制时间线 -> 摘要日志 `_summary.json` -> 结局/目标提前终止（`on_scenario_end(game)` 只结算不导出 @435）-> 定期记忆压缩；含 goal 注入/播种 hook/谓词判定（场景 runner 三层判定用） | 225 |
-| `_log_player_call` | `(turn, system_prompt, user_prompt, response)` | 玩家 LLM 交互全文写入 `player_llm.txt`（现为 run_llm_player 内嵌套函数） | 嵌套@296 |
+| `run_llm_player` | `(profile_path, module_name, max_turns, max_duration_s, post_init_hook, log_dir) -> {log_dir, summary, goal_achieved}` | **主循环**：init_game -> 玩家 prompt -> call_deepseek -> run_turn -> 机制时间线 -> 摘要日志 `_summary.json` -> 结局/目标提前终止（`on_scenario_end(game)` 只结算不导出 @439）-> 定期记忆压缩；`test_mode==goal` 时 `resolve_player_goal(profile, l3)` 回填 goal（e2e YAML 已设 goal 则不变） | 225 |
+| `_log_player_call` | `(turn, system_prompt, user_prompt, response)` | 玩家 LLM 交互全文写入 `player_llm.txt`（现为 run_llm_player 内嵌套函数） | 嵌套@300 |
 
 ## src/llm_player_prompts.py (81 行)
 

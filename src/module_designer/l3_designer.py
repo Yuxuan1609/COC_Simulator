@@ -12,6 +12,7 @@ class ModuleMeta:
     theme: str = ""
     expected_duration: str = ""
     player_count: str = ""
+    player_goal: str = ""
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items()}
@@ -25,6 +26,7 @@ class ModuleMeta:
             theme=data.get("theme", ""),
             expected_duration=data.get("expected_duration", ""),
             player_count=data.get("player_count", ""),
+            player_goal=data.get("player_goal", ""),
         )
 
 

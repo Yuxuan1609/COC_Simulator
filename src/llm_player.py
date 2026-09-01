@@ -239,7 +239,11 @@ def run_llm_player(profile_path: str = "data/stress_profile.json", module_name: 
     l1_name = "l1_player.json"
     l3_name = "l3_designer.json"
     with open(module_dir / l3_name, "r", encoding="utf-8") as f:
-        start_node = json.load(f).get("start_scene", "6号车厢")
+        l3_data = json.load(f)
+        start_node = l3_data.get("start_scene", "6号车厢")
+    if profile.get("test_mode") == "goal":
+        from module_designer.playtest_report import resolve_player_goal
+        profile["goal"] = resolve_player_goal(profile, l3_data)
     game = init_game(
         l2_path=str(module_dir / l2_name),
         l1_path=str(module_dir / l1_name),
