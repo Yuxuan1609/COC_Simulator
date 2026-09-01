@@ -45,25 +45,61 @@ class TestScheduledEvents:
         assert len(world.scheduled_events) == 1
         assert world.scheduled_events[0]["id"] == "night_fall"
 
-    def test_multiple_events_in_one_advance(self):
-        """一次推进跨越多事件 → 按时刻顺序全部触发并出队。"""
+    def test_multiple_events_in_one_advance(self, monkeypatch):
+        """一次推进跨越多事件 → 按 at_minutes 升序触发并出队。"""
+        world, _inv = _world_with_player()
+        world.scheduled_events = [
+            {
+                "id": "ev2",
+                "at_minutes": 90,
+                "markup": '@stat_change(stat_name="SAN", delta=-3)',
+                "description": "最晚",
+            },
+            {
+                "id": "ev0",
+                "at_minutes": 30,
+                "markup": '@stat_change(stat_name="SAN", delta=-1)',
+                "description": "最早",
+            },
+            {
+                "id": "ev1",
+                "at_minutes": 60,
+                "markup": '@stat_change(stat_name="SAN", delta=-2)',
+                "description": "中间",
+            },
+        ]
+        fired = []
+        import scenario_core
+        orig = scenario_core.apply_side_effects
+
+        def spy(w, effs, *a, **k):
+            fired.append({-1: "ev0", -2: "ev1", -3: "ev2"}[effs[0].delta])
+            return orig(w, effs, *a, **k)
+
+        monkeypatch.setattr(scenario_core, "apply_side_effects", spy)
+        world.advance_time(90)
+        assert fired == ["ev0", "ev1", "ev2"]
+        assert world.scheduled_events == []
+
+    def test_first_event_failure_still_fires_later_and_dequeues(self):
+        """首事件结算失败不影响后续触发，且均出队。"""
         world, inv = _world_with_player()
         world.scheduled_events = [
             {
-                "id": "later",
-                "at_minutes": 60,
-                "markup": '@stat_change(stat_name="SAN", delta=-2)',
-                "description": "后发",
+                "id": "bad",
+                "at_minutes": 30,
+                "markup": '@item_gain(item_name="x", quantity="garbage")',
+                "description": "坏事件",
             },
             {
-                "id": "earlier",
-                "at_minutes": 30,
+                "id": "good",
+                "at_minutes": 60,
                 "markup": '@stat_change(stat_name="SAN", delta=-1)',
-                "description": "先发",
+                "description": "好事件",
             },
         ]
         world.advance_time(60)
-        assert inv.derived.SAN == 47
+        assert inv.derived.SAN == 49
         assert world.scheduled_events == []
 
     def test_save_load_roundtrip(self, tmp_path):

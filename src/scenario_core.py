@@ -767,6 +767,7 @@ class ScenarioWorld:
         # 时间钩子(2026-08-21 spec §2.2/§4)
         self._tick_time_effects(minutes)
         self._apply_daily_recovery(old_day)
+        # fire after F8 recovery so F10 periodic ticks (next task) see post-recovery HP/SAN
         self._fire_scheduled_events(old_time)
 
     def _fire_scheduled_events(self, old_time: int):
@@ -784,10 +785,14 @@ class ScenarioWorld:
             markup = str(e.get("markup", "") or "")
             logging.getLogger("scenario_core").info(
                 "[F18] 时刻事件触发: %s @%s", e.get("id"), e.get("at_minutes"))
-            if markup:
-                effs = parse_markup_all(markup)
-                if effs:
-                    apply_side_effects(self, effs)
+            try:
+                if markup:
+                    effs = parse_markup_all(markup)
+                    if effs:
+                        apply_side_effects(self, effs)
+            except Exception:
+                logging.getLogger("scenario_core").exception(
+                    "[F18] 时刻事件结算失败: %s", e.get("id"))
         due_ids = {id(e) for e in due}
         self.scheduled_events = [e for e in self.scheduled_events
                                  if id(e) not in due_ids]
