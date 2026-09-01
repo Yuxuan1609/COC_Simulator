@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F31 模组体检 lint（S3-P2 Task 6，spec §5，扩而不建）：① `DependencyGraph.reachable_from(start)` BFS 沿 source→target，返回不可达节点 id（空图=[]）；② `cross_validate_layers` 扩 4 项 error：entity id 跨场景唯一性 / markup `flag=` `ref=` 引用存在性 / npc_profiles.scene\|all_scenes 场景存在 / ending_conditions 结构化字段+condition 内 IT_/AT_/I_/E_/END_/BOSS_ token 引用；③ 薄 CLI `python -m module_designer.lint <模组目录>`（`lint.py` + `__main__.py`）：validate_all+cross_validate + 场景 from_here 可达性/孤立场景 warning + L2 `check.difficulty`/`difficulty` 分档 info；exit 1 仅 error。TDD：tests/test_module_lint.py 5 测试 RED（AttributeError / 空 errors / ModuleNotFoundError）→ GREEN。全量 435 passed / 21 deselected（基线 430+5）。未改 prompts，跳过 real_llm_smoke。e2e_testbed 冒烟 exit 0（1 schema warning：IT_END difficulty=""；info regular×1）。layered_pipeline 956→1059 / dependency_graph 138→156。 |
 | 2026-09-01 | F10 spec-review（Task 5 复审 3 项）：① `apply_effect_payload` 每原子 try/except 隔离，失败记 `[F10] payload 结算失败` exception 仍结算后续原子；② `_tick_time_effects` hour/day 循环 try/except 后**始终** `t["_fired"]=total`（防中途抛后重放已结算 tick）；③ combat `_tick_temporary_effects` round 循环 try/except+log 继续下条 timed_effect。TDD：tests/test_periodic_effects.py 7→9（103→133 行）：`test_payload_atom_failure_isolates_later_atoms`（坏 markup 后 heal 仍 +1）/ `test_round_interval_fires_on_combat_tick`（CombatSystem(world)+CombatState 两次 `_tick_temporary_effects` → HP+2）。RED 1 failed（ValueError 未隔离；round 路径本已绿）→ GREEN。scenario_core 1972→1981 / combat 1549→1554。 |
 | 2026-09-01 | F10 spec-review（Task 5 复审 2 项）：① `_tick_time_effects` 首次 tick 持久化 `start_at=old`（缺则写入后再读），修分段 `advance_time` 每拍重基到本拍 `old` 导致 `_fired` 余数永不累计（50+50+50 hourly 原 HP 不变，现 HP+2）；② judge/combat timed 原子挂载同步拷 `interval`/`payload`（有则写入，同 id refresh 不叠条）。TDD：tests/test_periodic_effects.py 5→7（75→103 行）：`test_hourly_split_advances_accumulate` / `test_timed_atom_mounts_interval_payload`（Judge._execute_effect_atoms 挂载后 advance 150→HP 12）。RED 2 failed（HP 10 / interval 丢失）→ GREEN。scenario_core 1970→1972 / judge 562→567 / combat 1544→1549。 |
 | 2026-09-01 | F10 周期效应（S3-P2 Task 5，spec §4）：timed_effects 扩 `interval`(round/hour/day)+`payload` 原子数组；缺 interval=旧计时只到期清除。① 模块级 `apply_effect_payload`（scenario_core.py@1421）结算 heal/mp_change/markup 子集（markup 走 parse_markup_all+apply_side_effects，SAN 汇入 F5）；② `_tick_time_effects` 过期清除前按 `_fired`/`start_at` 公式 `(min(now,expire)-start_at)//span` 跨越次数循环结算 hour(span=60)/day(span=1440)；③ combat `_tick_temporary_effects` buff 递减后对 interval=round 条目每轮结算一次。计划稿只调 payload 一次，测试锁 150min→2 次 / 120min SAN -2×2，实现按 `total-fired` 循环。日界测试叠加 F8 HP+2：2880min 断言 HP==14（非计划稿 12）。TDD：tests/test_periodic_effects.py 5 测试 RED（HP 不变 / KeyError san_lost_today）→ GREEN。全量 426 passed / 21 deselected（基线 421+5）。未改 prompts，跳过 real_llm_smoke。scenario_core 1928→1970 / combat 1537→1544。 |
@@ -822,7 +823,7 @@ core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STON
 
 ### __init__.py (33 行)
 
-re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。
+re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。`python -m module_designer` 走 `__main__.py` → `lint.run_lint`（F31）。
 
 ### layered_schema.py (363 行) — Schema 定义 + 验证
 
@@ -833,15 +834,16 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_validate_value` / `_validate_object` | 递归校验 | 226 / 258 |
 | `validate_l1` / `validate_l2` / `validate_l3` / `validate_all` / `is_valid` | 各层验证入口 | 267–358 |
 
-### dependency_graph.py (138 行) — 依赖图
+### dependency_graph.py (156 行) — 依赖图
 
 | 类/方法 | 作用 | 行号 |
 |---------|------|------|
 | `DependencyNode` / `DependencyEdge` | dataclass + 序列化 | 9 / 24 |
 | `DependencyGraph.build` | `(dependencies)` 建图（ID 前缀 I/AT/E 推断类型） | 46 |
 | `detect_cycles` | DFS 检测所有循环 | 70 |
-| `cut_edge` / `cut_random_edge_in_cycles` | 切断循环边 | 102 / 108 |
-| `to_dict` / `from_dict` | 序列化 | 123 / 132 |
+| `reachable_from` | `(start) -> list[str]` BFS 沿 source→target，返回不在可达集合内的节点 id；空图=[] | 102 |
+| `cut_edge` / `cut_random_edge_in_cycles` | 切断循环边 | 120 / 126 |
+| `to_dict` / `from_dict` | 序列化 | 141 / 150 |
 
 ### l1_player.py (98 行) — L1 玩家层模型
 
@@ -883,20 +885,33 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `parse_step35` | 依赖图提取 | 1295 |
 | `parse_step4` | Phase2：@markup 标准化（STEP4_SYSTEM 含 @grant_spell 语法说明；Step2A 约束 prompt 同步） | 1493 |
 
-### layered_pipeline.py (917 行) — 管线编排
+### layered_pipeline.py (1059 行) — 管线编排
 
 | 函数/类 | 作用 | 行号 |
 |---------|------|------|
 | `CrossRefIssue` / `CrossRefReport` | 交叉引用问题/报告 | 34 / 46 |
-| `cross_validate_layers` | `(l1, l2, l3, weapon_lib, enemy_lib, spell_lib, item_lib)` 跨层引用验证（统一资源层：L2 side_effects @grant_spell.spell_ref -> 法术库校验，未知引用记 warning） | 97 |
-| `_bind_npc_entities` | 扫描 entity NPC 归属 → 剥离+绑定 | 250 |
-| `_extract_entity_bindings` | 从 npc_profiles 提取绑定 | 312 |
-| `_inject_step1a_meta` | Step1a 角色 → NPC scene 注入 | 321 |
-| `_inject_npc_special_entities` | 注入 follow_unlock + interact_unlock entity | 340 |
-| `_assemble_l2` | 所有 entity 组装为 L2 JSON | 390 |
-| `PipelineResult` | 结果容器（all_valid/summary） | 430 |
-| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点（:485/:763）均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 440 |
-| `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 922 |
+| `cross_validate_layers` | `(l1, l2, l3, weapon_lib, enemy_lib, spell_lib, item_lib)` 跨层引用验证。原 6 项 + F31：entity id 跨场景唯一 / markup flag\|ref 存在 / npc_profiles 场景 / ending_conditions 引用（均 error）；@grant_spell 未知仍 warning | 97 |
+| `_iter_l2_entities` | yield `(scene, kind, ent)`：interactions+auto_triggers+events | 311 |
+| `_bind_npc_entities` | 扫描 entity NPC 归属 → 剥离+绑定 | 353 |
+| `_extract_entity_bindings` | 从 npc_profiles 提取绑定 | 415 |
+| `_inject_step1a_meta` | Step1a 角色 → NPC scene 注入 | 424 |
+| `_inject_npc_special_entities` | 注入 follow_unlock + interact_unlock entity | 443 |
+| `_assemble_l2` | 所有 entity 组装为 L2 JSON | 493 |
+| `PipelineResult` | 结果容器（all_valid/summary） | 533 |
+| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 565 |
+| `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 1025 |
+
+### lint.py (106 行) — F31 模组体检 CLI
+
+| 函数 | 作用 | 行号 |
+|------|------|------|
+| `_scene_graph` | L1/L2 场景名 + `from_here.target` 建成 DependencyGraph | 14 |
+| `_difficulty_counts` | 遍历 L2 实体 `check.difficulty`/`difficulty`，跳过 None/空 | 34 |
+| `run_lint` | `(module_dir) -> int` 加载三件套 → validate_all + cross_validate_layers + 场景可达/孤立 warning + 难度 info；有 error 返回 1 | 48 |
+
+### __main__.py (4 行)
+
+`python -m module_designer` → `run_lint(sys.argv[1] or ".")`。`python -m module_designer.lint` 走 lint.py 的 `if __name__`。
 
 ### supplement_pipeline.py (515 行) — Author 触发的轻量补充管线
 

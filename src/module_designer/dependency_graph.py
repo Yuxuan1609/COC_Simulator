@@ -99,6 +99,24 @@ class DependencyGraph:
                 dfs(nid)
         return cycles
 
+    def reachable_from(self, start: str) -> list[str]:
+        """BFS 沿 source→target，返回不在可达集合内的节点 id。"""
+        if not self.nodes:
+            return []
+        visited: set[str] = set()
+        if start in self.nodes:
+            visited.add(start)
+            queue = [start]
+            i = 0
+            while i < len(queue):
+                u = queue[i]
+                i += 1
+                for edge in self.edges:
+                    if edge.source == u and edge.target not in visited:
+                        visited.add(edge.target)
+                        queue.append(edge.target)
+        return [nid for nid in self.nodes if nid not in visited]
+
     def cut_edge(self, edge: DependencyEdge) -> None:
         self.edges = [e for e in self.edges if e is not edge]
         self._circular_cut = True

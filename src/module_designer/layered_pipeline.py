@@ -113,6 +113,10 @@ def cross_validate_layers(
     4. L3 logic_chains[].branches[].condition 中引用的 flag 格式
     5. L3 scene_intents 的 key 与 L1/L2 场景名一致性
     6. L2 side_effects @grant_spell.spell_ref -> spell library（统一资源层）
+    7. entity id 跨场景唯一性（error）
+    8. markup 内 flag/ref 引用存在性（error）
+    9. npc_profiles 场景引用存在性（error）
+    10. ending_conditions 引用的 flag/实体存在（error）
     """
     report = CrossRefReport()
 
@@ -216,7 +220,106 @@ def cross_validate_layers(
                 "warning",
             )
 
+    # ── 7. entity id 跨场景唯一性 ──
+    id_places: dict[str, list[str]] = {}
+    known_entities: set[str] = set()
+    for scene_name, kind, ent in _iter_l2_entities(l2_data):
+        eid = ent.get("id") or ""
+        ename = ent.get("name") or ""
+        if eid:
+            id_places.setdefault(eid, []).append(scene_name or kind)
+            known_entities.add(eid)
+        if ename:
+            known_entities.add(ename)
+    for eid, places in id_places.items():
+        if len(places) > 1:
+            report.add(
+                "L2",
+                f"entity[{eid}]",
+                f"entity id「{eid}」在场景 {'/'.join(places)} 重复定义",
+                "error",
+            )
+
+    # ── 8. markup 内 flag/ref 引用存在性 ──
+    import re as _re_lint
+    for scene_name, kind, ent in _iter_l2_entities(l2_data):
+        for se in (ent.get("side_effects") or []):
+            for m in _re_lint.finditer(r'(\w+)="([^"]+)"', str(se)):
+                key, val = m.group(1), m.group(2)
+                if key in ("flag", "ref") and val and val not in known_entities:
+                    label = "flag" if key == "flag" else "实体"
+                    report.add(
+                        "L2",
+                        f"{scene_name or kind}.{ent.get('id', '?')}.side_effects",
+                        f"引用不存在的{label}「{val}」",
+                        "error",
+                    )
+
+    # ── 9. npc_profiles 场景引用 ──
+    npc_profiles = l2_data.get("npc_profiles") or {}
+    if isinstance(npc_profiles, dict):
+        for npc_name, profile in npc_profiles.items():
+            if not isinstance(profile, dict):
+                continue
+            scene = profile.get("scene") or ""
+            if scene and scene not in all_scenes:
+                report.add(
+                    "L2→L1/L2",
+                    f"npc_profiles.{npc_name}.scene",
+                    f"NPC '{npc_name}' 引用不存在的场景 '{scene}'",
+                    "error",
+                )
+            for s in profile.get("all_scenes") or []:
+                if s and s not in all_scenes:
+                    report.add(
+                        "L2→L1/L2",
+                        f"npc_profiles.{npc_name}.all_scenes",
+                        f"NPC '{npc_name}' 引用不存在的场景 '{s}'",
+                        "error",
+                    )
+
+    # ── 10. ending_conditions 引用的 flag/实体 ──
+    _id_tok = _re_lint.compile(r"\b(?:IT|AT|I|E|END|BOSS)_[A-Z0-9_]+\b")
+    for i, ec in enumerate(l3_data.get("ending_conditions") or []):
+        if not isinstance(ec, dict):
+            continue
+        refs = []
+        for key in ("flag", "entity_id", "entity", "ref"):
+            val = ec.get(key)
+            if val:
+                refs.append(val)
+        flags = ec.get("flags")
+        if isinstance(flags, list):
+            refs.extend(f for f in flags if f)
+        cond = str(ec.get("condition") or "")
+        own_id = ec.get("id") or ""
+        for tok in _id_tok.findall(cond):
+            if tok != own_id:
+                refs.append(tok)
+        for ref in refs:
+            if ref not in known_entities:
+                report.add(
+                    "L3",
+                    f"ending_conditions[{i}]",
+                    f"结局引用不存在的 flag/实体「{ref}」",
+                    "error",
+                )
+
     return report
+
+
+def _iter_l2_entities(l2_data: dict):
+    """Yield (scene_name, kind, entity_dict) for interactions/auto_triggers/events."""
+    for scene_name, scene_data in l2_data.get("scenes", {}).items():
+        if not isinstance(scene_data, dict):
+            continue
+        for kind in ("interactions", "auto_triggers"):
+            for ent in scene_data.get(kind) or []:
+                if isinstance(ent, dict):
+                    yield scene_name, kind, ent
+    for ent in l2_data.get("events") or []:
+        if isinstance(ent, dict):
+            yield "", "events", ent
 
 
 def _get_pipeline_version() -> str:
