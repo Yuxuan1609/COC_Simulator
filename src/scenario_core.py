@@ -695,6 +695,7 @@ class ScenarioWorld:
         self.spell_library = spell_library    # 统一资源层：法术库
         self._mp_regen_acc = 0        # MP 恢复分钟累计器(时间钩子)
         self.san_seen_sources: set[str] = set()   # F9: 目睹 SAN 全局去重(入档)
+        self.scheduled_events: list[dict] = []   # F18 时刻事件队列 [{id, at_minutes, markup, description}]（S3-P2 spec §3）
         self._insanity_llm = None   # F5 疯狂文本生成器（Task 2 由 game_loop 注入）
         self.clues: list = []
         self.narrative_memory: list = []
@@ -750,6 +751,7 @@ class ScenarioWorld:
 
     def advance_time(self, minutes: int):
         old_day = self.clock.day
+        old_time = self.clock.game_time
         self.clock.advance_time(minutes)
         # Auto-inject time flags into runtime_state
         # (先清旧 day:/time: flag 防长期局累积进 prompt/存档 -- ISSUES B2)
@@ -765,6 +767,30 @@ class ScenarioWorld:
         # 时间钩子(2026-08-21 spec §2.2/§4)
         self._tick_time_effects(minutes)
         self._apply_daily_recovery(old_day)
+        self._fire_scheduled_events(old_time)
+
+    def _fire_scheduled_events(self, old_time: int):
+        """F18：跨越时刻的事件按序触发，payload=markup 走 apply_side_effects。"""
+        import logging
+        now = self.clock.game_time
+        due = sorted(
+            (e for e in self.scheduled_events
+             if old_time < int(e.get("at_minutes", 0)) <= now),
+            key=lambda e: int(e.get("at_minutes", 0)))
+        if not due:
+            return
+        from game.side_effects import parse_markup_all
+        for e in due:
+            markup = str(e.get("markup", "") or "")
+            logging.getLogger("scenario_core").info(
+                "[F18] 时刻事件触发: %s @%s", e.get("id"), e.get("at_minutes"))
+            if markup:
+                effs = parse_markup_all(markup)
+                if effs:
+                    apply_side_effects(self, effs)
+        due_ids = {id(e) for e in due}
+        self.scheduled_events = [e for e in self.scheduled_events
+                                 if id(e) not in due_ids]
 
     def _tick_time_effects(self, minutes: int):
         """MP 恢复(余数累计) + timed_effects 过期清除。"""
@@ -1238,6 +1264,7 @@ class ScenarioWorld:
             "san_seen_sources": sorted(self.san_seen_sources),
             "clues": list(getattr(self, "clues", [])),
             "narrative_memory": list(getattr(self, "narrative_memory", [])),
+            "scheduled_events": [dict(e) for e in getattr(self, "scheduled_events", [])],
         }
 
     @classmethod
@@ -1269,6 +1296,7 @@ class ScenarioWorld:
         world.san_seen_sources = set(data.get("san_seen_sources", []))
         world.clues = list(data.get("clues", []))
         world.narrative_memory = list(data.get("narrative_memory", []))
+        world.scheduled_events = [dict(e) for e in data.get("scheduled_events", [])]
         # 恢复 clock（无外部依赖）
         clock_data = data.get("clock")
         if clock_data:
