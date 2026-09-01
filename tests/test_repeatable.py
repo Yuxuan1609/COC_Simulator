@@ -68,3 +68,44 @@ class TestRepeatable:
         assert entity.id not in joined_completed
         joined_trig = "\n".join(trig_scene)
         assert entity.id in joined_trig
+
+    def test_repeatable_survives_save_load(self, tmp_path):
+        """save_state → load_state 后 repeatable 实体仍可再执行。"""
+        from game.judge import Judge
+        from scenario_core import ScenarioWorld
+        world = _world_with(_repeatable_inter())
+        entity = world.graph.nodes["room_a"].interactions[0]
+        first = Judge(world)._execute_entity(entity)
+        assert first.success
+        path = str(tmp_path / "save.json")
+        world.save_state(path)
+        restored = ScenarioWorld.load_state(path)
+        entity2 = restored.graph.nodes["room_a"].interactions[0]
+        assert entity2.repeatable
+        second = Judge(restored)._execute_entity(entity2)
+        assert second.success
+        assert "已触发过" not in second.message
+
+    def test_keeper_lookup_allows_completed_repeatable_npc_entity(self):
+        """完成后 repeatable 的 NPC bound 实体仍可 inject / lookup。"""
+        from helpers import make_world, make_scene
+        from game.agents.keeper import Keeper
+        profile = {
+            "name": "列车员", "scene": "room_a", "can_interact": True,
+            "bound_interactions": [{
+                "id": "IT_NPC_R", "entity_type": "interaction",
+                "name": "再问一次", "type": "无", "requirement": "",
+                "trigger": "再问列车员", "result": "他还是那句话。",
+                "difficulty": "None", "repeatable": True,
+            }],
+        }
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           npc_profiles={"列车员": profile})
+        world.mark_completed("IT_NPC_R")
+        keeper = Keeper(world)
+        found = keeper._find_entity_by_id("IT_NPC_R")
+        assert found is not None
+        assert found.repeatable
+        keeper._inject_npc_at()
+        node = world.graph.nodes["room_a"]
+        assert any(e.id == "IT_NPC_R" for e in node.interactions)

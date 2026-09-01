@@ -385,7 +385,9 @@ class Keeper:
                 eid = ent.get("id", "")
                 if not eid or eid in injected:
                     continue
-                if self.world.is_entity_completed(eid):
+                if self.world.is_entity_completed(eid) and not (
+                    ent.get("repeatable") or (ent.get("extra") or {}).get("repeatable")
+                ):
                     continue
                 node.interactions.append(Entity.from_dict(ent, overrides={
                     "entity_type": "interaction",
@@ -396,7 +398,9 @@ class Keeper:
                 eid = at.get("id", "")
                 if not eid or eid in injected:
                     continue
-                if self.world.is_entity_completed(eid):
+                if self.world.is_entity_completed(eid) and not (
+                    at.get("repeatable") or (at.get("extra") or {}).get("repeatable")
+                ):
                     continue
                 node.auto_triggers.append(Entity.from_dict(at, overrides={
                     "entity_type": "auto_trigger",
@@ -603,7 +607,9 @@ class Keeper:
                     eid = ent.get("id", "")
                     if eid != entity_id:
                         continue
-                    if self.world.is_entity_completed(eid):
+                    if self.world.is_entity_completed(eid) and not (
+                        ent.get("repeatable") or (ent.get("extra") or {}).get("repeatable")
+                    ):
                         continue
                     return Entity.from_dict(ent, overrides={
                         "scene": ent.get("source_scene", ""),

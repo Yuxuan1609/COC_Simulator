@@ -416,6 +416,9 @@ class DirectedGraph:
                         "side_effects": e.side_effects,
                         "graded_result": e.graded_result,
                         "difficulty": e.difficulty,
+                        "extra": e.extra,
+                        "time_condition": e.time_condition,
+                        "repeatable": e.repeatable,
                     }
                     for e in node.interactions
                 ],
@@ -428,6 +431,9 @@ class DirectedGraph:
                         "side_effects": e.side_effects,
                         "graded_result": e.graded_result,
                         "difficulty": e.difficulty,
+                        "extra": e.extra,
+                        "time_condition": e.time_condition,
+                        "repeatable": e.repeatable,
                     }
                     for e in node.auto_triggers
                 ],
@@ -444,6 +450,9 @@ class DirectedGraph:
                 "side_effects": e.side_effects,
                 "graded_result": e.graded_result,
                 "difficulty": e.difficulty,
+                "extra": e.extra,
+                "time_condition": e.time_condition,
+                "repeatable": e.repeatable,
             }
             for e in self.events.values()
         ]
@@ -461,23 +470,6 @@ class DirectedGraph:
             ]
             auto_triggers = [
                 Entity.from_dict(at)
-                for at in node_data.get("auto_triggers", [])
-            ]
-            auto_triggers = [
-                Entity(
-                    id=at["id"],
-                    entity_type=at.get("entity_type", ""),
-                    name=at["name"],
-                    scene=at.get("scene", ""),
-                    type=at.get("type", ""),
-                    requirement=at.get("requirement", ""),
-                    trigger=at.get("trigger", ""),
-                    result=at.get("result", ""),
-                    side_effects=at.get("side_effects", []),
-                    graded_result=at.get("graded_result"),
-                    difficulty=at.get("difficulty", ""),
-                    time_condition=at.get("time_condition", ""),
-                )
                 for at in node_data.get("auto_triggers", [])
             ]
             graph.nodes[nid] = Node(
