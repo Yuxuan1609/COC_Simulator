@@ -44,26 +44,20 @@
 |---|------|------|
 | F1 | **物品转移**(丢弃/给予 NPC/交易) | **延后（2026-08-31 拍板）**：与 F17 场景物品容器一起出方案——无 F17 容器则丢弃无处落。原定位：use 大类剩余通路,"把钥匙递给 NPC"类叙事接不住 |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
-| F5 | **疯狂体系**(COC 核心) | 单次 SAN 损失>=5->临时疯狂(INT 检定);当日累计>=SAN/5->总结性疯狂;恐惧症/躁狂症标记。timed_effects 基建可承载;依赖 SAN check 通路(已接通)。模组高频写法"失败则疯狂" |
 | F6 | **重伤/濒死/急救** | **缓（2026-08-31 拍板）**：无队友体系濒死救援无承载，等 F27/F28 后重评。原定位：当前 HP 0 直接 loss+game_over；缺重伤 CON 检定/濒死每轮-1/急救稳定 |
 | F7 | **战斗反应与骰子表达** | **缓（2026-08-31 拍板）**：战斗系统保持现状，随将来「战斗专项优化」（含 R2 中断机制、F28 多方化）一并立项。原定位：闪避自动成功无对抗/反击无/奖励惩罚骰无/push roll 无 |
-| F10 | **周期性/环境效应**(表达力缺口) | timed/effect 原子只有"到期清除",无周期 tick payload;毒每轮掉 HP/雾中每轮 SAN/诅咒每日发作类模组写法无结构化通道(F9 注记"每轮在雾中停留"即此例)。钩子现成:_tick_time_effects(小时粒度,MP 恢复已走)/_tick_temporary_effects(轮末,buff 递减已走)。方向:effect 原子加 interval(round/hour/day)+payload 原子数组,8 原子体系自然延伸(2026-08-26 机制层思考) |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
 | F17 | **场景物品放置/拾取/容器** | 只有武器能放场景(scene_weapons),无 drop API、无容器嵌套;"抽屉里的东西""把物品藏回现场"接不住 |
-| F18 | **时间触发世界事件调度器** | clock 纯计数器;"22:00 凶手行动"玩家不动永不发生;钩子现成(_tick_time_effects) |
 | F19 | **环境状态进检定** | 光照/天气/噪音无修正源(难度只来自 entity.difficulty);手电筒/火柴 L0 无 effect,黑暗侦查无机械支撑 |
 | F20 | **探索侧潜行/躲藏** | 潜行只在对峙与战斗;"悄悄潜入/躲进柜子"只能 Author 自由发挥 |
 | F21 | **物品组合/合成 + 耐久/次数** | 无 combine/split;InventoryItem 只有 quantity,tool 类永不损耗 |
 | F22 | **线索系统结构化** | note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
-| F23 | **场景状态演化 + 实体可重复策略** | 已成功实体一刀切不可重复;场景描述只有 Author 补丁能改;重读文件/复查现场被硬挡 |
 | F26 | **谎言/欺骗机制** | 玩家陈述无条件采信并写入 memory,伪装身份套情报无支撑 |
 | F27 | **NPC 度量层缺口**(U1 前置) | **缓（2026-08-31 拍板）**：归将来「NPC 系统重检专项」。好感度当前无实际消费（attitude 唯一消费在 talk_to prompt），不单独铺度量层。原定位：`set_attitude`/`process_npc_turn` 死代码;好感/瞬态情绪/自主日程无度量字段 |
 | F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
 | F29 | **NPC 死亡剧情连锁** | **缓（2026-08-31 拍板）**：无多人体系，死亡连锁意义不大；将来若做降级为「NPC 特殊互动模式」（死亡触发个别 NPC 反应分支，非广播式连锁），随 NPC 系统重检专项一并。原定位：dead 只做门控;无目击者反应/态度联动/事件传播 |
 | F30 | **追逐/移动力** | MOV 已从 Stats 删除;flee 单骰 DEX 立即定音,无追逐轮/速度分级 |
-| F31 | **模组体检 lint** | 现有验证只到 schema+引用存在性;DependencyGraph 无可达性分析;无独立 CLI |
-| F32 | **模组试玩报告/难度标定** | llm_player 只出 goal_achieved 布尔;无场景覆盖率/结局触达率/检定难度分布 |
 | F33 | **手写模组支持** | 无手写路径;前端编辑器校验只查 scenes/entities 非空不接 layered_schema |
 | F34 | **模组版本管理/增量再生** | 无 manifest/源文档快照;重跑静默覆盖手改 JSON |
 | F35 | **分歧/结局结构可视化** | dependency_graph 只有 JSON;多结局分支汇合关系无法直观检查 |
@@ -100,7 +94,7 @@
 | F13-⑥ 极难贯穿差异化 | 长期 TODO:`_get_tier` 已算只进文本,伤害不变;需贯穿/最大伤害公式 |
 | F13-③ 玩家护甲 | 非目标(统一资源层 spec:equip 无机制加成;护甲只作用敌方) |
 | 输入格式扩展(epub/html/URL)/Step0 只认 txt | 有真实内容源需求再动(2026-08-26 盘点) |
-| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10；回查/优化生成管线时对照(2026-08-31 拍板) |
+| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10；S3-P2 已回写（F5/F23/F18/F10 运行时落地、暂无生产端；F31 无缺口；F32 player_goal 已落地，多次汇总等 F34）；回查/优化生成管线时对照(2026-08-31 拍板) |
 | 多语言模组/i18n | 叙事文本与结构键混存,远期 |
 | 模组素材附件(地图/立绘/handout) | schema 无 image 字段,远期生态 |
 | 多人混战目标选择/队友误伤/掩体 | 依赖 F28 先行;掩体等防御向机制随 F13 批次评估 |
@@ -112,6 +106,12 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-09-01 | **F32 试玩报告** | 纯聚合零 rubric 零 LLM；player_goal fallback（profile → L3 → driving_force）；`l2_keeper_test.json` 优先（6b7596b + f424bea）。 |
+| 2026-09-01 | **F31 模组体检 lint** | 扩 cross_validate（唯一性/markup/npc scene/ending refs）；reachable_from BFS；CLI `python -m module_designer.lint`（0189616 + a91602c + 7461321）。 |
+| 2026-09-01 | **F10 周期效应** | timed_effects 扩 interval+payload；hour/day 经 `_tick_time_effects`，round 经 combat；start_at 跨拍持久化；原子隔离（0c9ae62 + 6bb8e48 + 714590e）。 |
+| 2026-09-01 | **F18 时刻事件** | `scheduled_events` 入档；advance_time 跨越检测；markup payload 走 apply_side_effects；失败隔离仍出队（e468638 + 1357e8b）。 |
+| 2026-09-01 | **F23 实体可重复策略** | once/repeatable 两档，默认 once；completed 且非 repeatable 才 skip；save/load 持久化（6898369 + 4914609）。 |
+| 2026-09-01 | **F5 疯狂体系** | 轻方案：状态标记 + LLM 演绎，行为控制不做。核心 on_san_loss 三出口接线（20c98cb + 2c14ff0）；表现层 snapshot/prompt/live parse（7e57be9 + a796bd6 + 6f2d268）。B20 战斗 SAN 双轨不同步仍跟踪。 |
 | 2026-08-31 | **F25 Narrator 长期记忆** | narrative_memory 5 条滚动蒸馏 + narrator 注入（46b764f）；蒸馏失败隔离 compress（1a4a6e0）。 |
 | 2026-08-31 | **F8 恢复生态+mythos 增长** | HP 日恢复 +1 / SAN 默认 0 / 速率进 game_config；跨日界结算（939a68e）；mythos 增长通路=既有 `@stat_change(克苏鲁神话)` markup（无新机制）。 |
 | 2026-08-31 | **F14 技能成长标记** | checked 标记（fce8f7a）+ 幕末成长检定与版本化导出（9182190）。 |

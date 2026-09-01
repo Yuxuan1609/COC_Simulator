@@ -180,10 +180,12 @@ NPC 系统重检专项（2026-08-31 拍板，单独立项）：F27 度量层 / F
 |---|---|---|
 | difficulty 语义生效（P0-1 修复死参数） | S3-P0 | L2 生成器的 difficulty 标注从「装饰」变为真实判定档位；生成 prompt 应明确 hard/extreme 的实际含义与使用节制 |
 | mythos 增长通路 = `@stat_change(克苏鲁神话,+N)`（F8） | S3-P1 | 生成器可在「阅读典籍/目击神话」类实体挂此 markup；应作为推荐写法写进生成 prompt/参考文档（docs/library-schema.md 类） |
-| 疯狂状态标记 + SAN 事件联动提示词（F5） | S3-P2 | 生成器写 SAN 损失事件时可预期疯狂后果；模组的 san_loss 标注影响疯狂触发频率 |
-| 实体 repeatable 策略位（F23） | S3-P2 | L2 schema/生成器需为新字段产出合理默认；「重读文件/复查现场」类实体应标 repeatable |
-| 时刻事件 scheduled_events（F18 降级版） | S3-P2 | 生成器可写「22:00 凶手行动」类时刻事件；需要事件队列的声明格式 |
-| 周期效应 interval+payload（F10） | S3-P2 | 生成器可写「毒每轮掉 HP/雾中每轮 SAN」类 effect 原子 |
+| 疯狂状态标记 + SAN 事件联动提示词（F5） | S3-P2 运行时已落地 | 运行时：insanity 状态 + prompt 演绎。生成端缺口仍在：san_loss 标注与疯狂触发频率的关系说明、高 SAN 事件预写疯狂文本——**暂无生产端** |
+| 实体 repeatable 策略位（F23） | S3-P2 运行时已落地 | 运行时：L2 schema 字段存在，默认 once（隐式）。生成端缺口仍在：生成器产出合理默认、「重读文件/复查现场」标 repeatable——**暂无生产端** |
+| 时刻事件 scheduled_events（F18 降级版） | S3-P2 运行时已落地 | 运行时：跨越检测 + markup payload。生成端缺口仍在：时刻事件 L2 声明格式——**暂无生产端** |
+| 周期效应 interval+payload（F10） | S3-P2 运行时已落地 | 运行时：interval+payload 消费端。生成端缺口仍在：周期效应原子生产——**暂无生产端** |
+| 模组体检 lint（F31） | S3-P2 已落地 | **无缺口**——新检查管线内自动生效；CLI 为事后入口 |
+| 试玩报告（F32） | S3-P2 已落地 | `module_meta.player_goal` 已落地；多次试玩并行+汇总、CI 集成等 F34 |
 | 场景物品泛化（F17） | S3-P3 | scene_weapons 泛化为 scene_items 后生成 schema 同步 |
 | 环境字段挂 L1（F19） | S3-P3 | L1 生成器产出环境字段；L2 难度与环境修正联动 |
 | NPC 好感度量（F27） | S3-P2 | npc_profiles 可声明初始好感；交互阈值可引用 |

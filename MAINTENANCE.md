@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | S3-P2 收口：ISSUES F32/F31/F10/F18/F23/F5 入 §5（F1/F17/F27/F29 延后不关；F6/F7 仍缓；B20 留 §1 🟡）；簇评估 §10 回写运行时已落地 vs 暂无生产端（F31 无缺口；F32 player_goal 已落地，多次汇总等 F34）。函数表行号对齐：set_insanity_llm 867→871 / on_san_loss 871→875 / _gen_insanity_text 900→906 / ScenarioWorld to_dict/from_dict 1247/1292→1253/1298 / judge.py 562→567。零产品代码。 |
 | 2026-09-01 | F32 复审：`run_report` L2 优先级对齐 `llm_player`——存在 `l2_keeper_test.json` 则用之，否则 `l2_keeper.json`（原先 prod 优先，双文件模组会按正式 L2 聚合）。TDD：`test_run_report_prefers_l2_keeper_test`（双文件+visited 测试房）。playtest_report 215→214。 |
 | 2026-09-01 | F32 试玩报告（S3-P2 Task 7，spec §6）：纯聚合零 rubric 零 LLM。新建 `playtest_report.py`（215 行）：`build_report`/`render_markdown`/`run_report`/`resolve_player_goal`。场景覆盖=turns_detail.location 去重；结局=ending 字段+回合；实体触发=skill_results.entity_id ∪ mech `entities=`/`at=` ∩ `_iter_l2_entities`（含 NPC-bound）；检定分布=skill_results × L2 `difficulty`/`check.difficulty`（未知 entity_id→unknown）；耗时=summary.total_elapsed_s+turns。goal 缺省：profile.goal → L3 `module_meta.player_goal` → driving_force[:80]；`run_llm_player` 仅 test_mode==goal 时回填，不改 PLAYER_SYSTEM。生成端：L3 schema/ModuleMeta/`l3_template.json` 加 optional `player_goal`；STEP2C_L3_SYSTEM 加一句字段说明。TDD：tests/test_playtest_report.py 14 测 RED（ModuleNotFoundError）→ GREEN。全量 453 passed / 21 deselected（基线 438+14；1 既有用例）。未改 PLAYER_SYSTEM，跳过 real_llm_smoke。 |
 | 2026-09-01 | F31 lint 复审 Important：① `_iter_l2_entities` 纳入 `npc_profiles.bound_interactions`/`bound_auto_triggers`（唯一性、markup known_entities、ending refs、难度统计、可达种子均覆盖 NPC-bound）；② 锁测 `npc_profiles.scene` 不存在→error / 真实场景不报；③ 删 `lint.py` 死代码 `if start in eg.nodes`（场景名∉ entity 图）。TDD：tests/test_module_lint.py 7→9：`test_npc_profiles_scene_refs` / `test_npc_bound_interaction_duplicate_id_is_error`。layered_pipeline 1062→1071 / lint 124→122。 |
@@ -401,7 +402,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1392 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1499 |
 
-## src/game/judge.py (562 行) — 确定性闸门（无 LLM 依赖）
+## src/game/judge.py (567 行) — 确定性闸门（无 LLM 依赖）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -524,7 +525,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/game_loop.py (950 行) — 游戏主循环
+## src/game_loop.py (951 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -596,25 +597,25 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `advance_time` | `(minutes)` | **三合一 + F8 日界恢复 + F18 时刻事件 + F10 周期效应**：推进时钟前捕获 `old_day`/`old_time` + 注入时间标记（注入前先清旧 `day:`/`time:` 前缀 flag 防长期局累积进 prompt/存档，ISSUES B2） + `_tick_time_effects`（含 F10 hour/day payload） + `_apply_daily_recovery(old_day)` + `_fire_scheduled_events(old_time)`（F8 恢复后再 fire；keeper 每回合经 TimeAgent time_delta 走此单一入口） | 752 |
 | `_fire_scheduled_events` | `(old_time)` | F18：`old_time < at_minutes ≤ now` 的事件按 `at_minutes` 排序触发；payload=markup 走 `parse_markup_all`+`apply_side_effects`；每事件 try/except 隔离（失败记 `[F18] 时刻事件结算失败` exception 仍出队）；触发后按对象 id 出队（一次性）；空队列/未跨越 no-op | 773 |
 | `_tick_time_effects` | `(minutes)` | 时间钩子：满 MP 时 acc 清零不银行；否则余数累计按小时回 MP；F10：hour/day interval 按 `_fired`/`start_at`（首次 tick 持久化 `start_at=old`，后续跨拍累计）跨越次数循环结算 payload（循环 try/except 后**始终** `_fired=total` 防重放），然后 timed_effects 到期清除 | 800 |
-| `_apply_daily_recovery` | `(old_day)` | F8：跨日界恢复。无 player / days≤0 return；速率读 game_config（`hp_recovery_per_day` 默认 1 / `san_recovery_per_day` 默认 0）；HP/SAN 分别 clamp HP_MAX/SAN_MAX。函数内 import get_game_config（monkeypatch 可达） | 850 |
-| `set_insanity_llm` | `(llm_call)` | F5：注入疯狂文本生成器 callable(prompt)->str（Task 2 由 game_loop 注入）；None=回退固定文案 | 867 |
-| `on_san_loss` | `(loss, source="") -> dict` | F5 统一疯狂判定钩子（所有 SAN 损失出口汇入）：无 player / loss≤0 no-op 返回 {temporary:False, indefinite:False}；惰性跨日清零（san_day≠clock.day → san_lost_today=0、san_day=day、san_at_day_start=当前 SAN）；单次损失≥5 且未 temporary → `check_skill("INT")` 失败置 temporary（一次，文本经 _gen_insanity_text）；当日累计 ≥ max(1, san_at_day_start//5) 且未 indefinite → 置 indefinite（一次）；返回触发标志供调用方追加叙事 | 871 |
-| `_gen_insanity_text` | `(kind, source) -> str` | F5 疯狂文本：`_insanity_llm` 已注入则现场生成（60 字内表现描述，截 100 字，空回退）；异常回退「（{kind}）」固定文案 + warning 日志（`[F5] 疯狂文本生成失败，回退固定文案`+exc_info，不静默吞）；未注入回退固定文案 | 900 |
-| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 930 |
-| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 959 / 965 / 970 |
-| `mark_completed` / `is_entity_completed` | — | 完成标记 | 990 / 997 |
-| `set_background` / `set_player` / `load_player` | — | 状态设置 | 1006–1016 |
-| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 1026–1033 |
-| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 1043 / 1047 |
-| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 1062 / 1111 |
-| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1134 |
-| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1159 / 1162 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`） | 1171 |
-| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1206 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1231 / 1234 |
-| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1238 / 1242 |
-| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []） | 1247 / 1292 |
-| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1328 / 1348 |
+| `_apply_daily_recovery` | `(old_day)` | F8：跨日界恢复。无 player / days≤0 return；速率读 game_config（`hp_recovery_per_day` 默认 1 / `san_recovery_per_day` 默认 0）；HP/SAN 分别 clamp HP_MAX/SAN_MAX。函数内 import get_game_config（monkeypatch 可达） | 854 |
+| `set_insanity_llm` | `(llm_call)` | F5：注入疯狂文本生成器 callable(prompt)->str（Task 2 由 game_loop 注入）；None=回退固定文案 | 871 |
+| `on_san_loss` | `(loss, source="") -> dict` | F5 统一疯狂判定钩子（所有 SAN 损失出口汇入）：无 player / loss≤0 no-op 返回 {temporary:False, indefinite:False}；惰性跨日清零（san_day≠clock.day → san_lost_today=0、san_day=day、san_at_day_start=当前 SAN）；单次损失≥5 且未 temporary → `check_skill("INT")` 失败置 temporary（一次，文本经 _gen_insanity_text）；当日累计 ≥ max(1, san_at_day_start//5) 且未 indefinite → 置 indefinite（一次）；返回触发标志供调用方追加叙事 | 875 |
+| `_gen_insanity_text` | `(kind, source) -> str` | F5 疯狂文本：`_insanity_llm` 已注入则现场生成（60 字内表现描述，截 100 字，空回退）；异常回退「（{kind}）」固定文案 + warning 日志（`[F5] 疯狂文本生成失败，回退固定文案`+exc_info，不静默吞）；未注入回退固定文案 | 906 |
+| `load_dependency_graph` | `(dep_graph)` | 加载 L2 依赖图 → 注册 Boss 节点 | 936 |
+| `get_runtime_state` / `get_incoming_edges` / `check_edge_requirements` | — | 运行时状态/依赖检查 | 965 / 971 / 976 |
+| `mark_completed` / `is_entity_completed` | — | 完成标记 | 996 / 1003 |
+| `set_background` / `set_player` / `load_player` | — | 状态设置 | 1012–1022 |
+| `get_current_description` / `get_possible_exits` / `get_available_interactions` | — | 场景查询 | 1032–1039 |
+| `is_interaction_completed` / `are_entity_requirements_met` | — | 完成/条件判断 | 1049 / 1053 |
+| `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 1068 / 1117 |
+| `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1140 |
+| `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1165 / 1168 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`） | 1177 |
+| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1212 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1237 / 1240 |
+| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1244 / 1248 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []） | 1253 / 1298 |
+| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings | 1334 / 1354 |
 
 ### MemoryManager（@1620）
 
