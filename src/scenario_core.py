@@ -827,7 +827,9 @@ class ScenarioWorld:
             if interval not in ("hour", "day"):
                 continue
             span = 60 if interval == "hour" else 1440
-            start_at = int(t.get("start_at", old))
+            if "start_at" not in t:
+                t["start_at"] = old
+            start_at = int(t["start_at"])
             expire = int(t.get("expire_at", 0))
             fired = int(t.get("_fired", 0))
             total = max(0, (min(now, expire) - start_at) // span)

@@ -231,11 +231,16 @@ class Judge:
                 # 同 id refresh:替换旧条目刷新时效,不叠条
                 player.timed_effects = [te for te in player.timed_effects
                                         if te.get("id") != str(atom.get("id", "TIMED"))]
-                player.timed_effects.append({
+                entry = {
                     "id": str(atom.get("id", "TIMED")),
                     "description": str(atom.get("description", "")),
                     "expire_at": self.world.clock.game_time + minutes,
-                })
+                }
+                if atom.get("interval"):
+                    entry["interval"] = atom["interval"]
+                if atom.get("payload"):
+                    entry["payload"] = list(atom["payload"])
+                player.timed_effects.append(entry)
             elif t == "damage":
                 # 探索侧无伤害目标:跳过 + 日志,不硬造(spec §1.2)
                 logger.warning("[effect] damage 原子在探索侧跳过: %s", atom)

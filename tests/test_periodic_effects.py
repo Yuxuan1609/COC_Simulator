@@ -73,3 +73,31 @@ class TestPeriodicEffects:
         })
         world.advance_time(120)
         assert inv.insanity["san_lost_today"] == 4
+
+    def test_hourly_split_advances_accumulate(self):
+        """三次 advance_time(50) 累计 150 分钟，hourly heal+1 应结算 2 次。"""
+        world, inv = _world_with_player(hp=10)
+        inv.timed_effects.append({
+            "id": "疗养", "description": "", "interval": "hour",
+            "expire_at": world.clock.game_time + 300,
+            "payload": [{"type": "heal", "delta": 1}],
+        })
+        world.advance_time(50)
+        world.advance_time(50)
+        world.advance_time(50)
+        assert inv.derived.HP == 12
+
+    def test_timed_atom_mounts_interval_payload(self):
+        """timed 原子挂载须保留 interval+payload，advance 后 payload 结算。"""
+        from game.judge import Judge
+        world, inv = _world_with_player(hp=10)
+        Judge(world)._execute_effect_atoms([{
+            "type": "timed", "id": "疗养", "description": "",
+            "minutes": 300, "interval": "hour",
+            "payload": [{"type": "heal", "delta": 1}],
+        }], inv)
+        te = inv.timed_effects[0]
+        assert te.get("interval") == "hour"
+        assert te.get("payload") == [{"type": "heal", "delta": 1}]
+        world.advance_time(150)
+        assert inv.derived.HP == 12

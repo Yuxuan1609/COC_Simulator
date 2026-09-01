@@ -1007,11 +1007,16 @@ class CombatSystem:
                             wp = self.world.player
                             wp.timed_effects = [te for te in getattr(wp, "timed_effects", [])
                                                 if te.get("id") != str(atom.get("id", "TIMED"))]
-                            wp.timed_effects.append({
+                            entry = {
                                 "id": str(atom.get("id", "TIMED")),
                                 "description": str(atom.get("description", "")),
                                 "expire_at": self.world.clock.game_time + minutes,
-                            })
+                            }
+                            if atom.get("interval"):
+                                entry["interval"] = atom["interval"]
+                            if atom.get("payload"):
+                                entry["payload"] = list(atom["payload"])
+                            wp.timed_effects.append(entry)
                         else:
                             import logging
                             logging.getLogger("game.combat").warning(
