@@ -547,7 +547,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
   ]
 }}
 """
-    _show_prompt("Keeper Parse", prompt, system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。\n\n你的任务是为玩家输入匹配结构化的游戏内容。\n实体分为四类：[INTERACT]（场景交互）、[AUTO_TRIGGER]（自动触发）、[NPC_INTERACT]/[NPC_AT]（NPC 专属实体）、[EVENT]（全局事件）。\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/use/other/npc_interact)。\n只考虑可触发的entity，包括场景实体、NPC 专属实体和全局事件。\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。\n\n行为优先级：\n- 有明确对应实体时优先返回实体\n- 玩家使用/服用/施放/念诵背包物品或已知法术时返回 use，text 填原文（不要自己猜物品名）\n- 玩家行为泛指搜索整个场景时返回 search，想要移动到另一场景时返回 move\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问时返回 npc_interact，npc_name 填 NPC 名称\n- 其他情况下返回 other：纯氛围/感慨/感知描述（唱歌、观察、自言自语）用 impact=\"flavor\"；尝试新行为、改变环境、创造性地使用周围事物用 impact=\"creative\"\n- 与玩家行为无关的氛围 auto_trigger 不要捎带\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作\n- auto_trigger 必须在 actions 列表最前面\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。\n直接输出 JSON，不要额外文字。\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}")
+    _show_prompt("Keeper Parse", prompt, system="你是一个优秀的跑团KP，擅长理解玩家的意图并将之与游戏实体精准匹配。\n\n你的任务是为玩家输入匹配结构化的游戏内容。\n实体分为四类：[INTERACT]（场景交互）、[AUTO_TRIGGER]（自动触发）、[NPC_INTERACT]/[NPC_AT]（NPC 专属实体）、[EVENT]（全局事件）。\n硬性条件已由系统判定，你只需判断意图匹配了哪个可触发实体或行为(move/search/use/other/npc_interact)。\n只考虑可触发的entity，包括场景实体、NPC 专属实体和全局事件。\n如有「条件=」字段则需评估是否满足；无「条件=」字段则默认条件已满足。\n若调查员信息中显示疯狂状态，条件评估与检定相关描述应体现疯狂的影响。\n\n行为优先级：\n- 有明确对应实体时优先返回实体\n- 玩家使用/服用/施放/念诵背包物品或已知法术时返回 use，text 填原文（不要自己猜物品名）\n- 玩家行为泛指搜索整个场景时返回 search，想要移动到另一场景时返回 move\n- 当玩家明显是要和当前场景中存在的 NPC 对话/互动/询问时返回 npc_interact，npc_name 填 NPC 名称\n- 其他情况下返回 other：纯氛围/感慨/感知描述（唱歌、观察、自言自语）用 impact=\"flavor\"；尝试新行为、改变环境、创造性地使用周围事物用 impact=\"creative\"\n- 与玩家行为无关的氛围 auto_trigger 不要捎带\n- 一般一个动作只匹配一个结果，特殊情况下允许多个。玩家一轮输入可能不只有一个动作\n- auto_trigger 必须在 actions 列表最前面\n\n输出规则：id 必须从实体列表中精确复制；move.target 填可移动方向中列出的目标；只考虑可触发的entity。\n直接输出 JSON，不要额外文字。\n\n输出格式：{\"actions\": [{\"type\": \"auto_trigger\", \"id\": \"...\"}, ..., {\"type\": \"npc_interact\", \"npc_name\": \"NPC名称\"}]}")
     return prompt
 
 
@@ -923,7 +923,6 @@ Entity 字段规则：
 - side_effects: 间接后果——与 result 不重合的附带影响。自然语言字符串列表。无条件则为空列表
 - difficulty: None / regular / hard / extreme；不涉及检定则为 None
 - graded_result: type 不为"无"时填写。四等级：on_failure=检定失败、on_regular=常规成功、on_hard=困难成功（≤技能值/2）、on_extreme=极难成功（≤技能值/5）。若原文未区分等级，各等级可描述相同内容
-- 若调查员处于疯狂状态（见【调查员】块），相关检定与结果描述应体现疯狂的影响
 - entities 的 result/side_effects 不涉及进入与怪物的战斗/对抗/追捕（怪物遭遇和战斗由 game loop 运行时统一管理）。可以声明怪物出现，但不描述进入和怪物的对砍/战斗
 - @标记可嵌入 result / side_effects / graded_result 任意字段中，与普通文本混合。间接/附带影响使用 @函数(参数) 语法：@spawn_enemy(enemy_ref="名称", scene="场景", quantity=1) / @grant_weapon(weapon_ref="名称", scene="场景", quantity=1) / @stat_change(stat_name="属性", delta=-1) / @item_gain(item_name="物品", quantity=1) / @consume_item(item_name="物品", quantity=1) / @npc_state_change(npc_name="名称", new_state="状态") / @npc_follow(npc_name="名称", follow=true) / @grant_spell(spell_ref="法术库名称或id"). @grant_weapon 若 scene 为空，表示直接授予调查员（等价于搜索拾取武器的流程，只是触发条件不同）
 

@@ -222,3 +222,39 @@ class TestInsanityPresentation:
         from prompts import _build_investigator_info
         world, inv = _world_with_player()
         assert "疯狂状态" not in _build_investigator_info(world.build_snapshot())
+
+
+class TestInsanityLoadGame:
+    """F5 review 修复：读档重注 _insanity_llm + 疯狂规则入 keeper parse 系统 prompt。"""
+
+    def test_load_game_restores_insanity_llm(self, tmp_path):
+        """load_game 后 world 仍带 _insanity_llm 注入（Issue 2）。"""
+        from helpers import StubNarrator
+        from game.agents.keeper import Keeper
+        from game_loop import save_game, load_game
+        world, inv = _world_with_player()
+        keeper = Keeper(world)
+        game = {"keeper": keeper, "narrator": StubNarrator(), "author": None}
+        marker = lambda prompt: "LLM疯狂文本"
+        world.set_insanity_llm(marker)
+        path = str(tmp_path / "save.json")
+        save_game(game, path)
+
+        load_game(game, path)
+        assert game["keeper"].world._insanity_llm is marker, \
+            "load_game 重绑 world 后须重注 _insanity_llm（读档局不得回退固定文案）"
+
+    def test_keeper_parse_prompt_system_mentions_madness(self, monkeypatch):
+        """Issue 1：疯狂联动规则入 keeper parse 系统 prompt（Author prompt 无【调查员】块）。"""
+        import prompts
+        captured = {}
+
+        def _capture(label, content, log_dir=None, system=None):
+            captured["system"] = system or ""
+
+        monkeypatch.setattr(prompts, "_show_prompt", _capture)
+        world, inv = _world_with_player()
+        inv.insanity = {"temporary": "幻觉丛生"}
+        prompts.build_keeper_parse_prompt(world, "看看四周")
+        assert "疯狂" in captured["system"], \
+            "keeper parse 系统 prompt 应含疯狂联动规则"

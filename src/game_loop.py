@@ -691,6 +691,7 @@ def load_game(game: dict, path: str) -> None:
     restored.spell_library = cur.spell_library
     restored.time_costs = cur.time_costs
     restored.comms_interval = cur.comms_interval
+    restored.set_insanity_llm(getattr(cur, "_insanity_llm", None))
     keeper.set_world(restored)
     with open(path, "r", encoding="utf-8") as f:
         meta = _json.load(f).get("_meta", {})
