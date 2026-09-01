@@ -193,9 +193,8 @@ def render_markdown(report: dict) -> str:
 def run_report(summary_path: str, module_dir: str, out_path: str | None = None) -> dict:
     summary = json.loads(Path(summary_path).read_text(encoding="utf-8"))
     d = Path(module_dir)
-    l2_path = d / "l2_keeper.json"
-    if not l2_path.exists():
-        l2_path = d / "l2_keeper_test.json"
+    l2_name = "l2_keeper_test.json" if (d / "l2_keeper_test.json").exists() else "l2_keeper.json"
+    l2_path = d / l2_name
     l2 = json.loads(l2_path.read_text(encoding="utf-8"))
     l3_path = d / "l3_designer.json"
     l3 = json.loads(l3_path.read_text(encoding="utf-8")) if l3_path.exists() else None

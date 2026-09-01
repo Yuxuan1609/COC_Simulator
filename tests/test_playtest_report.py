@@ -204,3 +204,25 @@ class TestPlaytestReport:
         assert (tmp_path / "report.md").exists()
         assert rep["scene_coverage"]["visited"] == 1
         assert json.loads(out.read_text(encoding="utf-8"))["elapsed"]["turns"] == 1
+
+    def test_run_report_prefers_l2_keeper_test(self, tmp_path):
+        from module_designer.playtest_report import run_report
+        turns = [_turn(1, "测试房")]
+        (tmp_path / "_summary.json").write_text(
+            json.dumps(_summary(turns), ensure_ascii=False), encoding="utf-8")
+        mod = tmp_path / "mod"
+        mod.mkdir()
+        (mod / "l2_keeper.json").write_text(json.dumps({
+            "scenes": {"正式房": {}},
+        }, ensure_ascii=False), encoding="utf-8")
+        (mod / "l2_keeper_test.json").write_text(json.dumps({
+            "scenes": {"测试房": {}},
+        }, ensure_ascii=False), encoding="utf-8")
+        (mod / "l3_designer.json").write_text("{}", encoding="utf-8")
+        rep = run_report(str(tmp_path / "_summary.json"), str(mod),
+                         str(tmp_path / "report.json"))
+        cov = rep["scene_coverage"]
+        assert cov["total"] == 1
+        assert cov["visited"] == 1
+        assert cov["missing"] == []
+        assert "测试房" not in cov["missing"]

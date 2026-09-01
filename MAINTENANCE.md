@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-01 | F32 复审：`run_report` L2 优先级对齐 `llm_player`——存在 `l2_keeper_test.json` 则用之，否则 `l2_keeper.json`（原先 prod 优先，双文件模组会按正式 L2 聚合）。TDD：`test_run_report_prefers_l2_keeper_test`（双文件+visited 测试房）。playtest_report 215→214。 |
 | 2026-09-01 | F32 试玩报告（S3-P2 Task 7，spec §6）：纯聚合零 rubric 零 LLM。新建 `playtest_report.py`（215 行）：`build_report`/`render_markdown`/`run_report`/`resolve_player_goal`。场景覆盖=turns_detail.location 去重；结局=ending 字段+回合；实体触发=skill_results.entity_id ∪ mech `entities=`/`at=` ∩ `_iter_l2_entities`（含 NPC-bound）；检定分布=skill_results × L2 `difficulty`/`check.difficulty`（未知 entity_id→unknown）；耗时=summary.total_elapsed_s+turns。goal 缺省：profile.goal → L3 `module_meta.player_goal` → driving_force[:80]；`run_llm_player` 仅 test_mode==goal 时回填，不改 PLAYER_SYSTEM。生成端：L3 schema/ModuleMeta/`l3_template.json` 加 optional `player_goal`；STEP2C_L3_SYSTEM 加一句字段说明。TDD：tests/test_playtest_report.py 14 测 RED（ModuleNotFoundError）→ GREEN。全量 453 passed / 21 deselected（基线 438+14；1 既有用例）。未改 PLAYER_SYSTEM，跳过 real_llm_smoke。 |
 | 2026-09-01 | F31 lint 复审 Important：① `_iter_l2_entities` 纳入 `npc_profiles.bound_interactions`/`bound_auto_triggers`（唯一性、markup known_entities、ending refs、难度统计、可达种子均覆盖 NPC-bound）；② 锁测 `npc_profiles.scene` 不存在→error / 真实场景不报；③ 删 `lint.py` 死代码 `if start in eg.nodes`（场景名∉ entity 图）。TDD：tests/test_module_lint.py 7→9：`test_npc_profiles_scene_refs` / `test_npc_bound_interaction_duplicate_id_is_error`。layered_pipeline 1062→1071 / lint 124→122。 |
 | 2026-09-01 | F31 spec-review（Task 6 复审 2 项）：① 实体可达性不再用 `start_scene` 当图节点（场景名∉ entity id，原 `if start in eg.nodes` 恒假）。改为以起点场景内实体 id（含 `boss_encounters.scene==start`）为多种子 BFS，不可达节点 warning；起点无图内实体则跳过。② `cross_validate_layers` 将 `l2.boss_encounters[].id` 纳入 `known_entities`，结局 condition 提及现有 `BOSS_*` 不再误报。TDD：tests/test_module_lint.py 5→7：`test_entity_reachability_from_start_scene_seeds` / `test_ending_ref_known_boss_ok_unknown_errors`。RED 2 failed → GREEN。lint.py 106→124 / layered_pipeline 1059→1062。 |
@@ -912,7 +913,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_difficulty_counts` | 遍历 L2 实体 `check.difficulty`/`difficulty`，跳过 None/空 | 34 |
 | `run_lint` | `(module_dir) -> int` 加载三件套 → validate_all + cross_validate_layers + 场景可达/孤立 warning + 实体可达（起点场景实体多种子 BFS，无种子跳过）+ 难度 info；有 error 返回 1 | 48 |
 
-### playtest_report.py (215 行) — F32 单次试玩纯聚合报告
+### playtest_report.py (214 行) — F32 单次试玩纯聚合报告
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -922,7 +923,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_parse_mech_ids` | `(mech) -> set[str]` | 解析 mech 行 `entities=`/`at=`（`eid:tier` 只取 eid） | 43 |
 | `build_report` | `(summary, module_l2, module_l3=None) -> dict` | 场景覆盖/结局/实体触发/检定分布/耗时。触发=skill_results.entity_id ∪ mech ids ∩ 模组实体；未知检定 entity→difficulty `unknown` | 65 |
 | `render_markdown` | `(report) -> str` | 四指标段 + 耗时行，对齐 spec §6 示例 | 146 |
-| `run_report` | `(summary_path, module_dir, out_path=None) -> dict` | 读 `_summary.json`+l2/l3，写 json+同名 md | 193 |
+| `run_report` | `(summary_path, module_dir, out_path=None) -> dict` | 读 `_summary.json`+l2/l3，写 json+同名 md。L2：`l2_keeper_test.json` 存在则用之，否则 `l2_keeper.json`（对齐 `llm_player`） | 193 |
 
 ### __main__.py (4 行)
 
