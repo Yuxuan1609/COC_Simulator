@@ -46,6 +46,14 @@ class SceneWeapon:
 
 
 @dataclass
+class SceneItem:
+    kind: str
+    ref: str
+    hidden: bool = False
+    quantity: int = 1
+
+
+@dataclass
 class NPCStateChange:
     npc_name: str
     new_state: str

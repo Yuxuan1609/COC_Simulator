@@ -101,6 +101,7 @@ L2_SCENE_SCHEMA = {
     "auto_triggers": {"required": False, "list_of": L2_AUTO_TRIGGER_SCHEMA},
     "encounters": {"required": False},
     "scene_weapons": {"required": False},
+    "scene_items": {"required": False},
     "extra": {"required": False},
 }
 

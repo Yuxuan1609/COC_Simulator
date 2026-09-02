@@ -17,7 +17,7 @@ from config import COMMS_INTERVAL_MINUTES, WR0_ENABLED
 
 from game.side_effects import (
     ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon, GrantSpell,
-    SceneWeapon, NPCStateChange, NPCFollow,
+    SceneWeapon, SceneItem, NPCStateChange, NPCFollow,
     parse_markup, parse_markup_all,
 )
 
@@ -262,6 +262,7 @@ class Node:
     auto_triggers: List[Entity] = field(default_factory=list)
     encounters: list = field(default_factory=list)
     scene_weapons: list = field(default_factory=list)
+    scene_items: list = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
     def get_interaction(self, name: str) -> Optional[Entity]:
@@ -344,6 +345,7 @@ class DirectedGraph:
                 auto_triggers=auto_triggers,
                 encounters=node_info.get("encounters", []),
                 scene_weapons=node_info.get("scene_weapons", []),
+                scene_items=node_info.get("scene_items", []),
                 extra=node_info.get("extra", {}),
             )
 
@@ -439,6 +441,7 @@ class DirectedGraph:
                 ],
                 "encounters": node.encounters,
                 "scene_weapons": node.scene_weapons,
+                "scene_items": node.scene_items,
                 "extra": node.extra,
             }
         events_list = [
@@ -483,6 +486,7 @@ class DirectedGraph:
                 auto_triggers=auto_triggers,
                 encounters=node_data.get("encounters", []),
                 scene_weapons=node_data.get("scene_weapons", []),
+                scene_items=node_data.get("scene_items", []),
                 extra=node_data.get("extra", {}),
             )
         events_data = data.get("events", [])
@@ -690,6 +694,7 @@ class ScenarioWorld:
 
         # 本体状态
         self.scene_weapons: dict[str, list[SceneWeapon]] = {}
+        self.scene_items: dict[str, list] = {}
         self.weapon_library = weapon_library
         self.item_library = item_library      # 统一资源层：物品库（可选，init_game 注入）
         self.spell_library = spell_library    # 统一资源层：法术库
@@ -711,6 +716,13 @@ class ScenarioWorld:
                     )
                     for sw in node.scene_weapons
                 ]
+            raw_items = getattr(node, "scene_items", None) or []
+            if raw_items:
+                self.scene_items[node_id] = [
+                    self._scene_item_from_raw(raw) for raw in raw_items
+                ]
+        self._hydrate_scene_items_from_weapons()
+        self._sync_scene_weapons_from_items()
         self.time_costs: dict = {}
         self.comms_interval: int = COMMS_INTERVAL_MINUTES
         self.npc_states: dict[str, str] = {}
@@ -722,6 +734,38 @@ class ScenarioWorld:
 
         self.runtime_state: Dict[str, NodeRuntimeState] = {}
         self.dependency_graph: Dict[str, Any] = {}
+
+    @staticmethod
+    def _scene_item_from_raw(raw) -> SceneItem:
+        if isinstance(raw, SceneItem):
+            return raw
+        return SceneItem(
+            kind=raw.get("kind", "item"),
+            ref=raw.get("ref", ""),
+            hidden=bool(raw.get("hidden", False)),
+            quantity=int(raw.get("quantity", 1) or 1),
+        )
+
+    def _hydrate_scene_items_from_weapons(self) -> None:
+        for scene, weps in self.scene_weapons.items():
+            existing = {(i.kind, i.ref) for i in self.scene_items.get(scene, [])}
+            bucket = self.scene_items.setdefault(scene, [])
+            for sw in weps:
+                key = ("weapon", sw.weapon_ref)
+                if key in existing:
+                    continue
+                bucket.append(SceneItem(
+                    kind="weapon", ref=sw.weapon_ref, hidden=False, quantity=1))
+                existing.add(key)
+
+    def _sync_scene_weapons_from_items(self) -> None:
+        for scene, items in self.scene_items.items():
+            weps = [
+                SceneWeapon(weapon_ref=i.ref, scene=scene, quantity=i.quantity)
+                for i in items if i.kind == "weapon"
+            ]
+            if weps:
+                self.scene_weapons[scene] = weps
 
     # ── 向后兼容属性 — 代理到 clock ──
 
@@ -1195,6 +1239,11 @@ class ScenarioWorld:
                 {"weapon_ref": sw.weapon_ref, "quantity": sw.quantity}
                 for sw in self.scene_weapons.get(self.current_location, [])
             ],
+            "scene_items": [
+                {"kind": i.kind, "ref": i.ref, "hidden": i.hidden,
+                 "quantity": i.quantity}
+                for i in self.scene_items.get(self.current_location, [])
+            ],
             "runtime": {
                 "completed": [
                     eid for eid, s in self.runtime_state.items() if s.completed
@@ -1286,6 +1335,14 @@ class ScenarioWorld:
                         for sw in weps]
                 for scene, weps in self.scene_weapons.items()
             },
+            "scene_items": {
+                scene: [
+                    {"kind": i.kind, "ref": i.ref, "hidden": i.hidden,
+                     "quantity": i.quantity}
+                    for i in items
+                ]
+                for scene, items in self.scene_items.items()
+            },
             "memory": self.memory.to_dict(),
             "chronicle": self.chronicle.to_dict(),
             "san_seen_sources": sorted(self.san_seen_sources),
@@ -1329,6 +1386,23 @@ class ScenarioWorld:
         if clock_data:
             from game.clock import GameClock
             world.clock = GameClock.from_dict(clock_data)
+        scene_weapons_data = data.get("scene_weapons", {})
+        for scene, weps in scene_weapons_data.items():
+            world.scene_weapons[scene] = [
+                SceneWeapon(weapon_ref=w["weapon_ref"], scene=scene,
+                            quantity=w.get("quantity", 1))
+                for w in weps
+            ]
+        scene_items_data = data.get("scene_items")
+        if scene_items_data is not None:
+            world.scene_items = {
+                scene: [cls._scene_item_from_raw(it) for it in items]
+                for scene, items in scene_items_data.items()
+            }
+        else:
+            world.scene_items = {}
+        world._hydrate_scene_items_from_weapons()
+        world._sync_scene_weapons_from_items()
         return world
 
     def save_state(self, path: str, extra_meta: dict | None = None):
@@ -1407,6 +1481,16 @@ class ScenarioWorld:
                 SceneWeapon(weapon_ref=w["weapon_ref"], scene=scene, quantity=w.get("quantity", 1))
                 for w in weps
             ]
+        scene_items_data = world_data.get("scene_items")
+        if scene_items_data is not None:
+            world.scene_items = {
+                scene: [cls._scene_item_from_raw(it) for it in items]
+                for scene, items in scene_items_data.items()
+            }
+        else:
+            world.scene_items = {}
+        world._hydrate_scene_items_from_weapons()
+        world._sync_scene_weapons_from_items()
         ps = data.get("player_snapshot")
         if ps is not None:
             from investigator.serialization import from_dict as inv_from_dict
