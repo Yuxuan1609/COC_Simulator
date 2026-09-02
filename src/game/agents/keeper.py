@@ -8,7 +8,7 @@ from scenario_core import ScenarioWorld, Entity
 from game.side_effects import (
     parse_markup_all,
     ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon, SceneWeapon,
-    NPCStateChange, NPCFollow,
+    SceneItem, NPCStateChange, NPCFollow,
 )
 from ..messages import (
     ActionIntent, ActionOutcome,
@@ -500,6 +500,53 @@ class Keeper:
             items.remove(target)
         if not items:
             self.world.scene_items.pop(scene, None)
+        self.world._sync_scene_weapons_from_items()
+        return ref
+
+    _DROP_RE = re.compile(r"(丢|扔|放下)")
+    _DROP_NAME_RE = re.compile(r"(?:丢掉|放下|丢|扔)\s*(.+)")
+
+    def _detect_direct_drop(self, raw: str) -> tuple[str, str] | None:
+        """直接丢弃意图：丢/扔/放下/丢掉 + 最长持有名；否定词不触发。
+        返回 (kind, ref)；点名未持有返回 ("missing", name)；无名不触发。"""
+        if not self._DROP_RE.search(raw) or self._NEGATIVE_RE.search(raw):
+            return None
+        if not self.world.player:
+            return None
+        named = []
+        for it in self.world.player.item_manager.list_all():
+            if it.name and it.name in raw:
+                named.append(("item", it.name))
+        for w in self.world.player.weapons:
+            if w.name and w.name in raw:
+                named.append(("weapon", w.name))
+        if named:
+            return max(named, key=lambda x: len(x[1]))
+        m = self._DROP_NAME_RE.search(raw)
+        if not m:
+            return None
+        name = re.sub(r"^[了掉]+", "", m.group(1).strip()).strip()
+        if not name:
+            return None
+        return ("missing", name)
+
+    def _drop_to_scene(self, kind: str, ref: str) -> str:
+        """从背包/武器槽移除一件并作为暴露 SceneItem 放入当前场景。"""
+        player = self.world.player
+        if not player:
+            return ref
+        if kind == "weapon":
+            player.remove_weapon(ref)
+        else:
+            player.item_manager.remove(ref)
+        scene = self.world.current_location
+        items = self.world.scene_items.setdefault(scene, [])
+        existing = next((i for i in items if i.kind == kind and i.ref == ref), None)
+        if existing:
+            if kind == "item":
+                existing.quantity += 1
+        else:
+            items.append(SceneItem(kind=kind, ref=ref, hidden=False, quantity=1))
         self.world._sync_scene_weapons_from_items()
         return ref
 

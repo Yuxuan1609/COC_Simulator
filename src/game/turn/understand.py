@@ -25,6 +25,14 @@ def phase_a_understand(ctx, acc, tools) -> Early | None:
         names = tools._grant_scene_item(kind, ref)
         return Early(TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。"))
 
+    drop = tools._detect_direct_drop(ctx.raw)
+    if drop:
+        kind, ref = drop
+        if kind == "missing":
+            return Early(TurnResult(status=TurnStatus.COMPLETED, text=f"你没有{ref}。"))
+        tools._drop_to_scene(kind, ref)
+        return Early(TurnResult(status=TurnStatus.COMPLETED, text=f"你丢掉了{ref}。"))
+
     if ctx.depth >= MAX_ESCALATION_DEPTH:
         # Guard against infinite recursion — re-execute deterministically
         return Early(tools._process_deterministic_only(ctx.turn_input))

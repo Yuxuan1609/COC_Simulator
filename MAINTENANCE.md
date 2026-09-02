@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-02 | F17 Task 3 丢弃到场景（S3-P3 spec）：understand 在 turn_number+=1 前、拾取短路旁加丢弃短路。`_detect_direct_drop` 动词丢/扔/放下/丢掉 + 最长持有名；否定词不触发；点名未持有 Early「你没有X。」。`_drop_to_scene` 从背包/武器槽移除一件，append 暴露 SceneItem（同 kind+ref：物品 quantity+=1，武器不重复行），再 `_sync_scene_weapons_from_items`。TDD：test_scene_items TestDropToScene 5 测 RED 4 failed → GREEN。keeper 895→942 / understand 190→198。 |
 | 2026-09-02 | F17 Task 2 review：① `_detect_direct_pickup` 先收集当前场景 `ref in raw` 的全部 scene_items，取最长 ref；hidden→Early 没发现，exposed→授予（修隐藏「刀」挡住暴露「小刀」）。② GrantWeapon 有 scene / 空 scene fallback 写 `SceneItem(kind=weapon, hidden=False)` 入 `world.scene_items` 再 `_sync`（不再只 append scene_weapons）；World AT 同口径。TDD：test_scene_items 增 longest-ref pickup + GrantWeapon 经 sync 仍在 scene_items。RED 2 failed → GREEN。keeper 899→895 / scenario_core 2066 行不变 / game_loop 943 行不变。 |
 | 2026-09-02 | F17 Task 2 搜索暴露 + 免费拾取 + 废弃 weapon_offer（S3-P3 spec §1.2-1.5）：搜索成功翻转当前场景全部 hidden→False 并叙事列名、不弹是/否；失败不暴露。understand 在 turn_number+=1 前短路：exposed 未持有直接授予（武器槽 / ItemManager），hidden 点名 Early「你没发现这东西。」不推进回合。删除 `_weapon_offer`/`_weapon_offer_msg`/是否应答/finalize pending/game_loop 拼接。GrantWeapon(scene="") 改为直接入包。`_sync_scene_weapons_from_items` 先 clear 再投影（仅非 hidden 武器），空列表不留 stale。TDD：test_scene_items TestSearchExpose 5 测 + e2e 改写。全量 462 passed / 24 deselected。keeper 881→899 / understand 207→190 / finalize 142→124 / game_loop 951→943 / scenario_core 2061→2066。 |
 | 2026-09-02 | F17 Task 1 SceneItem 数据模型 + 加载映射 + 入档往返（S3-P3 spec §1.1，数据层 only）：`SceneItem(kind, ref, hidden, quantity)` @ side_effects.py:49；`Node.scene_items` 透传；`ScenarioWorld.scene_items` 从 node 加载后 `_hydrate_scene_items_from_weapons`（同 kind+ref 不重复）+ `_sync_scene_weapons_from_items` 投影；`to_dict`/`from_dict`/`load_state` 写读 `scene_items`，旧档缺键从 `scene_weapons` hydrate；`build_snapshot` 增当前场景 scene_items；L2_SCENE_SCHEMA 加 optional `scene_items`。TDD：tests/test_scene_items.py 3 测 RED（AttributeError）→ GREEN。scenario_core 1981→2061 / side_effects 161→169 / layered_schema 364→365。 |
@@ -258,7 +259,9 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：懒创建 `TurnRunner(self)` 并 `execute`（A–E 循环）；`_depth` 仅签名兼容，不再使用（无 `_run_turn_pipeline`、无递归 `process_turn`） | 164 |
 | `_detect_direct_pickup` | `(raw) -> tuple[str, str, bool] \| None` | F17：拾取动词+场景物品名；`ref in raw` 的全部候选取最长 ref（hidden→没发现，exposed→授予，防短 hidden 挡住长 exposed）；无点名时仅一件暴露未持有可不点名；含否定词不触发。返回 (kind, ref, hidden) | 456 |
 | `_grant_scene_item` | `(kind, ref) -> str` | F17：武器走 weapon_library+_build_investigator_weapon 入槽；物品走 item_manager.add；quantity>1 减一否则移除；空列表 del scene key；再 `_sync_scene_weapons_from_items` | 481 |
-| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 510 |
+| `_detect_direct_drop` | `(raw) -> tuple[str, str] \| None` | F17：丢/扔/放下/丢掉 + 最长持有名（item_manager / weapons）；否定词不触发；点名未持有返回 `("missing", name)`；无名不触发 | 509 |
+| `_drop_to_scene` | `(kind, ref) -> str` | F17：从背包/武器槽移除一件；当前场景同 kind+ref 已有则物品 quantity+=1、武器不重复行，否则 append 暴露 SceneItem；再 `_sync_scene_weapons_from_items` | 533 |
+| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 553 |
 | `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 171 |
 | `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 179 |
 | `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 196 |
@@ -267,19 +270,19 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 341 |
 | `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node（F23：completed 且非 repeatable 才跳过 @388/@401） | 368 |
 | `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入；GrantWeapon(scene="") 直接入包（无 offer）；Restart 时由 runner 在重入 A 前调用（A 入口会 clear pending） | 411 |
-| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表（live system= 含 `KEEPER_PARSE_MADNESS_RULE` @548） | 535 |
-| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 569 |
-| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 599 |
-| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找（F23：NPC bound completed 且非 repeatable 才跳过 @628） | 612 |
-| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行（A 的 `depth>=MAX` 与 runner Restart 后 `depth>=MAX` 两处入口） | 649 |
-| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 670 |
-| `_build_world_snapshot` | `()` | 构建世界快照 dict | 686 |
-| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 698 |
-| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 705 |
-| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 712 |
-| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 729 |
-| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 818 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 872 |
+| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表（live system= 含 `KEEPER_PARSE_MADNESS_RULE` @591） | 578 |
+| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 612 |
+| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 642 |
+| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找（F23：NPC bound completed 且非 repeatable 才跳过 @671） | 655 |
+| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行（A 的 `depth>=MAX` 与 runner Restart 后 `depth>=MAX` 两处入口） | 692 |
+| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 713 |
+| `_build_world_snapshot` | `()` | 构建世界快照 dict | 729 |
+| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 741 |
+| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 748 |
+| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 755 |
+| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 772 |
+| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 861 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 915 |
 
 ## src/game/turn/ — 回合管线（R1 已收口）
 
@@ -307,11 +310,11 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 
 | `__init__` | `(keeper)` | 持有 Keeper 引用 | 10 |
 | `execute` | `(turn_input, author=None)` | `while` 循环：建 ctx/acc → 顺序跑 A–E；`Early` 直接返回；`Restart` 则 `_apply_pending` 后 `depth+=1` 重入（`depth>=MAX_ESCALATION_DEPTH` 走 `_process_deterministic_only`）；`TurnFrozenError` → `_build_frozen_response`；正常走完返回 `acc.result`。不把 `_depth` 从 facade 传入（runner 自管 depth） | 13 |
 
-### `understand.py`（190 行）— A 理解阶段（R1-W1）
+### `understand.py`（198 行）— A 理解阶段（R1-W1）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `phase_a_understand` | `(ctx, acc, tools) -> Early \| None` | 入口守卫（F17 直接拾取：hidden 点名 Early「没发现」/exposed 授予，均在 turn_number+=1 前；深度保护）→ 回合初始化 → NPC AT 注入 → LUCK 声明式消耗 → use/move/search 短路 / pre-parse 消歧 / LLM parse（TurnFrozenError 冒泡，不在此捕获）→ NPC 对话分流（纯对话 Early；talk_to 走 `keeper.call_deepseek` 以保留既有 monkeypatch）→ use 归一 → intent 预发射；产出写入 `acc`/`ctx.raw`/`tools` 会话态 | 14 |
+| `phase_a_understand` | `(ctx, acc, tools) -> Early \| None` | 入口守卫（F17 直接拾取：hidden 点名 Early「没发现」/exposed 授予；直接丢弃：持有则入场景暴露 SceneItem，未持有 Early「你没有X。」；均在 turn_number+=1 前；深度保护）→ 回合初始化 → NPC AT 注入 → LUCK 声明式消耗 → use/move/search 短路 / pre-parse 消歧 / LLM parse（TurnFrozenError 冒泡，不在此捕获）→ NPC 对话分流（纯对话 Early；talk_to 走 `keeper.call_deepseek` 以保留既有 monkeypatch）→ use 归一 → intent 预发射；产出写入 `acc`/`ctx.raw`/`tools` 会话态 | 14 |
 
 ### `adjudicate.py`（293 行）— B 裁决阶段（R1-W2 + W6 作者门）
 

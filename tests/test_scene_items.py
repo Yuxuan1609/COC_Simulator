@@ -172,6 +172,105 @@ class TestSearchExpose:
         assert "刀" in refs
 
 
+class TestDropToScene:
+    def _game_with_item(self, monkeypatch, item="钥匙"):
+        from helpers import make_world, make_scene, stub_keeper_llm, make_game
+        from game.agents.keeper import Keeper
+        from investigator import Investigator, Skill
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = Investigator(name="测试员", age=25, gender="男",
+                           skills=[Skill(name="侦查", base_value=50)])
+        inv.item_manager.add(item)
+        world.set_player(inv)
+        keeper = Keeper(world)
+        stub_keeper_llm(
+            keeper, monkeypatch,
+            parse_results=[[{"type": "other", "text": "随便"}]])
+        return make_game(keeper), world, inv, keeper
+
+    def _game_with_weapon(self, monkeypatch, name="手枪"):
+        from helpers import make_world, make_scene, stub_keeper_llm, make_game
+        from game.agents.keeper import Keeper
+        from investigator import Investigator, Skill, Weapon
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = Investigator(name="测试员", age=25, gender="男",
+                           skills=[Skill(name="侦查", base_value=50)])
+        inv.add_weapon(Weapon(name=name, skill_name="射击(手枪)"))
+        world.set_player(inv)
+        keeper = Keeper(world)
+        stub_keeper_llm(
+            keeper, monkeypatch,
+            parse_results=[[{"type": "other", "text": "随便"}]])
+        return make_game(keeper), world, inv, keeper
+
+    def test_drop_item_to_scene_exposed(self, monkeypatch):
+        from helpers import assert_player_turn_contract
+        from game_loop import run_turn
+        game, world, inv, keeper = self._game_with_item(monkeypatch)
+        r = run_turn(game, "我丢掉钥匙")
+        assert_player_turn_contract(r)
+        assert not inv.item_manager.has("钥匙")
+        items = world.scene_items.get("room_a", [])
+        assert any(i.kind == "item" and i.ref == "钥匙" and not i.hidden for i in items)
+        assert keeper.turn_number == 0
+        assert r.pending_interaction is None
+
+    def test_drop_weapon_to_scene(self, monkeypatch):
+        from helpers import assert_player_turn_contract
+        from game_loop import run_turn
+        game, world, inv, keeper = self._game_with_weapon(monkeypatch)
+        r = run_turn(game, "我丢掉手枪")
+        assert_player_turn_contract(r)
+        assert not any(w.name == "手枪" for w in inv.weapons)
+        items = world.scene_items.get("room_a", [])
+        assert any(i.kind == "weapon" and i.ref == "手枪" and not i.hidden for i in items)
+        assert keeper.turn_number == 0
+
+    def test_drop_then_pickup_roundtrip(self, monkeypatch):
+        from helpers import assert_player_turn_contract
+        from game_loop import run_turn
+        game, world, inv, keeper = self._game_with_item(monkeypatch)
+        r1 = run_turn(game, "我丢掉钥匙")
+        assert_player_turn_contract(r1)
+        r2 = run_turn(game, "我捡起钥匙")
+        assert_player_turn_contract(r2)
+        assert inv.item_manager.has("钥匙")
+        assert not world.scene_items.get("room_a")
+        assert keeper.turn_number == 0
+
+    def test_negative_does_not_drop(self, monkeypatch):
+        from helpers import assert_player_turn_contract
+        from game_loop import run_turn
+        game, world, inv, keeper = self._game_with_item(monkeypatch)
+        r = run_turn(game, "我不丢掉钥匙")
+        assert_player_turn_contract(r)
+        assert inv.item_manager.has("钥匙")
+        assert not world.scene_items.get("room_a")
+
+    def test_drop_unowned_early(self, monkeypatch):
+        from helpers import make_world, make_scene, stub_keeper_llm, make_game
+        from helpers import assert_player_turn_contract
+        from game.agents.keeper import Keeper
+        from game_loop import run_turn
+        from investigator import Investigator, Skill
+
+        world = make_world({"room_a": make_scene()}, "room_a")
+        inv = Investigator(name="测试员", age=25, gender="男",
+                           skills=[Skill(name="侦查", base_value=50)])
+        world.set_player(inv)
+        keeper = Keeper(world)
+        stub_keeper_llm(
+            keeper, monkeypatch,
+            parse_results=[[{"type": "other", "text": "随便"}]])
+        r = run_turn(make_game(keeper), "我丢掉钥匙")
+        assert_player_turn_contract(r)
+        assert "你没有钥匙" in r.narrative
+        assert keeper.turn_number == 0
+        assert not world.scene_items.get("room_a")
+
+
 def test_grant_weapon_scene_survives_sync():
     """GrantWeapon(scene=...) 写入 scene_items；_sync 不得丢掉暴露武器。"""
     from helpers import make_world, make_scene
