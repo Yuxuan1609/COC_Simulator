@@ -207,7 +207,7 @@ def assert_player_turn_contract(r):
         assert r.pending_interaction is not None, "SUSPENDED 必须带 pending_interaction"
         assert r.pending_interaction.question
     if r.pending_interaction is not None:
-        assert r.pending_interaction.kind in ("weapon_offer", "standoff", "clarify")
+        assert r.pending_interaction.kind in ("standoff", "clarify")
         assert r.pending_interaction.question
     if r.game_over:
         assert r.ending is not None, "game_over 必须有 ending"

@@ -13,7 +13,7 @@ from .context import Restart
 def phase_b_adjudicate(ctx, acc, tools) -> Restart | None:
     """judge 各 entry 类型(interaction/event/use/move/search/other) + 依赖自动触发。
     产出: acc.all_outcomes / acc.enrich_input / tools._pending_side_effects /
-    tools._pending_move / tools._weapon_offer(search 发现)。
+    tools._pending_move。
     作者门：接受补丁/结构编辑 → Restart；拒绝写入 outcomes 后 fall through。"""
     # Step 2: Judge — iterate over parse result entries
     for entry in acc.parse_result:
@@ -137,17 +137,17 @@ def phase_b_adjudicate(ctx, acc, tools) -> Restart | None:
                         msg = "（仔细查看四周，没有特别的发现）"
                 else:
                     msg = "（你环顾四周，但昏暗的光线让你无法看清任何有用的东西）"
-                # Weapon discovery: always check scene weapons (visible even on failed search)
-                scene_weps = tools.world.scene_weapons.get(
-                    tools.world.current_location, []
-                )
-                if scene_weps:
-                    wep_names = "、".join(
-                        f"{f'{sw.quantity}把 ' if sw.quantity > 1 else ''}{sw.weapon_ref}"
-                        for sw in scene_weps
-                    )
-                    msg += f'\n\n（你发现了 {wep_names}。是否拾取？（是/否））'
-                    tools._weapon_offer = [{"weapon_ref": sw.weapon_ref, "scene": tools.world.current_location} for sw in scene_weps]
+                if ok:
+                    tools.world._hydrate_scene_items_from_weapons()
+                    loc = tools.world.current_location
+                    discovered = []
+                    for it in tools.world.scene_items.get(loc, []):
+                        if it.hidden:
+                            it.hidden = False
+                            discovered.append(it.ref)
+                    if discovered:
+                        msg += f"\n\n（你发现了{'、'.join(discovered)}。）"
+                    tools.world._sync_scene_weapons_from_items()
             else:
                 msg = "（仔细查看四周，没有特别的发现）"
             acc.all_outcomes.append(ActionOutcome(

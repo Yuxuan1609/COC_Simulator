@@ -25,8 +25,8 @@ def test_turn_endpoint_forwards_pending_interaction(client):
         brief="你发现了手枪。",
         narrative="桌上有一把手枪。是否拾取？",
         pending_interaction=PendingInteraction(
-            kind="weapon_offer", question="是否拾取？（是/否）",
-            interaction_id="weapon_offer"),
+            kind="standoff", question="你要怎么做？",
+            interaction_id="standoff"),
         skill_results=[], timestamp="12:00:00",
     )
     fake_game = SimpleNamespace()
@@ -35,8 +35,8 @@ def test_turn_endpoint_forwards_pending_interaction(client):
         resp = client.post("/api/game/turn", data={"user_input": "搜索桌子"})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["pending_interaction"]["kind"] == "weapon_offer"
-    assert data["pending_interaction"]["question"] == "是否拾取？（是/否）"
+    assert data["pending_interaction"]["kind"] == "standoff"
+    assert data["pending_interaction"]["question"] == "你要怎么做？"
     assert "standoff_prompt" not in data
     assert "full" not in data
     assert "time_agent" not in data

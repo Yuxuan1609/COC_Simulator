@@ -119,8 +119,6 @@ class Keeper:
         self._pending_side_effects: list = []  # deferred side effects (apply after Author check)
         self._pending_move: str | None = None  # deferred move target
         # ── session_state（跨回合；B1 存档设计将以此分组为入档单元）──
-        self._weapon_offer: list | None = None  # pending weapon pickup offers [{weapon_ref, scene}, ...]
-        self._weapon_offer_msg: str = ""  # offer prompt message for current turn's output
         self._standoff_pending: dict | None = None
         self._combat_result_pending: dict | None = None  # {outcome, narrative, is_boss} from last combat
         self._last_outcomes: list = []  # stored outcomes for combat completion replay
@@ -418,8 +416,11 @@ class Keeper:
         if self._pending_side_effects:
             from scenario_core import apply_side_effects
             def _direct_weapon(wref):
-                self._weapon_offer = [{"weapon_ref": wref, "scene": ""}]
-                self._weapon_offer_msg = f"（获得了{wref}，是否接受？请只回复「是」或「否」）"
+                lib = self.world.weapon_library
+                lib_wep = lib.get(wref) if lib else None
+                if lib_wep and self.world.player:
+                    self.world.player.add_weapon(
+                        _build_investigator_weapon(lib_wep, name_override=wref))
             effect_msgs = apply_side_effects(
                 self.world, list(self._pending_side_effects),
                 npc_events=self._npc_events,
@@ -452,42 +453,59 @@ class Keeper:
     _PICKUP_RE = re.compile(r"(捡|拾|拿起|拿上|拿走|取|拔|抓|收)")
     _NEGATIVE_RE = re.compile(r"(不|别|勿|甭)")
 
-    def _detect_direct_pickup(self, raw: str) -> str | None:
-        """直接拾取意图（R1）：拾取动词 + 场景武器名；场景仅一件可拾武器时可不点名。
-        含否定词（不/别/勿）时不触发。返回 weapon_ref 或 None。"""
+    def _detect_direct_pickup(self, raw: str) -> tuple[str, str, bool] | None:
+        """直接拾取意图（R1）：拾取动词 + 场景物品名；仅一件暴露且未持有时可不点名。
+        含否定词（不/别/勿）时不触发。返回 (kind, ref, hidden) 或 None。"""
         if not self._PICKUP_RE.search(raw) or self._NEGATIVE_RE.search(raw):
             return None
-        if not self.world.weapon_library or not self.world.player:
+        if not self.world.player:
             return None
-        owned = {w.name for w in self.world.player.weapons}
+        self.world._hydrate_scene_items_from_weapons()
         scene = self.world.current_location
-        pool = list(dict.fromkeys(
-            sw.weapon_ref for sw in self.world.scene_weapons.get(scene, [])
-            if sw.weapon_ref not in owned))
+        items = list(self.world.scene_items.get(scene, []))
+        for it in items:
+            if it.hidden and it.ref and it.ref in raw:
+                return (it.kind, it.ref, True)
+        owned_w = {w.name for w in self.world.player.weapons}
+        def _owned(it) -> bool:
+            if it.kind == "weapon":
+                return it.ref in owned_w
+            return self.world.player.item_manager.has(it.ref)
+        pool = [it for it in items if not it.hidden and not _owned(it)]
         if not pool:
             return None
-        for w in pool:
-            if w in raw:
-                return w
-        return pool[0] if len(pool) == 1 else None
+        for it in pool:
+            if it.ref in raw:
+                return (it.kind, it.ref, False)
+        if len(pool) == 1:
+            it = pool[0]
+            return (it.kind, it.ref, False)
+        return None
 
-    def _grant_scene_weapons(self, offer_list: list[dict]) -> str:
-        """发放武器入包并从场景移除，返回武器名串（「、」连接）。"""
-        for wo in offer_list:
-            lib_wep = self.world.weapon_library.get(wo["weapon_ref"])
-            if lib_wep:
-                inv_wep = _build_investigator_weapon(lib_wep, name_override=wo["weapon_ref"])
-                self.world.player.add_weapon(inv_wep)
-                scene = wo.get("scene", "")
-                if scene:
-                    scene_weps = self.world.scene_weapons.get(scene, [])
-                    for sw in list(scene_weps):
-                        if sw.weapon_ref == wo["weapon_ref"]:
-                            scene_weps.remove(sw)
-                            break
-                    if not scene_weps:
-                        del self.world.scene_weapons[scene]
-        return "、".join(w["weapon_ref"] for w in offer_list)
+    def _grant_scene_item(self, kind: str, ref: str) -> str:
+        """发放一件场景物品入包并从场景移除（quantity>1 则减一）。"""
+        scene = self.world.current_location
+        items = self.world.scene_items.get(scene, [])
+        target = next((i for i in items if i.kind == kind and i.ref == ref), None)
+        if target is None:
+            return ref
+        if kind == "weapon":
+            lib = self.world.weapon_library
+            lib_wep = lib.get(ref) if lib else None
+            if not (lib_wep and self.world.player):
+                return ref
+            self.world.player.add_weapon(
+                _build_investigator_weapon(lib_wep, name_override=ref))
+        elif self.world.player:
+            self.world.player.item_manager.add(ref)
+        if target.quantity > 1:
+            target.quantity -= 1
+        else:
+            items.remove(target)
+        if not items:
+            self.world.scene_items.pop(scene, None)
+        self.world._sync_scene_weapons_from_items()
+        return ref
 
     def _devour_standoff_for_boss(self, standoff_prompt, combat_init_result,
                                   all_outcomes, enrich_input):

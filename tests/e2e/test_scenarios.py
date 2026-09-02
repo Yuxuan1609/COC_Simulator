@@ -161,10 +161,11 @@ class TestS2AmbiguousClarify:
 class TestS3WeaponOffer:
     @retry_once
     def test_search_offer_then_pickup(self):
-        """S3：搜索→武器 offer→拾取。action_type=search 跳过 parse（offer 闭环是
-        硬断言目标，输入序列保守化）；enrich/time_agent/narrator 仍真实。"""
+        """S3：搜索成功暴露隐藏武器 → 无 pending → 下回合直接拾取。
+        action_type=search 跳过 parse；enrich/time_agent/narrator 仍真实。"""
         from game_loop import run_turn
-        from game.side_effects import SceneWeapon
+        from game.side_effects import SceneItem
+        from investigator import Investigator, Skill
         from library.weapons import WeaponLibrary, LibraryWeapon
         log_dir = _scenario_log_dir("s3_weapon_offer")
         stop = setup_llm_logging(log_dir)
@@ -173,22 +174,25 @@ class TestS3WeaponOffer:
             wlib._weapons["手枪"] = LibraryWeapon(name="手枪", skill_name="射击(手枪)")
             world = make_world({"room_a": make_scene()}, "room_a",
                                weapon_library=wlib)
-            inv = _player(world)
-            world.scene_weapons["room_a"] = [
-                SceneWeapon(weapon_ref="手枪", scene="room_a", quantity=1)]
+            inv = Investigator(name="测试员", age=25, gender="男",
+                               skills=[Skill(name="侦查", base_value=90)])
+            world.set_player(inv)
+            world.scene_items["room_a"] = [
+                SceneItem(kind="weapon", ref="手枪", hidden=True, quantity=1)]
+            world._sync_scene_weapons_from_items()
             game = _real_game(world, _l1("room_a"))
-            keeper = game["keeper"]
 
             r1 = run_turn(game, "搜索", action_type="search")
             assert_player_turn_contract(r1)
-            assert r1.pending_interaction is not None, "场景武器存在时搜索必须挂起 offer"
-            assert r1.pending_interaction.kind == "weapon_offer"
+            assert r1.pending_interaction is None, "搜索暴露不得挂起 offer"
+            items = world.scene_items.get("room_a", [])
+            assert items and items[0].hidden is False
 
-            r2 = run_turn(game, "是")
+            r2 = run_turn(game, "我捡起手枪")
             assert_player_turn_contract(r2)
             assert any(w.name == "手枪" for w in inv.weapons), "武器必须入包"
+            assert not world.scene_items.get("room_a"), "场景物品必须移除"
             assert not world.scene_weapons.get("room_a"), "场景武器必须移除"
-            assert keeper._weapon_offer is None, "offer 应答后必须清空"
         finally:
             stop()
 

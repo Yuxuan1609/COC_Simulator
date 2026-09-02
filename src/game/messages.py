@@ -240,7 +240,7 @@ class TurnStatus(Enum):
 @dataclass
 class PendingInteraction:
     """回合挂起的待答问题。"""
-    kind: str              # "weapon_offer" | "standoff" | "clarify"
+    kind: str              # "standoff" | "clarify"
     question: str          # 玩家可见问题文本
     interaction_id: str = ""  # resolver 路由键
 

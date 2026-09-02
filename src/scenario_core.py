@@ -759,10 +759,11 @@ class ScenarioWorld:
                 existing.add(key)
 
     def _sync_scene_weapons_from_items(self) -> None:
+        self.scene_weapons.clear()
         for scene, items in self.scene_items.items():
             weps = [
                 SceneWeapon(weapon_ref=i.ref, scene=scene, quantity=i.quantity)
-                for i in items if i.kind == "weapon"
+                for i in items if i.kind == "weapon" and not i.hidden
             ]
             if weps:
                 self.scene_weapons[scene] = weps
@@ -1634,7 +1635,7 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                 # scene 为空：直接授予调查员
                 if direct_weapon_callback:
                     direct_weapon_callback(effect.weapon_ref)
-                    msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员（待确认）")
+                    msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员")
                 else:
                     # fallback: 放置到当前场景
                     if target_scene not in world.scene_weapons:

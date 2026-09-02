@@ -88,15 +88,6 @@ def phase_e_finalize(ctx, acc, tools) -> None:
         t = Thread(target=_bg_memory, daemon=True)
         t.start()
 
-    # Inject weapon offer prompt if direct grant is pending
-    if tools._weapon_offer_msg:
-        acc.brief.action_outcomes.append(ActionOutcome(
-            intent=ActionIntent(action="other"), success=True,
-            message=tools._weapon_offer_msg,
-            entity_id="WEAPON_OFFER", entity_type="information",
-        ))
-        tools._weapon_offer_msg = ""
-
     tools._last_outcomes = list(acc.all_outcomes)  # store for combat resolution replay
 
     standoff_pending = None
@@ -105,15 +96,6 @@ def phase_e_finalize(ctx, acc, tools) -> None:
             kind="standoff",
             question=f"你还有最后一次机会避免与{acc.standoff_prompt['current_group']}的战斗——你要怎么做？",
             interaction_id="standoff",
-        )
-
-    offer_pending = None
-    if not standoff_pending and tools._weapon_offer:
-        offer_names = "、".join(w["weapon_ref"] for w in tools._weapon_offer)
-        offer_pending = PendingInteraction(
-            kind="weapon_offer",
-            question=f"是否拾取{offer_names}？请只回复「是」或「否」；直接说「捡起{offer_names}」也可以。",
-            interaction_id="weapon_offer",
         )
 
     # Boss 开战记账（延后至此：curate 成功后才记账；freeze 时 Boss 不被消耗，下回合可重触发；spec §4.1）
@@ -128,7 +110,7 @@ def phase_e_finalize(ctx, acc, tools) -> None:
     acc.result = TurnResult(
         status=TurnStatus.COMPLETED,
         brief=acc.brief,
-        pending_interaction=standoff_pending or offer_pending,
+        pending_interaction=standoff_pending,
         combat_init=acc.combat_init_result,
         ending=EndingInfo(**acc.ending_result) if acc.ending_result else None,
         npc_events=list(tools._npc_events),

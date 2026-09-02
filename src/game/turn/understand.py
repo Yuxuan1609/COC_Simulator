@@ -16,27 +16,13 @@ def phase_a_understand(ctx, acc, tools) -> Early | None:
     ctx.raw = ctx.turn_input.raw_text
     at = ctx.turn_input.action_type
 
-    # Pending weapon offer check: 只认「是」「否」本身（R2：模糊含"是"不吞回合）
-    offer_expired = False
-    if tools._weapon_offer:
-        answer = re.sub(r"[\s，。！？!?,.\、…~～'\"“”]", "", ctx.raw)
-        if answer in ("是", "否"):
-            offer_list = tools._weapon_offer
-            tools._weapon_offer = None
-            if answer == "是" and tools.world.weapon_library:
-                names = tools._grant_scene_weapons(offer_list)
-                return Early(TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。"))
-            names = "、".join(w["weapon_ref"] for w in offer_list)
-            return Early(TurnResult(status=TurnStatus.COMPLETED, text=f"你忽略了{names}。"))
-        # 非「是/否」输入：作废 offer，按正常回合继续处理
-        tools._weapon_offer = None
-        offer_expired = True
-
-    # 直接拾取通路（R1）：明说「捡/拾/拿 + 武器名」直接入包，无需 offer
-    direct_w = tools._detect_direct_pickup(ctx.raw)
-    if direct_w:
-        names = tools._grant_scene_weapons(
-            [{"weapon_ref": direct_w, "scene": tools.world.current_location}])
+    # 直接拾取通路（R1）：turn_number += 1 之前短路；hidden 点名不推进回合
+    hit = tools._detect_direct_pickup(ctx.raw)
+    if hit:
+        kind, ref, hidden = hit
+        if hidden:
+            return Early(TurnResult(status=TurnStatus.COMPLETED, text="你没发现这东西。"))
+        names = tools._grant_scene_item(kind, ref)
         return Early(TurnResult(status=TurnStatus.COMPLETED, text=f"你拾起了{names}。"))
 
     if ctx.depth >= MAX_ESCALATION_DEPTH:
@@ -44,9 +30,6 @@ def phase_a_understand(ctx, acc, tools) -> Early | None:
         return Early(tools._process_deterministic_only(ctx.turn_input))
     tools.turn_number += 1
     tools._warnings.clear()
-    if offer_expired:
-        tools._warnings.append(
-            "武器拾取提议已过期：输入非「是/否」，按正常回合处理")
     tools._npc_events.clear()
     tools._pending_side_effects.clear()
     tools._pending_move = None

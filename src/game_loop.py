@@ -511,14 +511,6 @@ def run_turn(game: dict, user_input: str,
                 narrator_narrative=narrative,
             )
 
-    # Surface pending weapon offer to player (narrator may omit the pickup prompt)
-    if result.pending_interaction and result.pending_interaction.kind == "weapon_offer":
-        wp_text = result.pending_interaction.question
-        if wp_text not in (narrative or ""):
-            narrative = (narrative or "") + ("\n\n" if narrative else "") + wp_text
-            if not narrative_brief:
-                narrative_brief = wp_text
-
     # NPC visible output
     npcs_visible = {"in_scene": [], "following": []}
     if world.npcs:

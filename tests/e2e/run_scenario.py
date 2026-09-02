@@ -98,7 +98,7 @@ _TURN_SCHEMA = {
     "turn": int, "input": str, "skill_results": list,
     "npc_events": list, "npcs_visible": dict, "time_state": dict,
 }
-_VALID_PENDING = ("weapon_offer", "standoff", "clarify")
+_VALID_PENDING = ("standoff", "clarify")
 
 
 def check_invariants(turns: list[dict]) -> list[str]:

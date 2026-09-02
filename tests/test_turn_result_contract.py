@@ -41,8 +41,8 @@ class TestTurnResultInvariants:
             status=TurnStatus.COMPLETED,
             brief=brief,
             pending_interaction=PendingInteraction(
-                kind="weapon_offer", question="是否拾取？",
-                interaction_id="weapon_offer"),
+                kind="standoff", question="你要怎么做？",
+                interaction_id="standoff"),
         )
         assert r.pending_interaction is not None
 
@@ -212,26 +212,29 @@ class TestProcessTurnReturnsContract:
         assert result.pending_interaction.kind == "standoff"
         assert keeper._standoff_pending is not None, "必须播种 _standoff_pending"
 
-    def test_weapon_offer_emits_pending_interaction(self, monkeypatch):
-        """搜索发现武器：COMPLETED + pending_interaction(kind="weapon_offer")。"""
+    def test_search_exposes_without_pending(self, monkeypatch):
+        """搜索成功暴露隐藏物品：COMPLETED 且无 pending_interaction。"""
         from scenario_core import DirectedGraph, ScenarioWorld
         from game.messages import TurnInput
         from game.agents.keeper import Keeper
-        from game.side_effects import SceneWeapon
-        from investigator import Investigator
+        from game.side_effects import SceneItem
+        from investigator import Investigator, Skill
         world = ScenarioWorld(DirectedGraph(
             scenes={"room_a": self._scene()}, events=[]), start_node="room_a")
-        world.set_player(Investigator(name="测试员", age=25, gender="男"))
-        world.scene_weapons["room_a"] = [
-            SceneWeapon(weapon_ref="手枪", scene="room_a", quantity=1)]
+        world.set_player(Investigator(
+            name="测试员", age=25, gender="男",
+            skills=[Skill(name="侦查", base_value=50)]))
+        world.scene_items["room_a"] = [
+            SceneItem(kind="item", ref="钥匙", hidden=True, quantity=1)]
         keeper = Keeper(world)
         self._stub_llm(keeper, monkeypatch,
                        parse_results=[[{"type": "search", "text": "搜索四周"}]])
+        monkeypatch.setattr("investigator.models.random.randint", lambda a, b: 1)
         result = keeper.process_turn(TurnInput(raw_text="搜索四周"), author=None)
         assert result.status == TurnStatus.COMPLETED
-        assert result.pending_interaction is not None
-        assert result.pending_interaction.kind == "weapon_offer"
-        assert "手枪" in result.pending_interaction.question
+        assert result.pending_interaction is None
+        items = world.scene_items.get("room_a", [])
+        assert items and items[0].hidden is False
 
     def test_standoff_pending_cleared_at_turn_entry(self, monkeypatch):
         """回合入口必须清理 _standoff_pending，避免陈旧状态泄漏到后续回合。"""
@@ -256,7 +259,6 @@ class TestRunTurnContract:
 
         fake_keeper = SimpleNamespace(
             turn_number=1,
-            _weapon_offer=None,
             _standoff_pending=None,
             process_turn=lambda ti, author=None: TurnResult(
                 status=TurnStatus.SUSPENDED,
@@ -290,7 +292,6 @@ class TestRunTurnContract:
 
         fake_keeper = SimpleNamespace(
             turn_number=2,
-            _weapon_offer=None,
             _standoff_pending={"group": "深潜者"},
             process_turn=lambda ti, author=None: (_ for _ in ()).throw(
                 AssertionError("不应走到 process_turn")),
@@ -316,7 +317,6 @@ class TestRunTurnContract:
         from types import SimpleNamespace
         fake_keeper = SimpleNamespace(
             turn_number=1,
-            _weapon_offer=None,
             _standoff_pending=None,
             process_turn=lambda ti, author=None: turn_result,
         )
