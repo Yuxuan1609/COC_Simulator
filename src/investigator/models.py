@@ -225,31 +225,35 @@ class Investigator:
 
     # ── 技能检定（COC 7th D100 规则）──
 
-    def check_skill(self, skill_name: str, difficulty: str = "regular") -> tuple:
+    def check_skill(self, skill_name: str, difficulty: str = "regular",
+                    modifier: int = 0) -> tuple:
         """D100 检定。名归一经 normalize_skill_name：
         skill→技能值；attr→属性值；pseudo(DODGE)→衍生闪避；
         ignore→直接成功；unknown/未掌握→记 check_warnings 后默认成功。
-        pending_luck_bonus 存在时给骰点 -N（下限 1），一次性消费。"""
+        pending_luck_bonus 存在时给骰点 -N（下限 1），一次性消费。
+        modifier 加在技能值上再算难度阈值（F19 环境修正）。"""
         from utils import normalize_skill_name
         kind, value = normalize_skill_name(skill_name)
         if kind == "ignore":
             return True, f"{skill_name}（已废弃技能，跳过检定）", "regular"
         if kind == "attr":
             target = getattr(self.stats, value, 0)
-            return self._roll_d100(skill_name, target, difficulty)
+            return self._roll_d100(skill_name, target, difficulty, modifier)
         if kind == "pseudo":
-            return self._roll_d100(skill_name, self.derived.DODGE, difficulty)
+            return self._roll_d100(skill_name, self.derived.DODGE, difficulty, modifier)
         skill = self.get_skill(skill_name)  # kind=="skill" 时 get_skill 已归一
         if skill is None:
             self.check_warnings.append(
                 f"未掌握技能[{skill_name}]（归一={kind}:{value}），默认成功放行")
             return True, f"{skill_name}（未掌握，默认判定成功）", "regular"
-        ok, msg, tier = self._roll_d100(skill_name, skill.value, difficulty)
+        ok, msg, tier = self._roll_d100(skill_name, skill.value, difficulty, modifier)
         if ok:
             skill.checked = True
         return ok, msg, tier
 
-    def _roll_d100(self, name: str, target: int, difficulty: str = "regular") -> tuple:
+    def _roll_d100(self, name: str, target: int, difficulty: str = "regular",
+                   modifier: int = 0) -> tuple:
+        target = max(1, min(99, int(target) + int(modifier)))
         roll = random.randint(1, 100)
         if self.pending_luck_bonus:
             roll = max(1, roll - self.pending_luck_bonus)

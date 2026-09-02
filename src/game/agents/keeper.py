@@ -270,7 +270,10 @@ class Keeper:
 
         # Step 2: D100 skill check
         skill_name = match_data["skill_name"]
-        ok, skill_msg, tier = self.world.player.check_skill(skill_name, "regular")
+        from investigator.rules import env_check_modifier
+        ok, skill_msg, tier = self.world.player.check_skill(
+            skill_name, "regular",
+            modifier=env_check_modifier(self.world, skill_name))
         skill_detail = (
             f"[STANDOFF] {skill_name}检定 | 等级={tier} | {'成功' if ok else '失败'}\n"
             f"  {skill_msg}"

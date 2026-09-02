@@ -314,6 +314,11 @@ _GAME_CONFIG_DEFAULTS = {
         [0, "身无分文"], [5, "拮据"], [10, "一般"], [20, "中等"],
         [30, "宽裕"], [50, "富裕"], [70, "富有"], [90, "极富"],
     ],
+    "env_check_modifiers": {       # F19 环境标签→技能目标值 ±N
+        "dark": {"侦查": -20, "潜行": 10},
+        "dim": {"侦查": -10},
+        "noisy": {"聆听": -20},
+    },
 }
 _CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "game_config.json")
@@ -370,3 +375,14 @@ def get_game_config() -> dict:
             pass
         _game_config_cache = cfg
     return copy.deepcopy(_game_config_cache)
+
+
+def env_check_modifier(world, skill_name: str) -> int:
+    env = world.current_environment()
+    table = get_game_config()["env_check_modifiers"]
+    total = 0
+    defaults = {"lighting": "normal", "noise": "quiet"}
+    for axis in ("lighting", "noise"):
+        tag = env.get(axis) or defaults[axis]
+        total += int(table.get(tag, {}).get(skill_name, 0) or 0)
+    return total

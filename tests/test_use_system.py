@@ -331,7 +331,7 @@ class TestExecuteMaterial:
             cost={"mp": 0, "san": 0},
             result_slots={"on_success": "锁开了。", "on_failure": "锁纹丝不动。"},
             refund_on_fail=True, use_semantic="tool")
-        inv.check_skill = lambda s, d="regular": (False, "锁匠检定：D100=98/10 失败", "failure")
+        inv.check_skill = lambda s, d="regular", modifier=0: (False, "锁匠检定：D100=98/10 失败", "failure")
         out = judge.execute_material(m, "开锁")
         assert not out.success and "纹丝不动" in out.message
         assert inv.item_manager.has("开锁工具"), "tool 语义失败不消耗，refund 兜底"
@@ -767,7 +767,7 @@ class TestExecuteMaterialEffects:
         world, inv = self._world()
         inv.derived.MP = 10
         inv.derived.HP = 10
-        inv.check_skill = lambda s, d="regular": (False, "检定：D100=98 失败", "failure")
+        inv.check_skill = lambda s, d="regular", modifier=0: (False, "检定：D100=98 失败", "failure")
         judge = Judge(world)
         m = self._mat(check={"skill": "锁匠", "type": "regular"},
                       cost={"mp": 5, "san": 0}, refund_on_fail=True,

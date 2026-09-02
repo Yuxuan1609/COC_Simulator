@@ -263,6 +263,7 @@ class Node:
     encounters: list = field(default_factory=list)
     scene_weapons: list = field(default_factory=list)
     scene_items: list = field(default_factory=list)
+    environment: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 
     def get_interaction(self, name: str) -> Optional[Entity]:
@@ -346,6 +347,7 @@ class DirectedGraph:
                 encounters=node_info.get("encounters", []),
                 scene_weapons=node_info.get("scene_weapons", []),
                 scene_items=node_info.get("scene_items", []),
+                environment=dict(node_info.get("environment") or {}),
                 extra=node_info.get("extra", {}),
             )
 
@@ -442,6 +444,7 @@ class DirectedGraph:
                 "encounters": node.encounters,
                 "scene_weapons": node.scene_weapons,
                 "scene_items": node.scene_items,
+                "environment": node.environment,
                 "extra": node.extra,
             }
         events_list = [
@@ -487,6 +490,7 @@ class DirectedGraph:
                 encounters=node_data.get("encounters", []),
                 scene_weapons=node_data.get("scene_weapons", []),
                 scene_items=node_data.get("scene_items", []),
+                environment=dict(node_data.get("environment") or {}),
                 extra=node_data.get("extra", {}),
             )
         events_data = data.get("events", [])
@@ -726,6 +730,7 @@ class ScenarioWorld:
         self.time_costs: dict = {}
         self.comms_interval: int = COMMS_INTERVAL_MINUTES
         self.npc_states: dict[str, str] = {}
+        self.environment_overrides: dict[str, dict] = {}
 
         self.triggered_events: Dict[str, bool] = {
             eid: False for eid in graph.get_all_event_ids()
@@ -1073,6 +1078,12 @@ class ScenarioWorld:
 
     def _current_node(self) -> Optional[Node]:
         return self.graph.nodes.get(self.current_location)
+
+    def current_environment(self) -> dict:
+        node = self._current_node()
+        base = dict(getattr(node, "environment", None) or {}) if node else {}
+        overrides = getattr(self, "environment_overrides", {})
+        return {**base, **dict(overrides.get(self.current_location, {}) or {})}
 
     def get_current_description(self) -> str:
         node = self._current_node()

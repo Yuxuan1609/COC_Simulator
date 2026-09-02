@@ -102,6 +102,7 @@ L2_SCENE_SCHEMA = {
     "encounters": {"required": False},
     "scene_weapons": {"required": False},
     "scene_items": {"required": False},
+    "environment": {"required": False},
     "extra": {"required": False},
 }
 

@@ -147,8 +147,10 @@ class Judge:
                 success = outcome == "win"
                 skill_tier = "regular" if success else "failure"
             else:
+                from investigator.rules import env_check_modifier
                 ok, msg, skill_tier = player.check_skill(
-                    cskill, "hard" if ctype == "hard" else "regular")
+                    cskill, "hard" if ctype == "hard" else "regular",
+                    modifier=env_check_modifier(self.world, cskill))
                 skill_detail = f"[use] {material.name} | {cskill} | {msg}"
                 success = ok
             log_skill_result(skill_detail)
@@ -358,7 +360,10 @@ class Judge:
             state = self.world.get_runtime_state(entity.id)
             if state.escalated_difficulty:
                 difficulty = state.escalated_difficulty
-            all_pass, skill_result, skill_tier = self.world.player.check_skill(intent_skill, difficulty)
+            from investigator.rules import env_check_modifier
+            all_pass, skill_result, skill_tier = self.world.player.check_skill(
+                intent_skill, difficulty,
+                modifier=env_check_modifier(self.world, intent_skill))
 
             skill_passed = all_pass
             skill_message = skill_result

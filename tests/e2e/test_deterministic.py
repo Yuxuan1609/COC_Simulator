@@ -413,7 +413,8 @@ class TestFailureEscalation:  # D9: A5
         }
         world = make_world({"room_a": make_scene(interactions=[interaction])}, "room_a")
         inv = _player(world)
-        inv.check_skill = lambda skill, diff: (False, f"{skill}检定：D100=98/10", "failure")
+        inv.check_skill = lambda skill, diff="regular", modifier=0: (
+            False, f"{skill}检定：D100=98/10", "failure")
         return world
 
     def test_failure_escalates_difficulty_and_counts_retries(self, monkeypatch):
@@ -476,7 +477,8 @@ class TestLockKeyFlow:  # F16: 锁-钥匙 infra 链路锁定(不加机制)
 
         world = self._lock_world()
         inv = _player(world)
-        inv.check_skill = lambda skill, diff: (True, f"{skill}检定：D100=10/50", "regular")
+        inv.check_skill = lambda skill, diff="regular", modifier=0: (
+            True, f"{skill}检定：D100=10/50", "regular")
         keeper = Keeper(world)
         stub_keeper_llm(keeper, monkeypatch,
                         parse_results=[[{"type": "interaction", "id": "IT_LOCK"}]])
@@ -497,7 +499,8 @@ class TestLockKeyFlow:  # F16: 锁-钥匙 infra 链路锁定(不加机制)
 
         world = self._lock_world()
         inv = _player(world)
-        inv.check_skill = lambda skill, diff: (False, f"{skill}检定：D100=98/10", "failure")
+        inv.check_skill = lambda skill, diff="regular", modifier=0: (
+            False, f"{skill}检定：D100=98/10", "failure")
         keeper = Keeper(world)
         stub_keeper_llm(keeper, monkeypatch,
                         parse_results=[[{"type": "interaction", "id": "IT_LOCK"}]])
@@ -1182,7 +1185,7 @@ class TestTimedAndCombatEffectsE2E:  # T13: spec §8 e2e 三场景
 
         world, inv, _slib = self._spell_world(["SILENCE_VEIL"])
         # 探索侧检定走 check_skill(POW 属性路径有 96+ 大失败,stub 保确定性)
-        inv.check_skill = lambda skill, diff="regular": (
+        inv.check_skill = lambda skill, diff="regular", modifier=0: (
             True, f"{skill}检定：D100=10/60", "regular")
         keeper = Keeper(world)
         stub_keeper_llm(keeper, monkeypatch)

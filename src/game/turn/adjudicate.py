@@ -103,7 +103,10 @@ def phase_b_adjudicate(ctx, acc, tools) -> Restart | None:
             # No dependency check, no flag update, no enrich.
             trait_enh = None
             if tools.world.player:
-                ok, skill_msg, tier = tools.world.player.check_skill("侦查", "regular")
+                from investigator.rules import env_check_modifier
+                ok, skill_msg, tier = tools.world.player.check_skill(
+                    "侦查", "regular",
+                    modifier=env_check_modifier(tools.world, "侦查"))
                 skill_detail = (
                     f"[SEARCH] 侦查检定 | 等级={tier} | {'成功' if ok else '失败'}\n"
                     f"  {skill_msg}"
