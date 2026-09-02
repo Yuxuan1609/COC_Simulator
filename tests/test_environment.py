@@ -134,3 +134,62 @@ def test_environment_overrides_save_load_roundtrip():
     world2 = ScenarioWorld.from_dict(dumped, world.graph)
     assert world2.environment_overrides.get("room_a", {}).get("lighting") == "normal"
     assert world2.current_environment().get("lighting") == "normal"
+
+
+def test_build_snapshot_includes_current_environment():
+    from helpers import make_world, make_scene
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dark", "noise": "noisy"})},
+        "room_a")
+    snap = world.build_snapshot()
+    assert snap.get("environment") == {"lighting": "dark", "noise": "noisy"}
+
+
+def test_build_scene_state_environment_dark():
+    from helpers import make_world, make_scene
+    from prompts import _build_scene_state
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dark"})}, "room_a")
+    text = _build_scene_state(world.build_snapshot())
+    assert "环境：黑暗" in text
+
+
+def test_build_scene_state_environment_noisy():
+    from helpers import make_world, make_scene
+    from prompts import _build_scene_state
+    world = make_world(
+        {"room_a": make_scene(environment={"noise": "noisy"})}, "room_a")
+    text = _build_scene_state(world.build_snapshot())
+    assert "环境：嘈杂" in text
+
+
+def test_build_scene_state_environment_dark_noisy():
+    from helpers import make_world, make_scene
+    from prompts import _build_scene_state
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dark", "noise": "noisy"})},
+        "room_a")
+    text = _build_scene_state(world.build_snapshot())
+    assert "环境：黑暗/嘈杂" in text
+
+
+def test_build_scene_state_environment_dim():
+    from helpers import make_world, make_scene
+    from prompts import _build_scene_state
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dim"})}, "room_a")
+    text = _build_scene_state(world.build_snapshot())
+    assert "环境：昏暗" in text
+
+
+def test_build_scene_state_omits_default_environment():
+    from helpers import make_world, make_scene
+    from prompts import _build_scene_state
+    world = make_world({"room_a": make_scene()}, "room_a")
+    text = _build_scene_state(world.build_snapshot())
+    assert "环境：" not in text
+    world_default = make_world(
+        {"room_a": make_scene(environment={"lighting": "normal", "noise": "quiet"})},
+        "room_a")
+    text_default = _build_scene_state(world_default.build_snapshot())
+    assert "环境：" not in text_default

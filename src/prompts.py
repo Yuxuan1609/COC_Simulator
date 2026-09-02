@@ -172,6 +172,18 @@ def _build_player_state(snap: dict) -> str:
 def _build_scene_state(snap: dict) -> str:
     """构建场景现状（NPC/敌人/暴露物品）"""
     parts = []
+    env_labels = []
+    env = snap.get("environment") or {}
+    lighting = env.get("lighting")
+    if lighting == "dark":
+        env_labels.append("黑暗")
+    elif lighting == "dim":
+        env_labels.append("昏暗")
+    noise = env.get("noise")
+    if noise == "noisy":
+        env_labels.append("嘈杂")
+    if env_labels:
+        parts.append(f"  环境：{'/'.join(env_labels)}")
     npcs = snap.get("npcs_in_scene", [])
     if npcs:
         parts.append(f"  NPC：{'、'.join(n['name'] for n in npcs)}")

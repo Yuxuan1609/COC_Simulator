@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-02 | F19 Task 7 环境知情行进 prompt（S3-P3 F19）：① `build_snapshot` 增 `environment` = `current_environment()`（node∪override）。② `_build_scene_state` 非默认标签渲染「环境：黑暗」「环境：嘈杂」「环境：黑暗/嘈杂」「环境：昏暗」；normal/quiet/空不输出行。LLM 不裁决数值，仅知情。TDD：tests/test_environment.py +6（snapshot 含 environment / dark / noisy / dark+noisy / dim / 默认省略）。RED 5 failed → GREEN 17 passed。全量 489 passed / 24 deselected + 1 既有 e2e 失败（`test_unresolved_use_becomes_creative`，HEAD 已挂，非本任务）。real_llm_smoke 4 failed（402 billing，同 Task 4，不阻塞提交）。scenario_core 2101→2102 / prompts 1168→1180。 |
 | 2026-09-02 | F19 Task 6 `@env_change` markup + persist overrides（S3-P3 F19）：① `EnvChange(axis, value)` @ side_effects.py:75；`_MARKUP_PATTERN` 增 `env_change`；`_build_side_effect` 解析 axis/value。② `apply_side_effects` 写 `world.environment_overrides[current_location][axis]=value`；legal lighting∈{dark,dim,normal} / noise∈{quiet,noisy}，非法 ignore + `scenario_core` warning 不 raise。③ `to_dict`/`from_dict` 浅拷贝 `environment_overrides`（旧档缺省 {}）。④ judge `_MARKUP_STRIP_RE` / prompts `_STRIP_MARKUP_RE` 增 env_change（不改 generation prompts）。`current_environment()` 已 merge node∪override。TDD：tests/test_environment.py +3（lighting normal 清 dark 侦查-20→0 / 非法 axis+value caplog / save-load roundtrip）。RED 3 failed → GREEN 11 passed。全量 483 passed / 24 deselected + 1 既有 e2e 失败（`test_unresolved_use_becomes_creative`，HEAD 已挂，非本任务）。side_effects 169→180 / scenario_core 2077→2101 / judge 572 / prompts 1168。 |
 | 2026-09-02 | F19 Task 5 environment 字段 + 修正表 + check_skill ±N（S3-P3 spec §2）：① `game_config.env_check_modifiers`（dark 侦查-20/潜行+10、dim 侦查-10、noisy 聆听-20）镜像 `_GAME_CONFIG_DEFAULTS`；② `env_check_modifier(world, skill)` 按 lighting/noise 两轴求和，缺省 normal/quiet=0；③ `Node.environment` 加载/to_dict/from_dict 透传；`world.current_environment()` = node ∪ `environment_overrides`（空 dict，Task 6 写入）；④ `check_skill(..., modifier=0)` → `_roll_d100` 先 `clamp(1,99, target+modifier)` 再算 hard/extreme；judge/adjudicate 搜索/keeper 对峙接线，**不改** on_san_loss INT。L2_SCENE_SCHEMA 加 optional environment。TDD：tests/test_environment.py 8 测 RED（TypeError/ImportError/AttributeError）→ GREEN。scenario_core 2066→2077 / models 467→471 / rules 372→388 / judge 567→572 / keeper 947→950 / adjudicate 293→296 / layered_schema 365→366。 |
 | 2026-09-02 | F17 Task 4 snapshot/prompt 只列 exposed：`build_snapshot` `scene_items` 仅 {kind,ref,quantity} 且 `not hidden`；`scene_weapons` 仍为暴露武器投影（前端兼容）。`_build_scene_state` 改列「场景物品」含暴露物品+武器，hidden 不进 prompt。TDD：test_scene_items +2（snapshot 无 hidden / prompt 含暴露名不含隐藏）。RED 2 failed → GREEN。prompts 1166→1168 / scenario_core 2066 行不变。 |
@@ -555,7 +556,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (2101 行) — 数据模型 + 世界状态
+## src/scenario_core.py (2102 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -626,12 +627,12 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 1112 / 1161 |
 | `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1184 |
 | `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1209 / 1212 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`）；F17 `scene_items` 仅当前场景 **exposed** `{kind,ref,quantity}`（hidden 不入）；`scene_weapons` 仍为暴露武器投影 | 1222 |
-| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1261 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1286 / 1289 |
-| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1293 / 1297 |
-| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []；F17 写 `scene_items`，from_dict 读之，缺则 hydrate from scene_weapons；F19 写 `environment_overrides` scene→{axis:value} 浅拷贝，from_dict 缺省 {}） | 1316 / 1373 |
-| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings；F17 load_state 同步 scene_items + hydrate | 1430 / 1450 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`）；F17 `scene_items` 仅当前场景 **exposed** `{kind,ref,quantity}`（hidden 不入）；`scene_weapons` 仍为暴露武器投影；F19 加 `environment` = `current_environment()` | 1235 |
+| `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1276 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1287 / 1290 |
+| `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1294 / 1298 |
+| `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []；F17 写 `scene_items`，from_dict 读之，缺则 hydrate from scene_weapons；F19 写 `environment_overrides` scene→{axis:value} 浅拷贝，from_dict 缺省 {}） | 1317 / 1374 |
+| `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings；F17 load_state 同步 scene_items + hydrate | 1431 / 1451 |
 
 ### MemoryManager（@1748）
 
@@ -976,13 +977,13 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
 | `evaluate_combat_round_narrative` | `(round_log, enemies_desc, player_name, scene)` | 战斗叙事（走 build_combat_narrative_prompt） | 502 |
 
-## src/prompts.py (1166 行) — Prompt 构建（所有 build_* 只构建不调用）
+## src/prompts.py (1180 行) — Prompt 构建（所有 build_* 只构建不调用）
 
 | 函数 | 签名/作用 | 行号 |
 |------|-----------|------|
 | `set_current_round` / `set_prompt_log_dir` / `_sanitize_label` / `_show_prompt` / `log_skill_result` | 日志设施 | 29–69 |
 | `apply_trait_enhancement` | `(player, skill_name, skill_detail, entity_name, search_context, player_input, graded_tiers) -> (new_tier, enhancement)` judge/search/standoff 三处复用 | 90 |
-| `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点；F17：`_build_scene_state` @172 列 snap.scene_items 暴露名「场景物品」，hidden 不进 prompt） | 127–214 |
+| `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点；F17：`_build_scene_state` @172 列 snap.scene_items 暴露名「场景物品」，hidden 不进 prompt；F19：非默认 lighting/noise 渲染「环境：黑暗/嘈杂」等，normal/quiet/空无行） | 127–226 |
 | `parse_narrative_output` | Narrator 输出解析 | 270 |
 | `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@319 / `_fmt_inter`@339 / `_fmt_at`@348 / `_parse_req`@383 / `_split_req_str`@397 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段） | 304 |
 | `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 476 |

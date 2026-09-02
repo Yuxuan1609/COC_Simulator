@@ -1270,6 +1270,7 @@ class ScenarioWorld:
                 f"{e['turn_range']}：{e['notes']}"
                 for e in getattr(self, "narrative_memory", [])
             ],
+            "environment": self.current_environment(),
         }
 
     def distill_narrative_memory(self, llm_call, max_entries: int = 5):
