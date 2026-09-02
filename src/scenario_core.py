@@ -1241,9 +1241,9 @@ class ScenarioWorld:
                 for sw in self.scene_weapons.get(self.current_location, [])
             ],
             "scene_items": [
-                {"kind": i.kind, "ref": i.ref, "hidden": i.hidden,
-                 "quantity": i.quantity}
+                {"kind": i.kind, "ref": i.ref, "quantity": i.quantity}
                 for i in self.scene_items.get(self.current_location, [])
+                if not i.hidden
             ],
             "runtime": {
                 "completed": [

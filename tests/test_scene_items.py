@@ -323,3 +323,44 @@ def test_grant_weapon_scene_survives_sync():
     world._sync_scene_weapons_from_items()
     items = world.scene_items.get("room_a", [])
     assert any(i.kind == "weapon" and i.ref == "手枪" and not i.hidden for i in items)
+
+
+def _mixed_hidden_exposed_world():
+    from helpers import make_world, make_scene
+    from game.side_effects import SceneItem
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.scene_items["room_a"] = [
+        SceneItem(kind="item", ref="钥匙", hidden=True, quantity=1),
+        SceneItem(kind="item", ref="手电", hidden=False, quantity=2),
+        SceneItem(kind="weapon", ref="手枪", hidden=False, quantity=1),
+        SceneItem(kind="weapon", ref="匕首", hidden=True, quantity=1),
+    ]
+    world._sync_scene_weapons_from_items()
+    return world
+
+
+def test_snapshot_lists_only_exposed_scene_items():
+    world = _mixed_hidden_exposed_world()
+    snap = world.build_snapshot()
+    items = snap["scene_items"]
+    refs = [i["ref"] for i in items]
+    assert "手电" in refs
+    assert "手枪" in refs
+    assert "钥匙" not in refs
+    assert "匕首" not in refs
+    for i in items:
+        assert set(i) >= {"kind", "ref", "quantity"}
+        assert "hidden" not in i
+    wep_refs = [w["weapon_ref"] for w in snap["scene_weapons"]]
+    assert "手枪" in wep_refs
+    assert "匕首" not in wep_refs
+
+
+def test_build_scene_state_lists_exposed_not_hidden():
+    from prompts import _build_scene_state
+    world = _mixed_hidden_exposed_world()
+    text = _build_scene_state(world.build_snapshot())
+    assert "手电" in text
+    assert "手枪" in text
+    assert "钥匙" not in text
+    assert "匕首" not in text

@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-02 | F17 Task 4 snapshot/prompt 只列 exposed：`build_snapshot` `scene_items` 仅 {kind,ref,quantity} 且 `not hidden`；`scene_weapons` 仍为暴露武器投影（前端兼容）。`_build_scene_state` 改列「场景物品」含暴露物品+武器，hidden 不进 prompt。TDD：test_scene_items +2（snapshot 无 hidden / prompt 含暴露名不含隐藏）。RED 2 failed → GREEN。prompts 1166→1168 / scenario_core 2066 行不变。 |
 | 2026-09-02 | F17 Task 3 review：① `_drop_to_scene` 只合并 **exposed** 同 kind+ref（物品/武器均 quantity+=1）；仅有 hidden 同行则 append 新暴露行，永不改 hidden。② `remove_weapon` 只移除一把同名。③ `_grant_scene_item` / `_detect_direct_pickup` 同 ref 时优先 exposed（防丢后点名撞上 hidden 被 Early 没发现）。TDD：test_scene_items TestDropToScene +2（hidden 不合并可捡 / 暴露武器 quantity>=2）。RED 2 failed → GREEN。keeper 942→947 / models 464→467。 |
 | 2026-09-02 | F17 Task 3 丢弃到场景（S3-P3 spec）：understand 在 turn_number+=1 前、拾取短路旁加丢弃短路。`_detect_direct_drop` 动词丢/扔/放下/丢掉 + 最长持有名；否定词不触发；点名未持有 Early「你没有X。」。`_drop_to_scene` 从背包/武器槽移除一件，append 暴露 SceneItem（同 kind+ref：物品 quantity+=1，武器不重复行），再 `_sync_scene_weapons_from_items`。TDD：test_scene_items TestDropToScene 5 测 RED 4 failed → GREEN。keeper 895→942 / understand 190→198。 |
 | 2026-09-02 | F17 Task 2 review：① `_detect_direct_pickup` 先收集当前场景 `ref in raw` 的全部 scene_items，取最长 ref；hidden→Early 没发现，exposed→授予（修隐藏「刀」挡住暴露「小刀」）。② GrantWeapon 有 scene / 空 scene fallback 写 `SceneItem(kind=weapon, hidden=False)` 入 `world.scene_items` 再 `_sync`（不再只 append scene_weapons）；World AT 同口径。TDD：test_scene_items 增 longest-ref pickup + GrantWeapon 经 sync 仍在 scene_items。RED 2 failed → GREEN。keeper 899→895 / scenario_core 2066 行不变 / game_loop 943 行不变。 |
@@ -622,7 +623,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `get_scene_summary` / `get_scene_info` | — | 场景汇总（前端/NPC 用） | 1112 / 1161 |
 | `move` | `(target) -> ActionResult` | 移动 + NPC 跟随同步 | 1184 |
 | `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1209 / 1212 |
-| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`）；F17 加当前场景 `scene_items` | 1221 |
+| `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`）；F17 `scene_items` 仅当前场景 **exposed** `{kind,ref,quantity}`（hidden 不入）；`scene_weapons` 仍为暴露武器投影 | 1222 |
 | `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1261 |
 | `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1286 / 1289 |
 | `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1293 / 1297 |
@@ -977,7 +978,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 |------|-----------|------|
 | `set_current_round` / `set_prompt_log_dir` / `_sanitize_label` / `_show_prompt` / `log_skill_result` | 日志设施 | 29–69 |
 | `apply_trait_enhancement` | `(player, skill_name, skill_detail, entity_name, search_context, player_input, graded_tiers) -> (new_tier, enhancement)` judge/search/standoff 三处复用 | 90 |
-| `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点） | 127–212 |
+| `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点；F17：`_build_scene_state` @172 列 snap.scene_items 暴露名「场景物品」，hidden 不进 prompt） | 127–214 |
 | `parse_narrative_output` | Narrator 输出解析 | 270 |
 | `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@319 / `_fmt_inter`@339 / `_fmt_at`@348 / `_parse_req`@383 / `_split_req_str`@397 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段） | 304 |
 | `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 476 |
