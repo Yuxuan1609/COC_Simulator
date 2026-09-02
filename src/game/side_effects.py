@@ -71,10 +71,16 @@ class GrantSpell:
     category: str = ""   # 描述性：combat/exploration，空则从库推断
 
 
+@dataclass
+class EnvChange:
+    axis: str
+    value: str
+
+
 # ── @markup parsing ──
 
 _MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow)'
+    r'@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change)'
     r'\(([^)]*)\)'
 )
 
@@ -143,6 +149,11 @@ def _build_side_effect(func_name: str, kwargs: dict):
         return NPCFollow(
             npc_name=kwargs.get("npc_name", ""),
             follow=follow_str in ("true", "1", "yes"),
+        )
+    elif func_name == "env_change":
+        return EnvChange(
+            axis=kwargs.get("axis", ""),
+            value=kwargs.get("value", ""),
         )
     return None
 

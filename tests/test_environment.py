@@ -88,3 +88,49 @@ def test_node_environment_load_and_to_dict():
     graph2 = DirectedGraph.from_dict(dumped)
     assert graph2.nodes["room_a"].environment == {
         "lighting": "dim", "noise": "noisy"}
+
+
+def test_env_change_lighting_normal_clears_dark_modifier():
+    from helpers import make_world, make_scene
+    from investigator.rules import env_check_modifier
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dark"})}, "room_a")
+    assert env_check_modifier(world, "侦查") == -20
+    apply_side_effects(
+        world, parse_markup_all('@env_change(axis="lighting", value="normal")'))
+    assert world.current_environment().get("lighting") == "normal"
+    assert env_check_modifier(world, "侦查") == 0
+
+
+def test_illegal_env_change_ignored_with_warning(caplog):
+    import logging
+    from helpers import make_world, make_scene
+    from investigator.rules import env_check_modifier
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dark"})}, "room_a")
+    with caplog.at_level(logging.WARNING):
+        apply_side_effects(
+            world, parse_markup_all('@env_change(axis="weather", value="rain")'))
+        apply_side_effects(
+            world, parse_markup_all('@env_change(axis="lighting", value="blinding")'))
+    assert world.current_environment().get("lighting") == "dark"
+    assert env_check_modifier(world, "侦查") == -20
+    assert any("env_change" in r.message for r in caplog.records)
+
+
+def test_environment_overrides_save_load_roundtrip():
+    from helpers import make_world, make_scene
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects, ScenarioWorld
+    world = make_world(
+        {"room_a": make_scene(environment={"lighting": "dark"})}, "room_a")
+    apply_side_effects(
+        world, parse_markup_all('@env_change(axis="lighting", value="normal")'))
+    dumped = world.to_dict()
+    world2 = ScenarioWorld.from_dict(dumped, world.graph)
+    assert world2.environment_overrides.get("room_a", {}).get("lighting") == "normal"
+    assert world2.current_environment().get("lighting") == "normal"

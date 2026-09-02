@@ -17,7 +17,7 @@ from config import COMMS_INTERVAL_MINUTES, WR0_ENABLED
 
 from game.side_effects import (
     ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon, GrantSpell,
-    SceneWeapon, SceneItem, NPCStateChange, NPCFollow,
+    SceneWeapon, SceneItem, NPCStateChange, NPCFollow, EnvChange,
     parse_markup, parse_markup_all,
 )
 
@@ -249,6 +249,8 @@ def _side_effect_to_dict(effect) -> dict:
         return {"type": "npc_state_change", "npc_name": effect.npc_name, "new_state": effect.new_state}
     elif isinstance(effect, NPCFollow):
         return {"type": "npc_follow", "npc_name": effect.npc_name, "follow": effect.follow}
+    elif isinstance(effect, EnvChange):
+        return {"type": "env_change", "axis": effect.axis, "value": effect.value}
     return {}
 
 
@@ -1361,6 +1363,10 @@ class ScenarioWorld:
             "clues": list(getattr(self, "clues", [])),
             "narrative_memory": list(getattr(self, "narrative_memory", [])),
             "scheduled_events": [dict(e) for e in getattr(self, "scheduled_events", [])],
+            "environment_overrides": {
+                scene: dict(vals)
+                for scene, vals in getattr(self, "environment_overrides", {}).items()
+            },
         }
 
     @classmethod
@@ -1393,6 +1399,10 @@ class ScenarioWorld:
         world.clues = list(data.get("clues", []))
         world.narrative_memory = list(data.get("narrative_memory", []))
         world.scheduled_events = [dict(e) for e in data.get("scheduled_events", [])]
+        world.environment_overrides = {
+            scene: dict(vals)
+            for scene, vals in data.get("environment_overrides", {}).items()
+        }
         # 恢复 clock（无外部依赖）
         clock_data = data.get("clock")
         if clock_data:
@@ -1714,6 +1724,20 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
             else:
                 sign = '+' if (isinstance(effect.delta, (int, float)) and effect.delta > 0) else ''
                 msgs.append(f"[属性变化] {effect.stat_name} {sign}{effect.delta}（无调查员，未应用）")
+        elif isinstance(effect, EnvChange):
+            legal = {"lighting": {"dark", "dim", "normal"}, "noise": {"quiet", "noisy"}}
+            axis = (effect.axis or "").strip()
+            value = (effect.value or "").strip()
+            if axis not in legal or value not in legal[axis]:
+                import logging
+                logging.getLogger("scenario_core").warning(
+                    "[env_change] 非法 axis/value，已忽略: axis=%r value=%r",
+                    axis, value)
+            else:
+                loc = world.current_location
+                bucket = world.environment_overrides.setdefault(loc, {})
+                bucket[axis] = value
+                msgs.append(f"[环境变化] {axis}={value} @ {loc}")
     return msgs
 
 
