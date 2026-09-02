@@ -249,6 +249,47 @@ class TestDropToScene:
         assert inv.item_manager.has("钥匙")
         assert not world.scene_items.get("room_a")
 
+    def test_drop_does_not_merge_into_hidden(self, monkeypatch):
+        """隐藏同 kind+ref 不得被合并；丢弃追加暴露行，无需搜索即可捡起暴露件。"""
+        from helpers import assert_player_turn_contract
+        from game.side_effects import SceneItem
+        from game_loop import run_turn
+        game, world, inv, keeper = self._game_with_item(monkeypatch)
+        world.scene_items["room_a"] = [
+            SceneItem(kind="item", ref="钥匙", hidden=True, quantity=1)]
+        r1 = run_turn(game, "我丢掉钥匙")
+        assert_player_turn_contract(r1)
+        assert not inv.item_manager.has("钥匙")
+        items = world.scene_items.get("room_a", [])
+        hidden = [i for i in items if i.kind == "item" and i.ref == "钥匙" and i.hidden]
+        exposed = [i for i in items if i.kind == "item" and i.ref == "钥匙" and not i.hidden]
+        assert len(hidden) == 1 and hidden[0].quantity == 1
+        assert len(exposed) == 1 and exposed[0].quantity == 1
+        r2 = run_turn(game, "我捡起钥匙")
+        assert_player_turn_contract(r2)
+        assert inv.item_manager.has("钥匙")
+        items2 = world.scene_items.get("room_a", [])
+        assert any(i.kind == "item" and i.ref == "钥匙" and i.hidden for i in items2)
+        assert not any(i.kind == "item" and i.ref == "钥匙" and not i.hidden
+                       for i in items2)
+
+    def test_drop_weapon_stacks_exposed_quantity(self, monkeypatch):
+        """已有暴露同名武器时丢弃应 quantity+=1，不得吞掉玩家那把。"""
+        from helpers import assert_player_turn_contract
+        from game.side_effects import SceneItem
+        from game_loop import run_turn
+        game, world, inv, keeper = self._game_with_weapon(monkeypatch)
+        world.scene_items["room_a"] = [
+            SceneItem(kind="weapon", ref="手枪", hidden=False, quantity=1)]
+        world._sync_scene_weapons_from_items()
+        r = run_turn(game, "我丢掉手枪")
+        assert_player_turn_contract(r)
+        assert not any(w.name == "手枪" for w in inv.weapons)
+        items = world.scene_items.get("room_a", [])
+        exposed = [i for i in items
+                   if i.kind == "weapon" and i.ref == "手枪" and not i.hidden]
+        assert sum(i.quantity for i in exposed) >= 2
+
     def test_drop_unowned_early(self, monkeypatch):
         from helpers import make_world, make_scene, stub_keeper_llm, make_game
         from helpers import assert_player_turn_contract

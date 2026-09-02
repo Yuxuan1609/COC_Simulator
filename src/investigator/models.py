@@ -442,7 +442,10 @@ class Investigator:
         self.weapons.append(w)
 
     def remove_weapon(self, name: str):
-        self.weapons = [w for w in self.weapons if w.name != name]
+        for i, w in enumerate(self.weapons):
+            if w.name == name:
+                self.weapons.pop(i)
+                return
 
     # ── 战斗已由 src/game/combat.py 的 CombatSystem 接管 ──
     # combat_check() 和 damage_roll() 的原本预留已迁移到 CombatSystem._resolve_player_action()

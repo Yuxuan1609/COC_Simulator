@@ -465,7 +465,7 @@ class Keeper:
         items = list(self.world.scene_items.get(scene, []))
         named = [it for it in items if it.ref and it.ref in raw]
         if named:
-            it = max(named, key=lambda x: len(x.ref))
+            it = max(named, key=lambda x: (len(x.ref), not x.hidden))
             return (it.kind, it.ref, it.hidden)
         owned_w = {w.name for w in self.world.player.weapons}
         def _owned(it) -> bool:
@@ -482,7 +482,10 @@ class Keeper:
         """发放一件场景物品入包并从场景移除（quantity>1 则减一）。"""
         scene = self.world.current_location
         items = self.world.scene_items.get(scene, [])
-        target = next((i for i in items if i.kind == kind and i.ref == ref), None)
+        target = next(
+            (i for i in items if i.kind == kind and i.ref == ref and not i.hidden),
+            None,
+        )
         if target is None:
             return ref
         if kind == "weapon":
@@ -541,10 +544,12 @@ class Keeper:
             player.item_manager.remove(ref)
         scene = self.world.current_location
         items = self.world.scene_items.setdefault(scene, [])
-        existing = next((i for i in items if i.kind == kind and i.ref == ref), None)
+        existing = next(
+            (i for i in items if i.kind == kind and i.ref == ref and not i.hidden),
+            None,
+        )
         if existing:
-            if kind == "item":
-                existing.quantity += 1
+            existing.quantity += 1
         else:
             items.append(SceneItem(kind=kind, ref=ref, hidden=False, quantity=1))
         self.world._sync_scene_weapons_from_items()
