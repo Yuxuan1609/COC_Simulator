@@ -186,6 +186,6 @@ NPC 系统重检专项（2026-08-31 拍板，单独立项）：F27 度量层 / F
 | 周期效应 interval+payload（F10） | S3-P2 运行时已落地 | 运行时：interval+payload 消费端。生成端缺口仍在：周期效应原子生产——**暂无生产端** |
 | 模组体检 lint（F31） | S3-P2 已落地 | **无缺口**——新检查管线内自动生效；CLI 为事后入口 |
 | 试玩报告（F32） | S3-P2 已落地 | `module_meta.player_goal` 已落地；多次试玩并行+汇总、CI 集成等 F34 |
-| 场景物品泛化（F17） | S3-P3 | scene_weapons 泛化为 scene_items 后生成 schema 同步 |
-| 环境字段挂 L1（F19） | S3-P3 | L1 生成器产出环境字段；L2 难度与环境修正联动 |
+| 场景物品泛化（F17） | S3-P3 运行时已落地 | 运行时：`scene_items` 平面模型 + hidden/exposed + 免费拾取/丢弃。L2 schema 已加 optional `scene_items`（`scene_weapons` 保留映射）。生成端缺口仍在：生成器产出 scene_items / 切换 prompt——**暂无生产端** |
+| 环境字段（F19） | S3-P3 运行时已落地 | 运行时：L2 场景 `environment` 两轴 + `env_check_modifiers` ±N + `@env_change`。L2 schema 已加 optional `environment`。生成端缺口仍在：L1/L2 生成器产出环境字段、生成 prompt 不改——**暂无生产端** |
 | NPC 好感度量（F27） | S3-P2 | npc_profiles 可声明初始好感；交互阈值可引用 |
