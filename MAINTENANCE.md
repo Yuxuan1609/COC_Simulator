@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-02 | F17 Task 2 review：① `_detect_direct_pickup` 先收集当前场景 `ref in raw` 的全部 scene_items，取最长 ref；hidden→Early 没发现，exposed→授予（修隐藏「刀」挡住暴露「小刀」）。② GrantWeapon 有 scene / 空 scene fallback 写 `SceneItem(kind=weapon, hidden=False)` 入 `world.scene_items` 再 `_sync`（不再只 append scene_weapons）；World AT 同口径。TDD：test_scene_items 增 longest-ref pickup + GrantWeapon 经 sync 仍在 scene_items。RED 2 failed → GREEN。keeper 899→895 / scenario_core 2066 行不变 / game_loop 943 行不变。 |
 | 2026-09-02 | F17 Task 2 搜索暴露 + 免费拾取 + 废弃 weapon_offer（S3-P3 spec §1.2-1.5）：搜索成功翻转当前场景全部 hidden→False 并叙事列名、不弹是/否；失败不暴露。understand 在 turn_number+=1 前短路：exposed 未持有直接授予（武器槽 / ItemManager），hidden 点名 Early「你没发现这东西。」不推进回合。删除 `_weapon_offer`/`_weapon_offer_msg`/是否应答/finalize pending/game_loop 拼接。GrantWeapon(scene="") 改为直接入包。`_sync_scene_weapons_from_items` 先 clear 再投影（仅非 hidden 武器），空列表不留 stale。TDD：test_scene_items TestSearchExpose 5 测 + e2e 改写。全量 462 passed / 24 deselected。keeper 881→899 / understand 207→190 / finalize 142→124 / game_loop 951→943 / scenario_core 2061→2066。 |
 | 2026-09-02 | F17 Task 1 SceneItem 数据模型 + 加载映射 + 入档往返（S3-P3 spec §1.1，数据层 only）：`SceneItem(kind, ref, hidden, quantity)` @ side_effects.py:49；`Node.scene_items` 透传；`ScenarioWorld.scene_items` 从 node 加载后 `_hydrate_scene_items_from_weapons`（同 kind+ref 不重复）+ `_sync_scene_weapons_from_items` 投影；`to_dict`/`from_dict`/`load_state` 写读 `scene_items`，旧档缺键从 `scene_weapons` hydrate；`build_snapshot` 增当前场景 scene_items；L2_SCENE_SCHEMA 加 optional `scene_items`。TDD：tests/test_scene_items.py 3 测 RED（AttributeError）→ GREEN。scenario_core 1981→2061 / side_effects 161→169 / layered_schema 364→365。 |
 | 2026-09-02 | B20 战斗 SAN 双轨单轨化：derived.SAN 唯一轨道，state.player_san 实时镜像。combat.py 四处：目睹 check 扣 derived.SAN+镜像 @803-806 / cast 扣减后镜像 @938 / markup 原子结算后镜像 @1000 / 被攻击 check 扣 derived.SAN+镜像 @1256；game_loop 写回（@834-835）变 no-op 保留。TDD：tests/test_combat_smoke.py 增 TestCombatSanSingleTrack 3 测（cast/markup 写回不退还、目睹即时镜像），RED 3 failed → GREEN；test_attacked_check_on_hit setup 改以 inv.derived.SAN 为轨道（原 state.player_san=50 + inv SAN=60 不一致 setup）。ISSUES：B20 入 §5，同类 HP 问题（heal 原子写 derived.HP 被写回吞）新记 B21。combat.py 1554→1558 行，函数表行号全表实测对齐。全量 456 passed / 24 deselected + 1 既有 flaky（复跑即过）。 |
@@ -234,7 +235,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (899 行) — Keeper 回合编配
+## src/game/agents/keeper.py (895 行) — Keeper 回合编配
 
 无 `_run_turn_pipeline`。`process_turn` 为薄 facade，委托 `TurnRunner.execute`（A–E 循环）。toolbox 方法仍驻本文件，供 turn/ 阶段经 `tools` 调用。
 
@@ -255,8 +256,8 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `load_session_state` | `(data)` | 从 `_meta.session_state` 恢复 dump 的三字段 | 147 |
 | `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 152 |
 | `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：懒创建 `TurnRunner(self)` 并 `execute`（A–E 循环）；`_depth` 仅签名兼容，不再使用（无 `_run_turn_pipeline`、无递归 `process_turn`） | 164 |
-| `_detect_direct_pickup` | `(raw) -> tuple[str, str, bool] \| None` | F17：拾取动词+场景物品名（hidden 点名也返回）；仅一件暴露未持有可不点名；含否定词不触发。返回 (kind, ref, hidden) | 456 |
-| `_grant_scene_item` | `(kind, ref) -> str` | F17：武器走 weapon_library+_build_investigator_weapon 入槽；物品走 item_manager.add；quantity>1 减一否则移除；空列表 del scene key；再 `_sync_scene_weapons_from_items` | 485 |
+| `_detect_direct_pickup` | `(raw) -> tuple[str, str, bool] \| None` | F17：拾取动词+场景物品名；`ref in raw` 的全部候选取最长 ref（hidden→没发现，exposed→授予，防短 hidden 挡住长 exposed）；无点名时仅一件暴露未持有可不点名；含否定词不触发。返回 (kind, ref, hidden) | 456 |
+| `_grant_scene_item` | `(kind, ref) -> str` | F17：武器走 weapon_library+_build_investigator_weapon 入槽；物品走 item_manager.add；quantity>1 减一否则移除；空列表 del scene key；再 `_sync_scene_weapons_from_items` | 481 |
 | `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 510 |
 | `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 171 |
 | `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 179 |
@@ -536,7 +537,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `set_turn_logger` | `(logger)` | 设置全局回合日志器（harness/入口调用） | 22 |
 | `setup_logging` | `() -> str` | 统一初始化日志目录 + TurnLogger + prompt/llm 日志 | 28 |
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 47 |
-| `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载（物品/法术经 library.loader 统一加载 core+extensions，@224-226）→ ScenarioWorld → F5 `set_insanity_llm` 注入 `_insanity_llm` 闭包（@253-258，lazy import call_deepseek+LLM_FLASH_MODEL 现场生成疯狂文本，异常回退固定文案）→ world 节点 AT 执行（延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
+| `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载（物品/法术经 library.loader 统一加载 core+extensions，@224-226）→ ScenarioWorld → F5 `set_insanity_llm` 注入 `_insanity_llm` 闭包（@253-258，lazy import call_deepseek+LLM_FLASH_MODEL 现场生成疯狂文本，异常回退固定文案）→ world 节点 AT 执行（GrantWeapon 写 SceneItem 再 `_sync` @277-282；延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
 | `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史 → SUSPENDED/FROZEN 短路 → Narrator 叙事（无 brief 早退且有 npc_events 时 add_record，F24）→ 场景更新 → PlayerFacingSnapshot | 336 |
 | `on_scenario_end` | `(game, character_path=None, module_name="unknown", out_dir=None) -> list[dict]` | P0-2/U4 scenario-end 钩子：幕末成长结算 + 有 character_path 才版本化导出；无玩家空报告；战斗败北勿调 | 638 |
 | `save_game` | `(game, path)` | B1② 唯一保存入口：`save_state(..., extra_meta={turn_number, session_state})` 一次写入 version 2 | 656 |
@@ -574,7 +575,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@549 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 552 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 558 |
 | `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；每原子 try/except 隔离（失败记 `[F10] payload 结算失败` 仍返回已积累 msgs）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1507 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口） | 1538 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`，不再只写 scene_weapons @1632-1653） | 1543 |
 
 ### DirectedGraph（@293）
 

@@ -262,7 +262,7 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     world_node = graph.nodes.get("world")
     _pending_world_items: list[ItemGain] = []  # 延后：玩家尚未设置时暂存
     if world_node:
-        from game.side_effects import parse_markup_all, SpawnEnemy, GrantWeapon, ItemGain, SceneWeapon as SW
+        from game.side_effects import parse_markup_all, SpawnEnemy, GrantWeapon, ItemGain, SceneItem
         for at in world_node.auto_triggers:
             effects = parse_markup_all(getattr(at, 'result', '') or '')
             for se_text in (getattr(at, 'side_effects', []) or []):
@@ -276,10 +276,10 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
                         print(f"[World AT] spawned {eff.enemy_ref} x{eff.quantity} in {target} ({inst.instance_id})")
                 elif isinstance(eff, GrantWeapon):
                     scene = eff.scene or start_node
-                    if scene not in world.scene_weapons:
-                        world.scene_weapons[scene] = []
-                    world.scene_weapons[scene].append(SW(
-                        weapon_ref=eff.weapon_ref, scene=scene, quantity=eff.quantity))
+                    world.scene_items.setdefault(scene, []).append(
+                        SceneItem(kind="weapon", ref=eff.weapon_ref,
+                                  hidden=False, quantity=eff.quantity))
+                    world._sync_scene_weapons_from_items()
                     print(f"[World AT] granted {eff.weapon_ref} x{eff.quantity} in {scene}")
                 elif isinstance(eff, ItemGain):
                     if world.player and hasattr(world.player, 'item_manager'):

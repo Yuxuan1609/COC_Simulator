@@ -463,20 +463,16 @@ class Keeper:
         self.world._hydrate_scene_items_from_weapons()
         scene = self.world.current_location
         items = list(self.world.scene_items.get(scene, []))
-        for it in items:
-            if it.hidden and it.ref and it.ref in raw:
-                return (it.kind, it.ref, True)
+        named = [it for it in items if it.ref and it.ref in raw]
+        if named:
+            it = max(named, key=lambda x: len(x.ref))
+            return (it.kind, it.ref, it.hidden)
         owned_w = {w.name for w in self.world.player.weapons}
         def _owned(it) -> bool:
             if it.kind == "weapon":
                 return it.ref in owned_w
             return self.world.player.item_manager.has(it.ref)
         pool = [it for it in items if not it.hidden and not _owned(it)]
-        if not pool:
-            return None
-        for it in pool:
-            if it.ref in raw:
-                return (it.kind, it.ref, False)
         if len(pool) == 1:
             it = pool[0]
             return (it.kind, it.ref, False)

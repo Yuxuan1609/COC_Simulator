@@ -136,3 +136,50 @@ class TestSearchExpose:
         assert_player_turn_contract(r)
         assert any(w.name == "手枪" for w in inv.weapons)
         assert not world.scene_items.get("room_a")
+
+    def test_pickup_prefers_longest_exposed_over_hidden_substring(self, monkeypatch):
+        """暴露「小刀」长于隐藏「刀」：点名小刀应授予，不得 Early 没发现。"""
+        from helpers import make_world, make_scene, stub_keeper_llm, make_game
+        from helpers import assert_player_turn_contract
+        from game.agents.keeper import Keeper
+        from game.side_effects import SceneItem
+        from game_loop import run_turn
+        from investigator import Investigator, Skill
+        from library.weapons import WeaponLibrary, LibraryWeapon
+
+        wlib = WeaponLibrary()
+        wlib._weapons["小刀"] = LibraryWeapon(name="小刀", skill_name="斗殴")
+        world = make_world({"room_a": make_scene()}, "room_a", weapon_library=wlib)
+        inv = Investigator(name="测试员", age=25, gender="男",
+                           skills=[Skill(name="侦查", base_value=50)])
+        world.set_player(inv)
+        world.scene_items["room_a"] = [
+            SceneItem(kind="weapon", ref="刀", hidden=True, quantity=1),
+            SceneItem(kind="weapon", ref="小刀", hidden=False, quantity=1),
+        ]
+        world._sync_scene_weapons_from_items()
+        keeper = Keeper(world)
+        stub_keeper_llm(
+            keeper, monkeypatch,
+            parse_results=[[{"type": "other", "text": "随便"}]])
+        game = make_game(keeper)
+        r = run_turn(game, "我捡起小刀")
+        assert_player_turn_contract(r)
+        assert "没发现" not in r.narrative
+        assert any(w.name == "小刀" for w in inv.weapons)
+        refs = [i.ref for i in world.scene_items.get("room_a", [])]
+        assert "小刀" not in refs
+        assert "刀" in refs
+
+
+def test_grant_weapon_scene_survives_sync():
+    """GrantWeapon(scene=...) 写入 scene_items；_sync 不得丢掉暴露武器。"""
+    from helpers import make_world, make_scene
+    from game.side_effects import GrantWeapon
+    from scenario_core import apply_side_effects
+
+    world = make_world({"room_a": make_scene()}, "room_a")
+    apply_side_effects(world, [GrantWeapon(weapon_ref="手枪", scene="room_a")])
+    world._sync_scene_weapons_from_items()
+    items = world.scene_items.get("room_a", [])
+    assert any(i.kind == "weapon" and i.ref == "手枪" and not i.hidden for i in items)

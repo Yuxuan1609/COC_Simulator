@@ -1638,18 +1638,18 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                     msgs.append(f"[武器授予] {effect.weapon_ref} x{effect.quantity} 直接授予调查员")
                 else:
                     # fallback: 放置到当前场景
-                    if target_scene not in world.scene_weapons:
-                        world.scene_weapons[target_scene] = []
-                    world.scene_weapons[target_scene].append(SceneWeapon(
-                        weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity))
+                    world.scene_items.setdefault(target_scene, []).append(
+                        SceneItem(kind="weapon", ref=effect.weapon_ref,
+                                  hidden=False, quantity=effect.quantity))
                     world.memory.note_item(effect.weapon_ref)
+                    world._sync_scene_weapons_from_items()
                     msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
             else:
-                sw = SceneWeapon(weapon_ref=effect.weapon_ref, scene=target_scene, quantity=effect.quantity)
-                if target_scene not in world.scene_weapons:
-                    world.scene_weapons[target_scene] = []
-                world.scene_weapons[target_scene].append(sw)
+                world.scene_items.setdefault(target_scene, []).append(
+                    SceneItem(kind="weapon", ref=effect.weapon_ref,
+                              hidden=False, quantity=effect.quantity))
                 world.memory.note_item(effect.weapon_ref)
+                world._sync_scene_weapons_from_items()
                 msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
         elif isinstance(effect, NPCStateChange):
             world.npcs.set_state(effect.npc_name, effect.new_state)
