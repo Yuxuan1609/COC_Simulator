@@ -801,8 +801,9 @@ class CombatSystem:
             if not witness:
                 continue
             loss, text = _san_check_and_lose(
-                state.player_san, witness[0], witness[1])
-            state.player_san = max(0, state.player_san - loss)
+                player.derived.SAN, witness[0], witness[1])
+            player.derived.SAN = max(0, player.derived.SAN - loss)
+            state.player_san = player.derived.SAN
             if loss and self.world is not None:
                 _on_san = getattr(self.world, "on_san_loss", None)
                 if callable(_on_san):
@@ -934,6 +935,7 @@ class CombatSystem:
             player.derived.MP -= need_mp
             if need_san:
                 player.derived.SAN = max(0, player.derived.SAN - need_san)
+                state.player_san = player.derived.SAN
                 if self.world is not None:
                     self.world.on_san_loss(need_san, "施法")
 
@@ -995,6 +997,7 @@ class CombatSystem:
                             effs = parse_markup_all(str(atom.get("text", "")))
                             if effs:
                                 apply_side_effects(self.world, effs)
+                                state.player_san = player.derived.SAN
                         else:
                             import logging
                             logging.getLogger("game.combat").warning(
@@ -1248,8 +1251,9 @@ class CombatSystem:
             if attacked and attacked_ref not in state.san_attacked_refs:
                 state.san_attacked_refs.add(attacked_ref)
                 loss, text = _san_check_and_lose(
-                    state.player_san, attacked[0], attacked[1])
-                state.player_san = max(0, state.player_san - loss)
+                    player.derived.SAN, attacked[0], attacked[1])
+                player.derived.SAN = max(0, player.derived.SAN - loss)
+                state.player_san = player.derived.SAN
                 if loss and self.world is not None:
                     _on_san = getattr(self.world, "on_san_loss", None)
                     if callable(_on_san):

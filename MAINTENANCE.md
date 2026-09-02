@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-02 | B20 战斗 SAN 双轨单轨化：derived.SAN 唯一轨道，state.player_san 实时镜像。combat.py 四处：目睹 check 扣 derived.SAN+镜像 @803-806 / cast 扣减后镜像 @938 / markup 原子结算后镜像 @1000 / 被攻击 check 扣 derived.SAN+镜像 @1256；game_loop 写回（@834-835）变 no-op 保留。TDD：tests/test_combat_smoke.py 增 TestCombatSanSingleTrack 3 测（cast/markup 写回不退还、目睹即时镜像），RED 3 failed → GREEN；test_attacked_check_on_hit setup 改以 inv.derived.SAN 为轨道（原 state.player_san=50 + inv SAN=60 不一致 setup）。ISSUES：B20 入 §5，同类 HP 问题（heal 原子写 derived.HP 被写回吞）新记 B21。combat.py 1554→1558 行，函数表行号全表实测对齐。全量 456 passed / 24 deselected + 1 既有 flaky（复跑即过）。 |
 | 2026-09-01 | docs: align remaining MAINTENANCE line numbers after S3-P2：MemoryManager/WorldChronicle +11；scenario_core 前部 Node/DirectedGraph/RequirementResolver；judge 尾部 requirement；combat `_get_tier` 段；prompts enrich 以降；models/serialization/layered_schema/game_loop 余差。零产品代码。 |
 | 2026-09-01 | S3-P2 收口：ISSUES F32/F31/F10/F18/F23/F5 入 §5（F1/F17/F27/F29 延后不关；F6/F7 仍缓；B20 留 §1 🟡）；簇评估 §10 回写运行时已落地 vs 暂无生产端（F31 无缺口；F32 player_goal 已落地，多次汇总等 F34）。函数表行号对齐：set_insanity_llm 867→871 / on_san_loss 871→875 / _gen_insanity_text 900→906 / ScenarioWorld to_dict/from_dict 1247/1292→1253/1298 / judge.py 562→567。零产品代码。 |
 | 2026-09-01 | F32 复审：`run_report` L2 优先级对齐 `llm_player`——存在 `l2_keeper_test.json` 则用之，否则 `l2_keeper.json`（原先 prod 优先，双文件模组会按正式 L2 聚合）。TDD：`test_run_report_prefers_l2_keeper_test`（双文件+visited 测试房）。playtest_report 215→214。 |
@@ -386,22 +387,22 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `run_single_round` | `(combat_init, state, action_id, target_ids, player_extra="") -> dict` | 交互式单回合（前端回合制；轮末 @595 `state.round += 1` 前调 `_tick_temporary_effects`） | 435 |
 | `_build_single_round_result` | `(state, combat_init) -> dict` | 单回合结果 dict；被支配跳过（weapon="--"/无法动弹）不渲染「未命中」；san_log 一次性渲染 | 599 |
 | `_generate_combat_narrative` | `(state, player, scene, log_dir)` | 战斗叙事生成 | 659 |
-| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻；player_san_max=player.derived.SAN_MAX（F2 @763）；末尾目睹 SAN check @788-814（F9 收口）：expanded_enemies 按 enemy_ref 去重，去重键=局部 seen_refs ∪ world.san_seen_sources（world 非 None 且有该属性时 check 后回写 ref 入全局集入档，跨场跨档同恐怖源只首次目睹 check；world=None 退化为场内去重；同 ref 群组只一次），目睹组=注释不含"攻击"的第一组，扣 state.player_san（下限 0）+san_log 追加叙事行；F5：loss>0 时经 getattr 防御式调 world.on_san_loss @806-811（触发疯狂 text 追加「（疯狂侵袭）」） | 740 |
-| `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 817 |
-| `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 849 |
-| `_skill_value` | `(player, skill_name)` | 技能值查询 | 902 |
-| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @962-1040**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，有 interval/payload 则拷入条目，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 已消费：_resolve_enemy_action 顶部跳过行动）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错）；F5：need_san 扣减后即调 world.on_san_loss @935-938（施法损失计疯狂） | 913 |
-| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1158 |
-| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1170 |
-| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1178 |
-| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 control 检查跳过；命中技能优先读 attack.skill_value（>0），否则 (DEX+POW)//2，再加 dodge_bonus（F13）；buff 减伤；被攻击 SAN check @1243-1259（F9 收口：同场同 enemy_ref 只首次命中触发，state.san_attacked_refs 场内去重不入档，multi_attack 不叠加）；F5：loss>0 时经 getattr 防御式调 world.on_san_loss @1253-1258（触发疯狂 text 追加「（疯狂侵袭）」进 narrative） | 1182 |
-| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；F10：world.player.timed_effects 中 `interval==round` 条目每轮调 `apply_effect_payload`（单条 try/except 隔离，失败记 `[F10] payload 结算失败` 继续下条）；调用点 run_combat @406 / run_single_round @595 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1265 |
-| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1290 / 1314 |
-| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1335 |
-| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1345 |
-| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1364 |
-| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1392 |
-| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1499 |
+| `_init_combat` | `(combat_init) -> CombatState` | 初始化：展开 quantity 群组，按 DEX 排先攻；player_san_max=player.derived.SAN_MAX（F2 @763）；末尾目睹 SAN check @788-815（F9 收口）：expanded_enemies 按 enemy_ref 去重，去重键=局部 seen_refs ∪ world.san_seen_sources（world 非 None 且有该属性时 check 后回写 ref 入全局集入档，跨场跨档同恐怖源只首次目睹 check；world=None 退化为场内去重；同 ref 群组只一次），目睹组=注释不含"攻击"的第一组，**B20 单轨：扣 player.derived.SAN（下限 0）+ state.player_san 镜像 @803-806**+san_log 追加叙事行；F5：loss>0 时经 getattr 防御式调 world.on_san_loss @807-812（触发疯狂 text 追加「（疯狂侵袭）」） | 740 |
+| `_match_action` | `(raw_input, available)` | 文本 → 动作 ID 匹配 | 818 |
+| `_get_player_actions` | `(player, environment_actions)` | 固定动作列表（拳/踢/回避/逃跑/武器/环境/施法--known_spells∩combat 类生成 cast_<id> 动作） | 850 |
+| `_skill_value` | `(player, skill_name)` | 技能值查询 | 903 |
+| `_resolve_player_action` | `(state, player, action_id, target_iid, environment_actions)` | 执行玩家动作（cast_* 前缀走 cast_spell 分支：习得/MP 硬门 -> 扣减 -> opposed/常规检定 -> **effect 原子数组遍历 @963-1041**（T9 重写，检定成功才结算）：damage 保留 _roll_damage+ignore_armor+死亡标记 / heal（formula 掷骰（utils.roll_formula 共享）或 delta 回退，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects 走 self.world，**B20：结算后 state.player_san 镜像 @1000**，无 world 跳过+warning）/ timed（挂 world.player.timed_effects，同 id refresh，expire_at=clock.game_time+minutes，有 interval/payload 则拷入条目，无 world/player 跳过+warning）/ buff（挂 state.temporary_effects，T10 消费）/ control（写 target.controlled_rounds，T11 已消费：_resolve_enemy_action 顶部跳过行动）/ narrative（拼 action.narrative）/ 未知 type `[unknown:{t}]` 降级永不报错）；F5+B20：need_san 扣 derived.SAN 后镜像 state.player_san @936-938 并调 world.on_san_loss @940（施法损失计疯狂） | 914 |
+| `_get_tier` | `(roll, skill_value)` | COC 四级检定 | 1161 |
+| `_select_enemy_attack` | `(enemy)` | 按权重随机选攻击 | 1173 |
+| `_select_enemy_target` | `(state, enemy)` | 敌人选目标 | 1181 |
+| `_resolve_enemy_action` | `(state, enemy, player)` | 执行敌人动作；顶部 control 检查跳过；命中技能优先读 attack.skill_value（>0），否则 (DEX+POW)//2，再加 dodge_bonus（F13）；buff 减伤；被攻击 SAN check @1247-1263（F9 收口：同场同 enemy_ref 只首次命中触发，state.san_attacked_refs 场内去重不入档，multi_attack 不叠加）；**B20 单轨：扣 player.derived.SAN + state.player_san 镜像 @1256**；F5：loss>0 时经 getattr 防御式调 world.on_san_loss @1257-1262（触发疯狂 text 追加「（疯狂侵袭）」进 narrative） | 1185 |
+| `_tick_temporary_effects` | `(state)` | 轮末递减（T10）：temporary_effects 各条 rounds-1、归零移除（`rounds-1 > 0` 存活过滤）；enemy.controlled_rounds 递减（T11 消费：_resolve_enemy_action 顶部检查）；F10：world.player.timed_effects 中 `interval==round` 条目每轮调 `apply_effect_payload`（单条 try/except 隔离，失败记 `[F10] payload 结算失败` 继续下条）；调用点 run_combat @406 / run_single_round @595 / run_game.py 交互循环 @521（均在 `state.round += 1` 前，共 3 处） | 1269 |
+| `_check_phase` / `_apply_phase` | — | Boss 阶段切换 | 1294 / 1318 |
+| `_any_special_rules` | `(combat_init, enemies)` | 是否有 special_rules 需要 LLM | 1339 |
+| `_build_battle_snapshot` | `(state, player, boss_phase)` | LLM 用战斗快照 | 1349 |
+| `_build_round_result` | `(state, player_actions, enemy_actions, round_num)` | RoundResult 构建 | 1368 |
+| `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1396 |
+| `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1503 |
 
 ## src/game/judge.py (567 行) — 确定性闸门（无 LLM 依赖）
 

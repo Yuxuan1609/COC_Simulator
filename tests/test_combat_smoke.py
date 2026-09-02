@@ -804,13 +804,13 @@ class TestSanCheckWiring:
         state = CombatState(enemies=[enemy])
         state.player_hp = 20
         state.player_hp_max = 20
-        state.player_san = 50
-        act = CombatSystem()._resolve_enemy_action(state, enemy,
-                                                   _make_investigator())
+        inv = _make_investigator(san=50)
+        state.player_san = inv.derived.SAN
+        act = CombatSystem()._resolve_enemy_action(state, enemy, inv)
         assert act.success, "DEX/POW=200 必中"
         assert "理智检定" in act.narrative and "恐惧侵蚀" in act.narrative
-        assert state.player_san == 49, \
-            f"roll=90>50 失败,失败组 1D6=1,SAN 50->49,实际 {state.player_san}"
+        assert inv.derived.SAN == 49 and state.player_san == 49, \
+            f"roll=90>50 失败,失败组 1D6=1,SAN 50->49(单轨 derived+镜像),实际 {state.player_san}"
 
     def test_run_combat_narrative_includes_san_log(self, monkeypatch):
         """run_combat(自动战斗路径)终局叙事前置 san_log:目睹 check 文本玩家可见(I1)。"""
@@ -846,6 +846,75 @@ class TestSanCheckWiring:
         assert act.success, "DEX/POW=200 必中"
         assert "理智检定" not in act.narrative, "无被攻击组不得追加 check"
         assert state.player_san == 50
+
+
+class TestCombatSanSingleTrack:
+    """B20: 战斗 SAN 单轨——derived.SAN 为唯一轨道,state.player_san 实时镜像;
+    施法成本/markup 的 SAN 扣减不得被战斗结束写回(game_loop 模式)隐式退还。"""
+
+    def _spell_lib(self, san_cost, effect=None):
+        from library.spells import SpellLibrary, LibrarySpell
+        lib = SpellLibrary()
+        lib._spells["X"] = LibrarySpell.from_dict({
+            "id": "X", "name": "试咒", "category": "combat",
+            "cost": {"mp": 1, "san": san_cost},
+            "check": {"skill": "POW", "type": "regular"},
+            "effect": effect or []})
+        return lib
+
+    def _caster(self):
+        inv = _make_investigator(hp=12, san=60, mp=14)
+        inv.skills.append(Skill(name="POW", base_value=50, value=200, category="属性"))
+        inv.known_spells = ["X"]
+        return inv
+
+    def test_cast_san_cost_survives_writeback(self):
+        """施法 SAN 成本:写回后不得退还(60 -2 -> 58)。"""
+        inv = self._caster()
+        cs = CombatSystem(spell_lib=self._spell_lib(2))
+        state = CombatState()
+        state.player_san = 60
+        act = cs._resolve_player_action(state, inv, "cast_X", "")
+        assert act.success, f"POW=200 必过: {act.narrative}"
+        inv.derived.SAN = max(0, state.player_san)   # game_loop 写回模式
+        assert inv.derived.SAN == 58, \
+            f"施法 san=2 成本须在写回后保留,实际 {inv.derived.SAN}"
+
+    def test_markup_san_change_survives_writeback(self):
+        """markup 原子改 SAN:写回后不得丢失(60 -1 -> 59)。"""
+        import os as _os
+        sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "e2e"))
+        from helpers import make_world, make_scene
+        inv = self._caster()
+        world = make_world({"room_a": make_scene()}, "room_a")
+        world.set_player(inv)
+        cs = CombatSystem(spell_lib=self._spell_lib(
+            0, [{"type": "markup",
+                 "text": '@stat_change(stat_name="SAN", delta=-1)'}]),
+            world=world)
+        state = CombatState()
+        state.player_san = 60
+        act = cs._resolve_player_action(state, inv, "cast_X", "")
+        assert act.success
+        inv.derived.SAN = max(0, state.player_san)   # game_loop 写回模式
+        assert inv.derived.SAN == 59, \
+            f"markup SAN-1 须在写回后保留,实际 {inv.derived.SAN}"
+
+    def test_witness_loss_mirrored_to_derived_san(self, monkeypatch):
+        """目睹扣减立即落到 derived.SAN(单轨),state.player_san 镜像一致。"""
+        from game import combat
+        monkeypatch.setattr(combat.random, "randint",
+                            lambda a, b: 90 if b == 100 else 1)
+        enemy = _TestEnemy("深潜者", hp=8, armor="0", instance_id="E_SAN_M",
+                           san_loss="0/1D6")
+        player = _make_investigator(hp=12, san=60)
+        combat_init = CombatInit(
+            enemies=[enemy], player=player,
+            scene="测试房间", initiative_context="san")
+        state = CombatSystem()._init_combat(combat_init)
+        assert player.derived.SAN == 59, \
+            f"目睹 check 失败组 1D6=1 须立即扣 derived.SAN,实际 {player.derived.SAN}"
+        assert state.player_san == player.derived.SAN, "镜像必须一致"
 
 
 class TestEnemyAttackSkillValue:
