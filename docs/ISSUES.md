@@ -26,7 +26,7 @@
 | # | 问题 | 修法/备注 |
 |---|------|----------|
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
-| B20 | **战斗 SAN 双轨不同步**(F5 联动) | 战斗内施法 SAN 直扣 derived.SAN,但 witness/attacked 损失记在战斗局部 state.player_san,战斗结束 game_loop 写回覆盖 -> 施法 SAN 被隐式退还;F5 on_san_loss 已累计该损失,造成疯狂账目与 SAN 值不一致(20c98cb 暴露,预存问题)。修法方向:战斗侧 SAN 收敛单轨(施法扣减改走战斗局部,或结束时两轨合并) |
+| B21 | **战斗 HP 双轨不同步**(B20 同类) | 战斗内 heal 原子直加 derived.HP(combat.py 施法 heal 分支),敌方伤害记 state.player_hp,战斗结束写回 derived.HP=cr.player_hp -> 战斗中施法回血被隐式吞掉。修法方向:与 B20 同法,HP 收敛单轨(derived.HP 唯一轨道,state.player_hp 镜像) |
 
 ### 🟢 Minor(攒一批顺手清)
 
@@ -42,17 +42,16 @@
 
 | # | 缺口 | 定位 |
 |---|------|------|
-| F1 | **物品转移**(丢弃/给予 NPC/交易) | **延后（2026-08-31 拍板）**：与 F17 场景物品容器一起出方案——无 F17 容器则丢弃无处落。原定位：use 大类剩余通路,"把钥匙递给 NPC"类叙事接不住 |
+| F1 | **物品转移**(丢弃/给予 NPC/交易) | **拆分（2026-09-02 拍板）**：丢弃到场景 → 随 F17 本期做（spec 2026-09-02-s3-p3）；给予 NPC/交易 → 归「NPC 系统重检专项」（NPC 无 inventory，是另一个台阶） |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
 | F6 | **重伤/濒死/急救** | **缓（2026-08-31 拍板）**：无队友体系濒死救援无承载，等 F27/F28 后重评。原定位：当前 HP 0 直接 loss+game_over；缺重伤 CON 检定/濒死每轮-1/急救稳定 |
 | F7 | **战斗反应与骰子表达** | **缓（2026-08-31 拍板）**：战斗系统保持现状，随将来「战斗专项优化」（含 R2 中断机制、F28 多方化）一并立项。原定位：闪避自动成功无对抗/反击无/奖励惩罚骰无/push roll 无 |
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
-| F17 | **场景物品放置/拾取/容器** | 只有武器能放场景(scene_weapons),无 drop API、无容器嵌套;"抽屉里的东西""把物品藏回现场"接不住 |
-| F19 | **环境状态进检定** | 光照/天气/噪音无修正源(难度只来自 entity.difficulty);手电筒/火柴 L0 无 effect,黑暗侦查无机械支撑 |
-| F20 | **探索侧潜行/躲藏** | 潜行只在对峙与战斗;"悄悄潜入/躲进柜子"只能 Author 自由发挥 |
+| F17 | **场景物品放置/拾取** | **方案已定（2026-09-02 spec S3-P3）**：泛化 scene_items（kind 区分武器/物品，武器无数量）+ hidden/exposed 状态机 + 免费拾取/丢弃短路；容器嵌套缓。原定位：只有武器能放场景(scene_weapons),"抽屉里的东西""把物品藏回现场"接不住 |
+| F19 | **环境状态进检定** | **方案已定（2026-09-02 spec S3-P3）**：场景 environment 两轴标签（lighting/noise）→ game_config.env_check_modifiers 全局表映射技能目标值 ±N（机械通道）+ @env_change markup + LLM 知情层。原定位：光照/天气/噪音无修正源;手电筒/火柴 L0 无 effect,黑暗侦查无机械支撑 |
 | F21 | **物品组合/合成 + 耐久/次数** | 无 combine/split;InventoryItem 只有 quantity,tool 类永不损耗 |
-| F22 | **线索系统结构化** | note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
+| F22 | **线索系统** | **降级（2026-09-02 拍板）**：线索=interaction 系统产物，notebook=玩家侧只读视图（CLI /notebook + 前端面板，零新结构零新判定；key_items/Chronicle 已落库，缺口只在呈现），随 F39 批次。集齐判定维持 Author LLM。原定位：note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
 | F26 | **谎言/欺骗机制** | 玩家陈述无条件采信并写入 memory,伪装身份套情报无支撑 |
 | F27 | **NPC 度量层缺口**(U1 前置) | **缓（2026-08-31 拍板）**：归将来「NPC 系统重检专项」。好感度当前无实际消费（attitude 唯一消费在 talk_to prompt），不单独铺度量层。原定位：`set_attitude`/`process_npc_turn` 死代码;好感/瞬态情绪/自主日程无度量字段 |
 | F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
@@ -81,6 +80,7 @@
 
 | 项 | 状态 |
 |----|------|
+| F20 探索侧潜行/躲藏 | 缓（2026-09-02 拍板）：消费方分析——遭遇回避已被对峙潜行+战斗 conceal 覆盖；NPC 感知不做；AT 触发不应被 hidden 挡。等 NPC 感知体系（NPC 专项）出现时重评 |
 | R4 parse 稀疏实体过度匹配(IT_END 误触发) | 暂缓观察(2026-08-15 拍板,近两轮未复现) |
 | 巡检层 verdict 化 | 暂缓(用户拍板) |
 | 前端现栈优化(抽 JS/htmx/Alpine) | 等用户手动测试反馈后排期 |
@@ -106,6 +106,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-09-02 | **B20 战斗 SAN 双轨不同步** | 单轨收敛：derived.SAN 唯一轨道，state.player_san 实时镜像。witness/attacked 扣减改落 derived.SAN 后镜像；cast 扣减与 markup 原子结算后补镜像；写回变 no-op。同类 HP 问题另记 B21。 |
 | 2026-09-01 | **F32 试玩报告** | 纯聚合零 rubric 零 LLM；player_goal fallback（profile → L3 → driving_force）；`l2_keeper_test.json` 优先（6b7596b + f424bea）。 |
 | 2026-09-01 | **F31 模组体检 lint** | 扩 cross_validate（唯一性/markup/npc scene/ending refs）；reachable_from BFS；CLI `python -m module_designer.lint`（0189616 + a91602c + 7461321）。 |
 | 2026-09-01 | **F10 周期效应** | timed_effects 扩 interval+payload；hour/day 经 `_tick_time_effects`，round 经 combat；start_at 跨拍持久化；原子隔离（0c9ae62 + 6bb8e48 + 714590e）。 |
