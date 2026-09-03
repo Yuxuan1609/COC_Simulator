@@ -54,3 +54,51 @@ def test_snapshot_attitude_is_chinese_label():
     world.npcs.set_attitude("线人", value=40)
     snap = world.npcs.get_in_scene_snapshot("room_a")
     assert snap[0]["attitude"] == "友好"
+
+
+def _npc_world():
+    from helpers import make_world, make_scene
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a", "attitude": "neutral"}})
+    return world, world.npcs.get("线人")
+
+
+def test_markup_delta_applied():
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects
+    world, npc = _npc_world()
+    apply_side_effects(world, parse_markup_all('@attitude_change(npc_name="线人", delta=20)'))
+    assert npc.attitude_value == 20
+    assert npc.attitude == "friendly"
+
+
+def test_talk_to_strips_and_applies():
+    world, npc = _npc_world()
+    def fake_llm(user, system="", **k):
+        return "哼。@attitude_change(npc_name=\"线人\", delta=-15)"
+    text = world.npcs.talk_to("线人", "滚开", fake_llm, world=world)
+    assert "@attitude_change" not in text
+    assert world.npcs.get("线人").attitude_value == -15
+
+
+def test_illegal_npc_name_warning_no_crash(caplog):
+    import logging
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects
+    world, npc = _npc_world()
+    with caplog.at_level(logging.WARNING):
+        apply_side_effects(
+            world, parse_markup_all('@attitude_change(npc_name="不存在的人", delta=20)'))
+    assert npc.attitude_value == 0
+    assert any("attitude_change" in r.message or "不存在的人" in r.message
+               for r in caplog.records)
+
+
+def test_empty_npc_name_in_talk_to_applies_to_current():
+    world, npc = _npc_world()
+    def fake_llm(user, system="", **k):
+        return "哼。@attitude_change(delta=-15)"
+    text = world.npcs.talk_to("线人", "滚开", fake_llm, world=world)
+    assert "@attitude_change" not in text
+    assert npc.attitude_value == -15

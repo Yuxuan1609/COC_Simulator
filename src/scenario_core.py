@@ -17,7 +17,7 @@ from config import COMMS_INTERVAL_MINUTES, WR0_ENABLED
 
 from game.side_effects import (
     ItemGain, ConsumeItem, StatChange, SpawnEnemy, GrantWeapon, GrantSpell,
-    SceneWeapon, SceneItem, NPCStateChange, NPCFollow, EnvChange,
+    SceneWeapon, SceneItem, NPCStateChange, NPCFollow, EnvChange, AttitudeChange,
     parse_markup, parse_markup_all,
 )
 
@@ -251,6 +251,8 @@ def _side_effect_to_dict(effect) -> dict:
         return {"type": "npc_follow", "npc_name": effect.npc_name, "follow": effect.follow}
     elif isinstance(effect, EnvChange):
         return {"type": "env_change", "axis": effect.axis, "value": effect.value}
+    elif isinstance(effect, AttitudeChange):
+        return {"type": "attitude_change", "npc_name": effect.npc_name, "delta": effect.delta}
     return {}
 
 
@@ -1739,6 +1741,15 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                 bucket = world.environment_overrides.setdefault(loc, {})
                 bucket[axis] = value
                 msgs.append(f"[环境变化] {axis}={value} @ {loc}")
+        elif isinstance(effect, AttitudeChange):
+            npc_name = (effect.npc_name or "").strip()
+            if not npc_name or world.npcs.get(npc_name) is None:
+                import logging
+                logging.getLogger("scenario_core").warning(
+                    "[attitude_change] 未知 NPC，已忽略: npc_name=%r", npc_name)
+            else:
+                world.npcs.set_attitude(npc_name, delta=effect.delta)
+                msgs.append(f"[态度变化] {npc_name} {effect.delta:+d}")
     return msgs
 
 

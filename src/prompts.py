@@ -575,7 +575,7 @@ def build_keeper_parse_prompt(world, user_input: str) -> str:
 # ── Keeper: Enrich (Step 3) ──
 
 _STRIP_MARKUP_RE = re.compile(
-    r'\s*@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change)'
+    r'\s*@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change|attitude_change)'
     r'\([^)]*\)'
 )
 

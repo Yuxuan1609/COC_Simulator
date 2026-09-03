@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | N1 Task 2 `@attitude_change` markup + talk_to 内嵌剥离：① `AttitudeChange(npc_name, delta)` @ side_effects.py:81；`_MARKUP_PATTERN` 增 `attitude_change`；`_build_side_effect` 解析 npc_name/delta。② `apply_side_effects` 调 `world.npcs.set_attitude(npc_name, delta=delta)`；空/未知 NPC warning 忽略不 raise。③ talk_to LLM 成功后 `parse_markup_all`+`apply_side_effects`，空 npc_name 填当前 NPC，展示文本 `_STRIP` 剥 markup。④ judge `_MARKUP_STRIP_RE` / prompts `_STRIP_MARKUP_RE` 增 attitude_change（不改 generation prompts）。TDD：tests/test_npc_attitude.py +4（markup delta / talk_to strip+apply / 非法名 warning / 空 npc_name 当前 NPC）。 |
 | 2026-09-03 | N1 Task 1 attitude_value 双轨 + 档位映射 + 入档：NPC 增 `attitude_value`（-100..100）；`attitude_tier` 读 `game_config.npc_attitude_tiers`；`set_attitude(name, delta=/value=)` clamp 并同步 `attitude=key`；snapshot `attitude` 改中文 label；to_dict 双写 / from_dict 优先数值否则档位中值。TDD：tests/test_npc_attitude.py 5 测。 |
 | 2026-09-02 | S3-P3 收口：ISSUES F17/F19 入 §5（F1 丢弃部分随 F17 落地，给予 NPC 仍 F28）；簇评估 §10 回写 scene_items/environment 运行时已落地、schema 字段已加、生成 prompt 不改——暂无生产端。函数表行号 grep 实测对齐（scenario_core / keeper / understand / adjudicate / finalize / prompts / models / rules / side_effects / judge / layered_schema）。零产品代码。 |
 | 2026-09-02 | F19 Task 7 环境知情行进 prompt（S3-P3 F19）：① `build_snapshot` 增 `environment` = `current_environment()`（node∪override）。② `_build_scene_state` 非默认标签渲染「环境：黑暗」「环境：嘈杂」「环境：黑暗/嘈杂」「环境：昏暗」；normal/quiet/空不输出行。LLM 不裁决数值，仅知情。TDD：tests/test_environment.py +6（snapshot 含 environment / dark / noisy / dark+noisy / dim / 默认省略）。RED 5 failed → GREEN 17 passed。全量 489 passed / 24 deselected + 1 既有 e2e 失败（`test_unresolved_use_becomes_creative`，HEAD 已挂，非本任务）。real_llm_smoke 4 failed（402 billing，同 Task 4，不阻塞提交）。scenario_core 2101→2102 / prompts 1168→1180。 |
@@ -417,7 +418,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1396 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1503 |
 
-## src/game/judge.py (572 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change）
+## src/game/judge.py (572 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -438,15 +439,15 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `assemble` | `(outcomes, ambient_changes, emphasis="", enriched_summary="") -> NarratorBrief` | 判定结果 + 场景快照 → NarratorBrief | 17 |
 | `_build_snapshot` | `() -> SceneSnapshot` | 收集当前场景元数据 | 32 |
 
-## src/game/side_effects.py (180 行) — @markup 副作用
+## src/game/side_effects.py (191 行) — @markup 副作用
 
 | 类/函数 | 说明 | 行号 |
 |---------|------|------|
-| `ItemGain` / `ConsumeItem` / `StatChange` / `SpawnEnemy` / `GrantWeapon` / `GrantSpell` / `SceneWeapon` / `SceneItem` / `NPCStateChange` / `NPCFollow` / `EnvChange` | @标记 dataclass（GrantSpell：spell_ref + category 描述性，统一资源层第 8 种 markup；F17 `SceneItem` kind/ref/hidden/quantity @49，运行时场景物品事实源；F19 `EnvChange` axis/value @75） | 8–77 |
-| `_parse_kwargs` | `@标记(...)` 参数解析 | 88 |
-| `_build_side_effect` | 函数名+kwargs → dataclass（含 env_change） | 101 |
-| `parse_markup` | 解析单个文本中的 @标记 | 161 |
-| `parse_markup_all` | `(text) -> list` 解析全部 @标记 | 171 |
+| `ItemGain` / `ConsumeItem` / `StatChange` / `SpawnEnemy` / `GrantWeapon` / `GrantSpell` / `SceneWeapon` / `SceneItem` / `NPCStateChange` / `NPCFollow` / `EnvChange` / `AttitudeChange` | @标记 dataclass（GrantSpell：spell_ref + category 描述性，统一资源层第 8 种 markup；F17 `SceneItem` kind/ref/hidden/quantity @49，运行时场景物品事实源；F19 `EnvChange` axis/value @75；N1 `AttitudeChange` npc_name/delta @81） | 8–84 |
+| `_parse_kwargs` | `@标记(...)` 参数解析 | 94 |
+| `_build_side_effect` | 函数名+kwargs → dataclass（含 env_change/attitude_change） | 107 |
+| `parse_markup` | 解析单个文本中的 @标记 | 172 |
+| `parse_markup_all` | `(text) -> list` 解析全部 @标记 | 182 |
 
 ## src/game/use_parser.py (180 行) - UseParser（统一资源层 use 大类独立 parse 系统）
 
@@ -462,32 +463,33 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
 | `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 
-## src/game/npc_manager.py (465 行) — NPC 管理
+## src/game/npc_manager.py (480 行) — NPC 管理
 
-### NPC dataclass（@10）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, attitude_value, following, memory, state, extra`
+### NPC dataclass（@14）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, attitude_value, following, memory, state, extra`
 
 ### 模块级
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `attitude_tier` | `(value) -> (key, label)` | clamp -100..100 后查 `npc_attitude_tiers` | 43 |
-| `_attitude_value_from_key` | `(key) -> int` | 旧档位中值：hostile=-75 / wary=-30 / neutral=0 / friendly=30 / devoted=75，无则 0 | 53 |
-| `_resolve_profile_attitude_value` | `(data) -> int` | profile：attitude_value 优先，否则 attitude/initial_attitude 中值，否则 0 | 59 |
+| `_STRIP` | markup 剥离正则（含 attitude_change） | talk_to 展示文本剥 @标记 | 8 |
+| `attitude_tier` | `(value) -> (key, label)` | clamp -100..100 后查 `npc_attitude_tiers` | 48 |
+| `_attitude_value_from_key` | `(key) -> int` | 旧档位中值：hostile=-75 / wary=-30 / neutral=0 / friendly=30 / devoted=75，无则 0 | 58 |
+| `_resolve_profile_attitude_value` | `(data) -> int` | profile：attitude_value 优先，否则 attitude/initial_attitude 中值，否则 0 | 64 |
 
-### NPCManager（@119）
+### NPCManager（@125）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查 | 128 |
-| `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化；attitude_value 自 profile 再同步 key | 166 |
-| `get` | `(name)` | 按名查询 | 193 |
-| `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照（attitude=中文 label） | 196 / 200 |
-| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → LLM 对话 | 214 |
-| `set_attitude` | `(name, delta=None, value=None)` | 数值版：delta 累加或 value 直设，clamp -100..100，同步 attitude=key | 283 |
-| `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作 | 294–307 |
-| `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 311 |
-| `to_dict` / `from_dict` | — | 序列化（双写 attitude_value+attitude key；旧档字符串→中值） | 319 / 336 |
-| `process_npc_turn` | `(npc_name, user_input, world, llm_json, llm_text, judge, curator)` | 独立 API：talk_to→parse→judge→enrich→curate（主循环不调用） | 369 |
+| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查 | 134 |
+| `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化；attitude_value 自 profile 再同步 key | 171 |
+| `get` | `(name)` | 按名查询 | 198 |
+| `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照（attitude=中文 label） | 201 / 205 |
+| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → LLM 对话；成功后 parse_markup_all+apply_side_effects（空 AttitudeChange.npc_name 填当前 NPC），展示文本剥 markup | 219 |
+| `set_attitude` | `(name, delta=None, value=None)` | 数值版：delta 累加或 value 直设，clamp -100..100，同步 attitude=key | 298 |
+| `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作 | 309–322 |
+| `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 326 |
+| `to_dict` / `from_dict` | — | 序列化（双写 attitude_value+attitude key；旧档字符串→中值） | 334 / 351 |
+| `process_npc_turn` | `(npc_name, user_input, world, llm_json, llm_text, judge, curator)` | 独立 API：talk_to→parse→judge→enrich→curate（主循环不调用） | 384 |
 
 ## src/game/enemy_manager.py (275 行) — 敌人管理
 
@@ -567,7 +569,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (2102 行) — 数据模型 + 世界状态
+## src/scenario_core.py (2113 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -590,11 +592,11 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `resolve_graded_result` | `(entity, tier) -> str` | 解析 `##GRADED##` 四档结果 | 141 |
 | `has_ending` | `(text) -> (name, narrative)` | 检测 `##END_*:desc##` | 165 |
 | `check_time_condition` | `(time_condition, day, time_of_day)` | 时间条件检查 | 176 |
-| `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具（F19 `_side_effect_to_dict` 含 EnvChange） | 216 / 231 |
+| `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具（F19 `_side_effect_to_dict` 含 EnvChange；N1 含 AttitudeChange） | 216 / 231 |
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@559 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 562 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 568 |
 | `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；每原子 try/except 隔离（失败记 `[F10] payload 结算失败` 仍返回已积累 msgs）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1534 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略 @1728） | 1565 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change/attitude_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略 @1730；N1 AttitudeChange：`set_attitude(npc_name, delta=)`，空/未知 NPC warning 忽略 @1744） | 1567 |
 
 ### DirectedGraph（@297）
 
@@ -999,7 +1001,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@333 / `_fmt_inter`@353 / `_fmt_at`@362 / `_parse_req`@397 / `_split_req_str`@411 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段） | 318 |
 | `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 490 |
 | `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @571 用 `KEEPER_PARSE_MADNESS_RULE`——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 493 |
-| `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合（`_STRIP_MARKUP_RE` @577 含 env_change） | 582 |
+| `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合（`_STRIP_MARKUP_RE` @577 含 env_change/attitude_change） | 582 |
 | `build_narrator_prompt` | `(brief, l1_scene, snap, user_input)` 沉浸式叙事；F25 有 `snap.narrative_memory` 时插【叙事记忆】段（呼应/回收不复述） | 631 |
 | `build_pre_parse_prompt` | `(player_text, ambiguity_context, world_brief)` 消歧 | 698 |
 | `build_author_prompt` | `(request, l3_data, persona)` patch/structural 判定（prompt 含【世界编年史】块；F5 疯狂联动 bullet 已移出——其 prompt 无【调查员】块，规则改驻 keeper parse system） | 778 |

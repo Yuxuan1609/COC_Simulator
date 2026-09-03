@@ -5,6 +5,11 @@ import re
 
 from config import NPC_MEMORY_CAP
 
+_STRIP = re.compile(
+    r'\s*@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change|attitude_change)'
+    r'\([^)]*\)'
+)
+
 
 @dataclass
 class NPC:
@@ -272,6 +277,16 @@ class NPCManager:
             response = llm_call(user_prompt, system=system_prompt, json_mode=False)
         except Exception:
             response = f"（{npc.name} 沉默不语。）"
+        else:
+            from game.side_effects import parse_markup_all, AttitudeChange
+            from scenario_core import apply_side_effects
+            effs = parse_markup_all(response)
+            for e in effs:
+                if isinstance(e, AttitudeChange) and not (e.npc_name or "").strip():
+                    e.npc_name = npc.name
+            if effs and world is not None:
+                apply_side_effects(world, effs)
+            response = _STRIP.sub("", response).strip() or f"（{npc.name} 沉默不语。）"
 
         npc.memory.append(f"玩家：「{player_input}」-> 回复：「{response}」")
         if len(npc.memory) > NPC_MEMORY_CAP:

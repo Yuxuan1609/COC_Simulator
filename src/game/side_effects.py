@@ -77,10 +77,16 @@ class EnvChange:
     value: str
 
 
+@dataclass
+class AttitudeChange:
+    npc_name: str = ""
+    delta: int = 0
+
+
 # ── @markup parsing ──
 
 _MARKUP_PATTERN = re.compile(
-    r'@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change)'
+    r'@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change|attitude_change)'
     r'\(([^)]*)\)'
 )
 
@@ -154,6 +160,11 @@ def _build_side_effect(func_name: str, kwargs: dict):
         return EnvChange(
             axis=kwargs.get("axis", ""),
             value=kwargs.get("value", ""),
+        )
+    elif func_name == "attitude_change":
+        return AttitudeChange(
+            npc_name=kwargs.get("npc_name", ""),
+            delta=int(kwargs.get("delta", 0)),
         )
     return None
 

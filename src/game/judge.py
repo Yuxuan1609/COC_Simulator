@@ -11,7 +11,7 @@ from game.side_effects import parse_markup_all
 from scenario_core import resolve_graded_result, check_time_condition
 
 _MARKUP_STRIP_RE = _re.compile(
-    r'\s*@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change)'
+    r'\s*@(spawn_enemy|grant_weapon|grant_spell|stat_change|item_gain|consume_item|npc_state_change|npc_follow|env_change|attitude_change)'
     r'\([^)]*\)'
 )
 from .messages import ActionIntent, ActionOutcome
