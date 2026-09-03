@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | N1 Task 1 attitude_value 双轨 + 档位映射 + 入档：NPC 增 `attitude_value`（-100..100）；`attitude_tier` 读 `game_config.npc_attitude_tiers`；`set_attitude(name, delta=/value=)` clamp 并同步 `attitude=key`；snapshot `attitude` 改中文 label；to_dict 双写 / from_dict 优先数值否则档位中值。TDD：tests/test_npc_attitude.py 5 测。 |
 | 2026-09-02 | S3-P3 收口：ISSUES F17/F19 入 §5（F1 丢弃部分随 F17 落地，给予 NPC 仍 F28）；簇评估 §10 回写 scene_items/environment 运行时已落地、schema 字段已加、生成 prompt 不改——暂无生产端。函数表行号 grep 实测对齐（scenario_core / keeper / understand / adjudicate / finalize / prompts / models / rules / side_effects / judge / layered_schema）。零产品代码。 |
 | 2026-09-02 | F19 Task 7 环境知情行进 prompt（S3-P3 F19）：① `build_snapshot` 增 `environment` = `current_environment()`（node∪override）。② `_build_scene_state` 非默认标签渲染「环境：黑暗」「环境：嘈杂」「环境：黑暗/嘈杂」「环境：昏暗」；normal/quiet/空不输出行。LLM 不裁决数值，仅知情。TDD：tests/test_environment.py +6（snapshot 含 environment / dark / noisy / dark+noisy / dim / 默认省略）。RED 5 failed → GREEN 17 passed。全量 489 passed / 24 deselected + 1 既有 e2e 失败（`test_unresolved_use_becomes_creative`，HEAD 已挂，非本任务）。real_llm_smoke 4 failed（402 billing，同 Task 4，不阻塞提交）。scenario_core 2101→2102 / prompts 1168→1180。 |
 | 2026-09-02 | F19 Task 6 `@env_change` markup + persist overrides（S3-P3 F19）：① `EnvChange(axis, value)` @ side_effects.py:75；`_MARKUP_PATTERN` 增 `env_change`；`_build_side_effect` 解析 axis/value。② `apply_side_effects` 写 `world.environment_overrides[current_location][axis]=value`；legal lighting∈{dark,dim,normal} / noise∈{quiet,noisy}，非法 ignore + `scenario_core` warning 不 raise。③ `to_dict`/`from_dict` 浅拷贝 `environment_overrides`（旧档缺省 {}）。④ judge `_MARKUP_STRIP_RE` / prompts `_STRIP_MARKUP_RE` 增 env_change（不改 generation prompts）。`current_environment()` 已 merge node∪override。TDD：tests/test_environment.py +3（lighting normal 清 dark 侦查-20→0 / 非法 axis+value caplog / save-load roundtrip）。RED 3 failed → GREEN 11 passed。全量 483 passed / 24 deselected + 1 既有 e2e 失败（`test_unresolved_use_becomes_creative`，HEAD 已挂，非本任务）。side_effects 169→180 / scenario_core 2077→2101 / judge 572 / prompts 1168。 |
@@ -461,23 +462,32 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
 | `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 
-## src/game/npc_manager.py (411 行) — NPC 管理
+## src/game/npc_manager.py (465 行) — NPC 管理
 
-### NPC dataclass（@10）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, following, memory, state, extra`
+### NPC dataclass（@10）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, attitude_value, following, memory, state, extra`
 
-### NPCManager（@85）
+### 模块级
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|------|
+| `attitude_tier` | `(value) -> (key, label)` | clamp -100..100 后查 `npc_attitude_tiers` | 43 |
+| `_attitude_value_from_key` | `(key) -> int` | 旧档位中值：hostile=-75 / wary=-30 / neutral=0 / friendly=30 / devoted=75，无则 0 | 53 |
+| `_resolve_profile_attitude_value` | `(data) -> int` | profile：attitude_value 优先，否则 attitude/initial_attitude 中值，否则 0 | 59 |
+
+### NPCManager（@119）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查 | 94 |
-| `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化 | 131 |
-| `get` | `(name)` | 按名查询 | 155 |
-| `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照 | 158 / 162 |
-| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → LLM 对话 | 175 |
-| `set_attitude` / `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作 | 244–259 |
-| `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 265 |
-| `to_dict` / `from_dict` | — | 序列化 | 273 / 289 |
-| `process_npc_turn` | `(npc_name, user_input, world, llm_json, llm_text, judge, curator)` | 独立 API：talk_to→parse→judge→enrich→curate（主循环不调用） | 315 |
+| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查 | 128 |
+| `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化；attitude_value 自 profile 再同步 key | 166 |
+| `get` | `(name)` | 按名查询 | 193 |
+| `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照（attitude=中文 label） | 196 / 200 |
+| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → LLM 对话 | 214 |
+| `set_attitude` | `(name, delta=None, value=None)` | 数值版：delta 累加或 value 直设，clamp -100..100，同步 attitude=key | 283 |
+| `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作 | 294–307 |
+| `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 311 |
+| `to_dict` / `from_dict` | — | 序列化（双写 attitude_value+attitude key；旧档字符串→中值） | 319 / 336 |
+| `process_npc_turn` | `(npc_name, user_input, world, llm_json, llm_text, judge, curator)` | 独立 API：talk_to→parse→judge→enrich→curate（主循环不调用） | 369 |
 
 ## src/game/enemy_manager.py (275 行) — 敌人管理
 
@@ -697,11 +707,11 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `calc_db` | `(STR, SIZ)` | DB 字符串（敌人侧保留） | 231 |
 | `opposed_check` | `(att_value, def_value) -> ("win"/"lose"/"tie", detail)` | **统一资源层对抗检定纯函数**：等级>技能值>平局；战斗/探索两侧复用 | 267 |
 | `_opposed_roll` / `_TIER_RANK` | - | 单侧掷骰+四级判定 / 等级序表 | 252 / 249 |
-| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表 13 键（F2 10 键 + F8 `hp_recovery_per_day=1` / `san_recovery_per_day=0` + F19 `env_check_modifiers`，与 data/game_config.json 逐键镜像）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 287 / 323 |
-| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 328 |
-| `_cfg_shape_ok` | `(v, dv) -> bool` | 嵌套配置形状校验（F2，T8 升级行深校验）：顶层/嵌套 dict 必需键齐全递归校验；list 非空且按首元素模板深校验行结构（行内 dict 键齐全+标量类型匹配或 None 特赦——db_build_table.max_key 兜底行合法；list 行等长逐位类型；标量行类型一致）；标量 `type is` 严格（bool 不混入 int） | 334 |
-| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段校验走 `_cfg_shape_ok`（dict 嵌套与 list 行结构坏值均整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。MP 恢复/HP·SAN 日界恢复/timed 默认时长/buff 减伤下限/F2 衍生查表/F19 环境修正表等统一从此读取 | 360 |
-| `env_check_modifier` | `(world, skill_name) -> int` | F19：当前场景 lighting/noise 标签查 `env_check_modifiers`，同技能多轴求和；缺省 lighting=normal noise=quiet → 0 | 380 |
+| `_GAME_CONFIG_DEFAULTS` / `_CONFIG_PATH` | 模块级常量 | 数值参数缺省表 14 键（F2 10 键 + F8 `hp_recovery_per_day=1` / `san_recovery_per_day=0` + F19 `env_check_modifiers` + N1 `npc_attitude_tiers`，与 data/game_config.json 逐键镜像）/ data/game_config.json 路径（测试 monkeypatch 切入点） | 287 / 330 |
+| `reset_game_config_cache` | `() -> None` | 测试用：清空 `_game_config_cache` 模块级缓存 | 335 |
+| `_cfg_shape_ok` | `(v, dv) -> bool` | 嵌套配置形状校验（F2，T8 升级行深校验）：顶层/嵌套 dict 必需键齐全递归校验；list 非空且按首元素模板深校验行结构（行内 dict 键齐全+标量类型匹配或 None 特赦——db_build_table.max_key / npc_attitude_tiers.max 兜底行合法；list 行等长逐位类型；标量行类型一致）；标量 `type is` 严格（bool 不混入 int） | 341 |
+| `get_game_config` | `() -> dict` | **game_config 参数中心**：惰性加载 data/game_config.json，缺省兜底 + 非 dict JSON 防御（回退全缺省）+ 字段校验走 `_cfg_shape_ok`（dict 嵌套与 list 行结构坏值均整体回缺省）+ 模块级缓存（每次返回 `copy.deepcopy` 深拷贝，嵌套 dict/list 不与缓存共享引用，防调用方污染）；文件缺失/损坏静默回缺省。MP 恢复/HP·SAN 日界恢复/timed 默认时长/buff 减伤下限/F2 衍生查表/F19 环境修正表/N1 NPC 态度档位等统一从此读取 | 367 |
+| `env_check_modifier` | `(world, skill_name) -> int` | F19：当前场景 lighting/noise 标签查 `env_check_modifiers`，同技能多轴求和；缺省 lighting=normal noise=quiet → 0 | 387 |
 
 ### growth.py (41 行) — U4 幕末成长检定 + 版本化导出
 

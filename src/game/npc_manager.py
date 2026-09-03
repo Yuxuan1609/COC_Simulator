@@ -24,10 +24,45 @@ class NPC:
 
     scene: str = ""
     attitude: str = "neutral"
+    attitude_value: int = 0
     following: bool = False
     memory: list[str] = field(default_factory=list)
     state: str = "alive"
     extra: dict | None = None
+
+
+_ATTITUDE_MIDPOINTS = {
+    "hostile": -75,
+    "wary": -30,
+    "neutral": 0,
+    "friendly": 30,
+    "devoted": 75,
+}
+
+
+def attitude_tier(value: int) -> tuple[str, str]:
+    value = max(-100, min(100, int(value)))
+    from investigator.rules import get_game_config
+    for row in get_game_config()["npc_attitude_tiers"]:
+        mx = row["max"]
+        if mx is None or value <= mx:
+            return row["key"], row["label"]
+    return "devoted", "信任"
+
+
+def _attitude_value_from_key(key: str | None) -> int:
+    if not key:
+        return 0
+    return _ATTITUDE_MIDPOINTS.get(key, 0)
+
+
+def _resolve_profile_attitude_value(data: dict) -> int:
+    if data.get("attitude_value") is not None:
+        return int(data["attitude_value"])
+    s = data.get("attitude") or data.get("initial_attitude")
+    if isinstance(s, str):
+        return _attitude_value_from_key(s)
+    return 0
 
 
 def _build_req_text(req_text: str, world) -> str:
@@ -131,6 +166,8 @@ class NPCManager:
     def init_from_profiles(self, profiles: dict):
         """从 L2 npc_profiles 批量创建 NPC 实例。"""
         for name, data in profiles.items():
+            av = max(-100, min(100, _resolve_profile_attitude_value(data)))
+            key, _ = attitude_tier(av)
             self._npcs[name] = NPC(
                 name=data.get("name", name),
                 role=data.get("role", ""),
@@ -147,7 +184,8 @@ class NPCManager:
                 scene=data.get("scene", ""),
                 state=data.get("initial_state", "alive"),
                 following=data.get("initial_following", False),
-                attitude=data.get("initial_attitude", "neutral"),
+                attitude=key,
+                attitude_value=av,
             )
 
     # ── 查询 ──
@@ -162,7 +200,8 @@ class NPCManager:
     def get_in_scene_snapshot(self, scene: str) -> list[dict]:
         """Lightweight dict list for world snapshot — no dataclass internals exposed."""
         return [
-            {"name": n.name, "state": n.state, "attitude": n.attitude, "following": n.following}
+            {"name": n.name, "state": n.state, "attitude": attitude_tier(n.attitude_value)[1],
+             "following": n.following}
             for n in self._npcs.values()
             if n.scene == scene and n.state not in ("dead", "left")
         ]
@@ -241,9 +280,16 @@ class NPCManager:
 
     # ── 状态变更 ──
 
-    def set_attitude(self, name: str, attitude: str):
-        if name in self._npcs:
-            self._npcs[name].attitude = attitude
+    def set_attitude(self, name: str, delta: int | None = None, value: int | None = None):
+        npc = self._npcs.get(name)
+        if not npc:
+            return
+        if value is not None:
+            npc.attitude_value = int(value)
+        elif delta is not None:
+            npc.attitude_value += int(delta)
+        npc.attitude_value = max(-100, min(100, npc.attitude_value))
+        npc.attitude, _ = attitude_tier(npc.attitude_value)
 
     def set_following(self, name: str, following: bool):
         if name in self._npcs:
@@ -276,6 +322,7 @@ class NPCManager:
             entry = {
                 "scene": npc.scene,
                 "attitude": npc.attitude,
+                "attitude_value": npc.attitude_value,
                 "following": npc.following,
                 "memory": list(npc.memory),
                 "state": npc.state,
@@ -291,6 +338,12 @@ class NPCManager:
         can_interact 优先使用运行时值（save 中可能已被 unlock），回退到 profile 静态值。"""
         for name, state_data in data.items():
             profile = profiles.get(name, {})
+            if "attitude_value" in state_data and state_data["attitude_value"] is not None:
+                av = int(state_data["attitude_value"])
+            else:
+                av = _attitude_value_from_key(state_data.get("attitude"))
+            av = max(-100, min(100, av))
+            key, _ = attitude_tier(av)
             self._npcs[name] = NPC(
                 name=name,
                 role=profile.get("role", ""),
@@ -305,7 +358,8 @@ class NPCManager:
                 bound_interactions=list(profile.get("bound_interactions", [])),
                 bound_auto_triggers=list(profile.get("bound_auto_triggers", [])),
                 scene=state_data.get("scene", ""),
-                attitude=state_data.get("attitude", "neutral"),
+                attitude=key,
+                attitude_value=av,
                 following=state_data.get("following", False),
                 memory=list(state_data.get("memory", [])),
                 state=state_data.get("state", "alive"),

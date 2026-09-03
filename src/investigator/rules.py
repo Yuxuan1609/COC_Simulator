@@ -319,6 +319,13 @@ _GAME_CONFIG_DEFAULTS = {
         "dim": {"侦查": -10},
         "noisy": {"聆听": -20},
     },
+    "npc_attitude_tiers": [
+        {"max": -50, "label": "敌意", "key": "hostile"},
+        {"max": -10, "label": "警惕", "key": "wary"},
+        {"max": 10, "label": "中立", "key": "neutral"},
+        {"max": 50, "label": "友好", "key": "friendly"},
+        {"max": None, "label": "信任", "key": "devoted"},
+    ],
 }
 _CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "data", "game_config.json")

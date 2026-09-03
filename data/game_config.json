@@ -42,5 +42,12 @@
     "dark":  {"侦查": -20, "潜行": 10},
     "dim":   {"侦查": -10},
     "noisy": {"聆听": -20}
-  }
+  },
+  "npc_attitude_tiers": [
+    {"max": -50, "label": "敌意", "key": "hostile"},
+    {"max": -10, "label": "警惕", "key": "wary"},
+    {"max": 10, "label": "中立", "key": "neutral"},
+    {"max": 50, "label": "友好", "key": "friendly"},
+    {"max": null, "label": "信任", "key": "devoted"}
+  ]
 }
