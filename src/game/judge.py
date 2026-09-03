@@ -528,7 +528,10 @@ class Judge:
         # Any hard string with recognizable IDs or logical operators can be parsed
         if "OR" in hard or "AND" in hard:
             return True
-        if _ENTITY_ID_RE.match(hard.strip().strip("()（）")):
+        stripped = hard.strip().strip("()（）")
+        if stripped.startswith("npc_dead:") or stripped.startswith("flag:"):
+            return True
+        if _ENTITY_ID_RE.match(stripped):
             return True
         return False
 
@@ -568,12 +571,17 @@ class Judge:
             if not req:
                 return True, ""
 
-        # Step 0: check for flag-based requirements (flag:xxx)
+        # Step 0: check for flag-based requirements (flag:xxx / npc_dead:xxx)
         if req.startswith("flag:"):
             flag_name = req[5:].strip()
             state = self.world.runtime_state.get(flag_name)
             if not state or not state.completed:
                 return False, f"需要满足条件「{flag_name}」"
+            return True, ""
+        if req.startswith("npc_dead:"):
+            state = self.world.runtime_state.get(req)
+            if not state or not state.completed:
+                return False, f"需要满足条件「{req}」"
             return True, ""
 
         # Step 1: string-based AND/OR parsing FIRST (handles OR semantics)

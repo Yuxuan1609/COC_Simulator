@@ -700,7 +700,7 @@ class ScenarioWorld:
         self.memory = MemoryManager()
         self.chronicle = WorldChronicle()
         self.enemies = EnemyManager(enemy_library) if enemy_library else None
-        self.npcs = NPCManager()
+        self.npcs = NPCManager(world=self)
         if npc_profiles:
             self.npcs.init_from_profiles(npc_profiles)
         self._npc_profiles = npc_profiles or {}
@@ -1308,7 +1308,7 @@ class ScenarioWorld:
     # ── NPC 运行时状态 ──
 
     def set_npc_state(self, npc_name: str, state: str):
-        self.npcs.set_state(npc_name, state)
+        self.npcs.set_state(npc_name, state, world=self)
 
     def get_npc_state(self, npc_name: str) -> str:
         npc = self.npcs.get(npc_name)
@@ -1493,7 +1493,7 @@ class ScenarioWorld:
         if npcs_data:
             from game.npc_manager import NPCManager
             try:
-                world.npcs = NPCManager()
+                world.npcs = NPCManager(world=world)
                 world.npcs.from_dict(npcs_data, world._npc_profiles)
             except Exception as e:
                 _warn(f"NPC 状态恢复失败（{e}）")
@@ -1683,7 +1683,7 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
                 world._sync_scene_weapons_from_items()
                 msgs.append(f"[武器放置] {effect.weapon_ref} x{effect.quantity} 在 {target_scene}")
         elif isinstance(effect, NPCStateChange):
-            world.npcs.set_state(effect.npc_name, effect.new_state)
+            world.npcs.set_state(effect.npc_name, effect.new_state, world=world)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
         elif isinstance(effect, NPCFollow):
             if effect.follow:

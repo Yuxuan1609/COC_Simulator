@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | N4 Task 5 NPC 死亡扫 AT：`set_state(name, state, world=None)` 在 state==dead 时写 `runtime_state["npc_dead:"+name]=NodeRuntimeState(completed=True)`（world 参数或 `NPCManager._world`）；`NPCManager(world=)` 由 ScenarioWorld.__init__/load_state 注入；`apply_side_effects` NPCStateChange / `set_npc_state` 传 world=。Judge `_is_simple_requirement` 认 `npc_dead:`/`flag:`；`_evaluate_requirement` 查 runtime_state 全键。不在 set_state 内调 check_auto_triggers。TDD：tests/test_npc_attitude.py +4。npc_manager 401→410 / judge 592→600 / scenario_core 2128 行不变。 |
 | 2026-09-03 | N3 Task 4 talk_to prompt 策略 + 删死代码 `process_npc_turn`：① `talk_to` system 用中文档位 label；删「如实告知」；加透露档位/采信/自主 `@attitude_change`。敌意短路仍在 LLM 前。② `_build_scene_state` NPC 列名带态度 label，加「按态度决定透露与采信」。③ 删除 `process_npc_turn`。TDD：tests/test_npc_attitude.py +2。npc_manager 493→401 / prompts 1185→1190。 |
 | 2026-09-03 | N1 Task 3 消费点（attitude_min / follow / 敌意短路）：① `talk_to` state/can_interact 门后 hostile 短路「不愿理会/驱赶」不调 LLM。② `set_following(True)` 与 `_check_follow_conditions` 对 hostile/wary 拒绝；`apply_side_effects` NPCFollow 同检，msg「[跟随] X 拒绝跟随（态度：…）」；`follow_unlock` 失败不 mark_completed。③ `Judge._execute_entity` extra.attitude_min+npc_name：`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡。④ keeper `_inject_npc_at` 跳过不满足 attitude_min 的 bound_interactions，注入 extra 带 npc_name/attitude_min；`_find_entity_by_id` 同写 extra；`_build_entity_lines` parse 列表过滤。⑤ `Entity.from_dict` 顶层 attitude_min 并入 extra；L2_INTERACTION_SCHEMA 加 optional attitude_min。TDD：tests/test_npc_attitude.py +4。npc_manager 480→493 / judge 572→592 / keeper 950→967 / scenario_core 2113→2128 / layered_schema 366→367 / prompts 1180→1185。 |
 | 2026-09-03 | N1 Task 2 `@attitude_change` markup + talk_to 内嵌剥离：① `AttitudeChange(npc_name, delta)` @ side_effects.py:81；`_MARKUP_PATTERN` 增 `attitude_change`；`_build_side_effect` 解析 npc_name/delta。② `apply_side_effects` 调 `world.npcs.set_attitude(npc_name, delta=delta)`；空/未知 NPC warning 忽略不 raise。③ talk_to LLM 成功后 `parse_markup_all`+`apply_side_effects`，空 npc_name 填当前 NPC，展示文本 `_STRIP` 剥 markup。④ judge `_MARKUP_STRIP_RE` / prompts `_STRIP_MARKUP_RE` 增 attitude_change（不改 generation prompts）。TDD：tests/test_npc_attitude.py +4（markup delta / talk_to strip+apply / 非法名 warning / 空 npc_name 当前 NPC）。 |
@@ -420,7 +421,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1396 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1503 |
 
-## src/game/judge.py (592 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
+## src/game/judge.py (600 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -430,9 +431,9 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check；F19：check_skill 传 `env_check_modifier`）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@180-188；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@110）；F5：need_san 且 `success or not refund_on_fail`（未退款）时调 world.on_san_loss @165-167（施法损失计疯狂，退款不计） | 83 |
 | `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes；有 interval/payload 则拷入条目供 F10 周期结算）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 198 |
 | `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 279 |
-| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 493 |
-| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 504 / 515 |
-| `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 526 |
+| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 513 |
+| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定；N4：`npc_dead:`/`flag:` 视为可解析 | 524 / 538 |
+| `_evaluate_requirement` | `(req) -> (bool, msg)` | item: → flag: → npc_dead:（查 runtime_state 全键）→ AND/OR 解析 → 边依赖检查 | 549 |
 
 ## src/game/curator.py (68 行) — 策展器
 
@@ -465,7 +466,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
 | `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 
-## src/game/npc_manager.py (401 行) — NPC 管理
+## src/game/npc_manager.py (410 行) — NPC 管理
 
 ### NPC dataclass（@14）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, attitude_value, following, memory, state, extra`
 
@@ -482,15 +483,18 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查；hostile/wary 拒绝「拒绝跟随（态度：…）」 | 134 |
-| `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化；attitude_value 自 profile 再同步 key | 171 |
-| `get` | `(name)` | 按名查询 | 198 |
-| `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照（attitude=中文 label） | 201 / 205 |
-| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → hostile 短路「不愿理会/驱赶」不调 LLM → LLM 对话（system：中文态度 label、按档位透露/采信、自主 `@attitude_change`，无「如实告知」）；成功后 parse_markup_all+apply_side_effects（空 AttitudeChange.npc_name 填当前 NPC），展示文本剥 markup | 222 |
-| `set_attitude` | `(name, delta=None, value=None)` | 数值版：delta 累加或 value 直设，clamp -100..100，同步 attitude=key | 307 |
-| `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作；`set_following(True)` 对 hostile/wary 不设 following、返回 False | 318–336 |
-| `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 342 |
-| `to_dict` / `from_dict` | — | 序列化（双写 attitude_value+attitude key；旧档字符串→中值） | 350 / 367 |
+| `__init__` | `(world=None)` | 存 `_world` 供 set_state 死亡旗标（ScenarioWorld 构造/load_state 注入） | 126 |
+| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查；hostile/wary 拒绝「拒绝跟随（态度：…）」 | 135 |
+| `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化；attitude_value 自 profile 再同步 key | 175 |
+| `get` | `(name)` | 按名查询 | 201 |
+| `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照（attitude=中文 label） | 204 / 208 |
+| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → hostile 短路「不愿理会/驱赶」不调 LLM → LLM 对话（system：中文态度 label、按档位透露/采信、自主 `@attitude_change`，无「如实告知」）；成功后 parse_markup_all+apply_side_effects（空 AttitudeChange.npc_name 填当前 NPC），展示文本剥 markup | 226 |
+| `set_attitude` | `(name, delta=None, value=None)` | 数值版：delta 累加或 value 直设，clamp -100..100，同步 attitude=key | 311 |
+| `set_following` / `get_following` | — | 状态操作；`set_following(True)` 对 hostile/wary 不设 following、返回 False | 322 / 330 |
+| `set_state` | `(name, state, world=None)` | 写 npc.state；state==dead 时 `runtime_state["npc_dead:"+name]=NodeRuntimeState(completed=True)`（world 或 `_world`）；非 dead 不写旗；不调 check_auto_triggers | 333 |
+| `set_scene` | `(name, scene)` | 改场景 | 345 |
+| `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 351 |
+| `to_dict` / `from_dict` | — | 序列化（双写 attitude_value+attitude key；旧档字符串→中值） | 359 / 376 |
 
 ## src/game/enemy_manager.py (275 行) — 敌人管理
 
@@ -597,7 +601,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@559 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 562 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 568 |
 | `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；每原子 try/except 隔离（失败记 `[F10] payload 结算失败` 仍返回已积累 msgs）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1534 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change/attitude_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略；N1 AttitudeChange：`set_attitude(npc_name, delta=)`，空/未知 NPC warning 忽略；N1 NPCFollow：hostile/wary 且 follow=True 不跟随，msg「[跟随] X 拒绝跟随（态度：…）」@1688） | 1574 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change/attitude_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略；N1 AttitudeChange：`set_attitude(npc_name, delta=)`，空/未知 NPC warning 忽略；N1 NPCFollow：hostile/wary 且 follow=True 不跟随，msg「[跟随] X 拒绝跟随（态度：…）」@1688；N4 NPCStateChange：`set_state(..., world=world)`，dead 写 `npc_dead:` 旗 @1686） | 1574 |
 
 ### DirectedGraph（@297）
 
@@ -643,7 +647,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `is_event_triggered` / `get_active_event_effects` | — | 事件状态 | 1223 / 1226 |
 | `build_snapshot` | `() -> dict` | **单源快照**供所有 prompt builder/前端；F25 加 `narrative_memory` 渲染行（`turn_range：notes`）；F17 `scene_items` 仅当前场景 **exposed** `{kind,ref,quantity}`（hidden 不入）；`scene_weapons` 仍为暴露武器投影；F19 加 `environment` = `current_environment()` | 1235 |
 | `distill_narrative_memory` | `(llm_call, max_entries=5)` | F25：把 `memory.raw_history` 快照后蒸馏为一条叙事要点入 `narrative_memory`（5 条滚动 `{turn_range, notes}`，notes 截 250 字）；空历史不调 LLM。与 `memory.compress` 同点触发、先蒸后压 | 1276 |
-| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷 | 1301 / 1304 |
+| `set_npc_state` / `get_npc_state` | — | NPC 状态快捷；`set_npc_state` 传 world=self（N4 死亡旗） | 1310 / 1313 |
 | `apply_world_update` / `apply_scene_update` | — | 叙事回写 | 1308 / 1312 |
 | `to_dict` / `from_dict` | — | 序列化（含 `chronicle` 键；F9 增 `san_seen_sources` sorted list，from_dict 恢复、旧档缺省空集；E 簇占坑 `clues`/`narrative_memory`，from_dict `data.get(..., [])`；F18 增 `scheduled_events` list[dict] 浅拷贝，from_dict 缺省 []；F17 写 `scene_items`，from_dict 读之，缺则 hydrate from scene_weapons；F19 写 `environment_overrides` scene→{axis:value} 浅拷贝，from_dict 缺省 {}） | 1317 / 1374 |
 | `save_state` / `load_state` | `save_state(path, extra_meta=None)` / `load_state(path, enemy_lib=None, boss_lib=None, npc_profiles=None)` | 全量存档/恢复。save 写 version 2 + `_meta`（extra_meta 或 {}）；库由调用方透传（模组资产不入档）；version in (1, 2)；结构性损坏 raise；库缺失/单条失败 → 跳过 + load_warnings；F17 load_state 同步 scene_items + hydrate | 1431 / 1451 |

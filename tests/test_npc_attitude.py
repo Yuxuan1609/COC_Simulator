@@ -198,3 +198,54 @@ def test_attitude_min_skips_keeper_inject():
     keeper._inject_npc_at()
     node = world.graph.nodes["room_a"]
     assert not any(e.id == "IT_SECRET" for e in node.interactions)
+
+
+def test_npc_death_completes_runtime_flag_and_fires_at():
+    from helpers import make_world, make_scene
+    world = make_world({
+        "room_a": make_scene(auto_triggers=[{
+            "id": "AT_DEAD", "name": "线人死讯", "type": "无",
+            "requirement": "npc_dead:线人",
+            "result": "街上有人在议论线人的死。",
+        }])
+    }, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a"}})
+    world.npcs.set_state("线人", "dead")
+    assert world.get_runtime_state("npc_dead:线人").completed
+    from game.judge import Judge
+    judge = Judge(world)
+    outs = judge.check_auto_triggers()
+    assert any(o.entity_id == "AT_DEAD" for o in outs)
+
+
+def test_set_state_non_dead_does_not_set_flag():
+    from helpers import make_world, make_scene
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a"}})
+    world.npcs.set_state("线人", "left")
+    assert not world.get_runtime_state("npc_dead:线人").completed
+
+
+def test_npc_death_flag_idempotent():
+    from helpers import make_world, make_scene
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a"}})
+    world.npcs.set_state("线人", "dead")
+    world.npcs.set_state("线人", "dead")
+    assert world.get_runtime_state("npc_dead:线人").completed
+
+
+def test_markup_npc_state_change_dead_sets_flag():
+    from helpers import make_world, make_scene
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a"}})
+    apply_side_effects(
+        world, parse_markup_all('@npc_state_change(npc_name="线人", new_state="dead")'))
+    assert world.npcs.get("线人").state == "dead"
+    assert world.get_runtime_state("npc_dead:线人").completed

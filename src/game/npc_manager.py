@@ -123,8 +123,9 @@ def _build_req_text(req_text: str, world) -> str:
 
 
 class NPCManager:
-    def __init__(self):
+    def __init__(self, world=None):
         self._npcs: dict[str, NPC] = {}
+        self._world = world
 
     STATE_GATE_MESSAGES: dict[str, str] = {
         "dead": "（{name} 已无法交谈）",
@@ -329,9 +330,17 @@ class NPCManager:
     def get_following(self) -> list[NPC]:
         return [n for n in self._npcs.values() if n.following]
 
-    def set_state(self, name: str, state: str):
-        if name in self._npcs:
-            self._npcs[name].state = state
+    def set_state(self, name: str, state: str, world=None):
+        if name not in self._npcs:
+            return
+        self._npcs[name].state = state
+        if state != "dead":
+            return
+        w = world if world is not None else self._world
+        if w is None:
+            return
+        from scenario_core import NodeRuntimeState
+        w.runtime_state["npc_dead:" + name] = NodeRuntimeState(completed=True)
 
     def set_scene(self, name: str, scene: str):
         if name in self._npcs:
