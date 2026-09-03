@@ -1665,3 +1665,114 @@ class TestSaveLoadContinue:  # 统一存档批回归：turn→save→load→turn
         assert_player_turn_contract(r2)
         assert r2.status == TurnStatus.COMPLETED, \
             f"读档后回合应正常完成，实际 status={r2.status}"
+
+
+class TestEnvModifierSearch:
+    """F19：黑暗场景搜索走 env_check_modifier（stub LLM，钉死骰点）。"""
+
+    def _setup(self, monkeypatch, lighting, roll):
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+        from investigator import Investigator, Skill
+        world = make_world(
+            {"room_a": make_scene(environment={"lighting": lighting})},
+            "room_a")
+        inv = Investigator(name="测试员", age=25, gender="男",
+                           skills=[Skill(name="侦查", base_value=50, value=50)])
+        world.set_player(inv)
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "search", "text": "搜索"}]])
+        monkeypatch.setattr("investigator.models.random.randint",
+                            lambda a, b: roll)
+        return run_turn, world, inv, make_game(keeper)
+
+    def test_dark_search_roll_40_fails(self, monkeypatch):
+        """侦查 50 + dark -20 → 目标 30；roll=40 失败。"""
+        run_turn, world, inv, game = self._setup(monkeypatch, "dark", 40)
+        r = run_turn(game, "搜索四周")
+        assert_player_turn_contract(r)
+        assert "无法看清" in r.narrative or "昏暗" in r.narrative
+
+    def test_normal_search_roll_40_succeeds(self, monkeypatch):
+        """无环境修正：侦查 50，roll=40 成功。"""
+        run_turn, world, inv, game = self._setup(monkeypatch, "normal", 40)
+        r = run_turn(game, "搜索四周")
+        assert_player_turn_contract(r)
+        assert "无法看清" not in r.narrative
+
+
+class TestHostileNpcDialogueStub:
+    """N1：敌意 NPC 对话短路，不调 LLM。"""
+
+    def test_hostile_talk_skips_llm(self, monkeypatch):
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           npc_profiles={"线人": {
+                               "name": "线人", "scene": "room_a",
+                               "can_interact": True,
+                               "attitude": "hostile"}})
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "npc_interact",
+                                         "npc_name": "线人"}]])
+
+        def _boom(*a, **k):
+            raise AssertionError("敌意短路不得调用 LLM")
+
+        monkeypatch.setattr("game.agents.keeper.call_deepseek", _boom)
+        game = make_game(keeper)
+        r = run_turn(game, "和线人说话")
+        assert_player_turn_contract(r)
+        assert "不愿理会" in r.narrative or "驱赶" in r.narrative
+
+
+class TestNpcDeathAtParsePath:
+    """N4：死亡 AT 走 parse→adjudicate 主路径（非 check_auto_triggers 直调）。"""
+
+    def _world(self):
+        at = {
+            "id": "AT_DEAD", "entity_type": "auto_trigger", "type": "无",
+            "name": "线人死讯", "requirement": "npc_dead:线人",
+            "trigger": "线人死后街上议论",
+            "result": "街上有人在议论线人的死。",
+            "side_effects": [], "graded_result": None, "difficulty": "None",
+            "scene": "room_a", "time_condition": [],
+        }
+        world = make_world(
+            {"room_a": make_scene(auto_triggers=[at])}, "room_a",
+            npc_profiles={"线人": {
+                "name": "线人", "scene": "room_a", "can_interact": True}})
+        _player(world)
+        return world
+
+    def test_death_at_blocked_while_alive(self, monkeypatch):
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+        world = self._world()
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "auto_trigger",
+                                         "id": "AT_DEAD"}]])
+        game = make_game(keeper)
+        r = run_turn(game, "听街上的传闻")
+        assert_player_turn_contract(r)
+        assert "议论线人的死" not in r.narrative
+        assert not world.is_entity_completed("AT_DEAD")
+
+    def test_death_at_fires_after_death_via_parse(self, monkeypatch):
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+        world = self._world()
+        world.npcs.set_state("线人", "dead")
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "auto_trigger",
+                                         "id": "AT_DEAD"}]])
+        game = make_game(keeper)
+        r = run_turn(game, "听街上的传闻")
+        assert_player_turn_contract(r)
+        assert "议论线人的死" in r.narrative
+        assert world.is_entity_completed("AT_DEAD")

@@ -837,3 +837,103 @@ class TestS19TimeEffects:  # F18 时刻事件 + F10 周期效应：共用 advanc
                 f"F10 hourly payload 须结算 2 次（+2 HP），实际 {inv.derived.HP - hp0}"
         finally:
             stop()
+
+
+class TestS20HostileNpcTalk:  # N1：敌意短路，真实 parse 后不调对话 LLM
+    """S20：parse 真实（npc_interact）；talk_to 敌意短路不泄密。"""
+
+    @retry_once
+    def test_hostile_npc_does_not_leak_secret(self):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s20_hostile_npc")
+        stop = setup_llm_logging(log_dir)
+        secret = "密室在钟楼地下第三层"
+        try:
+            world = make_world({"room_a": make_scene()}, "room_a",
+                               npc_profiles={"线人": {
+                                   "name": "线人", "scene": "room_a",
+                                   "can_interact": True,
+                                   "attitude": "hostile",
+                                   "what_they_can_do": secret,
+                                   "personality_notes": "嘴很严",
+                               }})
+            _player(world)
+            game = _real_game(world, _l1("room_a"))
+            r = run_turn(game, "我向线人打听密室的位置")
+            assert_player_turn_contract(r)
+            assert r.status == TurnStatus.COMPLETED, f"status={r.status}"
+            text = f"{r.brief}\n{r.narrative}"
+            assert "不愿理会" in text or "驱赶" in text, \
+                f"敌意须短路驱赶: {text[:240]}"
+            assert secret not in text, f"不得泄露 what_they_can_do: {text[:240]}"
+        finally:
+            stop()
+
+
+class TestS21DarkSearchEnv:  # F19：黑暗搜索 env 修正，真实 enrich/narrator
+    """S21：action_type=search 跳过 parse；骰点钉死 40；侦查 50+dark-20=30 → 失败。"""
+
+    @retry_once
+    def test_dark_search_fails_with_pinned_roll(self, monkeypatch):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        from investigator import Investigator, Skill
+        log_dir = _scenario_log_dir("s21_dark_search")
+        stop = setup_llm_logging(log_dir)
+        try:
+            world = make_world(
+                {"room_a": make_scene(environment={"lighting": "dark"})},
+                "room_a")
+            inv = Investigator(
+                name="测试员", age=25, gender="男",
+                skills=[Skill(name="侦查", base_value=50, value=50)])
+            world.set_player(inv)
+            monkeypatch.setattr("investigator.models.random.randint",
+                                lambda a, b: 40)
+            game = _real_game(world, _l1("room_a"))
+            r = run_turn(game, "搜索", action_type="search")
+            assert_player_turn_contract(r)
+            assert r.status == TurnStatus.COMPLETED, f"status={r.status}"
+            text = f"{r.brief}\n{r.narrative}"
+            assert "无法看清" in text or "昏暗" in text, \
+                f"黑暗侦查失败须进叙事: {text[:240]}"
+        finally:
+            stop()
+
+
+class TestS22DeathAtParse:  # N4：死后真实 parse 可触发 npc_dead AT
+    """S22：线人已死；parse/enrich/narrator 真实。宽断言：死讯 AT 完成或叙事含死讯。"""
+
+    @retry_once
+    def test_death_at_fires_via_real_parse(self):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s22_death_at")
+        stop = setup_llm_logging(log_dir)
+        try:
+            at = {
+                "id": "AT_DEAD", "entity_type": "auto_trigger", "type": "无",
+                "name": "线人死讯", "requirement": "npc_dead:线人",
+                "trigger": "街上有人在议论线人的死",
+                "result": "街上有人在议论线人的死。",
+                "side_effects": [], "graded_result": None,
+                "difficulty": "None", "scene": "room_a", "time_condition": [],
+            }
+            world = make_world(
+                {"room_a": make_scene(auto_triggers=[at])}, "room_a",
+                npc_profiles={"线人": {
+                    "name": "线人", "scene": "room_a",
+                    "can_interact": True}})
+            _player(world)
+            world.npcs.set_state("线人", "dead")
+            game = _real_game(world, _l1("room_a"))
+            r = run_turn(game, "我站在街上，侧耳听人们在议论什么")
+            assert_player_turn_contract(r)
+            assert r.status == TurnStatus.COMPLETED, f"status={r.status}"
+            text = f"{r.brief}\n{r.narrative}"
+            fired = world.is_entity_completed("AT_DEAD")
+            assert fired or "线人" in text, \
+                f"死后 parse 应触发死讯或叙事提及线人: {text[:240]}"
+        finally:
+            stop()
