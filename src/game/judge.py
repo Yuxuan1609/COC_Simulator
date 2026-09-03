@@ -579,8 +579,8 @@ class Judge:
                 return False, f"需要满足条件「{flag_name}」"
             return True, ""
         if req.startswith("npc_dead:"):
-            state = self.world.runtime_state.get(req)
-            if not state or not state.completed:
+            from scenario_core import parse_hard_requirement
+            if not parse_hard_requirement(req, self.world.runtime_state):
                 return False, f"需要满足条件「{req}」"
             return True, ""
 

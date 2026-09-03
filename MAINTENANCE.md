@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | N4 review：`npc_dead:` 对 `parse_hard_requirement` 可见。`_extract_entity_id` 认 `npc_dead:` 前缀为 runtime_state 全键（不再被 `_ENTITY_ID_PATTERN` 拒识后 grace-pass True）；`_build_entity_lines` 经 `are_entity_requirements_met` 同路径，NPC 存活时死亡 AT 进暂不可触发。Judge `_evaluate_requirement` npc_dead 特判改为调 `parse_hard_requirement`（仍短路，避免后续 grace True）。TDD：tests/test_npc_attitude.py +3。scenario_core 2128→2130 / judge 600 行不变。 |
 | 2026-09-03 | N4 Task 5 NPC 死亡扫 AT：`set_state(name, state, world=None)` 在 state==dead 时写 `runtime_state["npc_dead:"+name]=NodeRuntimeState(completed=True)`（world 参数或 `NPCManager._world`）；`NPCManager(world=)` 由 ScenarioWorld.__init__/load_state 注入；`apply_side_effects` NPCStateChange / `set_npc_state` 传 world=。Judge `_is_simple_requirement` 认 `npc_dead:`/`flag:`；`_evaluate_requirement` 查 runtime_state 全键。不在 set_state 内调 check_auto_triggers。TDD：tests/test_npc_attitude.py +4。npc_manager 401→410 / judge 592→600 / scenario_core 2128 行不变。 |
 | 2026-09-03 | N3 Task 4 talk_to prompt 策略 + 删死代码 `process_npc_turn`：① `talk_to` system 用中文档位 label；删「如实告知」；加透露档位/采信/自主 `@attitude_change`。敌意短路仍在 LLM 前。② `_build_scene_state` NPC 列名带态度 label，加「按态度决定透露与采信」。③ 删除 `process_npc_turn`。TDD：tests/test_npc_attitude.py +2。npc_manager 493→401 / prompts 1185→1190。 |
 | 2026-09-03 | N1 Task 3 消费点（attitude_min / follow / 敌意短路）：① `talk_to` state/can_interact 门后 hostile 短路「不愿理会/驱赶」不调 LLM。② `set_following(True)` 与 `_check_follow_conditions` 对 hostile/wary 拒绝；`apply_side_effects` NPCFollow 同检，msg「[跟随] X 拒绝跟随（态度：…）」；`follow_unlock` 失败不 mark_completed。③ `Judge._execute_entity` extra.attitude_min+npc_name：`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡。④ keeper `_inject_npc_at` 跳过不满足 attitude_min 的 bound_interactions，注入 extra 带 npc_name/attitude_min；`_find_entity_by_id` 同写 extra；`_build_entity_lines` parse 列表过滤。⑤ `Entity.from_dict` 顶层 attitude_min 并入 extra；L2_INTERACTION_SCHEMA 加 optional attitude_min。TDD：tests/test_npc_attitude.py +4。npc_manager 480→493 / judge 572→592 / keeper 950→967 / scenario_core 2113→2128 / layered_schema 366→367 / prompts 1180→1185。 |
@@ -433,7 +434,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 279 |
 | `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 513 |
 | `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定；N4：`npc_dead:`/`flag:` 视为可解析 | 524 / 538 |
-| `_evaluate_requirement` | `(req) -> (bool, msg)` | item: → flag: → npc_dead:（查 runtime_state 全键）→ AND/OR 解析 → 边依赖检查 | 549 |
+| `_evaluate_requirement` | `(req) -> (bool, msg)` | item: → flag: → npc_dead:（委托 `parse_hard_requirement`，未完成短路 False，避免后续 grace True）→ AND/OR 解析 → 边依赖检查 | 549 |
 
 ## src/game/curator.py (68 行) — 策展器
 
@@ -598,8 +599,8 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `has_ending` | `(text) -> (name, narrative)` | 检测 `##END_*:desc##` | 165 |
 | `check_time_condition` | `(time_condition, day, time_of_day)` | 时间条件检查 | 176 |
 | `_normalize_requirement` / `_side_effect_to_dict` | — | 内部工具（F19 `_side_effect_to_dict` 含 EnvChange；N1 含 AttitudeChange） | 216 / 231 |
-| `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@559 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 562 |
-| `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 568 |
+| `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`npc_dead:` 前缀原样返回作 runtime_state 键；否则 `_ENTITY_ID_PATTERN`@568 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 571 |
+| `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/npc_dead:/实体 ID 条件解析（无识别 ID 的组优雅放行；`npc_dead:` 查 runtime_state 全键 completed） | 579 |
 | `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；每原子 try/except 隔离（失败记 `[F10] payload 结算失败` 仍返回已积累 msgs）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1534 |
 | `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change/attitude_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略；N1 AttitudeChange：`set_attitude(npc_name, delta=)`，空/未知 NPC warning 忽略；N1 NPCFollow：hostile/wary 且 follow=True 不跟随，msg「[跟随] X 拒绝跟随（态度：…）」@1688；N4 NPCStateChange：`set_state(..., world=world)`，dead 写 `npc_dead:` 旗 @1686） | 1574 |
 
@@ -1003,7 +1004,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `apply_trait_enhancement` | `(player, skill_name, skill_detail, entity_name, search_context, player_input, graded_tiers) -> (new_tier, enhancement)` judge/search/standoff 三处复用 | 90 |
 | `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点；F17：`_build_scene_state` @172 列 snap.scene_items 暴露名「场景物品」，hidden 不进 prompt；F19：非默认 lighting/noise 渲染「环境：黑暗/嘈杂」等，normal/quiet/空无行；N3：NPC 列名带态度 label +「按态度决定透露与采信」） | 127–231 |
 | `parse_narrative_output` | Narrator 输出解析 | 289 |
-| `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@338 / `_fmt_inter`@358 / `_fmt_at`@367 / `_parse_req`@402 / `_split_req_str`@416 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段；N1：bound_interactions attitude_min 不满足则跳过） | 323 |
+| `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@338 / `_fmt_inter`@358 / `_fmt_at`@367 / `_parse_req`@402 / `_split_req_str`@416 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段；N1：bound_interactions attitude_min 不满足则跳过；N4：`npc_dead:` 未完成则 AT 进 nontrig 非 trig） | 323 |
 | `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 495 |
 | `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @576 用 `KEEPER_PARSE_MADNESS_RULE`——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 503 |
 | `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合（`_STRIP_MARKUP_RE` @582 含 env_change/attitude_change） | 592 |

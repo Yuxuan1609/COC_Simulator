@@ -249,3 +249,41 @@ def test_markup_npc_state_change_dead_sets_flag():
         world, parse_markup_all('@npc_state_change(npc_name="线人", new_state="dead")'))
     assert world.npcs.get("线人").state == "dead"
     assert world.get_runtime_state("npc_dead:线人").completed
+
+
+def _world_with_death_at():
+    from helpers import make_world, make_scene
+    world = make_world({
+        "room_a": make_scene(auto_triggers=[{
+            "id": "AT_DEAD", "name": "线人死讯", "type": "无",
+            "requirement": "npc_dead:线人",
+            "result": "街上有人在议论线人的死。",
+        }])
+    }, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a"}})
+    return world
+
+
+def test_npc_dead_requirement_false_while_alive():
+    from scenario_core import parse_hard_requirement
+    world = _world_with_death_at()
+    assert parse_hard_requirement("npc_dead:线人", world.runtime_state) is False
+    from prompts import _build_entity_lines
+    trig_scene, nontrig_scene, *_ = _build_entity_lines(world)
+    assert not any("AT_DEAD" in line for line in trig_scene)
+    assert any("AT_DEAD" in line for line in nontrig_scene)
+
+
+def test_npc_dead_requirement_true_after_death():
+    from scenario_core import parse_hard_requirement
+    world = _world_with_death_at()
+    world.npcs.set_state("线人", "dead")
+    assert parse_hard_requirement("npc_dead:线人", world.runtime_state) is True
+
+
+def test_check_auto_triggers_empty_before_death():
+    from game.judge import Judge
+    world = _world_with_death_at()
+    outs = Judge(world).check_auto_triggers()
+    assert not any(o.entity_id == "AT_DEAD" for o in outs)

@@ -570,6 +570,8 @@ _ENTITY_ID_PATTERN = re.compile(r'^[A-Z][A-Z0-9_]+[a-z]?$')
 
 def _extract_entity_id(text: str) -> str | None:
     """Extract entity ID from a cleaned group string. Returns None if no ID found."""
+    if text.startswith("npc_dead:"):
+        return text
     match = _ENTITY_ID_PATTERN.match(text)
     return match.group(0) if match else None
 
