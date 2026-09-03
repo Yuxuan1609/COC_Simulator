@@ -42,7 +42,7 @@
 
 | # | 缺口 | 定位 |
 |---|------|------|
-| F1 | **物品转移**(给予 NPC/交易) | **丢弃到场景已随 F17 落地（2026-09-02）**。剩余：给予 NPC/交易 → 随 F28 队友化大升级（NPC inventory 投机基建已拍板不做；叙事交接用 bound_interaction + item requirement + consume 假性流转） |
+| F1 | **物品转移**(给予 NPC/交易) | **丢弃到场景已随 F17 落地（2026-09-02）**。剩余：给予 NPC/交易 → 仍随 F28 队友化大升级（NPC inventory 投机基建已拍板不做；叙事交接用 bound_interaction + item requirement + consume 假性流转） |
 | F3 | timed 只进 Author prompt | enrich/narrator 经 Author 产出间接感知(架构特性,同 known_spells 通路);叙事一致性有诉求时补直连 |
 | F6 | **重伤/濒死/急救** | **缓（2026-08-31 拍板）**：无队友体系濒死救援无承载，等 F27/F28 后重评。原定位：当前 HP 0 直接 loss+game_over；缺重伤 CON 检定/濒死每轮-1/急救稳定 |
 | F7 | **战斗反应与骰子表达** | **缓（2026-08-31 拍板）**：战斗系统保持现状，随将来「战斗专项优化」（含 R2 中断机制、F28 多方化）一并立项。原定位：闪避自动成功无对抗/反击无/奖励惩罚骰无/push roll 无 |
@@ -50,10 +50,7 @@
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
 | F21 | **物品组合/合成 + 耐久/次数** | 无 combine/split;InventoryItem 只有 quantity,tool 类永不损耗 |
 | F22 | **线索系统** | **降级（2026-09-02 拍板）**：线索=interaction 系统产物，notebook=玩家侧只读视图（CLI /notebook + 前端面板，零新结构零新判定；key_items/Chronicle 已落库，缺口只在呈现），随 F39 批次。集齐判定维持 Author LLM。原定位：note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
-| F26 | **谎言/欺骗机制** | **方案已定（2026-09-02 NPC 专项 N3）**：纯 LLM 策略化零新结构——talk_to prompt 按态度档位+信息敏感度决定透露，陈述采信由 LLM 现场演绎，memory 不加真伪标记。原定位：玩家陈述无条件采信并写入 memory,伪装身份套情报无支撑 |
-| F27 | **NPC 度量层缺口**(U1 前置) | **方案已定（2026-09-02 NPC 专项 N1）**：attitude 双轨（数值 -100..100 入档 + 档位文本进 prompt）+ @attitude_change 双来源（模组显式/LLM 自主内嵌）+ 消费点（attitude_min 门槛/follow/敌意短路/LLM 渲染）；mood/自主日程不做。死代码：set_attitude 复活数值化、process_npc_turn 删除 |
 | F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
-| F29 | **NPC 死亡剧情连锁** | **方案已定（2026-09-02 NPC 专项 N4）**：降级为 AT + LLM 演绎零新结构——死亡入 Chronicle 供对话自由反应；确定性分支用 bound_auto_triggers 挂 NPC 死亡条件（实现时验证 AT 覆盖死亡事件，缺则小补）。不做广播式连锁。原定位：dead 只做门控;无目击者反应/态度联动/事件传播 |
 | F30 | **追逐/移动力** | MOV 已从 Stats 删除;flee 单骰 DEX 立即定音,无追逐轮/速度分级 |
 | F33 | **手写模组支持** | 无手写路径;前端编辑器校验只查 scenes/entities 非空不接 layered_schema |
 | F34 | **模组版本管理/增量再生** | 无 manifest/源文档快照;重跑静默覆盖手改 JSON |
@@ -92,7 +89,7 @@
 | F13-⑥ 极难贯穿差异化 | 长期 TODO:`_get_tier` 已算只进文本,伤害不变;需贯穿/最大伤害公式 |
 | F13-③ 玩家护甲 | 非目标(统一资源层 spec:equip 无机制加成;护甲只作用敌方) |
 | 输入格式扩展(epub/html/URL)/Step0 只认 txt | 有真实内容源需求再动(2026-08-26 盘点) |
-| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10；S3-P2 已回写（F5/F23/F18/F10 运行时落地、暂无生产端；F31 无缺口；F32 player_goal 已落地，多次汇总等 F34）；S3-P3 已回写（F17/F19 运行时落地、schema 字段已加、生成 prompt 不改——暂无生产端）；回查/优化生成管线时对照(2026-08-31 拍板) |
+| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10；S3-P2 已回写（F5/F23/F18/F10 运行时落地、暂无生产端；F31 无缺口；F32 player_goal 已落地，多次汇总等 F34）；S3-P3 已回写（F17/F19 运行时落地、schema 字段已加、生成 prompt 不改——暂无生产端）；NPC 专项已回写（attitude_min / `@attitude_change` / `npc_dead:` 运行时落地、生成 prompt 不改——暂无生产端）；回查/优化生成管线时对照(2026-08-31 拍板) |
 | 多语言模组/i18n | 叙事文本与结构键混存,远期 |
 | 模组素材附件(地图/立绘/handout) | schema 无 image 字段,远期生态 |
 | 多人混战目标选择/队友误伤/掩体 | 依赖 F28 先行;掩体等防御向机制随 F13 批次评估 |
@@ -104,6 +101,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-09-03 | **F27 NPC 度量层 + F26 谎言/欺骗 + F29 死亡连锁** | NPC 专项运行时落地：F27/N1 attitude 双轨 + `@attitude_change` 双来源 + attitude_min/follow/敌意短路；F26/N3 talk_to 纯 LLM 策略（删「如实告知」/`process_npc_turn`）；F29/N4 `npc_dead:` AT 旗。F1 给予仍 F28。L2 schema 已加 optional `attitude_min`，生成 prompt 不改——**暂无生产端**。 |
 | 2026-09-02 | **F17 场景物品 + F19 环境修正** | S3-P3 运行时落地：F17 `scene_items`（hidden/exposed、搜索暴露、免费拾取/丢弃短路、废弃 weapon_offer）；F1 丢弃部分随 F17 落地（给予 NPC 仍 F28）。F19 场景 environment 两轴 + `env_check_modifiers` ±N + `@env_change` + prompt 知情行。L2 schema 字段已加，生成 prompt 不改——**暂无生产端**。 |
 | 2026-09-02 | **B20 战斗 SAN 双轨不同步** | 单轨收敛：derived.SAN 唯一轨道，state.player_san 实时镜像。witness/attacked 扣减改落 derived.SAN 后镜像；cast 扣减与 markup 原子结算后补镜像；写回变 no-op。同类 HP 问题另记 B21。 |
 | 2026-09-01 | **F32 试玩报告** | 纯聚合零 rubric 零 LLM；player_goal fallback（profile → L3 → driving_force）；`l2_keeper_test.json` 优先（6b7596b + f424bea）。 |

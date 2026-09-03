@@ -188,4 +188,6 @@ NPC 系统重检专项（2026-08-31 拍板，单独立项）：F27 度量层 / F
 | 试玩报告（F32） | S3-P2 已落地 | `module_meta.player_goal` 已落地；多次试玩并行+汇总、CI 集成等 F34 |
 | 场景物品泛化（F17） | S3-P3 运行时已落地 | 运行时：`scene_items` 平面模型 + hidden/exposed + 免费拾取/丢弃。L2 schema 已加 optional `scene_items`（`scene_weapons` 保留映射）。生成端缺口仍在：生成器产出 scene_items / 切换 prompt——**暂无生产端** |
 | 环境字段（F19） | S3-P3 运行时已落地 | 运行时：L2 场景 `environment` 两轴 + `env_check_modifiers` ±N + `@env_change`。L2 schema 已加 optional `environment`。生成端缺口仍在：L1/L2 生成器产出环境字段、生成 prompt 不改——**暂无生产端** |
-| NPC 好感度量（F27） | S3-P2 | npc_profiles 可声明初始好感；交互阈值可引用 |
+| NPC 好感度量（F27/N1） | NPC 专项运行时已落地 | 运行时：`attitude_value` 双轨 + `@attitude_change` + `attitude_min` 门槛/follow/敌意短路。L2 schema 已加 optional `attitude_min`。生成端缺口仍在：生成器产出 `attitude_min` / 初始 `attitude_value` / 交互挂 `@attitude_change`——**暂无生产端** |
+| 谎言/欺骗策略（F26/N3） | NPC 专项运行时已落地 | 运行时：talk_to prompt 按态度档位透露/采信。无新 schema 字段。生成端——**暂无生产端** |
+| NPC 死亡 AT（F29/N4） | NPC 专项运行时已落地 | 运行时：`set_state(dead)` 写 `npc_dead:` 旗，AT requirement 可引用。生成端缺口仍在：生成器产出死亡 AT / `npc_dead:` 条件——**暂无生产端** |

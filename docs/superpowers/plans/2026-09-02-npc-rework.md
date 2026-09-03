@@ -235,4 +235,4 @@ def test_npc_death_completes_runtime_flag_and_fires_at():
 - MAINTENANCE 行号对齐。
 - `python -m pytest tests/ -q`
 
-- [ ] **Commit** `docs: NPC rework closeout — N1/N3/N4 ISSUES §5 + MAINTENANCE`
+- [x] **Commit** `docs: NPC rework closeout — N1/N3/N4 ISSUES §5 + MAINTENANCE`
