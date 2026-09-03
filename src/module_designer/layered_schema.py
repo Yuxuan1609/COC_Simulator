@@ -48,6 +48,7 @@ L2_INTERACTION_SCHEMA = {
     "based_on": {"required": False},
     "graded_result": {"required": False},
     "repeatable": {"required": False},
+    "attitude_min": {"required": False},
 }
 
 L2_AUTO_TRIGGER_SCHEMA = L2_INTERACTION_SCHEMA  # 统一字段模型

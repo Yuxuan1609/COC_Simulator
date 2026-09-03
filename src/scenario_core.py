@@ -85,6 +85,13 @@ def find_entity_by_id(world: 'ScenarioWorld', entity_id: str):
     return None
 
 
+def _entity_extra_with_attitude(d: dict) -> dict | None:
+    extra = dict(d.get("extra") or {})
+    if d.get("attitude_min") is not None:
+        extra.setdefault("attitude_min", d["attitude_min"])
+    return extra or d.get("extra")
+
+
 @dataclass
 class Entity:
     """Unified entity — interaction, auto_trigger, or event."""
@@ -127,7 +134,7 @@ class Entity:
             side_effects=list(d.get("side_effects", [])),
             graded_result=d.get("graded_result"),
             difficulty=d.get("difficulty", ""),
-            extra=d.get("extra"),
+            extra=_entity_extra_with_attitude(d),
             time_condition=d.get("time_condition", ""),
             repeatable=bool(d.get("repeatable", False)
                             or (d.get("extra") or {}).get("repeatable", False)),
@@ -1679,6 +1686,14 @@ def apply_side_effects(world: 'ScenarioWorld', side_effects: list,
             world.npcs.set_state(effect.npc_name, effect.new_state)
             msgs.append(f"[NPC状态] {effect.npc_name} -> {effect.new_state}")
         elif isinstance(effect, NPCFollow):
+            if effect.follow:
+                npc = world.npcs.get(effect.npc_name) if world.npcs else None
+                if npc is not None:
+                    from game.npc_manager import attitude_tier
+                    key, label = attitude_tier(npc.attitude_value)
+                    if key in ("hostile", "wary"):
+                        msgs.append(f"[跟随] {effect.npc_name} 拒绝跟随（态度：{label}）")
+                        continue
             world.npcs.set_following(effect.npc_name, effect.follow)
             status = "开始跟随" if effect.follow else "停止跟随"
             msgs.append(f"[NPC跟随] {effect.npc_name} {status}")

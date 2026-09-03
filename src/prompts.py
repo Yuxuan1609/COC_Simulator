@@ -433,6 +433,11 @@ def _build_entity_lines(world) -> tuple[list[str], list[str], list[str], list[st
                 if not eid or (world.is_entity_completed(eid)
                                and not (ent.get("repeatable") or extra.get("repeatable"))):
                     continue
+                amin = ent.get("attitude_min")
+                if amin is None:
+                    amin = extra.get("attitude_min")
+                if amin is not None and npc.attitude_value < int(amin):
+                    continue
                 req = ent.get("requirement", "") or ""
                 met, soft = _parse_req(req)
                 e = Entity.from_dict(ent, overrides={

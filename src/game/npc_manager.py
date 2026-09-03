@@ -146,6 +146,9 @@ class NPCManager:
             return False, f"{npc.name} 不愿意跟随你{hint}"
         if npc.state in ("dead", "left"):
             return False, f"{npc.name} 无法跟随（{npc.state}）"
+        key, label = attitude_tier(npc.attitude_value)
+        if key in ("hostile", "wary"):
+            return False, f"{npc.name} 拒绝跟随（态度：{label}）"
 
         req = npc.follow_requirements.strip() if npc.follow_requirements else ""
         if not req:
@@ -253,6 +256,9 @@ class NPCManager:
                     resolved = _build_req_text(hard + (f"||{soft}" if soft else ""), world)
                     return f"（{npc.name} 暂时不愿与你交谈，{resolved}。）"
 
+        if attitude_tier(npc.attitude_value)[0] == "hostile":
+            return f"（{npc.name} 不愿理会你，将你驱赶。）"
+
         triggers_text = ""
         if npc.interaction_triggers:
             triggers_text = f"互动触发条件：{'； '.join(npc.interaction_triggers)}\n"
@@ -307,8 +313,15 @@ class NPCManager:
         npc.attitude, _ = attitude_tier(npc.attitude_value)
 
     def set_following(self, name: str, following: bool):
-        if name in self._npcs:
-            self._npcs[name].following = following
+        npc = self._npcs.get(name)
+        if not npc:
+            return False
+        if following:
+            key, _ = attitude_tier(npc.attitude_value)
+            if key in ("hostile", "wary"):
+                return False
+        npc.following = following
+        return True
 
     def get_following(self) -> list[NPC]:
         return [n for n in self._npcs.values() if n.following]

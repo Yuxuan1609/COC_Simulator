@@ -102,3 +102,72 @@ def test_empty_npc_name_in_talk_to_applies_to_current():
     text = world.npcs.talk_to("线人", "滚开", fake_llm, world=world)
     assert "@attitude_change" not in text
     assert npc.attitude_value == -15
+
+
+def test_hostile_talk_does_not_call_llm():
+    from helpers import make_world, make_scene
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a", "attitude": "hostile"}})
+    def fake_llm(*a, **k):
+        raise AssertionError("llm should not be called")
+    text = world.npcs.talk_to("线人", "你好", fake_llm, world=world)
+    assert "不愿理会" in text or "驱赶" in text
+
+
+def test_attitude_min_blocks_interaction():
+    from helpers import make_world, make_scene
+    from game.judge import Judge
+    world = make_world({"room_a": make_scene(interactions=[{
+        "id": "IT_ASK", "entity_type": "interaction",
+        "name": "打听", "scene": "room_a",
+        "type": "无", "requirement": "", "trigger": "打听",
+        "result": "他说了。", "side_effects": [],
+        "difficulty": "",
+        "extra": {"attitude_min": 10, "npc_name": "线人"},
+    }])}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a", "attitude": "neutral"}})
+    entity = world.graph.nodes["room_a"].interactions[0]
+    outcome = Judge(world)._execute_entity(entity)
+    assert not outcome.success
+    assert "不愿配合" in outcome.message
+
+
+def test_wary_cannot_follow():
+    from helpers import make_world, make_scene
+    from game.side_effects import parse_markup_all
+    from scenario_core import apply_side_effects
+    world = make_world({"room_a": make_scene()}, "room_a")
+    world.npcs.init_from_profiles({
+        "线人": {"role": "线人", "scene": "room_a",
+                "attitude": "wary", "can_follow": True}})
+    npc = world.npcs.get("线人")
+    world.npcs.set_following("线人", True)
+    assert npc.following is False
+    msgs = apply_side_effects(
+        world, parse_markup_all('@npc_follow(npc_name="线人", follow=true)'))
+    assert npc.following is False
+    assert any("拒绝跟随" in m for m in msgs)
+
+
+def test_attitude_min_skips_keeper_inject():
+    from helpers import make_world, make_scene
+    from game.agents.keeper import Keeper
+    profile = {
+        "name": "线人", "scene": "room_a", "can_interact": True,
+        "attitude": "neutral",
+        "bound_interactions": [{
+            "id": "IT_SECRET", "entity_type": "interaction",
+            "name": "问秘密", "type": "无", "requirement": "",
+            "trigger": "问秘密", "result": "他摇头。",
+            "difficulty": "None",
+            "attitude_min": 10,
+        }],
+    }
+    world = make_world({"room_a": make_scene()}, "room_a",
+                       npc_profiles={"线人": profile})
+    keeper = Keeper(world)
+    keeper._inject_npc_at()
+    node = world.graph.nodes["room_a"]
+    assert not any(e.id == "IT_SECRET" for e in node.interactions)

@@ -390,10 +390,20 @@ class Keeper:
                     ent.get("repeatable") or (ent.get("extra") or {}).get("repeatable")
                 ):
                     continue
-                node.interactions.append(Entity.from_dict(ent, overrides={
-                    "entity_type": "interaction",
-                    "scene": npc.scene or self.world.current_location,
-                }))
+                amin = ent.get("attitude_min")
+                if amin is None:
+                    amin = (ent.get("extra") or {}).get("attitude_min")
+                if amin is not None and npc.attitude_value < int(amin):
+                    continue
+                extra = dict(ent.get("extra") or {})
+                extra.setdefault("npc_name", npc_name)
+                if amin is not None:
+                    extra.setdefault("attitude_min", amin)
+                node.interactions.append(Entity.from_dict(
+                    {**ent, "extra": extra}, overrides={
+                        "entity_type": "interaction",
+                        "scene": npc.scene or self.world.current_location,
+                    }))
                 injected.add(eid)
             for at in npc.bound_auto_triggers:
                 eid = at.get("id", "")
@@ -680,7 +690,14 @@ class Keeper:
                         ent.get("repeatable") or (ent.get("extra") or {}).get("repeatable")
                     ):
                         continue
-                    return Entity.from_dict(ent, overrides={
+                    extra = dict(ent.get("extra") or {})
+                    extra.setdefault("npc_name", npc.name)
+                    amin = ent.get("attitude_min")
+                    if amin is None:
+                        amin = extra.get("attitude_min")
+                    if amin is not None:
+                        extra.setdefault("attitude_min", amin)
+                    return Entity.from_dict({**ent, "extra": extra}, overrides={
                         "scene": ent.get("source_scene", ""),
                     })
         # Boss encounters

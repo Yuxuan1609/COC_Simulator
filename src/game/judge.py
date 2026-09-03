@@ -292,6 +292,18 @@ class Judge:
         # Hard requirements already evaluated by _build_entity_lines before parse;
         # soft requirements evaluated by Parse (LLM). Here we just execute state change.
         extra = entity.extra or {}
+        amin = extra.get("attitude_min")
+        if amin is None:
+            amin = getattr(entity, "attitude_min", None)
+        npc_name_gate = extra.get("npc_name", "")
+        if amin is not None and npc_name_gate and self.world.npcs:
+            npc_gate = self.world.npcs.get(npc_name_gate)
+            if npc_gate is not None and npc_gate.attitude_value < int(amin):
+                return ActionOutcome(
+                    intent=intent or ActionIntent(action="other"),
+                    success=False, message="对方现在不愿配合。",
+                    entity_id=entity.id, entity_type=entity.entity_type,
+                )
         npc_special = extra.get("npc_special", "")
         if npc_special in ("follow_unlock", "interact_unlock"):
             npc_name = extra.get("npc_name", "")
@@ -310,7 +322,15 @@ class Judge:
                 )
 
             if npc_special == "follow_unlock":
-                self.world.npcs.set_following(npc_name, True)
+                if not self.world.npcs.set_following(npc_name, True):
+                    from game.npc_manager import attitude_tier
+                    _, label = attitude_tier(npc.attitude_value)
+                    return ActionOutcome(
+                        intent=intent or ActionIntent(action="other"),
+                        success=False,
+                        message=f"{npc_name} 拒绝跟随（态度：{label}）",
+                        entity_id=entity.id, entity_type=entity.entity_type,
+                    )
                 self._set_completion_flag(entity, "")
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),

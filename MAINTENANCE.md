@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | N1 Task 3 消费点（attitude_min / follow / 敌意短路）：① `talk_to` state/can_interact 门后 hostile 短路「不愿理会/驱赶」不调 LLM。② `set_following(True)` 与 `_check_follow_conditions` 对 hostile/wary 拒绝；`apply_side_effects` NPCFollow 同检，msg「[跟随] X 拒绝跟随（态度：…）」；`follow_unlock` 失败不 mark_completed。③ `Judge._execute_entity` extra.attitude_min+npc_name：`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡。④ keeper `_inject_npc_at` 跳过不满足 attitude_min 的 bound_interactions，注入 extra 带 npc_name/attitude_min；`_find_entity_by_id` 同写 extra；`_build_entity_lines` parse 列表过滤。⑤ `Entity.from_dict` 顶层 attitude_min 并入 extra；L2_INTERACTION_SCHEMA 加 optional attitude_min。TDD：tests/test_npc_attitude.py +4。npc_manager 480→493 / judge 572→592 / keeper 950→967 / scenario_core 2113→2128 / layered_schema 366→367 / prompts 1180→1185。 |
 | 2026-09-03 | N1 Task 2 `@attitude_change` markup + talk_to 内嵌剥离：① `AttitudeChange(npc_name, delta)` @ side_effects.py:81；`_MARKUP_PATTERN` 增 `attitude_change`；`_build_side_effect` 解析 npc_name/delta。② `apply_side_effects` 调 `world.npcs.set_attitude(npc_name, delta=delta)`；空/未知 NPC warning 忽略不 raise。③ talk_to LLM 成功后 `parse_markup_all`+`apply_side_effects`，空 npc_name 填当前 NPC，展示文本 `_STRIP` 剥 markup。④ judge `_MARKUP_STRIP_RE` / prompts `_STRIP_MARKUP_RE` 增 attitude_change（不改 generation prompts）。TDD：tests/test_npc_attitude.py +4（markup delta / talk_to strip+apply / 非法名 warning / 空 npc_name 当前 NPC）。 |
 | 2026-09-03 | N1 Task 1 attitude_value 双轨 + 档位映射 + 入档：NPC 增 `attitude_value`（-100..100）；`attitude_tier` 读 `game_config.npc_attitude_tiers`；`set_attitude(name, delta=/value=)` clamp 并同步 `attitude=key`；snapshot `attitude` 改中文 label；to_dict 双写 / from_dict 优先数值否则档位中值。TDD：tests/test_npc_attitude.py 5 测。 |
 | 2026-09-02 | S3-P3 收口：ISSUES F17/F19 入 §5（F1 丢弃部分随 F17 落地，给予 NPC 仍 F28）；簇评估 §10 回写 scene_items/environment 运行时已落地、schema 字段已加、生成 prompt 不改——暂无生产端。函数表行号 grep 实测对齐（scenario_core / keeper / understand / adjudicate / finalize / prompts / models / rules / side_effects / judge / layered_schema）。零产品代码。 |
@@ -244,7 +245,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/agents/keeper.py (950 行) — Keeper 回合编配
+## src/game/agents/keeper.py (967 行) — Keeper 回合编配
 
 无 `_run_turn_pipeline`。`process_turn` 为薄 facade，委托 `TurnRunner.execute`（A–E 循环）。toolbox 方法仍驻本文件，供 turn/ 阶段经 `tools` 调用。
 
@@ -276,12 +277,12 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100（F19：`env_check_modifier`）→ 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 239 |
 | `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 319 |
 | `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 344 |
-| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node（F23：completed 且非 repeatable 才跳过 @389/@402） | 371 |
+| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node（F23：completed 且非 repeatable 才跳过；N1：bound_interactions attitude_min 不满足则跳过，注入 extra 带 npc_name/attitude_min） | 371 |
 | `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入；GrantWeapon(scene="") 直接入包（无 offer）；Restart 时由 runner 在重入 A 前调用（A 入口会 clear pending） | 414 |
 | `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表（live system= 含 `KEEPER_PARSE_MADNESS_RULE` @599） | 586 |
 | `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 620 |
 | `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 650 |
-| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找（F23：NPC bound completed 且非 repeatable 才跳过 @679） | 663 |
+| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找（F23：NPC bound completed 且非 repeatable 才跳过；N1：extra 写入 npc_name/attitude_min） | 673 |
 | `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行（A 的 `depth>=MAX` 与 runner Restart 后 `depth>=MAX` 两处入口） | 700 |
 | `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 721 |
 | `_build_world_snapshot` | `()` | 构建世界快照 dict | 737 |
@@ -418,7 +419,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1396 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1503 |
 
-## src/game/judge.py (572 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
+## src/game/judge.py (592 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -427,7 +428,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 68 |
 | `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check；F19：check_skill 传 `env_check_modifier`）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@180-188；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@110）；F5：need_san 且 `success or not refund_on_fail`（未退款）时调 world.on_san_loss @165-167（施法损失计疯狂，退款不计） | 83 |
 | `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes；有 interval/payload 则拷入条目供 F10 周期结算）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 198 |
-| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ NPC 特殊实体(follow/interact unlock) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 279 |
+| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 279 |
 | `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 493 |
 | `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定 | 504 / 515 |
 | `_evaluate_requirement` | `(req) -> (bool, msg)` | flag: → AND/OR 解析 → 边依赖检查 | 526 |
@@ -463,7 +464,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
 | `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 
-## src/game/npc_manager.py (480 行) — NPC 管理
+## src/game/npc_manager.py (493 行) — NPC 管理
 
 ### NPC dataclass（@14）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, attitude_value, following, memory, state, extra`
 
@@ -480,16 +481,16 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查 | 134 |
+| `_check_follow_conditions` | `(npc, world)` | 跟随条件检查；hostile/wary 拒绝「拒绝跟随（态度：…）」 | 134 |
 | `init_from_profiles` | `(profiles)` | 从 L2 npc_profiles 批量初始化；attitude_value 自 profile 再同步 key | 171 |
 | `get` | `(name)` | 按名查询 | 198 |
 | `get_in_scene` / `get_in_scene_snapshot` | — | 场景内 NPC（排除 dead/left）/ 轻量快照（attitude=中文 label） | 201 / 205 |
-| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → LLM 对话；成功后 parse_markup_all+apply_side_effects（空 AttitudeChange.npc_name 填当前 NPC），展示文本剥 markup | 219 |
+| `talk_to` | `(npc_name, player_input, llm_call, world=None)` | state→can_interact→interact_requirements 门禁 → hostile 短路「不愿理会/驱赶」不调 LLM → LLM 对话；成功后 parse_markup_all+apply_side_effects（空 AttitudeChange.npc_name 填当前 NPC），展示文本剥 markup | 222 |
 | `set_attitude` | `(name, delta=None, value=None)` | 数值版：delta 累加或 value 直设，clamp -100..100，同步 attitude=key | 298 |
-| `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作 | 309–322 |
+| `set_following` / `get_following` / `set_state` / `set_scene` | — | 状态操作；`set_following(True)` 对 hostile/wary 不设 following、返回 False | 315–330 |
 | `sync_followers` | `(scene)` | 跟随 NPC 同步到新场景 | 326 |
 | `to_dict` / `from_dict` | — | 序列化（双写 attitude_value+attitude key；旧档字符串→中值） | 334 / 351 |
-| `process_npc_turn` | `(npc_name, user_input, world, llm_json, llm_text, judge, curator)` | 独立 API：talk_to→parse→judge→enrich→curate（主循环不调用） | 384 |
+| `process_npc_turn` | `(npc_name, user_input, world, llm_json, llm_text, judge, curator)` | 独立 API：talk_to→parse→judge→enrich→curate（主循环不调用） | 397 |
 
 ## src/game/enemy_manager.py (275 行) — 敌人管理
 
@@ -569,7 +570,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/scenario_core.py (2113 行) — 数据模型 + 世界状态
+## src/scenario_core.py (2128 行) — 数据模型 + 世界状态
 
 ### 数据类 / 基础模型
 
@@ -579,8 +580,8 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Requirement` | `raw, entity_id, negated, flags` — 条件解析结果 | 49 |
 | `Interaction` | 互动摘要模型 | 57 |
 | `ActionResult` | `success, message, ...` | 71 |
-| `Entity` | `id, entity_type, name, scene, type, requirement, trigger, result, side_effects, graded_result, difficulty, extra, time_condition, repeatable` — 统一实体；`from_dict` 工厂 @110（F23：`repeatable` 默认 False=once，读顶层键或 extra.repeatable） | 89 |
-| `Node` | `node_id, description, edges, to_here, interactions, auto_triggers, encounters, scene_weapons, scene_items, environment, extra`；`get_interaction`@271 `get_auto_trigger`@277 | 258 |
+| `Entity` | `id, entity_type, name, scene, type, requirement, trigger, result, side_effects, graded_result, difficulty, extra, time_condition, repeatable` — 统一实体；`from_dict` 工厂 @117（F23：`repeatable` 默认 False=once，读顶层键或 extra.repeatable；N1：顶层 attitude_min 并入 extra via `_entity_extra_with_attitude` @88） | 96 |
+| `Node` | `node_id, description, edges, to_here, interactions, auto_triggers, encounters, scene_weapons, scene_items, environment, extra`；`get_interaction`@278 `get_auto_trigger`@284 | 265 |
 | `NodeRuntimeState` | `completed, result_tier, retries, escalated_difficulty` | 285 |
 
 ### 顶层函数
@@ -596,7 +597,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_extract_entity_id` | `(text) -> str\|None` | 从清洗后的 AND/OR 组提取实体 ID；`_ENTITY_ID_PATTERN`@559 `^[A-Z][A-Z0-9_]+[a-z]?$`（I1/I12a/AT2 与 IT_LOCK 类无数字 ID；单字母/中文自然语言不匹配） | 562 |
 | `parse_hard_requirement` | `(hard, runtime_state)` | AND/OR/括号/flag 条件解析（无识别 ID 的组优雅放行） | 568 |
 | `apply_effect_payload` | `(world, payload, source="") -> list` | F10：结算 timed payload 原子子集 heal（clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（parse_markup_all+apply_side_effects，SAN 汇入 F5）；每原子 try/except 隔离（失败记 `[F10] payload 结算失败` 仍返回已积累 msgs）；无 player / 空 payload no-op；combat `_tick_temporary_effects` 与 `_tick_time_effects` 共用 | 1534 |
-| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change/attitude_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略 @1730；N1 AttitudeChange：`set_attitude(npc_name, delta=)`，空/未知 NPC warning 忽略 @1744） | 1567 |
+| `apply_side_effects` | `(world, side_effects, npc_events=None, direct_weapon_callback=None)` | 副作用应用到世界（spawn_enemy/grant_weapon/stat_change/item_gain/consume_item/npc_state_change/npc_follow/env_change/attitude_change）（统一资源层：GrantSpell 分支经 spell_library 校验加入 known_spells，不重复授予；F5：StatChange SAN 分支扣减后 `before-after` 差值>0 时调 `world.on_san_loss`，触发疯狂时 msgs 追加 [疯狂] 行——文本按 trig 标志选型：temporary 新触发取 temporary 文本，否则取 indefinite（修 set-once 残留旧文案）；F18 `_fire_scheduled_events` / F10 markup payload 亦走此入口；F17 GrantWeapon 有 scene / 空 scene 无 callback：append SceneItem(kind=weapon, hidden=False) 再 `_sync`；F19 EnvChange：legal lighting∈{dark,dim,normal}/noise∈{quiet,noisy} 写 `environment_overrides[current_location]`，非法 warning 忽略；N1 AttitudeChange：`set_attitude(npc_name, delta=)`，空/未知 NPC warning 忽略；N1 NPCFollow：hostile/wary 且 follow=True 不跟随，msg「[跟随] X 拒绝跟随（态度：…）」@1688） | 1574 |
 
 ### DirectedGraph（@297）
 
@@ -861,11 +862,11 @@ core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STON
 
 re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。`python -m module_designer` 走 `__main__.py` → `lint.run_lint`（F31）。
 
-### layered_schema.py (366 行) — Schema 定义 + 验证
+### layered_schema.py (367 行) — Schema 定义 + 验证
 
 | 项 | 说明 | 行号 |
 |----|------|------|
-| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of；F23：L2_INTERACTION_SCHEMA/L2_EVENT_SCHEMA 含 optional `repeatable`；F32：L3_MODULE_META_SCHEMA 含 optional `player_goal`；F17：L2_SCENE_SCHEMA 含 optional `scene_items`，`scene_weapons` 保留；F19：L2_SCENE_SCHEMA 含 optional `environment`） | 10–181 |
+| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of；F23：L2_INTERACTION_SCHEMA/L2_EVENT_SCHEMA 含 optional `repeatable`；N1：L2_INTERACTION_SCHEMA 含 optional `attitude_min`；F32：L3_MODULE_META_SCHEMA 含 optional `player_goal`；F17：L2_SCENE_SCHEMA 含 optional `scene_items`，`scene_weapons` 保留；F19：L2_SCENE_SCHEMA 含 optional `environment`） | 10–182 |
 | `SchemaViolation` / `SchemaReport` | 违规/报告（add/errors/warnings/is_valid/summary） | 188 / 199 |
 | `_validate_value` / `_validate_object` | 递归校验 | 231 / 263 |
 | `validate_l1` / `validate_l2` / `validate_l3` / `validate_all` / `is_valid` | 各层验证入口 | 272–363 |
@@ -990,7 +991,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
 | `evaluate_combat_round_narrative` | `(round_log, enemies_desc, player_name, scene)` | 战斗叙事（走 build_combat_narrative_prompt） | 502 |
 
-## src/prompts.py (1180 行) — Prompt 构建（所有 build_* 只构建不调用）
+## src/prompts.py (1185 行) — Prompt 构建（所有 build_* 只构建不调用）
 
 | 函数 | 签名/作用 | 行号 |
 |------|-----------|------|
@@ -998,7 +999,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `apply_trait_enhancement` | `(player, skill_name, skill_detail, entity_name, search_context, player_input, graded_tiers) -> (new_tier, enhancement)` judge/search/standoff 三处复用 | 90 |
 | `_build_scene_context` / `_build_investigator_info` / `_build_player_state` / `_build_scene_state` / `_build_time_block` / `_build_world_state` / `_build_l1l3_context` | 确定性场景上下文构建（F5：`_build_investigator_info` @139 读 `player.insanity` 渲染「疯狂状态：…（叙事与检定演绎其影响，不机械复述）」行 @147-153，keeper parse/narrator 共用注入点；F17：`_build_scene_state` @172 列 snap.scene_items 暴露名「场景物品」，hidden 不进 prompt；F19：非默认 lighting/noise 渲染「环境：黑暗/嘈杂」等，normal/quiet/空无行） | 127–226 |
 | `parse_narrative_output` | Narrator 输出解析 | 284 |
-| `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@333 / `_fmt_inter`@353 / `_fmt_at`@362 / `_parse_req`@397 / `_split_req_str`@411 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段） | 318 |
+| `_build_entity_lines` | 场景实体 → prompt 行（`_split_req`@333 / `_fmt_inter`@353 / `_fmt_at`@362 / `_parse_req`@397 / `_split_req_str`@411 辅助；F23：repeatable 完成后不进 completed_scene/completed_npc，留可触发段；N1：bound_interactions attitude_min 不满足则跳过） | 318 |
 | `KEEPER_PARSE_MADNESS_RULE` | 疯狂联动规则句（log 副本与 live `_parse` system= 共用） | 490 |
 | `build_keeper_parse_prompt` | `(world, user_input)` Keeper Step1 实体匹配（JSON 表含 use 类型 + other 的 flavor/creative 子类；system 行为优先级含 use 返还规则与氛围 AT 不捎带；F5：system @571 用 `KEEPER_PARSE_MADNESS_RULE`——调查员信息显示疯狂状态时条件评估与检定描述体现其影响） | 493 |
 | `build_keeper_enrich_prompt` | `(world, judged_entities, user_input)` Step3 叙事整合（`_STRIP_MARKUP_RE` @577 含 env_change/attitude_change） | 582 |
