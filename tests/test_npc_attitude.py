@@ -151,6 +151,33 @@ def test_wary_cannot_follow():
     assert any("拒绝跟随" in m for m in msgs)
 
 
+def test_talk_to_system_prompt_n3_strategy():
+    world, npc = _npc_world()
+    captured = {}
+
+    def fake_llm(user, system="", **k):
+        captured["system"] = system
+        return "嗯。"
+
+    world.npcs.talk_to("线人", "你好", fake_llm, world=world)
+    system = captured["system"]
+    assert "如实告知" not in system
+    assert "当前态度" in system
+    assert "敌意拒绝" in system
+    assert "警惕套话" in system
+    assert "@attitude_change" in system
+    assert "当前态度：中立" in system
+    assert "当前态度：neutral" not in system
+
+
+def test_keeper_scene_state_attitude_disclosure():
+    from prompts import _build_scene_state
+    world, npc = _npc_world()
+    text = _build_scene_state(world.build_snapshot())
+    assert "按态度决定透露与采信" in text
+    assert "中立" in text
+
+
 def test_attitude_min_skips_keeper_inject():
     from helpers import make_world, make_scene
     from game.agents.keeper import Keeper

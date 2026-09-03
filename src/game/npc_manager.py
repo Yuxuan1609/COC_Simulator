@@ -263,6 +263,7 @@ class NPCManager:
         if npc.interaction_triggers:
             triggers_text = f"互动触发条件：{'； '.join(npc.interaction_triggers)}\n"
 
+        _, label = attitude_tier(npc.attitude_value)
         system_prompt = (
             f"你是 NPC「{npc.name}」。\n"
             f"角色：{npc.role}\n"
@@ -270,11 +271,13 @@ class NPCManager:
             f"外貌：{npc.appearance}\n"
             f"能力与所知信息：{npc.what_they_can_do}\n"
             + triggers_text
-            + f"当前态度：{npc.attitude}\n"
+            + f"当前态度：{label}（数值不展示）\n"
             f"当前状态：{npc.state}\n"
             + (f"对话记忆：{'； '.join(npc.memory[-5:])}\n" if npc.memory else "")
             + "\n请用符合角色设定的语气回复调查员。\n"
-            "若调查员询问或触及你能力范围内/互动触发条件中的信息，应如实告知所知内容，不刻意隐瞒。\n"
+            "根据态度决定透露程度：敌意拒绝、警惕套话、友好有限透露、信任才交底。\n"
+            "对调查员的身份声明与陈述自行判断是否采信，不要无条件相信。\n"
+            f"若交谈改变你对调查员的态度，在回复末尾内嵌 @attitude_change(npc_name=\"{npc.name}\", delta=±N)，N 为整数。该标记不会展示给玩家。\n"
             "回复简洁（1-3句话）。"
         )
         user_prompt = f"调查员对你说：「{player_input}」"
@@ -393,101 +396,6 @@ class NPCManager:
                 state=state_data.get("state", "alive"),
                 extra=state_data.get("extra"),
             )
-
-    def process_npc_turn(self, npc_name: str, user_input: str, world,
-                         llm_json, llm_text, judge, curator) -> dict:
-        """Execute NPC turn: talk_to -> parse -> judge -> enrich -> curate.
-        Returns {'brief': NarratorBrief, 'npc_events': [...], 'enrich': str}.
-        game_loop handles narration.
-        """
-        from prompts import build_npc_parse_prompt, build_keeper_enrich_prompt
-        from game.messages import ActionIntent, ActionOutcome, EnrichInput
-        from scenario_core import Entity as EntityCls
-
-        npc = self._npcs.get(npc_name)
-        if not npc:
-            return {"brief": f"（{npc_name} 不在此处。）"}
-
-        dialogue = self.talk_to(npc_name, user_input, llm_text, world=world)
-
-        matched_entity_ids = []
-        follow_request = False
-        matched_entities = []
-
-        if npc.bound_interactions or npc.bound_auto_triggers:
-            parse_prompt = build_npc_parse_prompt(
-                npc_name, user_input, npc.bound_interactions, npc.bound_auto_triggers,
-                world.current_location,
-            )
-            try:
-                parse_result = llm_json(parse_prompt)
-                matched_entity_ids = parse_result.get("matched_entities", [])
-                follow_request = parse_result.get("follow_request", False)
-            except Exception:
-                matched_entity_ids = []
-
-            all_bound = npc.bound_interactions + npc.bound_auto_triggers
-            for eid in matched_entity_ids:
-                for e in all_bound:
-                    if e.get("id") == eid:
-                        matched_entities.append(e)
-                        break
-
-        npc_events = []
-        if follow_request:
-            ok, reason = self._check_follow_conditions(npc, world)
-            if ok:
-                self.set_following(npc_name, True)
-                npc_events.append(f"{npc_name} 开始跟随你")
-            else:
-                npc_events.append(reason)
-
-        all_outcomes: list[ActionOutcome] = []
-        enrich_input = EnrichInput()
-        for entity in matched_entities:
-            ent = EntityCls.from_dict(entity, overrides={
-                "scene": entity.get("source_scene", ""),
-            })
-            intent = ActionIntent(action="interact", target=entity.get("name", ""))
-            outcome = judge._execute_entity(ent, intent=intent, player_input=user_input)
-            all_outcomes.append(outcome)
-            enrich_input.entities.append({
-                "entity_type": ent.entity_type,
-                "id": ent.id,
-                "name": ent.name,
-                "result": outcome.message,
-                "success": outcome.success,
-                "skill_tier": outcome.skill_tier,
-            })
-            if outcome.success:
-                tr = entity.get("extra", {}).get("time_range") if entity.get("extra") else None
-                enrich_input.actions.append({
-                    "type": ent.entity_type,
-                    "name": ent.name,
-                    "success": True,
-                    "time_range": tr,
-                })
-
-        enrich_prompt = build_keeper_enrich_prompt(world, enrich_input.entities, user_input)
-        try:
-            enrich_result = llm_json(enrich_prompt)
-            enrich_text = enrich_result.get("results", dialogue)
-            emphasis = enrich_result.get("emphasis_hint", "")
-        except Exception:
-            enrich_text = dialogue
-            emphasis = ""
-
-        if not all_outcomes:
-            dialogue_outcome = ActionOutcome(
-                intent=ActionIntent(action="other", target=npc_name),
-                success=True, message=dialogue, entity_type="interaction",
-            )
-            all_outcomes = [dialogue_outcome]
-
-        ambient_changes = [f"{npc_name}: {dialogue}"] if not matched_entities else []
-        brief = curator.assemble(all_outcomes, ambient_changes, emphasis=emphasis)
-
-        return {"brief": brief, "npc_events": npc_events, "enrich": enrich_text}
 
     def __repr__(self):
         return f"NPCManager({len(self._npcs)} NPCs)"

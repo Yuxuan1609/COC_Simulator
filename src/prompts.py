@@ -186,7 +186,12 @@ def _build_scene_state(snap: dict) -> str:
         parts.append(f"  环境：{'/'.join(env_labels)}")
     npcs = snap.get("npcs_in_scene", [])
     if npcs:
-        parts.append(f"  NPC：{'、'.join(n['name'] for n in npcs)}")
+        npc_bits = [
+            f"{n['name']}（{n['attitude']}）" if n.get("attitude") else n["name"]
+            for n in npcs
+        ]
+        parts.append(f"  NPC：{'、'.join(npc_bits)}")
+        parts.append("  按态度决定透露与采信")
     enemies = snap.get("enemies_in_scene", [])
     if enemies:
         parts.append(f"  敌人：{'、'.join(e['enemy_ref'] for e in enemies)}")
