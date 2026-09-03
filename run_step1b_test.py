@@ -37,7 +37,7 @@ result = call_deepseek(
     prompt,
     json_mode=False,
     system=STEP1B_SYSTEM,
-    model="deepseek-v4-flash",
+    model="deepseek-v4-flash-vision-exp",
     reasoning_effort="max",
 )
 

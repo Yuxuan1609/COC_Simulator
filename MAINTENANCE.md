@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | 模型名：`deepseek-v4-pro` / `deepseek-v4-flash` 统一为 `deepseek-v4-flash-vision-exp`（config_llm.template / config.DEGRADE_POLICY / llm 默认注释 / launcher+character / run_pipeline VALID_MODELS / run_step0+step1b / e2e harness+escalation+run_scenario / stress_profile）。`src/config_llm.py` gitignore 本地同步。历史 spec 不改。 |
 | 2026-09-03 | NPC 专项收口：ISSUES F27/F26/F29 入 §5（F1 给予仍 F28）；簇评估 §10 回写 attitude_min / `@attitude_change` / `npc_dead:` 运行时已落地、生成 prompt 不改——暂无生产端。函数表行号 grep 实测对齐（scenario_core / keeper / npc_manager / rules / combat / prompts / judge / side_effects）。零产品代码。 |
 | 2026-09-03 | N4 review：`npc_dead:` 对 `parse_hard_requirement` 可见。`_extract_entity_id` 认 `npc_dead:` 前缀为 runtime_state 全键（不再被 `_ENTITY_ID_PATTERN` 拒识后 grace-pass True）；`_build_entity_lines` 经 `are_entity_requirements_met` 同路径，NPC 存活时死亡 AT 进暂不可触发。Judge `_evaluate_requirement` npc_dead 特判改为调 `parse_hard_requirement`（仍短路，避免后续 grace True）。TDD：tests/test_npc_attitude.py +3。scenario_core 2128→2130 / judge 600 行不变。 |
 | 2026-09-03 | N4 Task 5 NPC 死亡扫 AT：`set_state(name, state, world=None)` 在 state==dead 时写 `runtime_state["npc_dead:"+name]=NodeRuntimeState(completed=True)`（world 参数或 `NPCManager._world`）；`NPCManager(world=)` 由 ScenarioWorld.__init__/load_state 注入；`apply_side_effects` NPCStateChange / `set_npc_state` 传 world=。Judge `_is_simple_requirement` 认 `npc_dead:`/`flag:`；`_evaluate_requirement` 查 runtime_state 全键。不在 set_state 内调 check_auto_triggers。TDD：tests/test_npc_attitude.py +4。npc_manager 401→410 / judge 592→600 / scenario_core 2128 行不变。 |

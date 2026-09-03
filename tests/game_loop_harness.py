@@ -105,7 +105,7 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
 
     # Step 1: Parse
     parse_prompt = build_keeper_parse_prompt(world, raw)
-    parse_response = call_deepseek(parse_prompt, json_mode=True, model="deepseek-v4-flash",
+    parse_response = call_deepseek(parse_prompt, json_mode=True, model="deepseek-v4-flash-vision-exp",
                                     fallback_schema={"actions": []})
     parse_data = json.loads(parse_response) if isinstance(parse_response, str) else parse_response
     parse_actions = parse_data.get("actions", [])
@@ -205,7 +205,7 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
     emphasis = ""
     if judged_entities:
         enrich_prompt = build_keeper_enrich_prompt(world, judged_entities, raw)
-        enrich_response = call_deepseek(enrich_prompt, json_mode=True, model="deepseek-v4-flash",
+        enrich_response = call_deepseek(enrich_prompt, json_mode=True, model="deepseek-v4-flash-vision-exp",
                                          fallback_schema={"results": {}, "reasoning": "",
                                                           "emphasis_hint": ""})
         enrichment = json.loads(enrich_response) if isinstance(enrich_response, str) else enrich_response
@@ -246,7 +246,7 @@ def run_turn_with_log(game, user_input: str, case_dir: str, turn_num: int) -> di
     with open(os.path.join(turn_dir, "04_narrator_prompt.txt"), "w", encoding="utf-8") as f:
         f.write(narrator_prompt)
 
-    narrative_response = call_deepseek(narrator_prompt, json_mode=True, model="deepseek-v4-flash",
+    narrative_response = call_deepseek(narrator_prompt, json_mode=True, model="deepseek-v4-flash-vision-exp",
                                         fallback_schema={"brief": "", "narrative": "", "scene_update": ""})
     narrative_brief, narrative, scene_update = parse_narrative_output(narrative_response)
     if scene_update:

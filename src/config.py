@@ -66,18 +66,18 @@ LLM_SLOW_RATE_THRESHOLD = 0.5
 
 DEGRADE_POLICY: dict[str, dict] = {
     "keeper": {
-        "fallback_model": "deepseek-v4-flash",
+        "fallback_model": "deepseek-v4-flash-vision-exp",
         "skip_enrich": True,
         "skip_combat_entry": True,
         "skip_intent_detect": True,
     },
     "narrator": {
-        "fallback_model": "deepseek-v4-flash",
+        "fallback_model": "deepseek-v4-flash-vision-exp",
         "thinking": False,
         "reasoning_effort": "low",
     },
     "author": {
-        "fallback_model": "deepseek-v4-flash",
+        "fallback_model": "deepseek-v4-flash-vision-exp",
         "reject_all_structural": True,
     },
     "time_agent": {

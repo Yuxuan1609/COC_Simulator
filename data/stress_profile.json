@@ -26,7 +26,7 @@
     "max_turns": 60,
     "max_duration_s": 1800,
     "memory_compress_interval": 5,
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-v4-flash-vision-exp",
     "reasoning_effort": "low",
     "module_name": "常暗之厢_0531"
   },

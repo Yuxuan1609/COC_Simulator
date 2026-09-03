@@ -138,7 +138,7 @@ def call_deepseek(
     统一 DeepSeek 调用入口。
     json_mode=True  → 返回解析后的 dict（用于结构化判定）
     json_mode=False → 返回原始文本（用于叙事生成/压缩）
-    model: 模型名称，None 时默认 "deepseek-v4-pro"
+    model: 模型名称，None 时默认 LLM_DEFAULT_MODEL
     thinking: 是否启用思考模式，None 时默认 True
     reasoning_effort: 推理强度 ("low"/"medium"/"high")，None 时默认 "high"
     temperature: 温度参数，None 时 json_mode 默认 0.3，非 json_mode 默认 0.7

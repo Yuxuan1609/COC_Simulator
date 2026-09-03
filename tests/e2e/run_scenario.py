@@ -86,7 +86,7 @@ def build_profile(scn: dict) -> dict:
             "max_turns": int(scn.get("max_turns", 10)),
             "max_duration_s": int(scn.get("max_duration_s", 900)),
             "memory_compress_interval": 5,
-            "model": scn.get("player_model", "deepseek-v4-flash"),
+            "model": scn.get("player_model", "deepseek-v4-flash-vision-exp"),
             "module_name": scn["module"],
         },
     }

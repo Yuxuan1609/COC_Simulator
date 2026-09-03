@@ -293,7 +293,7 @@ def _setup_llm_logging(log_dir):
         _log_text(log_dir, f"{label}_response.{ext}",
                   response if isinstance(response, str) else json.dumps(response, ensure_ascii=False, indent=2))
         _log_json(log_dir, f"{label}_meta.json", {
-            "model": model or "deepseek-v4-pro",
+            "model": model or "deepseek-v4-flash-vision-exp",
             "reasoning_effort": reasoning_effort or "default",
             "json_mode": json_mode,
             "call_order": call_num,

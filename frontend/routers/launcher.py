@@ -16,10 +16,10 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 DEFAULT_CONFIG = {
-    "model": "deepseek-v4-pro",
+    "model": "deepseek-v4-flash-vision-exp",
     "thinking": True,
     "reasoning_effort": "high",
-    "flash_model": "deepseek-v4-flash",
+    "flash_model": "deepseek-v4-flash-vision-exp",
     "llm_timeout_ms": 120000,
     "llm_slow_threshold_ms": 30000,
     "combat_llm_enhancement": False,
@@ -71,7 +71,7 @@ async def save_config(
     model: str = Form(...),
     thinking: str = Form("off"),
     reasoning_effort: str = Form("high"),
-    flash_model: str = Form("deepseek-v4-flash"),
+    flash_model: str = Form("deepseek-v4-flash-vision-exp"),
     llm_timeout_ms: int = Form(120000),
     llm_slow_threshold_ms: int = Form(30000),
     combat_llm_enhancement: str = Form("off"),

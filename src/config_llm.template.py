@@ -19,10 +19,10 @@ LLM_API_KEY_ENV = "DEEPSEEK_API_KEY"
 # 模型选择
 # ═══════════════════════════════════════════════════════════════
 
-LLM_DEFAULT_MODEL = "deepseek-v4-pro"
+LLM_DEFAULT_MODEL = "deepseek-v4-flash-vision-exp"
 """主模型：用于 Keeper Parse、Narrator、Author 等核心调用。"""
 
-LLM_FLASH_MODEL = "deepseek-v4-flash"
+LLM_FLASH_MODEL = "deepseek-v4-flash-vision-exp"
 """轻量模型：用于 CombatEntry、TimeAgent、Enrich、Standoff 等高频调用。"""
 
 

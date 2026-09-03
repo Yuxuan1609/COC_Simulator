@@ -165,7 +165,7 @@ def run_step0(input_path: str, output_path: str | None = None):
         prompt,
         json_mode=False,
         system=STEP0_SYSTEM,
-        model="deepseek-v4-pro",
+        model="deepseek-v4-flash-vision-exp",
         reasoning_effort="max",
         temperature=0.3,
         max_tokens=162840,

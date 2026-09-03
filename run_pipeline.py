@@ -153,7 +153,7 @@ from library.bosses import BossLibrary
 #  PipelineConfig
 # ═══════════════════════════════════════════════════════════════
 
-VALID_MODELS = ("deepseek-v4-pro", "deepseek-v4-flash")
+VALID_MODELS = ("deepseek-v4-flash-vision-exp",)
 VALID_REASONING_EFFORT = ("low", "medium", "high", "max")
 VALID_START_FROM = (
     "step_1", "step_2a", "step_2bc", "step_3a", "step_3b",
@@ -190,10 +190,10 @@ class PipelineConfig:
     skill_checks_path: str = "data/skill_checks.json"
 
     # ── 模型 ──
-    json_model: str = "deepseek-v4-pro"
-    #   合法值: deepseek-v4-pro | deepseek-v4-flash
+    json_model: str = "deepseek-v4-flash-vision-exp"
+    #   合法值: deepseek-v4-flash-vision-exp
     #   JSON 模式（结构化提取/判定）使用此模型
-    text_model: str = "deepseek-v4-pro"
+    text_model: str = "deepseek-v4-flash-vision-exp"
     #   合法值: 同 json_model
     #   文本模式（精修叙事）使用此模型
     thinking_enabled: bool = True
