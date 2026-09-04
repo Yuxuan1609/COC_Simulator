@@ -775,7 +775,8 @@ def combat_turn_loop(cs: CombatSystem, combat_init: CombatInit, player_weapons: 
                         getattr(combat_init, 'player_extra', '') or '', inv_context
                     )
                     new_dmg = max(0, corrected.get("damage", old_dmg))
-                    state.player_hp = max(0, state.player_hp + old_dmg - new_dmg)
+                    player.derived.HP = max(0, player.derived.HP + old_dmg - new_dmg)
+                    state.player_hp = player.derived.HP
                     ea_data["damage"] = new_dmg
                     if new_dmg != old_dmg:
                         print(f"     ⚡ LLM修正({getattr(enemy, 'enemy_ref', '?')}): 伤害 {old_dmg} → {new_dmg}")

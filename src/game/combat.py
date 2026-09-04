@@ -359,7 +359,8 @@ class CombatSystem:
                             enemy, ea_data, player, player_extra, inv_context
                         )
                         new_dmg = max(0, corrected.get("damage", old_dmg))
-                        state.player_hp = max(0, state.player_hp + old_dmg - new_dmg)
+                        player.derived.HP = max(0, player.derived.HP + old_dmg - new_dmg)
+                        state.player_hp = player.derived.HP
                         ea_data["damage"] = new_dmg
                         if corrected.get("narrative"):
                             ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
@@ -547,7 +548,8 @@ class CombatSystem:
                     corrected = self._llm_correct_enemy_round(
                         enemy, ea_data, player, player_extra, inv_context)
                     new_dmg = max(0, corrected.get("damage", old_dmg))
-                    state.player_hp = max(0, state.player_hp + old_dmg - new_dmg)
+                    player.derived.HP = max(0, player.derived.HP + old_dmg - new_dmg)
+                    state.player_hp = player.derived.HP
                     ea_data["damage"] = new_dmg
                     if corrected.get("narrative"):
                         ea_data["effects"] = ea_data.get("effects", []) + [corrected["narrative"]]
@@ -984,6 +986,7 @@ class CombatSystem:
                         if delta:
                             player.derived.HP = min(player.derived.HP_MAX,
                                                     player.derived.HP + delta)
+                            state.player_hp = player.derived.HP
                             action.narrative += f" 你恢复了 {delta} 点 HP。"
                     elif t == "mp_change":
                         d = int(atom.get("delta", 0) or 0)
@@ -998,6 +1001,7 @@ class CombatSystem:
                             if effs:
                                 apply_side_effects(self.world, effs)
                                 state.player_san = player.derived.SAN
+                                state.player_hp = player.derived.HP
                         else:
                             import logging
                             logging.getLogger("game.combat").warning(
@@ -1239,8 +1243,9 @@ class CombatSystem:
                 floor = int(get_game_config()["buff_damage_floor"])
                 damage = max(floor, damage - reduce_total)
             action.damage = damage
-            action.hp_before = state.player_hp
-            state.player_hp = max(0, state.player_hp - damage)
+            action.hp_before = player.derived.HP
+            player.derived.HP = max(0, player.derived.HP - damage)
+            state.player_hp = player.derived.HP
             action.hp_after = state.player_hp
             action.narrative = f"{enemy_label}用{attack_name}击中了你！造成{damage}点伤害。"
             # 被攻击情境 SAN check(库 san_loss 含"被攻击"组时;2026-08-26 遭遇通路;
@@ -1285,6 +1290,7 @@ class CombatSystem:
                     try:
                         apply_effect_payload(self.world, t.get("payload") or [],
                                              source=f"{t.get('id', '')}：")
+                        state.player_hp = wp.derived.HP
                     except Exception:
                         logging.getLogger("scenario_core").exception(
                             "[F10] payload 结算失败: %s", t.get("id"))

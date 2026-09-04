@@ -505,23 +505,24 @@ class TestCombatBuff:
         """必中敌人(attributes DEX/POW=200)+ 满 HP 玩家 state(伤害靠 monkeypatch 固定)。"""
         enemy = _TestEnemy("甲兽", hp=20, armor="0", instance_id="E_BUFF")
         enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        inv = _make_investigator(hp=20)
         state = CombatState(enemies=[enemy])
-        state.player_hp = 20
-        state.player_hp_max = 20
+        state.player_hp = inv.derived.HP
+        state.player_hp_max = inv.derived.HP_MAX
         state.temporary_effects = temporary_effects or []
-        return CombatSystem(), state, enemy
+        return CombatSystem(), state, enemy, inv
 
     def test_buff_reduces_incoming_damage(self, monkeypatch):
         import game.combat as combat_mod
         monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
         # 无 buff 对照:全额 7
-        cs, state, enemy = self._env()
-        act_plain = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        cs, state, enemy, inv = self._env()
+        act_plain = cs._resolve_enemy_action(state, enemy, inv)
         assert act_plain.success and act_plain.damage == 7
         assert state.player_hp == 20 - 7
         # 有 buff(reduce=3):7-3=4
-        cs2, state2, enemy2 = self._env([{"id": "B", "reduce": 3, "rounds": 3}])
-        act_buff = cs2._resolve_enemy_action(state2, enemy2, _make_investigator())
+        cs2, state2, enemy2, inv2 = self._env([{"id": "B", "reduce": 3, "rounds": 3}])
+        act_buff = cs2._resolve_enemy_action(state2, enemy2, inv2)
         assert act_buff.success
         assert act_buff.damage == 4, "总减免 3:伤害 7-3=4"
         assert state2.player_hp == 20 - 4, "扣血按减免后伤害"
@@ -532,39 +533,39 @@ class TestCombatBuff:
         import investigator.rules as rules_mod
         monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 5)
         # 默认 floor=0:reduce=99 -> 伤害 0
-        cs, state, enemy = self._env([{"id": "B", "reduce": 99, "rounds": 1}])
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        cs, state, enemy, inv = self._env([{"id": "B", "reduce": 99, "rounds": 1}])
+        act = cs._resolve_enemy_action(state, enemy, inv)
         assert act.success and act.damage == 0
         assert state.player_hp == 20, "floor=0 时减穿归零"
         # floor=1:至少扣 1
         monkeypatch.setattr(rules_mod, "get_game_config",
                             lambda: {"buff_damage_floor": 1})
-        cs2, state2, enemy2 = self._env([{"id": "B", "reduce": 99, "rounds": 1}])
-        act2 = cs2._resolve_enemy_action(state2, enemy2, _make_investigator())
+        cs2, state2, enemy2, inv2 = self._env([{"id": "B", "reduce": 99, "rounds": 1}])
+        act2 = cs2._resolve_enemy_action(state2, enemy2, inv2)
         assert act2.success and act2.damage == 1, "floor 可配:减穿后取 floor=1"
         assert state2.player_hp == 20 - 1
 
     def test_buff_rounds_decay_and_expire(self, monkeypatch):
         import game.combat as combat_mod
         monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
-        cs, state, enemy = self._env([{"id": "B", "reduce": 3, "rounds": 2}])
+        cs, state, enemy, inv = self._env([{"id": "B", "reduce": 3, "rounds": 2}])
         cs._tick_temporary_effects(state)
         assert state.temporary_effects == [{"id": "B", "reduce": 3, "rounds": 1}], \
             "轮末 rounds-1,rounds=1 仍在"
         cs._tick_temporary_effects(state)
         assert len(state.temporary_effects) == 0, "rounds 归零移除"
         # 移除后伤害全额(对照)
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        act = cs._resolve_enemy_action(state, enemy, inv)
         assert act.success and act.damage == 7, "buff 过期后不再减免"
         assert state.player_hp == 20 - 7
 
     def test_multiple_buffs_stack_reduce(self, monkeypatch):
         import game.combat as combat_mod
         monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 9)
-        cs, state, enemy = self._env([
+        cs, state, enemy, inv = self._env([
             {"id": "B1", "reduce": 2, "rounds": 3},
             {"id": "B2", "reduce": 3, "rounds": 3}])
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        act = cs._resolve_enemy_action(state, enemy, inv)
         assert act.success
         assert act.damage == 9 - 5, "两个 buff 减免叠加:2+3=5"
         assert state.player_hp == 20 - (9 - 5)
@@ -579,18 +580,19 @@ class TestCombatControl:
         enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
         if controlled_rounds is not None:
             enemy.controlled_rounds = controlled_rounds
+        inv = _make_investigator(hp=20)
         state = CombatState(enemies=[enemy])
-        state.player_hp = 20
-        state.player_hp_max = 20
-        return CombatSystem(), state, enemy
+        state.player_hp = inv.derived.HP
+        state.player_hp_max = inv.derived.HP_MAX
+        return CombatSystem(), state, enemy, inv
 
     def test_controlled_enemy_skips_action(self, monkeypatch):
         import game.combat as combat_mod
         monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
         # 被控制(controlled_rounds=2):跳过行动,不掷骰不伤害不消耗 dodge
-        cs, state, enemy = self._env(controlled_rounds=2)
+        cs, state, enemy, inv = self._env(controlled_rounds=2)
         state._player_dodging = True
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        act = cs._resolve_enemy_action(state, enemy, inv)
         assert act.success is False, "被支配敌人无攻击检定,success=False"
         assert "无法动弹" in act.narrative and "傀儡兽" in act.narrative, \
             "叙事含'被无形的力量攫住,无法动弹'且带敌人标签"
@@ -599,24 +601,24 @@ class TestCombatControl:
         assert state._player_dodging is True, "跳过路径不消耗 _player_dodging"
         assert enemy.controlled_rounds == 2, "跳过本身不递减(递减只在轮末 _tick)"
         # 对照:无 control 时同一敌人必中(DEX/POW=200)造成伤害
-        cs2, state2, enemy2 = self._env()
-        act2 = cs2._resolve_enemy_action(state2, enemy2, _make_investigator())
+        cs2, state2, enemy2, inv2 = self._env()
+        act2 = cs2._resolve_enemy_action(state2, enemy2, inv2)
         assert act2.success and act2.damage == 7, "无 control 正常命中掷骰"
         assert state2.player_hp == 20 - 7, "无 control 正常扣血"
 
     def test_control_decays_via_tick(self):
-        cs, state, enemy = self._env(controlled_rounds=1)
-        act_before = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        cs, state, enemy, inv = self._env(controlled_rounds=1)
+        act_before = cs._resolve_enemy_action(state, enemy, inv)
         assert "无法动弹" in act_before.narrative, "前置:控制期内跳过行动"
         cs._tick_temporary_effects(state)
         assert enemy.controlled_rounds == 0, "轮末递减 1->0,恢复行动"
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        act = cs._resolve_enemy_action(state, enemy, inv)
         assert "无法动弹" not in act.narrative, "归零后走正常行动路径"
         assert act.success and act.roll >= 1, "恢复正常掷骰且必中(DEX/POW=200)"
 
     def test_controlled_skip_round_narrative_not_miss(self):
-        cs, state, enemy = self._env(controlled_rounds=2)
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        cs, state, enemy, inv = self._env(controlled_rounds=2)
+        act = cs._resolve_enemy_action(state, enemy, inv)
         state.log = [act]
         from game.messages import CombatInit
         result = cs._build_single_round_result(
@@ -627,9 +629,9 @@ class TestCombatControl:
         assert "无法动弹" in text or "无法行动" in text
 
     def test_uncontrolled_enemy_acts_normally(self):
-        cs, state, enemy = self._env()   # 无 controlled_rounds 属性的普通敌人
+        cs, state, enemy, inv = self._env()   # 无 controlled_rounds 属性的普通敌人
         assert not hasattr(enemy, "controlled_rounds"), "前置:普通敌人无该属性"
-        act = cs._resolve_enemy_action(state, enemy, _make_investigator())
+        act = cs._resolve_enemy_action(state, enemy, inv)
         assert act.success and act.roll >= 1, "getattr 默认 0,正常掷骰命中"
         assert "无法动弹" not in act.narrative, "叙事走常规命中文案"
         assert act.damage >= 1, "正常路径造成伤害(1D6)"
@@ -801,10 +803,10 @@ class TestSanCheckWiring:
         enemy = _TestEnemy("深潜者", hp=20, armor="0", instance_id="E_ATK",
                            san_loss="0/1D4 (目睹), 1/1D6 (被攻击)")
         enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        inv = _make_investigator(hp=20, san=50)
         state = CombatState(enemies=[enemy])
-        state.player_hp = 20
-        state.player_hp_max = 20
-        inv = _make_investigator(san=50)
+        state.player_hp = inv.derived.HP
+        state.player_hp_max = inv.derived.HP_MAX
         state.player_san = inv.derived.SAN
         act = CombatSystem()._resolve_enemy_action(state, enemy, inv)
         assert act.success, "DEX/POW=200 必中"
@@ -837,12 +839,12 @@ class TestSanCheckWiring:
         enemy = _TestEnemy("幽灵", hp=20, armor="0", instance_id="E_NOATK",
                            san_loss="0/1D4 (目睹)")
         enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        inv = _make_investigator(hp=20, san=50)
         state = CombatState(enemies=[enemy])
-        state.player_hp = 20
-        state.player_hp_max = 20
-        state.player_san = 50
-        act = CombatSystem()._resolve_enemy_action(state, enemy,
-                                                   _make_investigator())
+        state.player_hp = inv.derived.HP
+        state.player_hp_max = inv.derived.HP_MAX
+        state.player_san = inv.derived.SAN
+        act = CombatSystem()._resolve_enemy_action(state, enemy, inv)
         assert act.success, "DEX/POW=200 必中"
         assert "理智检定" not in act.narrative, "无被攻击组不得追加 check"
         assert state.player_san == 50
@@ -917,6 +919,78 @@ class TestCombatSanSingleTrack:
         assert state.player_san == player.derived.SAN, "镜像必须一致"
 
 
+class TestCombatHpSingleTrack:
+    """B21: 战斗 HP 单轨——derived.HP 为唯一轨道,state.player_hp 实时镜像;
+    施法 heal / markup HP 不得被战斗结束写回(game_loop 模式)隐式吞掉。"""
+
+    def _spell_lib(self, effect=None):
+        from library.spells import SpellLibrary, LibrarySpell
+        lib = SpellLibrary()
+        lib._spells["X"] = LibrarySpell.from_dict({
+            "id": "X", "name": "试咒", "category": "combat",
+            "cost": {"mp": 1, "san": 0},
+            "check": {"skill": "POW", "type": "regular"},
+            "effect": effect or []})
+        return lib
+
+    def _caster(self, hp=12):
+        inv = _make_investigator(hp=hp, san=60, mp=14)
+        inv.skills.append(Skill(name="POW", base_value=50, value=200, category="属性"))
+        inv.known_spells = ["X"]
+        return inv
+
+    def test_heal_survives_writeback(self):
+        """heal 原子:写回后不得吞掉(9 +3 -> 12)。"""
+        inv = self._caster(hp=12)
+        inv.derived.HP = 9
+        cs = CombatSystem(spell_lib=self._spell_lib(
+            [{"type": "heal", "target": "self", "delta": 3}]))
+        state = CombatState()
+        state.player_hp = 9
+        act = cs._resolve_player_action(state, inv, "cast_X", "")
+        assert act.success, f"POW=200 必过: {act.narrative}"
+        inv.derived.HP = max(0, state.player_hp)
+        assert inv.derived.HP == 12, \
+            f"heal +3 须在写回后保留,实际 {inv.derived.HP}"
+
+    def test_markup_hp_change_survives_writeback(self):
+        """markup 原子改 HP:写回后不得丢失(9 +3 -> 12)。"""
+        import os as _os
+        sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "e2e"))
+        from helpers import make_world, make_scene
+        inv = self._caster(hp=12)
+        inv.derived.HP = 9
+        world = make_world({"room_a": make_scene()}, "room_a")
+        world.set_player(inv)
+        cs = CombatSystem(spell_lib=self._spell_lib(
+            [{"type": "markup",
+              "text": '@stat_change(stat_name="HP", delta=3)'}]),
+            world=world)
+        state = CombatState()
+        state.player_hp = 9
+        act = cs._resolve_player_action(state, inv, "cast_X", "")
+        assert act.success
+        inv.derived.HP = max(0, state.player_hp)
+        assert inv.derived.HP == 12, \
+            f"markup HP+3 须在写回后保留,实际 {inv.derived.HP}"
+
+    def test_enemy_damage_mirrored_to_derived_hp(self, monkeypatch):
+        """敌方伤害立即落到 derived.HP(单轨),state.player_hp 镜像一致。"""
+        import game.combat as combat_mod
+        monkeypatch.setattr(combat_mod, "_roll_damage", lambda *a, **k: 7)
+        enemy = _TestEnemy("甲兽", hp=20, armor="0", instance_id="E_HP_M")
+        enemy.attributes = {"DEX": 200, "POW": 200, "STR": 50, "SIZ": 50}
+        inv = _make_investigator(hp=20)
+        state = CombatState(enemies=[enemy])
+        state.player_hp = 20
+        state.player_hp_max = 20
+        act = CombatSystem()._resolve_enemy_action(state, enemy, inv)
+        assert act.success and act.damage == 7
+        assert inv.derived.HP == 13, \
+            f"伤害须立即扣 derived.HP,实际 {inv.derived.HP}"
+        assert state.player_hp == inv.derived.HP, "镜像必须一致"
+
+
 class TestEnemyAttackSkillValue:
     """F13: 敌人 attack.skill_value 断链接通。库字段优先,缺省回退 (DEX+POW)//2。"""
 
@@ -928,9 +1002,10 @@ class TestEnemyAttackSkillValue:
                            attacks=[{"name": "爪击", "skill_name": "格斗",
                                      "skill_value": skill_value, "damage": "1D3"}])
         enemy.attributes = {"DEX": dex, "POW": pow_, "STR": 50, "SIZ": 50}
+        inv = _make_investigator(hp=20)
         state = CombatState(enemies=[enemy])
-        state.player_hp = 20
-        return CombatSystem()._resolve_enemy_action(state, enemy, _make_investigator())
+        state.player_hp = inv.derived.HP
+        return CombatSystem()._resolve_enemy_action(state, enemy, inv)
 
     def test_reads_attack_skill_value(self, monkeypatch):
         act = self._act(monkeypatch, roll=30, skill_value=20, dex=50, pow_=50)
@@ -997,11 +1072,11 @@ class TestSanWitnessDedup:  # F9: 目睹全局去重 + 被攻击场内去重
                            san_loss="0/2 (目睹), 1/3 (被攻击)",
                            attacks=[{"name": "爪击", "skill_name": "格斗",
                                      "skill_value": 99, "damage": "1D3"}])
+        player = _make_investigator(hp=20, san=60)
         state = CombatState(enemies=[enemy])
-        state.player_hp = 20
-        state.player_san = 60
+        state.player_hp = player.derived.HP
+        state.player_san = player.derived.SAN
         cs = CombatSystem()
-        player = _make_investigator(san=60)
         a1 = cs._resolve_enemy_action(state, enemy, player)
         a2 = cs._resolve_enemy_action(state, enemy, player)
         assert "恐惧侵蚀" in a1.narrative, "首次命中必须触发被攻击 check"

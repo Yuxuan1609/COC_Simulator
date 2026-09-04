@@ -26,7 +26,6 @@
 | # | 问题 | 修法/备注 |
 |---|------|----------|
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
-| B21 | **战斗 HP 双轨不同步**(B20 同类) | 战斗内 heal 原子直加 derived.HP(combat.py 施法 heal 分支),敌方伤害记 state.player_hp,战斗结束写回 derived.HP=cr.player_hp -> 战斗中施法回血被隐式吞掉。修法方向:与 B20 同法,HP 收敛单轨(derived.HP 唯一轨道,state.player_hp 镜像) |
 
 ### 🟢 Minor(攒一批顺手清)
 
@@ -101,6 +100,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-09-03 | **B21 战斗 HP 双轨不同步** | 单轨收敛：derived.HP 唯一轨道，state.player_hp 实时镜像。heal/markup HP 结算后镜像；敌方伤害与 LLM 修正扣 derived.HP 后镜像；F10 round payload 后镜像。写回变 no-op 保留。 |
 | 2026-09-03 | **F27 NPC 度量层 + F26 谎言/欺骗 + F29 死亡连锁** | NPC 专项运行时落地：F27/N1 attitude 双轨 + `@attitude_change` 双来源 + attitude_min/follow/敌意短路；F26/N3 talk_to 纯 LLM 策略（删「如实告知」/`process_npc_turn`）；F29/N4 `npc_dead:` AT 旗。F1 给予仍 F28。L2 schema 已加 optional `attitude_min`，生成 prompt 不改——**暂无生产端**。 |
 | 2026-09-02 | **F17 场景物品 + F19 环境修正** | S3-P3 运行时落地：F17 `scene_items`（hidden/exposed、搜索暴露、免费拾取/丢弃短路、废弃 weapon_offer）；F1 丢弃部分随 F17 落地（给予 NPC 仍 F28）。F19 场景 environment 两轴 + `env_check_modifiers` ±N + `@env_change` + prompt 知情行。L2 schema 字段已加，生成 prompt 不改——**暂无生产端**。 |
 | 2026-09-02 | **B20 战斗 SAN 双轨不同步** | 单轨收敛：derived.SAN 唯一轨道，state.player_san 实时镜像。witness/attacked 扣减改落 derived.SAN 后镜像；cast 扣减与 markup 原子结算后补镜像；写回变 no-op。同类 HP 问题另记 B21。 |

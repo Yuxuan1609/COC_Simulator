@@ -1238,6 +1238,7 @@ class TestTimedAndCombatEffectsE2E:  # T13: spec §8 e2e 三场景
             f"石肤减免后伤害应为 7-3=4,实际 {act_e.damage}"
         assert state.player_hp == 20 - 4, "扣血按减免后伤害"
         # 对照:同一敌人/玩家干净 state(无 buff)全额 7
+        inv.derived.HP = 20
         state_c = self._fresh_state(cs, inv, enemy)
         act_c = cs._resolve_enemy_action(state_c, state_c.enemies[0], inv)
         assert act_c.success and act_c.damage == 7, "无 buff 全额伤害"

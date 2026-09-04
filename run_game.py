@@ -490,7 +490,8 @@ def _run_interactive_combat(game, combat_init) -> dict | None:
                     corrected = cs._llm_correct_enemy_round(
                         enemy, ea_data, player, player_extra, inv_context)
                     new_dmg = max(0, int(corrected.get("damage", ea.damage)))
-                    state.player_hp = max(0, state.player_hp + ea.damage - new_dmg)
+                    player.derived.HP = max(0, player.derived.HP + ea.damage - new_dmg)
+                    state.player_hp = player.derived.HP
                     ea.damage = new_dmg
 
         # 显示结果
