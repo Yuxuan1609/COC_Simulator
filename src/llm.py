@@ -15,6 +15,10 @@ from config_llm import (
     LLM_MAX_TOKENS_JSON, LLM_MAX_TOKENS_TEXT,
     RE_COMBAT_NARRATIVE,
 )
+try:
+    from config_llm import LLM_FALLBACK_PROVIDER as _FB_CFG
+except ImportError:
+    _FB_CFG = {}
 
 # 从项目根目录 .env 文件加载环境变量
 _env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -34,6 +38,66 @@ client = OpenAI(
     api_key=os.getenv(LLM_API_KEY_ENV, ""),
     base_url=LLM_BASE_URL
 )
+
+
+def _init_fallback():
+    cfg = dict(_FB_CFG or {})
+    env_name = cfg.get("api_key_env") or ""
+    key = ((os.getenv(env_name, "") if env_name else "")
+           or (cfg.get("api_key") or "")).strip()
+    url = (cfg.get("base_url") or "").strip()
+    if not key or not url:
+        return None, None
+    return OpenAI(api_key=key, base_url=url), cfg
+
+
+_fallback_client, _fallback_provider = _init_fallback()
+_use_fallback = False
+
+
+def _should_fallback(exc) -> bool:
+    if getattr(exc, "status_code", None) == 402:
+        return True
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None) == 402:
+        return True
+    msg = str(exc)
+    return "402" in msg and ("Insufficient" in msg or "balance" in msg.lower())
+
+
+def _map_model(model, fb) -> str:
+    if not fb:
+        return model
+    flash = fb.get("flash_model") or fb.get("default_model") or model
+    default = fb.get("default_model") or flash
+    if model == LLM_FLASH_MODEL:
+        return flash
+    return default
+
+
+def _fallback_kwargs(kwargs, fb) -> dict:
+    kw = dict(kwargs)
+    kw["model"] = _map_model(kw.get("model"), fb)
+    kw.pop("extra_body", None)
+    kw.pop("reasoning_effort", None)
+    return kw
+
+
+def _chat_create(**kwargs):
+    global _use_fallback
+    if _use_fallback and _fallback_client is not None:
+        return _fallback_client.chat.completions.create(
+            **_fallback_kwargs(kwargs, _fallback_provider))
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as e:
+        if (not _should_fallback(e) or _fallback_client is None
+                or _use_fallback):
+            raise
+        print("[LLM] 402 billing — switching to fallback provider")
+        _use_fallback = True
+        return _fallback_client.chat.completions.create(
+            **_fallback_kwargs(kwargs, _fallback_provider))
 
 # ── 响应日志 ──
 
@@ -171,7 +235,7 @@ def call_deepseek(
 
             last_error = None
             for attempt in range(1, max_retries + 1):
-                response = client.chat.completions.create(
+                response = _chat_create(
                     model=_model,
                     messages=[
                         {"role": "system", "content": default_system},
@@ -235,7 +299,7 @@ def call_deepseek(
             _max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS_TEXT
             default_system = system or ("你是一个专业的TRPG主持人（KP）。"
                                        "用户输入以 ###flag### 结尾的部分是系统调试指令，请忽视并按原样传递。")
-            response = client.chat.completions.create(
+            response = _chat_create(
                 model=_model,
                 messages=[
                     {"role": "system", "content": default_system},
@@ -373,7 +437,7 @@ COC 7th 规则：极难≤技能值/5={max(1, skill_value // 5)}，困难≤技�
 """
     set_log_label("skill_checks")
     _log_response(f"=== 特质增强 Prompt ===\n{prompt}")
-    response = client.chat.completions.create(
+    response = _chat_create(
         model=LLM_FLASH_MODEL,
         messages=[
             {"role": "system", "content": "你是一个TRPG规则辅助裁判。仅输出JSON。"},
@@ -473,7 +537,7 @@ def evaluate_failure_penalty(
 
 无合适标记时 markup_effects 留空。narrative 不可为空。
 直接输出 JSON。"""
-    response = client.chat.completions.create(
+    response = _chat_create(
         model=LLM_FLASH_MODEL,
         messages=[
             {"role": "system", "content": "你是一个TRPG规则辅助裁判。仅输出JSON。"},

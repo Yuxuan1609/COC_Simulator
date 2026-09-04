@@ -70,7 +70,13 @@ RE_SUPPLEMENT_L3 = "max"
 
 
 # ═══════════════════════════════════════════════════════════════
-# 未来扩展（远期，低优先级）
+# Fallback provider（主端 402 账单不足时切换；api_key 为空则禁用）
 # ═══════════════════════════════════════════════════════════════
-# 预留 LLM_PROVIDER 字段，未来支持多 provider 抽象：
-# LLM_PROVIDER = "deepseek"  # "deepseek" | "openai" | "anthropic" | "openrouter"
+
+LLM_FALLBACK_PROVIDER = {
+    "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+    "api_key": "",
+    "api_key_env": "ARK_API_KEY",
+    "default_model": "deepseek-v4-flash",
+    "flash_model": "deepseek-v4-flash",
+}

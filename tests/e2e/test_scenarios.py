@@ -160,6 +160,7 @@ class TestS2AmbiguousClarify:
 
 class TestS3WeaponOffer:
     @retry_once
+    @pytest.mark.real_llm_smoke
     def test_search_offer_then_pickup(self):
         """S3：搜索成功暴露隐藏武器 → 无 pending → 下回合直接拾取。
         action_type=search 跳过 parse；enrich/time_agent/narrator 仍真实。"""
@@ -843,6 +844,7 @@ class TestS20HostileNpcTalk:  # N1：敌意短路，真实 parse 后不调对话
     """S20：parse 真实（npc_interact）；talk_to 敌意短路不泄密。"""
 
     @retry_once
+    @pytest.mark.real_llm_smoke
     def test_hostile_npc_does_not_leak_secret(self):
         from game_loop import run_turn
         from game.messages import TurnStatus
@@ -935,5 +937,108 @@ class TestS22DeathAtParse:  # N4：死后真实 parse 可触发 npc_dead AT
             fired = world.is_entity_completed("AT_DEAD")
             assert fired or "线人" in text, \
                 f"死后 parse 应触发死讯或叙事提及线人: {text[:240]}"
+        finally:
+            stop()
+
+
+class TestS23N3AttitudeAudit:  # N3：五档态度透露策略，LLM rubric 审计汇报
+    """S23：同一密 + 同一问句，hostile/wary/neutral/friendly/devoted 各跑一回合。
+    硬断言只锁契约与敌意短路；透露梯度由审计 LLM 按 rubric 打分并打印，不挡 CI。"""
+
+    SECRET = "密室在钟楼地下第三层"
+    ASK = "我向线人打听密室的位置"
+    TIERS = ("hostile", "wary", "neutral", "friendly", "devoted")
+    RUBRIC = """N3 态度透露策略审计。密文是「密室在钟楼地下第三层」。
+档位预期（引擎 prompt 策略，非文学质量）：
+- hostile：机械短路驱赶，不得出现密文（none）
+- wary：套话/搪塞/反问，不得交出完整密文（none 或 hint）
+- neutral：可含糊其辞，不得主动交底完整密文（none/hint/最多 partial）
+- friendly：有限透露，允许地点线索但不要求完整密文（hint 或 partial）
+- devoted：信任交底，应出现完整密文或明确等价表述（full）
+梯度：敌意/警惕的披露等级不得高于友好/信任。
+对每档给出 disclosure∈{none,hint,partial,full} 与是否符合该档预期（pass）。"""
+
+    def _profile(self, attitude):
+        return {
+            "name": "线人", "scene": "room_a", "can_interact": True,
+            "attitude": attitude,
+            "what_they_can_do": self.SECRET,
+            "personality_notes": "对不信任的人嘴严，对信任的人会和盘托出。",
+        }
+
+    def _audit(self, rows, log_dir):
+        import json
+        from llm import call_deepseek
+        from config_llm import LLM_FLASH_MODEL
+        digest = "\n\n".join(
+            f"【{r['tier']}】contains_secret={r['contains_secret']}\n"
+            f"narrative:\n{r['text'][:500]}"
+            for r in rows)
+        system = (
+            "你是 TRPG 机制审计员。只评态度档位是否按 N3 策略透露密文，"
+            "不评文学。证据必须引自提供的 narrative。直接输出 JSON。"
+        )
+        user = f"""【判定标准 rubric】
+{self.RUBRIC}
+
+【五档跑团输出】
+{digest}
+
+输出 JSON：
+{{"items":[{{"tier":"hostile","disclosure":"none|hint|partial|full","pass":true,"evidence":"引用"}},...],
+ "gradient_ok":true,"reason":"50字以内"}}"""
+        fallback = {"items": [], "gradient_ok": False, "reason": "judge 调用异常"}
+        try:
+            response = call_deepseek(
+                user, json_mode=True, system=system,
+                model=LLM_FLASH_MODEL, reasoning_effort="max",
+                fallback_schema=fallback, max_retries=3, timeout=300)
+            data = json.loads(response) if isinstance(response, str) else response
+        except Exception as e:
+            data = {**fallback, "reason": f"judge 调用失败: {e}"}
+        path = os.path.join(log_dir, "n3_audit.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"rows": rows, "audit": data}, f, ensure_ascii=False, indent=2)
+        return data
+
+    @retry_once
+    def test_attitude_disclosure_audit(self):
+        from game_loop import run_turn
+        from game.messages import TurnStatus
+        log_dir = _scenario_log_dir("s23_n3_attitude")
+        stop = setup_llm_logging(log_dir)
+        try:
+            rows = []
+            for attitude in self.TIERS:
+                world = make_world(
+                    {"room_a": make_scene()}, "room_a",
+                    npc_profiles={"线人": self._profile(attitude)})
+                _player(world)
+                game = _real_game(world, _l1("room_a"))
+                r = run_turn(game, self.ASK)
+                assert_player_turn_contract(r)
+                assert r.status == TurnStatus.COMPLETED, \
+                    f"{attitude} status={r.status}"
+                text = f"{r.brief}\n{r.narrative}"
+                contains = self.SECRET in text
+                rows.append({"tier": attitude, "text": text,
+                             "contains_secret": contains})
+                if attitude == "hostile":
+                    assert "不愿理会" in text or "驱赶" in text, \
+                        f"敌意须短路: {text[:240]}"
+                    assert not contains, f"敌意不得泄密: {text[:240]}"
+
+            audit = self._audit(rows, log_dir)
+            items = {it.get("tier"): it for it in audit.get("items") or []}
+            print("\n=== S23 N3 态度透露审计 ===")
+            print(f"{'档位':<10} {'密文':<6} {'披露':<10} {'符合预期':<8} 证据")
+            for r in rows:
+                it = items.get(r["tier"], {})
+                print(f"{r['tier']:<10} {str(r['contains_secret']):<6} "
+                      f"{str(it.get('disclosure', '?')):<10} "
+                      f"{str(it.get('pass', '?')):<8} "
+                      f"{str(it.get('evidence', ''))[:80]}")
+            print(f"gradient_ok={audit.get('gradient_ok')}  {audit.get('reason', '')}")
+            print(f"audit log: {os.path.join(log_dir, 'n3_audit.json')}")
         finally:
             stop()

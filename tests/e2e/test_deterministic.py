@@ -1729,6 +1729,32 @@ class TestHostileNpcDialogueStub:
         assert_player_turn_contract(r)
         assert "不愿理会" in r.narrative or "驱赶" in r.narrative
 
+    def test_friendly_talk_calls_llm(self, monkeypatch):
+        from game_loop import run_turn
+        from game.agents.keeper import Keeper
+
+        world = make_world({"room_a": make_scene()}, "room_a",
+                           npc_profiles={"线人": {
+                               "name": "线人", "scene": "room_a",
+                               "can_interact": True,
+                               "attitude": "friendly"}})
+        keeper = Keeper(world)
+        stub_keeper_llm(keeper, monkeypatch,
+                        parse_results=[[{"type": "npc_interact",
+                                         "npc_name": "线人"}]])
+        calls = []
+
+        def _ok(*a, **k):
+            calls.append(1)
+            return "嗯，最近还好。"
+
+        monkeypatch.setattr("game.agents.keeper.call_deepseek", _ok)
+        game = make_game(keeper)
+        r = run_turn(game, "和线人说话")
+        assert_player_turn_contract(r)
+        assert calls, "非敌意 talk_to 必须调用 LLM"
+        assert "最近还好" in r.narrative
+
 
 class TestNpcDeathAtParsePath:
     """N4：死亡 AT 走 parse→adjudicate 主路径（非 check_auto_triggers 直调）。"""

@@ -10,6 +10,8 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-03 | LLM fallback provider：主端 402 切 Ark（`LLM_FALLBACK_PROVIDER`）。`_chat_create` 统一四路 completions；切后进程内 sticky。密钥只写 gitignore 的 `config_llm.py`；模板 `api_key=""`。TDD：tests/test_llm_provider.py 3 测。llm.py 514→579。 |
+| 2026-09-03 | N3 测试债 1/2/3：① stub `TestHostileNpcDialogueStub.test_friendly_talk_calls_llm`（非敌意必须调 LLM）。② smoke 扩 S3 拾取 + S20 敌意短路（pytest.ini 注释同步）。③ real_llm S23 五档态度（hostile/wary/neutral/friendly/devoted）同一密同一问，硬断言仅敌意短路+契约；审计 LLM 按 rubric 打 disclosure 梯度并打印/落盘 `n3_audit.json`，不挡 CI。默认套件 520 passed / 28 deselected + 1 既有 flaky。smoke/S23 本机 402 billing 未跑通。 |
 | 2026-09-03 | B21 战斗 HP 双轨单轨化：derived.HP 唯一轨道，state.player_hp 实时镜像。combat.py：heal 后镜像 @987 / markup 后镜像 HP @1004 / 敌方伤害扣 derived.HP+镜像 @1244-1248 / 自动战斗 LLM 修正两处 @362/@551 / F10 round payload 后镜像 @1293；run_game 交互 LLM 修正同口径。写回变 no-op 保留。TDD：TestCombatHpSingleTrack 3 测 RED→GREEN。ISSUES B21 入 §5。combat.py 1558→1565。默认套件 520 passed / 27 deselected。 |
 | 2026-09-03 | 测试补缺口：stub e2e `TestEnvModifierSearch` / `TestHostileNpcDialogueStub` / `TestNpcDeathAtParsePath`（5）；real_llm S20 敌意不泄密 / S21 黑暗搜索 / S22 死亡 AT parse（3 passed）。默认套件 517 passed / 27 deselected。 |
 | 2026-09-03 | 模型名：`deepseek-v4-pro` / `deepseek-v4-flash` 统一为 `deepseek-v4-flash-vision-exp`（config_llm.template / config.DEGRADE_POLICY / llm 默认注释 / launcher+character / run_pipeline VALID_MODELS / run_step0+step1b / e2e harness+escalation+run_scenario / stress_profile）。`src/config_llm.py` gitignore 本地同步。历史 spec 不改。 |
@@ -986,15 +988,20 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 
 ---
 
-## src/llm.py (514 行) — LLM 封装
+## src/llm.py (579 行) — LLM 封装
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `_init_sensor` | `()` | 延迟初始化 LLMSensor（避免 config 循环 import） | 48 |
-| `set_llm_log_dir` / `set_log_label` | — | 响应日志目录/当前 label | 62 / 70 |
-| `_log_response` | `(content, label=None)` | 响应写入 `<label>.txt` | 76 |
-| `_extract_json` | `(content) -> str` | markdown 块/花括号定位提取 JSON | 93 |
-| `call_deepseek` | `(prompt, *, json_mode=True, system=None, model=None, thinking=None, reasoning_effort=None, temperature=None, max_tokens=None, max_retries=3, fallback_schema=None, timeout=300.0, _label=None) -> dict\|str` | **统一 LLM 入口**：JSON 模式（重试+温度递减+fallback 兜底）/文本模式；内嵌传感器埋点；`_label` 规避并行日志竞态 | 123 |
+| `_init_fallback` | `()` | 从 `LLM_FALLBACK_PROVIDER` 建 OpenAI client；无 key/url 则禁用 | 43 |
+| `_should_fallback` | `(exc) -> bool` | 仅 402 / Insufficient Balance 才切 | 58 |
+| `_map_model` | `(model, fb) -> str` | 主模型名映射到 fallback default/flash | 68 |
+| `_fallback_kwargs` | `(kwargs, fb) -> dict` | 映射 model，剥 thinking/reasoning_effort | 78 |
+| `_chat_create` | `(**kwargs)` | 统一 completions：402 切 fallback 并 sticky | 86 |
+| `_init_sensor` | `()` | 延迟初始化 LLMSensor（避免 config 循环 import） | 112 |
+| `set_llm_log_dir` / `set_log_label` | — | 响应日志目录/当前 label | 126 / 134 |
+| `_log_response` | `(content, label=None)` | 响应写入 `<label>.txt` | 140 |
+| `_extract_json` | `(content) -> str` | markdown 块/花括号定位提取 JSON | 157 |
+| `call_deepseek` | `(prompt, *, json_mode=True, system=None, model=None, thinking=None, reasoning_effort=None, temperature=None, max_tokens=None, max_retries=3, fallback_schema=None, timeout=300.0, _label=None) -> dict\|str` | **统一 LLM 入口**：经 `_chat_create`；JSON 模式（重试+温度递减+fallback schema 兜底）/文本模式；内嵌传感器埋点；`_label` 规避并行日志竞态 | 187 |
 | `get_sensor` | `()` | 获取传感器 | 268 |
 | `evaluate_trait_enhancement` | `(inv_desc, skill_name, skill_detail, dice_roll, skill_value, entity_name, graded_tiers, search_context, player_input) -> dict` | 特质修正 sub-agent（虚拟骰子 ±20 逻辑；大成功/大失败保护；最多 1 级偏移校验） | 272 |
 | `evaluate_failure_penalty` | `(inv_desc, entity_name, skill_name, skill_detail, failure_tier, scene_context, graded_on_failure, retry_count) -> dict` | 失败惩罚 sub-agent（重试越多后果越重，可带 @markup_effects） | 421 |
@@ -1056,14 +1063,15 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `AUTOSAVE_ENABLED` / `AUTOSAVE_INTERVAL_SEC` / `AUTOSAVE_MAX_COPIES` / `AUTOSAVE_DIR` | 自动存档 |
 | `OFFLINE_INJECTION_ENABLED` / `RUNTIME_INJECTION_ENABLED` | 注入开关 |
 
-## src/config_llm.py (76 行) — LLM 后端配置（git 忽略；模板见 config_llm.template.py）
+## src/config_llm.py (~90 行) — LLM 后端配置（git 忽略；模板见 config_llm.template.py）
 
 | 常量 | 说明 |
 |------|------|
-| `LLM_BASE_URL` / `LLM_API_KEY_ENV` | API 端点 / Key 环境变量名 |
+| `LLM_BASE_URL` / `LLM_API_KEY_ENV` | 主 API 端点 / Key 环境变量名 |
 | `LLM_DEFAULT_MODEL` / `LLM_FLASH_MODEL` | 主模型 / 轻量模型 |
 | `LLM_THINKING_ENABLED` / `LLM_REASONING_EFFORT` / `LLM_TEMPERATURE_JSON` / `LLM_TEMPERATURE_TEXT` / `LLM_MAX_TOKENS_JSON` / `LLM_MAX_TOKENS_TEXT` | 默认生成参数 |
 | `RE_*` | 各调用点 reasoning_effort 覆盖（RE_KEEPER_PARSE="max" 等） |
+| `LLM_FALLBACK_PROVIDER` | 402 账单不足时切换：base_url / api_key / api_key_env / default_model / flash_model。模板 api_key 为空禁用；本地 config_llm.py 填 Ark |
 
 ## src/utils.py (232 行) — 通用工具
 
