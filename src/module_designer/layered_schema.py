@@ -37,6 +37,12 @@ L1_SCENE_SCHEMA = {
 
 L2_DIFFICULTIES = {"None", "regular", "hard", "extreme"}
 
+
+def _attitude_keys() -> tuple:
+    """态度档位从运行时 game_config 派生（单一事实源，禁复制字面量）。"""
+    from investigator.rules import get_game_config
+    return tuple(t["key"] for t in get_game_config()["npc_attitude_tiers"])
+
 L2_INTERACTION_SCHEMA = {
     "type": {"required": True},
     "name": {"required": True},
@@ -76,12 +82,36 @@ L2_NPC_PROFILE_SCHEMA = {
     "what_they_can_do": {"required": False},
     "interaction_triggers": {"required": False},
     "initial_state": {"required": False},
-    "initial_attitude": {"required": False},
+    "initial_attitude": {"required": False, "values": _attitude_keys()},
+    "attitude_value": {"required": False, "min": -100, "max": 100},
     "initial_following": {"required": False},
     "can_interact": {"required": False},
     "can_follow": {"required": False},
     "follow_requirements": {"required": False},
     "interact_requirements": {"required": False},
+    "scene": {"required": False},
+    "all_scenes": {"required": False},
+    "bound_interactions": {"required": False},
+    "bound_auto_triggers": {"required": False},
+}
+
+L2_SCHEDULED_EVENT_SCHEMA = {
+    "id": {"required": True},
+    "at_minutes": {"required": True},
+    "markup": {"required": False},
+    "description": {"required": False},
+}
+
+L2_SCENE_ITEM_SCHEMA = {
+    "kind": {"required": False, "values": ["item", "weapon"]},
+    "ref": {"required": False},
+    "quantity": {"required": False},
+    "hidden": {"required": False},
+}
+
+L2_ENVIRONMENT_SCHEMA = {
+    "lighting": {"required": False, "values": ["dark", "dim", "normal"]},
+    "noise": {"required": False, "values": ["quiet", "noisy"]},
 }
 
 L2_BOSS_ENCOUNTER_SCHEMA = {
@@ -102,8 +132,8 @@ L2_SCENE_SCHEMA = {
     "auto_triggers": {"required": False, "list_of": L2_AUTO_TRIGGER_SCHEMA},
     "encounters": {"required": False},
     "scene_weapons": {"required": False},
-    "scene_items": {"required": False},
-    "environment": {"required": False},
+    "scene_items": {"required": False, "list_of": L2_SCENE_ITEM_SCHEMA},
+    "environment": {"required": False, "nested": L2_ENVIRONMENT_SCHEMA},
     "extra": {"required": False},
 }
 
@@ -138,6 +168,7 @@ L3_SCENE_INTENT_SCHEMA = {
 
 L3_ENDING_CONDITION_SCHEMA = {
     "id": {"required": True},
+    "name": {"required": False},
     "condition": {"required": False},
     "narrative": {"required": False},
 }
@@ -250,6 +281,15 @@ def _validate_value(data: dict, field: str, rules: dict, path: str, report: Sche
                 "warning",
             )
 
+    # 数值范围检查
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "min" in rules and value < rules["min"]:
+            report.add(f"{path}.{field}",
+                       f"值 {value} 低于下限 {rules['min']}", "warning")
+        if "max" in rules and value > rules["max"]:
+            report.add(f"{path}.{field}",
+                       f"值 {value} 高于上限 {rules['max']}", "warning")
+
     # 嵌套对象检查
     if "nested" in rules and isinstance(value, dict):
         _validate_object(value, rules["nested"], f"{path}.{field}", report)
@@ -327,6 +367,19 @@ def validate_l2(data: dict) -> SchemaReport:
     if isinstance(boss_encounters, list):
         for i, be in enumerate(boss_encounters):
             _validate_object(be, L2_BOSS_ENCOUNTER_SCHEMA, f"L2.boss_encounters[{i}]", report)
+
+    # 验证 scheduled_events
+    scheduled = data.get("scheduled_events", [])
+    if scheduled:
+        if not isinstance(scheduled, list):
+            report.add("L2.scheduled_events", "scheduled_events 应为 list", "error")
+        else:
+            for i, ev in enumerate(scheduled):
+                if not isinstance(ev, dict):
+                    report.add(f"L2.scheduled_events[{i}]", "事件数据应为 dict", "error")
+                    continue
+                _validate_object(ev, L2_SCHEDULED_EVENT_SCHEMA,
+                                 f"L2.scheduled_events[{i}]", report)
 
     return report
 

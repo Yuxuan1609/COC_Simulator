@@ -29,8 +29,39 @@
           "trigger": "玩家对着刻有符号的墙壁低声说出「结束测试」时",
           "result": "##END_END_TEST:测试结局触发## 墙壁上的符号逐一亮起，又逐一熄灭。你感到意识被温柔地抽离——测试结束了。",
           "side_effects": [],
-          "difficulty": "",
+          "difficulty": "None",
           "time_condition": []
+        },
+        {
+          "id": "IT_RECHECK",
+          "scene": "测试房间A",
+          "type": "侦查",
+          "name": "复查墙壁刻痕",
+          "requirement": "",
+          "trigger": "玩家再次仔细检查墙壁刻痕时",
+          "result": "刻痕的排列似乎比记忆中多了一组。",
+          "side_effects": [],
+          "difficulty": "regular",
+          "time_condition": [],
+          "repeatable": true
+        },
+        {
+          "id": "IT_ASK_REPORT",
+          "scene": "测试房间A",
+          "type": "话术",
+          "name": "向乘务员索要血书情报",
+          "requirement": "",
+          "trigger": "玩家向测试乘务员打听血书的来历时",
+          "result": "##GRADED##",
+          "graded_result": {
+            "on_failure": "乘务员含糊地岔开了话题。",
+            "on_regular": "乘务员压低声音透露了血书的一部分内容。",
+            "on_hard": "乘务员把血书的来历和盘托出。",
+            "on_extreme": "乘务员不仅说出全部，还主动提出带路。"
+          },
+          "difficulty": "regular",
+          "time_condition": [],
+          "attitude_min": -30
         }
       ],
       "auto_triggers": [
@@ -71,6 +102,11 @@
         }
       ],
       "extra": {},
+      "scene_items": [
+        {"kind": "item", "ref": "一页撕碎的笔记", "quantity": 1, "hidden": true},
+        {"kind": "item", "ref": "蜡烛", "quantity": 1, "hidden": false}
+      ],
+      "environment": {"lighting": "dim"},
       "description": "一间不大的石室，墙角堆着几块松动的砖，一支蜡烛固定在墙龛里，火光映出墙上密密的符号。空气中有一丝若有若无的盐腥味。房间一角的地板上落着一把小刀，一扇石门通向测试房间B。"
     },
     "测试房间B": {
@@ -90,10 +126,23 @@
           "difficulty": "None",
           "scene": "测试房间B",
           "time_condition": []
+        },
+        {
+          "id": "AT_CORPSE_REACT",
+          "type": "无",
+          "name": "乘务员尸体异变",
+          "requirement": "npc_dead:测试乘务员",
+          "trigger": "测试乘务员死亡后玩家进入测试房间B",
+          "result": "乘务员的尸体不见了，地上拖着一道暗色的痕迹。",
+          "side_effects": [],
+          "difficulty": "None",
+          "scene": "测试房间B",
+          "time_condition": [{"day": ">=1", "times": ["夜间"]}]
         }
       ],
       "encounters": [],
       "scene_weapons": [],
+      "environment": {"noise": "noisy"},
       "from_here": [
         {
           "target": "测试房间A",
@@ -137,6 +186,7 @@
       ],
       "initial_state": "alive",
       "initial_attitude": "neutral",
+      "attitude_value": 10,
       "initial_following": false,
       "can_interact": true,
       "can_follow": true,
@@ -150,6 +200,14 @@
       "bound_auto_triggers": []
     }
   },
+  "scheduled_events": [
+    {
+      "id": "SE_NIGHT_CHILL",
+      "at_minutes": 60,
+      "markup": "@stat_change(stat_name=\"SAN\", delta=-1)",
+      "description": "入夜后石室温度骤降，调查员心神不宁"
+    }
+  ],
   "dependency_graph": {
     "nodes": {
       "IT_SEARCH": {

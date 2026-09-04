@@ -6,7 +6,8 @@
     "era": "现代",
     "theme": "机制测试",
     "expected_duration": "10分钟",
-    "player_count": 1
+    "player_count": 1,
+    "player_goal": "调查石室血书的来历，活着离开这座石室"
   },
   "world_rules": [
     {
@@ -35,6 +36,12 @@
       "name": "测试结局",
       "condition": "玩家在测试房间A对墙低语「结束测试」，触发 IT_END 交互。",
       "narrative": "墙上的符号逐一亮起又熄灭，意识被温柔抽离——测试结局触发成功，游戏结束。"
+    },
+    {
+      "id": "END_DEATH",
+      "name": "陨落结局",
+      "condition": "调查员 HP 降至 0 或 SAN 归零",
+      "narrative": "石室重归寂静，符号在墙上微微发亮，等待下一位访客。"
     }
   ],
   "tone_constraints": {

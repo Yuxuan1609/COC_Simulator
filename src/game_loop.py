@@ -250,6 +250,10 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     dep_graph = l2.get("dependency_graph", {})
     world.load_dependency_graph(dep_graph)
 
+    # F18 时刻事件：l2 顶层 scheduled_events 键入运行时队列
+    world.scheduled_events = [dict(e) for e in l2.get("scheduled_events", [])
+                              if isinstance(e, dict)]
+
     def _insanity_llm(prompt: str) -> str:
         from llm import call_deepseek
         from config_llm import LLM_FLASH_MODEL

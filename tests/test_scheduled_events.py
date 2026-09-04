@@ -117,3 +117,23 @@ class TestScheduledEvents:
         from scenario_core import ScenarioWorld
         restored = ScenarioWorld.load_state(path)
         assert restored.scheduled_events == events
+
+
+class TestScheduledEventsModuleLoad:
+    def test_init_game_loads_scheduled_events(self, tmp_path):
+        """l2 JSON 顶层 scheduled_events 键 → keeper.world.scheduled_events（断链修复）。"""
+        import json
+        import shutil
+        src_dir = os.path.join(os.path.dirname(__file__), '..', 'data',
+                               'modules', 'e2e_testbed')
+        mod = tmp_path / "mod"
+        shutil.copytree(src_dir, mod)
+        l2p = mod / "l2_keeper.json"
+        l2 = json.loads(l2p.read_text(encoding='utf-8'))
+        assert l2.get("scheduled_events"), "fixture 应先含 scheduled_events（Task 4）"
+        from game_loop import init_game
+        game = init_game(str(l2p), str(mod / "l1_player.json"),
+                         str(mod / "l3_designer.json"),
+                         start_node="测试房间A")
+        world = game["keeper"].world
+        assert any(e.get("id") == "SE_NIGHT_CHILL" for e in world.scheduled_events)

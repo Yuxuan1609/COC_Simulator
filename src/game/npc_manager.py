@@ -36,15 +36,6 @@ class NPC:
     extra: dict | None = None
 
 
-_ATTITUDE_MIDPOINTS = {
-    "hostile": -75,
-    "wary": -30,
-    "neutral": 0,
-    "friendly": 30,
-    "devoted": 75,
-}
-
-
 def attitude_tier(value: int) -> tuple[str, str]:
     value = max(-100, min(100, int(value)))
     from investigator.rules import get_game_config
@@ -58,7 +49,11 @@ def attitude_tier(value: int) -> tuple[str, str]:
 def _attitude_value_from_key(key: str | None) -> int:
     if not key:
         return 0
-    return _ATTITUDE_MIDPOINTS.get(key, 0)
+    from investigator.rules import get_game_config
+    for row in get_game_config()["npc_attitude_tiers"]:
+        if row.get("key") == key:
+            return int(row.get("mid", 0) or 0)
+    return 0
 
 
 def _resolve_profile_attitude_value(data: dict) -> int:

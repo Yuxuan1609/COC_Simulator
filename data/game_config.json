@@ -44,10 +44,10 @@
     "noisy": {"聆听": -20}
   },
   "npc_attitude_tiers": [
-    {"max": -50, "label": "敌意", "key": "hostile"},
-    {"max": -10, "label": "警惕", "key": "wary"},
-    {"max": 10, "label": "中立", "key": "neutral"},
-    {"max": 50, "label": "友好", "key": "friendly"},
-    {"max": null, "label": "信任", "key": "devoted"}
+    {"max": -50, "label": "敌意", "key": "hostile", "mid": -75},
+    {"max": -10, "label": "警惕", "key": "wary", "mid": -30},
+    {"max": 10, "label": "中立", "key": "neutral", "mid": 0},
+    {"max": 50, "label": "友好", "key": "friendly", "mid": 30},
+    {"max": null, "label": "信任", "key": "devoted", "mid": 75}
   ]
 }
