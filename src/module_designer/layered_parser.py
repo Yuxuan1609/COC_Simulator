@@ -395,6 +395,10 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
 - NPC互动是否生成 entity 的判断标准：entity 必须有可感知的游戏机制后果——技能检定、物品给予/消耗、属性变化、NPC状态变更（受伤/死亡等）、触发新的事件、场景永久性变化。单纯的NPC对话/交谈/打听消息（无机制后果的信息传递）不生成 entity，由运行时 NPC 对话系统处理。
 - **双路径 entity**：如果某个互动的结果或难度取决于前方某个关键事件的完成状态（如 NPC 是否已被救醒），可以为同一目标创建两个 entity：一个用于前置条件未满足时（更高难度或不同方式），一个用于前置条件已满足时（更低难度或 NPC 辅助）。两个 entity 通过不同的 requirement 区分，互为平行路径而非重复。
 - NPC 跟随/离开实体由管线根据 Step 1a 的 can_follow 字段自动生成，你不要手动创建。
+- scene_items：场景中可拾取/可发现的物品列表，写在该场景 scene_movements 对象内。[{"kind":"item"|"weapon","ref":"物品名","quantity":1,"hidden":true|false}]。hidden=true 表示需搜索类互动成功后暴露；模组中「最初看不见但可找到」的物品必须 hidden=true
+- environment：场景环境状态，写在该场景 scene_movements 对象内。{"lighting":"dark|dim|normal","noise":"quiet|noisy"}，只填非默认轴（默认 lighting=normal、noise=quiet）。黑暗/昏暗会影响搜索类检定
+- difficulty 语义：regular=满技能值、hard=技能值半数、extreme=技能值 1/5（运行时真实生效）。仅靠运气或专业训练才能成功的行动应标 hard/extreme，不要全用 regular
+- repeatable：默认 once。玩家有合理理由重复执行且重复有意义的实体标 "repeatable": true
 - 仅输出 JSON，不要任何解释性文字
 
 从精修模组文本中提取每个场景的全部可执行互动，以及场景间的通行路径。
@@ -414,6 +418,7 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
       "graded_result": {"on_failure": "...", "on_regular": "...", "on_hard": "...", "on_extreme": "..."},
       "difficulty": "regular",
       "time_condition": [],
+      "repeatable": false,
       "based_on": null
     }
   ],
@@ -424,7 +429,9 @@ STEP2A_SYSTEM = """你是一个 TRPG 模组解析助手，专门提取场景中�
       ],
       "to_here": [
         {"source": "5号车厢", "method": "步行通过车门", "requirement": ""}
-      ]
+      ],
+      "scene_items": [{"kind": "item", "ref": "物品名", "quantity": 1, "hidden": true}],
+      "environment": {"lighting": "dim"}
     },
     "7号车厢": { ... }
   }
@@ -741,7 +748,8 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
 - personality_notes：性格、说话风格、情绪倾向
 - interaction_triggers：什么情况下玩家可与该 NPC 自由对话（自然语言列表，从 entity trigger 中提炼）
 - initial_state：NPC 初始存活状态，默认 "alive"
-- initial_attitude：NPC 初始态度，默认 "neutral"（可选值：hostile / wary / neutral / friendly / allied）
+- initial_attitude：NPC 初始态度，默认 "neutral"（可选值：<<ATTITUDE_KEYS>>）
+- attitude_value：NPC 初始态度数值（-100~100 整数），与 initial_attitude 档位一致（<<ATTITUDE_MIDS>>）。态度对剧情有明确影响的 NPC 两字段都填；其余只填 initial_attitude
 - initial_following：初始是否已跟随玩家，默认 false
 - can_interact：NPC 是否具备互动能力（默认 true）。若 false，表示 NPC 从本质上不能自由对话（如昏迷、充满敌意、只出现于固定演出），需通过 interact_unlock entity 解锁。此字段描述 NPC 的"本质属性"，与 interact_requirements（条件性门禁）互补：两者同时满足时互动才可用
 - can_follow：NPC 是否可能跟随调查员行动
@@ -778,6 +786,7 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
       "interaction_triggers": ["玩家靠近时NPC主动搭话", "玩家持有某物品时触发对话"],
       "initial_state": "alive",
       "initial_attitude": "neutral",
+      "attitude_value": 0,
       "initial_following": false,
       "can_interact": true,
       "can_follow": true,
@@ -794,6 +803,22 @@ STEP25_COMBINED_SYSTEM = """你是一个 TRPG NPC 设计助手。
 - bound_entities：该 NPC 专属的 entity ID 列表（scene 通用 entity 不列入）
 - follow_requirements / interact_requirements：|| 前为硬性 entity ID 条件，|| 后为软性自然语言条件；纯硬性或纯软性可省略 || 的另一侧
 - 仅输出 JSON，不要任何解释性文字"""
+
+
+def _attitude_key_text() -> str:
+    from investigator.rules import get_game_config
+    return " / ".join(t["key"] for t in get_game_config()["npc_attitude_tiers"])
+
+
+def _attitude_mid_text() -> str:
+    from investigator.rules import get_game_config
+    return ", ".join(
+        f'{t["key"]}≈{t["mid"]}' for t in get_game_config()["npc_attitude_tiers"])
+
+
+STEP25_COMBINED_SYSTEM = STEP25_COMBINED_SYSTEM.replace(
+    "<<ATTITUDE_KEYS>>", _attitude_key_text()).replace(
+    "<<ATTITUDE_MIDS>>", _attitude_mid_text())
 
 
 def build_step25_combined_prompt(
@@ -1402,6 +1427,10 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
       用法：NPC 本身的状态变化——如从"alive"变为"dead"、从"unconscious"变为"alive"、从"hostile"变为"neutral"等。npc_name 必须与 NPC 列表中精确一致。
     @npc_follow(npc_name="NPC名", follow=true)
       用法：NPC 开始（true）或停止（false）跟随调查员行动。仅用于跟随关系的切换，不使用其他场合。
+    @attitude_change(npc_name="NPC名", delta=±10)
+      用法：NPC 对调查员的态度数值变化（-100~100，正数改善）。交谈/事件导致态度转变时使用。npc_name 必须与 NPC 列表精确一致。
+    @env_change(axis="lighting|noise", value="新值")
+      用法：永久改变当前场景的环境轴状态（如点灯后 lighting 从 dark 变 normal）。lighting∈dark|dim|normal，noise∈quiet|noisy。
 
     特别说明：
     - @npc_state_change 有两个硬编码的特殊状态：
@@ -1417,6 +1446,8 @@ STEP4_SYSTEM = """你是一个 TRPG 游戏资源配置助手。
 5. 不允许自创 enemy_ref / weapon_ref / stat_name。
 6. type 为"无"的 entity 若无实质 side_effects 则保持原样。
 7. **time_condition 格式校验**: entity 若含 time_condition 字段，校验格式为 [{"day": ">=N|<=N|N|ALL", "times": ["时段",...]}]，时段仅限 凌晨/早晨/白天/黄昏/夜间，天数从1起。无约束则为 []
+8. **npc_dead 前置语法**: requirement 中可写 `npc_dead:NPC名`，表示「该 NPC 死亡后才可触发」（npc_name 必须与 NPC 列表精确一致）。死亡连锁反应类 auto_trigger 使用此语法。
+9. **克苏鲁神话增长（F8 模式）**: 阅读典籍/目击神话生物类的 entity，在 graded_result 或 side_effects 中挂 @stat_change(stat_name="克苏鲁神话", delta=+N)。仅这两类情境使用，普通事件不要挂。
 
 输出格式:
 {

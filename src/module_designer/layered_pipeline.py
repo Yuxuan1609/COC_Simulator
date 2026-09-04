@@ -526,6 +526,10 @@ def _assemble_l2(interactions, events, auto_triggers, scene_movements, l1_data,
                                     "from_here": [], "to_here": [], "extra": {}})
         scenes[sname]["from_here"] = movement.get("from_here", [])
         scenes[sname]["to_here"] = movement.get("to_here", [])
+        if movement.get("scene_items"):
+            scenes[sname]["scene_items"] = movement["scene_items"]
+        if movement.get("environment"):
+            scenes[sname]["environment"] = movement["environment"]
     for sname in scenes:
         l1_scene = l1_data.get(sname, {})
         scenes[sname]["description"] = l1_scene.get("description", "") or l1_scene.get("atmosphere", "")
