@@ -154,3 +154,23 @@ class DependencyGraph:
         g._circular_cut = data.get("_circular_cut", False)
         g._cut_info = data.get("_cut_info")
         return g
+
+    def to_mermaid(self) -> str:
+        """导出 mermaid flowchart。结局节点高亮；环以注释标注。"""
+        lines = ["flowchart TD"]
+        for nid, node in self.nodes.items():
+            label = (node.name or nid).replace('"', "'")
+            if node.entity_type == "ending":
+                lines.append(f'    {nid}(["{label}"])')
+            else:
+                lines.append(f'    {nid}["{label}"]')
+        for e in self.edges:
+            lines.append(f"    {e.source} --> {e.target}")
+        endings = [n.entity_id for n in self.nodes.values()
+                   if n.entity_type == "ending"]
+        if endings:
+            lines.append("    classDef ending fill:#f9d423,stroke:#333")
+            lines.append("    class " + ",".join(endings) + " ending")
+        for cyc in self.detect_cycles():
+            lines.append(f"    %% 环: {' -> '.join(cyc)}")
+        return "\n".join(lines)

@@ -45,8 +45,12 @@ def _difficulty_counts(l2: dict) -> Counter:
     return counts
 
 
-def run_lint(module_dir: str) -> int:
-    """返回 exit code：有 error=1，否则 0。"""
+def run_lint(module_dir: str, strict: bool = False) -> int:
+    """返回 exit code：有 error=1，否则 0。
+
+    strict=True 时仅把 validate_all 的 schema warning 升为 error；
+    可达性等 lint warning 保持 warning、不挡退出码。
+    """
     d = Path(module_dir)
     l1 = json.loads((d / "l1_player.json").read_text(encoding="utf-8"))
     l2 = json.loads((d / "l2_keeper.json").read_text(encoding="utf-8"))
@@ -69,7 +73,10 @@ def run_lint(module_dir: str) -> int:
 
     for layer, report in reports.items():
         for v in report.violations:
-            _add(v.severity, f"{layer} {v.path}: {v.message}")
+            sev = v.severity
+            if strict and sev == "warning":
+                sev = "error"
+            _add(sev, f"{layer} {v.path}: {v.message}")
     for i in cross.issues:
         _add(i.severity, f"{i.layer} {i.path}: {i.message}")
 
@@ -118,5 +125,26 @@ def run_lint(module_dir: str) -> int:
     return 1 if n_error else 0
 
 
+def cli_main(argv: list[str] | None = None) -> int:
+    """lint CLI：`--strict` 升 schema warning；`--graph` 打印 mermaid。"""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    flags = {a for a in argv if a.startswith("--")}
+    args = [a for a in argv if not a.startswith("--")]
+    module_dir = args[0] if args else "."
+    if "--graph" in flags:
+        l2 = json.loads((Path(module_dir) / "l2_keeper.json")
+                        .read_text(encoding="utf-8"))
+        raw = l2.get("dependency_graph") or {}
+        if raw.get("nodes"):
+            g = DependencyGraph.from_dict(raw)
+        else:
+            l1 = json.loads((Path(module_dir) / "l1_player.json")
+                            .read_text(encoding="utf-8"))
+            g = _scene_graph(l1, l2)
+        print(g.to_mermaid())
+        return 0
+    return run_lint(module_dir, strict="--strict" in flags)
+
+
 if __name__ == "__main__":
-    sys.exit(run_lint(sys.argv[1] if len(sys.argv) > 1 else "."))
+    sys.exit(cli_main())

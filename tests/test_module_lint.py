@@ -223,3 +223,62 @@ class TestLintChecks:
         (dirty / "l3_designer.json").write_text(
             json.dumps(_l3(("s1", "s2")), ensure_ascii=False), encoding="utf-8")
         assert run_lint(str(dirty)) == 1
+
+
+class TestLintStrict:
+    def _write_module(self, tmp_path, l2_overrides):
+        mod = tmp_path / "mod"
+        mod.mkdir()
+        base = {"scenes": {}, "events": [], "npc_profiles": {},
+                "boss_encounters": [], "dependency_graph": {}}
+        base.update(l2_overrides)
+        (mod / "l2_keeper.json").write_text(
+            json.dumps(base, ensure_ascii=False), encoding='utf-8')
+        (mod / "l1_player.json").write_text("{}", encoding='utf-8')
+        (mod / "l3_designer.json").write_text("{}", encoding='utf-8')
+        return mod
+
+    def test_schema_warning_not_blocking_by_default(self, tmp_path):
+        """schema 违规（非法 attitude 档位）默认 warning：exit code 仍为 0。"""
+        from module_designer.lint import run_lint
+        mod = self._write_module(tmp_path, {"npc_profiles": {
+            "张三": {"name": "张三", "initial_attitude": "allied"}}})
+        assert run_lint(str(mod)) == 0
+
+    def test_strict_escalates_schema_warnings(self, tmp_path):
+        """--strict：schema warning 升级为 error，影响 exit code。"""
+        from module_designer.lint import run_lint
+        mod = self._write_module(tmp_path, {"npc_profiles": {
+            "张三": {"name": "张三", "initial_attitude": "allied"}}})
+        assert run_lint(str(mod), strict=True) == 1
+
+    def test_strict_does_not_escalate_reachability_warnings(self, tmp_path):
+        """--strict 不把实体不可达 warning 升成 error。"""
+        from module_designer.lint import run_lint
+        graph = {
+            "nodes": {
+                "IT_A": {"entity_id": "IT_A", "entity_type": "interaction", "name": "a"},
+                "IT_ISOLATED": {"entity_id": "IT_ISOLATED",
+                                "entity_type": "interaction", "name": "iso"},
+            },
+            "edges": [],
+        }
+        mod = tmp_path / "reach"
+        mod.mkdir()
+        (mod / "l1_player.json").write_text(
+            json.dumps(_l1(("s1", "s2")), ensure_ascii=False), encoding="utf-8")
+        (mod / "l2_keeper.json").write_text(
+            json.dumps(_l2({
+                "s1": [_entity("IT_A", scene="s1")],
+                "s2": [_entity("IT_ISOLATED", scene="s2")],
+            }, graph=graph), ensure_ascii=False), encoding="utf-8")
+        (mod / "l3_designer.json").write_text(
+            json.dumps(_l3(("s1", "s2")), ensure_ascii=False), encoding="utf-8")
+        assert run_lint(str(mod), strict=True) == 0
+
+    def test_testbed_passes_strict(self):
+        """e2e_testbed 在 strict 下零 schema error。"""
+        from module_designer.lint import run_lint
+        testbed = os.path.join(os.path.dirname(__file__), '..', 'data',
+                               'modules', 'e2e_testbed')
+        assert run_lint(testbed, strict=True) == 0
