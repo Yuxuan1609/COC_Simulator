@@ -178,16 +178,16 @@ NPC 系统重检专项（2026-08-31 拍板，单独立项）：F27 度量层 / F
 
 | 机制变化 | 落地批次 | 对生成管线的影响 |
 |---|---|---|
-| difficulty 语义生效（P0-1 修复死参数） | S3-P0 | L2 生成器的 difficulty 标注从「装饰」变为真实判定档位；生成 prompt 应明确 hard/extreme 的实际含义与使用节制 |
-| mythos 增长通路 = `@stat_change(克苏鲁神话,+N)`（F8） | S3-P1 | 生成器可在「阅读典籍/目击神话」类实体挂此 markup；应作为推荐写法写进生成 prompt/参考文档（docs/library-schema.md 类） |
+| difficulty 语义生效（P0-1 修复死参数） | S3-P0；生成端 2026-09-04 回填 | 运行时 hard=半数 / extreme=1/5 已生效。STEP2A prompt 已写明该语义。**未做真实生成验证** |
+| mythos 增长通路 = `@stat_change(克苏鲁神话,+N)`（F8） | S3-P1；生成端 2026-09-04 回填 | STEP4 已写 F8 推荐写法（读典籍/目击神话挂该 markup）。**未做真实生成验证** |
 | 疯狂状态标记 + SAN 事件联动提示词（F5） | S3-P2 运行时已落地 | 运行时：insanity 状态 + prompt 演绎。生成端缺口仍在：san_loss 标注与疯狂触发频率的关系说明、高 SAN 事件预写疯狂文本——**暂无生产端** |
-| 实体 repeatable 策略位（F23） | S3-P2 运行时已落地 | 运行时：L2 schema 字段存在，默认 once（隐式）。生成端缺口仍在：生成器产出合理默认、「重读文件/复查现场」标 repeatable——**暂无生产端** |
-| 时刻事件 scheduled_events（F18 降级版） | S3-P2 运行时已落地 | 运行时：跨越检测 + markup payload。生成端缺口仍在：时刻事件 L2 声明格式——**暂无生产端** |
+| 实体 repeatable 策略位（F23） | S3-P2 运行时已落地；生成端 2026-09-04 回填 | 运行时：L2 schema 字段存在，默认 once。STEP2A 已说明何时标 `repeatable: true`。e2e_testbed 有实例。**未做真实生成验证** |
+| 时刻事件 scheduled_events（F18 降级版） | S3-P2 运行时已落地；生成端 2026-09-04 回填 | 运行时：跨越检测 + markup payload。schema 已校验顶层 `scheduled_events`；`init_game` 加载桥已接；e2e_testbed 有实例。生成 prompt 未教 scheduled_events 产出（STEP1A/2B 本期不动） |
 | 周期效应 interval+payload（F10） | S3-P2 运行时已落地 | 运行时：interval+payload 消费端。生成端缺口仍在：周期效应原子生产——**暂无生产端** |
 | 模组体检 lint（F31） | S3-P2 已落地 | **无缺口**——新检查管线内自动生效；CLI 为事后入口 |
 | 试玩报告（F32） | S3-P2 已落地 | `module_meta.player_goal` 已落地；多次试玩并行+汇总、CI 集成等 F34 |
-| 场景物品泛化（F17） | S3-P3 运行时已落地 | 运行时：`scene_items` 平面模型 + hidden/exposed + 免费拾取/丢弃。L2 schema 已加 optional `scene_items`（`scene_weapons` 保留映射）。生成端缺口仍在：生成器产出 scene_items / 切换 prompt——**暂无生产端** |
-| 环境字段（F19） | S3-P3 运行时已落地 | 运行时：L2 场景 `environment` 两轴 + `env_check_modifiers` ±N + `@env_change`。L2 schema 已加 optional `environment`。生成端缺口仍在：L1/L2 生成器产出环境字段、生成 prompt 不改——**暂无生产端** |
-| NPC 好感度量（F27/N1） | NPC 专项运行时已落地 | 运行时：`attitude_value` 双轨 + `@attitude_change` + `attitude_min` 门槛/follow/敌意短路。L2 schema 已加 optional `attitude_min`。生成端缺口仍在：生成器产出 `attitude_min` / 初始 `attitude_value` / 交互挂 `@attitude_change`——**暂无生产端** |
+| 场景物品泛化（F17） | S3-P3 运行时已落地；生成端 2026-09-04 回填 | 运行时：`scene_items` 平面模型。L2 schema 已嵌套校验 kind/hidden；STEP2A 已教字段（写在 scene_movements 内）；`_assemble_l2` 透传到 L2 scene。e2e_testbed hidden+exposed 实例。**未做真实生成验证** |
+| 环境字段（F19） | S3-P3 运行时已落地；生成端 2026-09-04 回填 | 运行时：L2 场景 `environment` 两轴（锚 L2 scene，非 L1）。schema 嵌套校验 lighting∈dark\|dim\|normal、noise∈quiet\|noisy。STEP2A/STEP4 `@env_change` 已回填；`_assemble_l2` 透传。**未做真实生成验证** |
+| NPC 好感度量（F27/N1） | NPC 专项运行时已落地；生成端 2026-09-04 回填 | 运行时：`attitude_value` 双轨 + `@attitude_change` + `attitude_min`。schema：`attitude_min` + `attitude_value`（-100~100）+ `initial_attitude` 五档（allied→devoted）；中值 `game_config.npc_attitude_tiers[].mid` 单一事实源。STEP25/STEP4 已回填。**未做真实生成验证** |
 | 谎言/欺骗策略（F26/N3） | NPC 专项运行时已落地 | 运行时：talk_to prompt 按态度档位透露/采信。无新 schema 字段。生成端——**暂无生产端** |
-| NPC 死亡 AT（F29/N4） | NPC 专项运行时已落地 | 运行时：`set_state(dead)` 写 `npc_dead:` 旗，AT requirement 可引用。生成端缺口仍在：生成器产出死亡 AT / `npc_dead:` 条件——**暂无生产端** |
+| NPC 死亡 AT（F29/N4） | NPC 专项运行时已落地；生成端 2026-09-04 回填 | 运行时：`set_state(dead)` 写 `npc_dead:` 旗。STEP4 已教 `npc_dead:NPC名` 语法；e2e_testbed 有 AT 实例。**未做真实生成验证** |

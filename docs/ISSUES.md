@@ -51,9 +51,9 @@
 | F22 | **线索系统** | **降级（2026-09-02 拍板）**：线索=interaction 系统产物，notebook=玩家侧只读视图（CLI /notebook + 前端面板，零新结构零新判定；key_items/Chronicle 已落库，缺口只在呈现），随 F39 批次。集齐判定维持 Author LLM。原定位：note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
 | F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
 | F30 | **追逐/移动力** | MOV 已从 Stats 删除;flee 单骰 DEX 立即定音,无追逐轮/速度分级 |
-| F33 | **手写模组支持** | 无手写路径;前端编辑器校验只查 scenes/entities 非空不接 layered_schema |
+| F33 | **手写模组支持**（前端编辑器/手写工作流） | CLI `lint --strict` 已接 layered_schema（2026-09-04，见 §5）。剩余：无手写路径；前端编辑器校验只查 scenes/entities 非空 |
 | F34 | **模组版本管理/增量再生** | 无 manifest/源文档快照;重跑静默覆盖手改 JSON |
-| F35 | **分歧/结局结构可视化** | dependency_graph 只有 JSON;多结局分支汇合关系无法直观检查 |
+| F35 | **分歧/结局结构可视化**（前端） | CLI mermaid 已落地（`python -m module_designer.lint <dir> --graph`，2026-09-04，见 §5）。剩余：前端渲染多结局分支汇合 |
 | F36 | **管线进度/失败前端可见 + 质量量化指标** | launcher 后台线程 fire-and-forget;auto 失败仍打印"执行完毕"(前端域) |
 | F37 | **撤销/回滚上一回合** | 无 undo;误操作只能翻旧手动存档或重开(体验破例,前端/CLI 皆缺) |
 | F38 | **存档槽位 UI + 元信息 + autosave 入口** | 存读档靠手敲命令;save_game 只记 turn_number;autosave 无法经 /load 触及(前端域) |
@@ -88,7 +88,8 @@
 | F13-⑥ 极难贯穿差异化 | 长期 TODO:`_get_tier` 已算只进文本,伤害不变;需贯穿/最大伤害公式 |
 | F13-③ 玩家护甲 | 非目标(统一资源层 spec:equip 无机制加成;护甲只作用敌方) |
 | 输入格式扩展(epub/html/URL)/Step0 只认 txt | 有真实内容源需求再动(2026-08-26 盘点) |
-| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10；S3-P2 已回写（F5/F23/F18/F10 运行时落地、暂无生产端；F31 无缺口；F32 player_goal 已落地，多次汇总等 F34）；S3-P3 已回写（F17/F19 运行时落地、schema 字段已加、生成 prompt 不改——暂无生产端）；NPC 专项已回写（attitude_min / `@attitude_change` / `npc_dead:` 运行时落地、生成 prompt 不改——暂无生产端）；回查/优化生成管线时对照(2026-08-31 拍板) |
+| 模组生成管线影响清单 | 长期备注：docs/superpowers/specs/2026-08-31-cluster-assessment.md §10。**生成端回填专项已收口（2026-09-04）**：schema 修补 + prompt 最小回填 + `_assemble_l2` 透传 scene_items/environment + e2e_testbed 全元素 + F33 CLI `--strict` / F35 mermaid；**prompt 未做真实端到端生成验证**，管线系统升级时重验。F5 生成端（san_loss 标注/预写疯狂文本）仍暂无生产端。run_game.py 交互路径无独立专测（仅 test_combat_smoke 惰性导入），不新开项 |
+| F35 前端渲染 | 随前端专项：把 `to_mermaid()` 文本画进编辑器。CLI 已收口 |
 | 多语言模组/i18n | 叙事文本与结构键混存,远期 |
 | 模组素材附件(地图/立绘/handout) | schema 无 image 字段,远期生态 |
 | 多人混战目标选择/队友误伤/掩体 | 依赖 F28 先行;掩体等防御向机制随 F13 批次评估 |
@@ -100,6 +101,7 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-09-04 | **生成端回填（schema / prompt / lint --strict / mermaid）** | schema：attitude_value + 五档枚举派生 + `mid` 单一事实源；scene_items/environment 嵌套校验；scheduled_events 进 validate_l2。prompt：STEP2A/4/25 最小回填（allied→devoted）+ `_assemble_l2` 透传。F33 CLI `--strict` 只升 schema warning；F35 CLI mermaid。e2e_testbed 全元素 + `init_game` scheduled_events 加载桥。前端手写编辑器（F33 余）与 mermaid 前端（F35 余）仍 §2。prompt 未做真实生成验证。 |
 | 2026-09-03 | **B21 战斗 HP 双轨不同步** | 单轨收敛：derived.HP 唯一轨道，state.player_hp 实时镜像。heal/markup HP 结算后镜像；敌方伤害与 LLM 修正扣 derived.HP 后镜像；F10 round payload 后镜像。写回变 no-op 保留。 |
 | 2026-09-03 | **F27 NPC 度量层 + F26 谎言/欺骗 + F29 死亡连锁** | NPC 专项运行时落地：F27/N1 attitude 双轨 + `@attitude_change` 双来源 + attitude_min/follow/敌意短路；F26/N3 talk_to 纯 LLM 策略（删「如实告知」/`process_npc_turn`）；F29/N4 `npc_dead:` AT 旗。F1 给予仍 F28。L2 schema 已加 optional `attitude_min`，生成 prompt 不改——**暂无生产端**。 |
 | 2026-09-02 | **F17 场景物品 + F19 环境修正** | S3-P3 运行时落地：F17 `scene_items`（hidden/exposed、搜索暴露、免费拾取/丢弃短路、废弃 weapon_offer）；F1 丢弃部分随 F17 落地（给予 NPC 仍 F28）。F19 场景 environment 两轴 + `env_check_modifiers` ±N + `@env_change` + prompt 知情行。L2 schema 字段已加，生成 prompt 不改——**暂无生产端**。 |

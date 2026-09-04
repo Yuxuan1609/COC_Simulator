@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-04 | 生成端回填专项：① schema：`_attitude_keys` 派生五档；`attitude_value` min/max；NPC 落盘字段；scene_items/environment 嵌套；`scheduled_events` 进 `validate_l2`；`_validate_value` min/max。② `npc_attitude_tiers[].mid` 单一事实源，删 `_ATTITUDE_MIDPOINTS`。③ e2e_testbed 全元素 + `init_game` scheduled_events 加载桥。④ STEP2A/4/25 最小回填（allied→devoted，中值从 mid 拼进 prompt）+ `_assemble_l2` 透传 scene_items/environment。⑤ `run_lint(..., strict=)` 只升 schema warning；`to_mermaid` 复用 `detect_cycles`；`cli_main` 接 `--strict`/`--graph`。TDD：test_generation_schema / test_fixture_completeness / test_generation_prompts / test_dependency_graph + lint strict / scheduled 加载 / save_load 综合往返。layered_schema 367→420 / lint 122→150 / dependency_graph 156→176 / layered_parser 1511→1542 / npc_manager 410→405 / game_loop 943→947。 |
 | 2026-09-03 | LLM fallback provider：主端 402 切 Ark（`LLM_FALLBACK_PROVIDER`）。`_chat_create` 统一四路 completions；切后进程内 sticky。密钥只写 gitignore 的 `config_llm.py`；模板 `api_key=""`。TDD：tests/test_llm_provider.py 3 测。llm.py 514→579。 |
 | 2026-09-03 | N3 测试债 1/2/3：① stub `TestHostileNpcDialogueStub.test_friendly_talk_calls_llm`（非敌意必须调 LLM）。② smoke 扩 S3 拾取 + S20 敌意短路（pytest.ini 注释同步）。③ real_llm S23 五档态度（hostile/wary/neutral/friendly/devoted）同一密同一问，硬断言仅敌意短路+契约；审计 LLM 按 rubric 打 disclosure 梯度并打印/落盘 `n3_audit.json`，不挡 CI。默认套件 520 passed / 28 deselected + 1 既有 flaky。smoke/S23 本机 402 billing 未跑通。 |
 | 2026-09-03 | B21 战斗 HP 双轨单轨化：derived.HP 唯一轨道，state.player_hp 实时镜像。combat.py：heal 后镜像 @987 / markup 后镜像 HP @1004 / 敌方伤害扣 derived.HP+镜像 @1244-1248 / 自动战斗 LLM 修正两处 @362/@551 / F10 round payload 后镜像 @1293；run_game 交互 LLM 修正同口径。写回变 no-op 保留。TDD：TestCombatHpSingleTrack 3 测 RED→GREEN。ISSUES B21 入 §5。combat.py 1558→1565。默认套件 520 passed / 27 deselected。 |
@@ -473,7 +474,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `UseParser.resolve_llm` | `(raw, catalogs)` | **LLM 兜底**：build_material_fuzzy_prompt -> 目录校验回灌 resolve | 157 |
 | `USE_VERBS` / `_NEGATION_RE` | 常量 | 使用谓词表 / 否定词正则 | 14 / 18 |
 
-## src/game/npc_manager.py (410 行) — NPC 管理
+## src/game/npc_manager.py (405 行) — NPC 管理
 
 ### NPC dataclass（@15）字段：`name, role, personality_notes, appearance, what_they_can_do, interaction_triggers, can_follow, follow_requirements, can_interact, interact_requirements, bound_interactions, bound_auto_triggers, scene, attitude, attitude_value, following, memory, state, extra`
 
@@ -482,9 +483,9 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `_STRIP` | markup 剥离正则（含 attitude_change） | talk_to 展示文本剥 @标记 | 8 |
-| `attitude_tier` | `(value) -> (key, label)` | clamp -100..100 后查 `npc_attitude_tiers` | 48 |
-| `_attitude_value_from_key` | `(key) -> int` | 旧档位中值：hostile=-75 / wary=-30 / neutral=0 / friendly=30 / devoted=75，无则 0 | 58 |
-| `_resolve_profile_attitude_value` | `(data) -> int` | profile：attitude_value 优先，否则 attitude/initial_attitude 中值，否则 0 | 64 |
+| `attitude_tier` | `(value) -> (key, label)` | clamp -100..100 后查 `npc_attitude_tiers` | 39 |
+| `_attitude_value_from_key` | `(key) -> int` | 读 `game_config.npc_attitude_tiers[].mid`（单一事实源），无则 0 | 49 |
+| `_resolve_profile_attitude_value` | `(data) -> int` | profile：attitude_value 优先，否则 attitude/initial_attitude 中值，否则 0 | 59 |
 
 ### NPCManager（@125）
 
@@ -570,7 +571,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `set_turn_logger` | `(logger)` | 设置全局回合日志器（harness/入口调用） | 22 |
 | `setup_logging` | `() -> str` | 统一初始化日志目录 + TurnLogger + prompt/llm 日志 | 28 |
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 47 |
-| `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载（物品/法术经 library.loader 统一加载 core+extensions，@224-226）→ ScenarioWorld → F5 `set_insanity_llm` 注入 `_insanity_llm` 闭包（@253-258，lazy import call_deepseek+LLM_FLASH_MODEL 现场生成疯狂文本，异常回退固定文案）→ world 节点 AT 执行（GrantWeapon 写 SceneItem 再 `_sync` @277-282；延后 item_gain）→ at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author | 155 |
+| `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载 → ScenarioWorld → `load_dependency_graph` → **F18 `l2["scheduled_events"]` 拷入 `world.scheduled_events`（@253-255）** → F5 `set_insanity_llm` → world 节点 AT → at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author。返回 dict，世界在 `game["keeper"].world` | 155 |
 | `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史 → SUSPENDED/FROZEN 短路 → Narrator 叙事（无 brief 早退且有 npc_events 时 add_record，F24）→ 场景更新 → PlayerFacingSnapshot | 336 |
 | `on_scenario_end` | `(game, character_path=None, module_name="unknown", out_dir=None) -> list[dict]` | P0-2/U4 scenario-end 钩子：幕末成长结算 + 有 character_path 才版本化导出；无玩家空报告；战斗败北勿调 | 638 |
 | `save_game` | `(game, path)` | B1② 唯一保存入口：`save_state(..., extra_meta={turn_number, session_state})` 一次写入 version 2 | 656 |
@@ -871,18 +872,19 @@ core 条目内容（T12 升维，2026-08-24，8 条中 5 条带 effect）：STON
 
 ### __init__.py (33 行)
 
-re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。`python -m module_designer` 走 `__main__.py` → `lint.run_lint`（F31）。
+re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/validate_all/is_valid`、全部 `parse_step*`/`build_step*`、`DependencyGraph`、`run_pipeline/cross_validate_layers/PipelineResult/save_pipeline_result`。`python -m module_designer` 走 `__main__.py` → `lint.cli_main`（F31/F33/F35）。
 
-### layered_schema.py (367 行) — Schema 定义 + 验证
+### layered_schema.py (420 行) — Schema 定义 + 验证
 
 | 项 | 说明 | 行号 |
 |----|------|------|
-| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema 常量（required/values/list_of；F23：L2_INTERACTION_SCHEMA/L2_EVENT_SCHEMA 含 optional `repeatable`；N1：L2_INTERACTION_SCHEMA 含 optional `attitude_min`；F32：L3_MODULE_META_SCHEMA 含 optional `player_goal`；F17：L2_SCENE_SCHEMA 含 optional `scene_items`，`scene_weapons` 保留；F19：L2_SCENE_SCHEMA 含 optional `environment`） | 10–182 |
-| `SchemaViolation` / `SchemaReport` | 违规/报告（add/errors/warnings/is_valid/summary） | 188 / 199 |
-| `_validate_value` / `_validate_object` | 递归校验 | 231 / 263 |
-| `validate_l1` / `validate_l2` / `validate_l3` / `validate_all` / `is_valid` | 各层验证入口 | 272–363 |
+| `_attitude_keys` | 从 `game_config.npc_attitude_tiers[].key` 派生枚举 | 41 |
+| `L1_*` / `L2_*` / `L3_*` | 三层字段 schema。NPC：`attitude_value` min/max、`initial_attitude` values 派生、`scene`/`all_scenes`/`bound_*`。scene_items 嵌套 kind∈item\|weapon；environment 嵌套 lighting/noise 合法值。`L2_SCHEDULED_EVENT_SCHEMA`；ending optional `name` | 10–214 |
+| `SchemaViolation` / `SchemaReport` | 违规/报告（add/errors/warnings/is_valid/summary） | 220 / 231 |
+| `_validate_value` / `_validate_object` | 递归校验；`_validate_value` 含 min/max warning | 263 / 304 |
+| `validate_l1` / `validate_l2` / `validate_l3` / `validate_all` / `is_valid` | 各层验证入口；`validate_l2` 含 scheduled_events | 313–417 |
 
-### dependency_graph.py (156 行) — 依赖图
+### dependency_graph.py (176 行) — 依赖图
 
 | 类/方法 | 作用 | 行号 |
 |---------|------|------|
@@ -892,6 +894,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `reachable_from` | `(start) -> list[str]` BFS 沿 source→target，返回不在可达集合内的节点 id；空图=[] | 102 |
 | `cut_edge` / `cut_random_edge_in_cycles` | 切断循环边 | 120 / 126 |
 | `to_dict` / `from_dict` | 序列化 | 141 / 150 |
+| `to_mermaid` | flowchart TD；结局 `classDef`；环复用 `detect_cycles` 以 `%% 环:` 标注 | 158 |
 
 ### l1_player.py (98 行) — L1 玩家层模型
 
@@ -912,7 +915,7 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 
 `ModuleMeta`@8（含 optional `player_goal`）`WorldRule`@32 `SceneIntent`@54 `EndingCondition`@77 `ToneConstraints`@95 `NarrativeLine`@118 `TimePressureConfig`@144 `CharacterDesign`@173 `L3Designer`@192（to_dict/from_dict）；`load_l3`@234 `save_l3`@242。
 
-### layered_parser.py (1511 行) — 管线 LLM 解析（每步含 build_*_prompt + parse_*）
+### layered_parser.py (1542 行) — 管线 LLM 解析（每步含 build_*_prompt + parse_*）
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
@@ -922,18 +925,19 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_with_fallback` | `(parse_fn, required_keys, fallback_data, max_retries, verbose, step_name)` 带重试与保底 | 153 |
 | `parse_step1a` | 模块元信息+场景+角色+Boss+敌人/武器约束 + 统一资源层物品/法术库摘要（build_step1a_prompt 的 item_names/spell_names 参数，@grant_spell 与 item: 引用范围） | 290 
 | `parse_step1b` | 精修浓缩模组文本 | 362 |
-| `parse_step2a` | interactions + scene_movements；返回前对 interaction 的 `type` 字段调 `normalize_skill_name` 落库归一（旧技能名→新名，属性/伪技能/未识别保留原文并 print 提示） | 483 |
-| `parse_step2b_combined` | events + auto_triggers（合并） | 589 |
-| `parse_step2c_l1` | L1 场景感知 | 657 |
-| `parse_step2c_l3` | L3 设计层 | 722 |
-| `parse_step25_combined` | NPC 档案 + entity 归属 + follow/interact 解锁（合并） | 860 |
-| `parse_step2_boss` | Boss 遭遇实体 | 958 |
-| `parse_step3a` | 去重 + 冲突解决 + 结局标记 | 1042 |
-| `_step3b_deterministic` / `parse_step3b` | L1↔L2 交叉核对（确定性修复 + LLM 补 linked_interaction） | 1058 / 1176 |
-| `parse_step35` | 依赖图提取 | 1295 |
-| `parse_step4` | Phase2：@markup 标准化（STEP4_SYSTEM 含 @grant_spell 语法说明；Step2A 约束 prompt 同步） | 1493 |
+| `parse_step2a` | interactions + scene_movements；STEP2A 含 scene_items/environment/repeatable/difficulty 语义；返回前对 `type` 调 `normalize_skill_name` | 490 |
+| `parse_step2b_combined` | events + auto_triggers（合并） | 596 |
+| `parse_step2c_l1` | L1 场景感知 | 664 |
+| `parse_step2c_l3` | L3 设计层 | 729 |
+| `_attitude_key_text` / `_attitude_mid_text` | STEP25 档位 key/mid 从 game_config 派生（禁第三份字面量） | 808 / 813 |
+| `parse_step25_combined` | NPC 档案 + entity 归属；STEP25 含 attitude_value、枚举 devoted | 885 |
+| `parse_step2_boss` | Boss 遭遇实体 | 983 |
+| `parse_step3a` | 去重 + 冲突解决 + 结局标记 | 1067 |
+| `_step3b_deterministic` / `parse_step3b` | L1↔L2 交叉核对（确定性修复 + LLM 补 linked_interaction） | 1083 / 1201 |
+| `parse_step35` | 依赖图提取 | 1320 |
+| `parse_step4` | Phase2：@markup 标准化（含 @attitude_change / @env_change / npc_dead: / F8 克苏鲁神话） | 1524 |
 
-### layered_pipeline.py (1071 行) — 管线编排
+### layered_pipeline.py (1075 行) — 管线编排
 
 | 函数/类 | 作用 | 行号 |
 |---------|------|------|
@@ -944,18 +948,19 @@ re-export：`SceneL1/SceneL2/L3Designer` 及 load/save、`validate_l1/l2/l3/vali
 | `_extract_entity_bindings` | 从 npc_profiles 提取绑定 | 427 |
 | `_inject_step1a_meta` | Step1a 角色 → NPC scene 注入 | 436 |
 | `_inject_npc_special_entities` | 注入 follow_unlock + interact_unlock entity | 455 |
-| `_assemble_l2` | 所有 entity 组装为 L2 JSON | 505 |
-| `PipelineResult` | 结果容器（all_valid/summary） | 545 |
-| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 577 |
-| `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 1037 |
+| `_assemble_l2` | 所有 entity 组装为 L2 JSON；透传 `scene_movements[scene].scene_items` / `.environment` | 505 |
+| `PipelineResult` | 结果容器（all_valid/summary） | 549 |
+| `run_pipeline` | `(content, llm_json, llm_text=None, *, weapon_lib, enemy_lib, boss_lib, max_retries, verbose, inject_l3_wr0) -> PipelineResult` **4 步渐进管线主入口**：Step1→2a→2b+2c→3a∥2.5→3b→3.5/Phase1→Phase2→验证；技能名列表两处加载点均从 `load_skill_config()["skills"]` 取新 20 表；Step3.5 `stat_names` 不含 SIZ | 581 |
+| `save_pipeline_result` | `(result, module_dir)` 写 l1/l2/l3 JSON（l3 自动补 start_scene） | 1041 |
 
-### lint.py (122 行) — F31 模组体检 CLI
+### lint.py (150 行) — F31 模组体检 CLI（F33 `--strict` / F35 `--graph`）
 
 | 函数 | 作用 | 行号 |
 |------|------|------|
 | `_scene_graph` | L1/L2 场景名 + `from_here.target` 建成 DependencyGraph | 14 |
 | `_difficulty_counts` | 遍历 L2 实体 `check.difficulty`/`difficulty`，跳过 None/空 | 34 |
-| `run_lint` | `(module_dir) -> int` 加载三件套 → validate_all + cross_validate_layers + 场景可达/孤立 warning + 实体可达（起点场景实体多种子 BFS，无种子跳过）+ 难度 info；有 error 返回 1 | 48 |
+| `run_lint` | `(module_dir, strict=False) -> int` 加载三件套 → validate_all + cross_validate + 可达 warning + 难度 info。`strict=True` **只把 schema warning 升 error**；图 warning 不挡。有 error 返回 1 | 48 |
+| `cli_main` | `--graph` 打印 mermaid 后 0；否则 `run_lint(..., strict=--strict)`。`python -m module_designer` 与 `python -m module_designer.lint` 共用 | 128 |
 
 ### playtest_report.py (214 行) — F32 单次试玩纯聚合报告
 

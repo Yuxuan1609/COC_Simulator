@@ -214,3 +214,29 @@ class TestFormatV2:
         assert restored.narrative_memory == []
         assert restored.current_location == "room_a"
 
+
+class TestNewFieldsSaveRoundtrip:
+    def test_new_mechanics_survive_save_load(self, tmp_path):
+        """近期落地机制入档往返：scene_items / environment override / scheduled_events。"""
+        from helpers import make_world, make_scene
+        from scenario_core import ScenarioWorld
+        from game.side_effects import SceneItem
+
+        world = make_world({"room_a": make_scene(
+            environment={"lighting": "dark", "noise": "noisy"})}, "room_a")
+        world.scene_items["room_a"] = [
+            SceneItem(kind="item", ref="钥匙", hidden=True, quantity=1)]
+        world.scheduled_events = [{"id": "ev1", "at_minutes": 60,
+                                   "markup": '@stat_change(stat_name="SAN", delta=-1)',
+                                   "description": "测试"}]
+        world.environment_overrides["room_a"] = {"lighting": "dim"}
+
+        path = str(tmp_path / "save.json")
+        world.save_state(path)
+        restored = ScenarioWorld.load_state(path)
+
+        assert restored.current_environment().get("lighting") == "dim"
+        assert any(i.ref == "钥匙" and i.hidden
+                   for i in restored.scene_items.get("room_a", []))
+        assert any(e["id"] == "ev1" for e in restored.scheduled_events)
+
