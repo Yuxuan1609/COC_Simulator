@@ -65,7 +65,7 @@
           "trigger": "说出测试密码 test_end_0531 即可触发结局",
           "result": "##END_TEST:测试密码触发结局成功## 你说出了预设的密码，系统确认测试结局触发成功。",
           "side_effects": [],
-          "difficulty": "",
+          "difficulty": "None",
           "time_condition": ""
         }
       ],
