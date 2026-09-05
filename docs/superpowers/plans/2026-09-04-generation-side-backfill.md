@@ -480,3 +480,33 @@ git commit -m "docs: 生成端回填专项收口 — §10 回写 + F33/F35 CLI �
 - Spec 覆盖：§1.1→Task 1-2；§1.2→Task 3-4；§1.3→Task 1/3/5；§2→Task 6-9；§3.1→Task 10；§3.2→Task 11；§4→Task 12；§5→Task 13。timed_effects 不进 fixture。`--strict` 只升 schema。environment noise=quiet。init_game 返回 dict。mermaid 断言 classDef。F33 不关前端手写路径。
 - `_assemble_l2` 透传是 P2 附带，让「有能力产出」落地，不是管线系统升级。
 - 占位符：无。JSON 示例禁止 str.format 以免打到 STEP25 的 `{`。
+
+---
+
+## 执行情况（2026-09-04）
+
+**状态：plan / spec 已按审查修订，代码未开工。** 对照 spec 原稿、簇评估 §10、`ISSUES.md`、`design.md` 三层模型，以及 `layered_schema` / `lint` / `npc_manager` / `game_loop` / `e2e_testbed` 现码。初稿按原文落地会红或验收打架；下列条目已吸收进本文与 `2026-09-04-generation-side-backfill-design.md`。
+
+### 审查发现 → 处置
+
+| # | 发现 | 处置（已写入 plan/spec） |
+|---|---|---|
+| 1 | `--strict` 升全部 warning，与 Task 4「不可达 warning 不挡」、验收「testbed 过 strict」互斥；`IT_END.difficulty=""` 已是 schema warning | `--strict` **只升 `validate_all` 的 schema warning**；可达性保持 warning。Task 4 改 `IT_END.difficulty="None"`；新实体不进 dependency_graph |
+| 2 | STEP2A 把 `noise` 写成 `normal`；运行时合法值是 `quiet\|noisy` | 词表与示例改为 `lighting∈dark\|dim\|normal`，`noise∈quiet\|noisy`；schema 嵌套校验锁非法轴值 |
+| 3 | mermaid 测试要 `:::`/`style`，实现用 `classDef`；另写 `_find_cycles` 与已有 `detect_cycles` 重复 | 断言 `classDef`；环复用 `detect_cycles()` |
+| 4 | Task 5 用 `game.world`；`init_game` 返回 dict，世界在 `game["keeper"].world`；默认起点 `6号车厢` | 测试改 dict 取 world，显式 `start_node="测试房间A"` |
+| 5 | spec §1.1.3 中值单一事实源未做；`_ATTITUDE_MIDPOINTS` 与 STEP25 字面量是第二、三份 | `npc_attitude_tiers[].mid`；删私有表；STEP25 加载期派生，禁止第三份字面量 |
+| 6 | STEP2A 只改 prompt，`_assemble_l2` 丢 scene 级字段；全局同级键会对不上每场景一份 | 字段写进 **每个** `scene_movements` 对象；P2 附带透传几行（非管线系统升级） |
+| 7 | F33 整项搬 §5 会误关「手写模组/前端编辑器」 | 只收口 CLI schema；§2 手写/前端仍在。F35 前端留 §4 |
+| 8 | 完备性未锁存量 scene_weapons / graded_result / 多场景；`IT_RECHECK` 写成「侦察」；hidden 钥匙与「测试钥匙」撞车 | 存量三项进防漂移测试；技能名「侦查」；hidden 改为「一页撕碎的笔记」 |
+
+### 明确缺口（本期不修，收口时写 ISSUES / §10）
+
+- 真实端到端模组生成验证不做。`pytest -m real_llm_smoke` 打的是对局主路径，**覆盖不到** `layered_parser`，P2 只作仪式性收口（402 不阻塞）。
+- 未知字段仍静默（schema 引擎既有行为）。
+- timed_effects 无模组 JSON 字段，不进 fixture。
+- `run_game.py` 交互路径：Task 12 盘点，缺则登记 ISSUES，不硬造 e2e。
+
+### 代码进度（2026-09-04 收口）
+
+全部完成：`c8904c5` P1 schema + testbed 全元素 + scheduled_events 桥；`9c3d6b8` P2 prompt 最小回填 + assemble 透传；`916e57c` P3 lint --strict + mermaid；`ae9c526` P4 §10/ISSUES 回写 + save/load 新字段往返。收口 `python -m pytest tests/ -q`：**556 passed / 28 deselected**。明确缺口已写入 ISSUES §4 与簇评估 §10（每行标「未做真实生成验证」）。
