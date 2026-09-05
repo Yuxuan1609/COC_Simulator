@@ -26,14 +26,17 @@
 | # | 问题 | 修法/备注 |
 |---|------|----------|
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
+| B22 | **`/trigger` 幽灵命令** | run_game.py help(160 行)宣称 `/trigger <E1>`，但 107-163 无分发分支，`_handle_spawn_command` 只认 /spawn、/inject；输入被当普通回合送 LLM。删 help 文案或接分发（2026-09-05 测试盘点 H3 附带发现） |
+| B23 | **Boss 软条件 LLM 异常→乐观放行** | keeper.py:368 `except: return True`：LLM 挂了 Boss 无条件触发。方向（乐观 vs 保守）待拍板后补测锁（2026-09-05 测试盘点 H2） |
 
 ### 🟢 Minor(攒一批顺手清)
 
 | # | 问题 | 备注 |
 |---|------|------|
 | B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2"（阶段 0 跳过） |
-| B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);此处仅备忘 combat/judge 两处 refresh 实现需保持同步 |
+| B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);两处实现需保持同步——**仍无 parity 测试锁**（2026-09-05 盘点 M4，建议参数化等价断言） |
 | B19 | 角色卡加载失败静默降级默认卡 | frontend/routers/game.py 异常被吞换默认卡;玩家无提示（前端域,按约定不排期） |
+| B24 | **测试缺口批次**（盘点 2026-09-05，详见 docs/test-gap-audit-2026-09-05.md） | 高：H1 Boss 存读档往返零覆盖、H3 run_game 交互主循环零专测；中：M1 narrator 兜底无 warning、M2 ConsumeItem 模糊匹配吞异常、M3 autosave 全链静默、M5 judge 失败惩罚分支；低：L1 `_mp_regen_acc` 不入档等 7 条。补测时按报告优先级清 |
 
 ---
 
