@@ -162,14 +162,14 @@ class Keeper:
         return cats
 
     def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0,
-                     debug: bool = False) -> TurnResult:
+                     debug: bool = False, on_phase=None) -> TurnResult:
         """Facade：委托 TurnRunner（_depth 参数保留兼容，不再使用）。"""
         if not hasattr(self, "_runner"):
             from ..turn.runner import TurnRunner
             self._runner = TurnRunner(self)
         if not debug:
             debug = bool(getattr(self, "_debug_requested", False))
-        return self._runner.execute(turn_input, author, debug=debug)
+        return self._runner.execute(turn_input, author, debug=debug, on_phase=on_phase)
 
     def _record_match(self, entity_id: str, success: bool, reason: str = "") -> None:
         tr = getattr(self, "_turn_trace", None)

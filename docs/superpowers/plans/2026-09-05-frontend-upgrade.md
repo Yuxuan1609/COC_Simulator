@@ -373,7 +373,7 @@ def game_debug(turns: int = 5):
 - **线程安全**：进度推送发生在 `run_in_executor` 工作线程 → 回调内用 `loop.call_soon_threadsafe(queue.put_nowait, msg)` 或改 `queue.Queue`；禁止直接 `asyncio.Queue.put_nowait`。
 - **边界**：Restart 重跑时相位会重复推（允许，前端按最新状态覆盖）；Early/SUSPENDED 早退时只推已执行相位 + 必须最终推 `complete`（前端在 `complete` 关闭进度条，现网 game.py:748 依此）。
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```python
 def test_phase_callbacks_fire_in_order():
@@ -390,8 +390,8 @@ def test_narrate_pushed_around_actual_narrate():
     """对外步名 narrate 在 narrator.narrate 调用期间，不在 finalize/curate 时提前 [OK]。"""
 ```
 
-- [ ] **Step 2: 实现**——`execute` 每相位前后调 `on_phase(name, "start"|"done")`；run_turn 做内部名→对外步名映射 + **narrate 包住真正的 `narrator.narrate`** + `call_soon_threadsafe` 推队列 + 保证 `complete`；turn.py 删假推送。
-- [ ] **Step 3: 绿 + real_llm_smoke + 提交**
+- [x] **Step 2: 实现**——`execute` 每相位前后调 `on_phase(name, "start"|"done")`；run_turn 做内部名→对外步名映射 + **narrate 包住真正的 `narrator.narrate`** + `call_soon_threadsafe` 推队列 + 保证 `complete`；turn.py 删假推送。
+- [x] **Step 3: 绿 + real_llm_smoke + 提交**
 
 ### Task 12: F40 会话恢复（**战斗原子化 + 方案 A 战前快照回滚**）
 

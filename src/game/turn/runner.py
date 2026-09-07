@@ -10,7 +10,7 @@ class TurnRunner:
     def __init__(self, keeper):
         self.keeper = keeper
 
-    def execute(self, turn_input, author=None, debug=False):
+    def execute(self, turn_input, author=None, debug=False, on_phase=None):
         from .understand import phase_a_understand
         from .adjudicate import phase_b_adjudicate
         from .encounter import phase_c_encounter
@@ -19,6 +19,14 @@ class TurnRunner:
         tools = self.keeper
         depth = 0
         trace = [] if debug else None
+        # Restart 重跑会重复推相位（允许，前端按最新状态覆盖）。
+        phases = (
+            ("understand", phase_a_understand),
+            ("adjudicate", phase_b_adjudicate),
+            ("encounter", phase_c_encounter),
+            ("enrich", phase_d_enrich),
+            ("finalize", phase_e_finalize),
+        )
         while True:
             ctx = TurnContext(turn_input=turn_input, author=author, depth=depth,
                               raw=turn_input.raw_text, trace=trace)
@@ -28,10 +36,12 @@ class TurnRunner:
                 judge._turn_trace = trace
             acc = TurnAccumulator()
             try:
-                for phase in (phase_a_understand, phase_b_adjudicate,
-                              phase_c_encounter, phase_d_enrich,
-                              phase_e_finalize):
+                for name, phase in phases:
+                    if on_phase:
+                        on_phase(name, "start")
                     r = phase(ctx, acc, tools)
+                    if on_phase:
+                        on_phase(name, "done")
                     if isinstance(r, Early):
                         return r.result
                     if isinstance(r, Restart):

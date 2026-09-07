@@ -354,11 +354,37 @@ def _player_debug_payload(keeper, debug: bool) -> dict | None:
     return {"evaluated": evaluated, "matched": list(matched_by_id.values())}
 
 
+# F42：runner 内部相位名 → 现网 WS 步名。finalize 含 curator，映射 curate。
+# narrator.narrate 在 TurnRunner.execute 返回之后，由 run_turn 单独推 narrate。
+PHASE_TO_WS = {
+    "understand": "parse",
+    "adjudicate": "judge",
+    "encounter": "combat_entry",
+    "enrich": "enrich",
+    "finalize": "curate",
+}
+
+
 def run_turn(game: dict, user_input: str,
              weapon_lib=None, enemy_lib=None, injector=None,
              action_type: str = "", action_target: str = "",
-             debug: bool = False) -> PlayerTurnResult:
-    """Execute one turn. Returns a PlayerTurnResult."""
+             debug: bool = False, on_progress=None) -> PlayerTurnResult:
+    """Execute one turn. Returns a PlayerTurnResult.
+
+    on_progress(step, status)：对外 WS 步名。内部相位经 PHASE_TO_WS 映射；
+    narrate 包住真正的 narrator.narrate；所有返回路径 finally 推 complete。
+    """
+    try:
+        return _run_turn_impl(
+            game, user_input, weapon_lib, enemy_lib, injector,
+            action_type, action_target, debug, on_progress)
+    finally:
+        if on_progress:
+            on_progress("complete", "")
+
+
+def _run_turn_impl(game, user_input, weapon_lib, enemy_lib, injector,
+                   action_type, action_target, debug, on_progress):
     keeper = game["keeper"]
     from prompts import set_current_round
     set_current_round(keeper.turn_number)
@@ -397,7 +423,15 @@ def run_turn(game: dict, user_input: str,
             action_type=action_type,
             action_target=action_target,
         )
-        result = keeper.process_turn(turn_input, author=author)
+        if on_progress is not None:
+            def _emit_internal(name, status):
+                ext = PHASE_TO_WS.get(name)
+                if ext:
+                    on_progress(ext, status)
+            result = keeper.process_turn(
+                turn_input, author=author, on_phase=_emit_internal)
+        else:
+            result = keeper.process_turn(turn_input, author=author)
 
     debug_payload = _player_debug_payload(keeper, debug)
 
@@ -502,8 +536,14 @@ def run_turn(game: dict, user_input: str,
     elif brief is not None and hasattr(brief, 'scene_snapshot'):
         try:
             snap = world.build_snapshot()
-            narrative_brief, narrative, scene_update = narrator.narrate(
-                brief, snap=snap, user_input=user_input)
+            if on_progress:
+                on_progress("narrate", "start")
+            try:
+                narrative_brief, narrative, scene_update = narrator.narrate(
+                    brief, snap=snap, user_input=user_input)
+            finally:
+                if on_progress:
+                    on_progress("narrate", "done")
             # F39：叙事全文在 narrate 成功之后入档；不后移 record_turn，不进 Author render
             if chronicle is not None:
                 chronicle.record_narrative(
