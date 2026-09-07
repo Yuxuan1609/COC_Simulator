@@ -5,6 +5,7 @@ import {
   renderEntities,
   renderSkills,
   renderLlm,
+  applyTurnDebug,
   toggleDebug,
   syncDebugUi,
 } from "../../frontend/static/js/debug.js";
@@ -129,6 +130,61 @@ test("renderSkills escapes entity_id and empty state", () => {
   assert.equal(html.includes("&lt;img"), true);
   assert.equal(html.includes("D100=90/50"), true);
   assert.match(renderSkills([]), /本回合无检定/);
+});
+
+test("renderSkills shows production raw_check D100 text", () => {
+  const html = renderSkills([{
+    entity_id: "IT_SEARCH",
+    entity_type: "interaction",
+    tier: "regular",
+    success: true,
+    raw_check: "侦查检定：D100=45/50",
+  }]);
+  assert.match(html, /侦查检定：D100=45\/50/);
+  assert.match(html, /IT_SEARCH/);
+  assert.equal(html.includes("<script"), false);
+});
+
+test("renderSkills escapes raw_check XSS", () => {
+  const html = renderSkills([{
+    entity_id: "IT_X",
+    tier: "regular",
+    success: true,
+    raw_check: "<script>alert(1)</script>D100=1/2",
+    enhancement: { detail_override: "<b>boost</b>" },
+  }]);
+  assert.equal(html.includes("<script>"), false);
+  assert.equal(html.includes("<b>boost</b>"), false);
+  assert.equal(html.includes("&lt;script&gt;"), true);
+  assert.equal(html.includes("&lt;b&gt;"), true);
+  assert.match(html, /D100=1\/2/);
+});
+
+test("applyTurnDebug falls back to skill_checks when skill_results empty", () => {
+  const els = {};
+  globalThis.document = {
+    getElementById(id) {
+      if (!els[id]) els[id] = el(false);
+      return els[id];
+    },
+  };
+  applyTurnDebug({
+    debug: { evaluated: [], matched: [] },
+    skill_results: [],
+    player_snapshot: {
+      skill_checks: [{
+        entity_id: "IT_Y",
+        tier: "hard",
+        success: true,
+        raw_roll: 12,
+        target: 40,
+      }],
+    },
+  });
+  const html = els["debug-skills-body"].innerHTML;
+  assert.match(html, /IT_Y/);
+  assert.match(html, /D100=12\/40/);
+  assert.equal(html.includes("本回合无检定"), false);
 });
 
 test("renderLlm escapes filename and preview", () => {

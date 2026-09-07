@@ -85,19 +85,27 @@ export function renderSkills(results) {
   }
   return list.map(function (sc) {
     const success = sc.success !== false;
-    let dice = "";
+    let extra = "";
+    if (sc.raw_check) {
+      extra += " " + escapeHtml(sc.raw_check);
+    }
     if (sc.raw_roll != null && sc.raw_roll !== "") {
-      dice = " D100=" + escapeHtml(sc.raw_roll);
+      extra += ' <span class="debug-muted">D100=' + escapeHtml(sc.raw_roll);
       if (sc.target != null && sc.target !== "") {
-        dice += "/" + escapeHtml(sc.target);
+        extra += "/" + escapeHtml(sc.target);
       }
+      extra += "</span>";
+    }
+    const enh = sc.enhancement && sc.enhancement.detail_override;
+    if (enh) {
+      extra += ' <span class="debug-muted">' + escapeHtml(enh) + "</span>";
     }
     return (
       '<div class="debug-row">' +
       flagSpan(success, "OK", "FAIL") +
       " " + escapeHtml(sc.entity_id || "?") +
       (sc.tier ? ' <span class="debug-muted">[' + escapeHtml(sc.tier) + "]</span>" : "") +
-      (dice ? '<span class="debug-muted">' + dice + "</span>" : "") +
+      extra +
       "</div>"
     );
   }).join("");
@@ -120,15 +128,23 @@ export function renderLlm(records) {
   }).join("");
 }
 
+function pickSkills(data) {
+  const results = data.skill_results;
+  if (Array.isArray(results) && results.length) return results;
+  const checks = data.player_snapshot && data.player_snapshot.skill_checks;
+  if (Array.isArray(checks) && checks.length) return checks;
+  return [];
+}
+
 export function applyTurnDebug(data) {
   if (!data) return;
   if (data.debug) {
     setBody("debug-trace-body", renderTrace(data.debug));
   }
-  if (data.debug || data.skill_results) {
-    const skills = data.skill_results
-      || (data.player_snapshot && data.player_snapshot.skill_checks)
-      || [];
+  const skills = pickSkills(data);
+  const hasResults = Array.isArray(data.skill_results);
+  const hasChecks = !!(data.player_snapshot && Array.isArray(data.player_snapshot.skill_checks));
+  if (data.debug || skills.length || hasResults || hasChecks) {
     setBody("debug-skills-body", renderSkills(skills));
   }
 }

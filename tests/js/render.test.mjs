@@ -130,3 +130,20 @@ test("handleTurnResponse renders escaped debug.evaluated into panel", () => {
   assert.equal(skills.includes("<b>IT_X</b>"), false);
   assert.equal(skills.includes("&lt;b&gt;"), true);
 });
+
+test("handleTurnResponse debug panel shows production raw_check", () => {
+  const els = installDom();
+  handleTurnResponse("搜索", {
+    narrative: "ok",
+    debug: { evaluated: [], matched: [] },
+    skill_results: [{
+      entity_id: "IT_SEARCH",
+      entity_type: "interaction",
+      tier: "regular",
+      success: true,
+      raw_check: "侦查检定：D100=45/50",
+    }],
+  });
+  const skills = els["debug-skills-body"].innerHTML;
+  assert.match(skills, /侦查检定：D100=45\/50/);
+});
