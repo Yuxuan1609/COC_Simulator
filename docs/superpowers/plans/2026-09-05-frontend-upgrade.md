@@ -338,8 +338,8 @@ def game_debug(turns: int = 5):
 - Create: `frontend/static/js/debug.js`
 - Modify: `frontend/templates/game.html`（工具栏 bug 开关 + 面板容器）
 
-- [ ] **Step 1: 实现**——四节折叠（触发流水/实体可用性/检定明细/LLM 记录）；开关走 §4 switch 组件（**R15 拍板：与现有 `trpg_debug` 合并为一个开关，不再整页 reload**；原 DBG 敌人详情/潜在威胁在 debug 开时仍挂场景卡，同时打开 panel）。开启时 turn 请求 FormData 带 `debug=1` 并把响应 `debug` 键渲染进「当回合触发流水」。`setSwitch('debug')` 与 `localStorage.trpg_debug` 单一写入。
-- [ ] **Step 2: 手动验证**（spec §8.3 场景：开一局→开 debug→输行动→四节有数据）+ 提交
+- [x] **Step 1: 实现**——四节折叠（触发流水/实体可用性/检定明细/LLM 记录）；开关走 §4 switch 组件（**R15 拍板：与现有 `trpg_debug` 合并为一个开关，不再整页 reload**；原 DBG 敌人详情/潜在威胁在 debug 开时仍挂场景卡，同时打开 panel）。开启时 turn 请求 FormData 带 `debug=1` 并把响应 `debug` 键渲染进「当回合触发流水」。`setSwitch('debug')` 与 `localStorage.trpg_debug` 单一写入。
+- [x] **Step 2: 手动验证**（spec §8.3：本环境无浏览器手测，以 `tests/js/debug.test.mjs` + `test_frontend_js_modules.py` 锁定四节渲染/XSS/无 reload/FormData `debug=1`）+ 提交
 
 ---
 

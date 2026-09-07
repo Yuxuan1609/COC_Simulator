@@ -99,3 +99,34 @@ test("handleTurnResponse escapes leftover narrative_html", () => {
   assert.equal(html.includes("<img"), false);
   assert.equal(html.includes("&lt;img"), true);
 });
+
+test("handleTurnResponse renders escaped debug.evaluated into panel", () => {
+  const els = installDom();
+  handleTurnResponse("看", {
+    narrative: "ok",
+    debug: {
+      evaluated: [{
+        id: "<img src=x onerror=alert(1)>",
+        available: false,
+        gate: "requirement",
+        reason: "<script>x</script>",
+      }],
+      matched: [],
+    },
+    skill_results: [{
+      entity_id: "<b>IT_X</b>",
+      tier: "regular",
+      success: true,
+      raw_roll: 20,
+      target: 50,
+    }],
+  });
+  const html = els["debug-trace-body"].innerHTML;
+  assert.equal(html.includes("<img"), false);
+  assert.equal(html.includes("<script>"), false);
+  assert.equal(html.includes("&lt;img"), true);
+  assert.equal(html.includes("&lt;script&gt;"), true);
+  const skills = els["debug-skills-body"].innerHTML;
+  assert.equal(skills.includes("<b>IT_X</b>"), false);
+  assert.equal(skills.includes("&lt;b&gt;"), true);
+});

@@ -27,6 +27,7 @@ export const state = {
   sceneCardExpanded: false,
   inlineChatVisible: false,
   lastSceneEnemies: [],
+  lastSceneSnap: null,
   switches: {},
 };
 

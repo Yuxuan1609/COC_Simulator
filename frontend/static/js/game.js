@@ -1,20 +1,21 @@
 import { state, loadState, setDebug } from "./state.js";
 import { escapeHtml } from "./util.js";
 import { get } from "./api.js";
-import { initLayout, paintSwitch } from "./layout.js";
+import { initLayout } from "./layout.js";
 import {
   initGame,
   sendTurn,
   sendTurnAction,
   toggleSceneCard,
   toggleInlineChat,
-  toggleDebug,
   toggleAutoWin,
   syncAutoWin,
   talkToNpc,
   openEnemyDetail,
   closeEnemyDetail,
+  updateSceneCard,
 } from "./scene.js";
+import { toggleDebug as toggleDebugPanel, syncDebugUi, refreshDebugSnapshot } from "./debug.js";
 import {
   toggleCombatPanel,
   executeCombatRound,
@@ -23,6 +24,12 @@ import {
 } from "./combat.js";
 import { toggleCharCard, updateCharHUD } from "./charcard.js";
 import { connectWS } from "./ws.js";
+
+function toggleDebug() {
+  const pending = toggleDebugPanel();
+  if (state.lastSceneSnap) updateSceneCard(state.lastSceneSnap);
+  return pending;
+}
 
 window.initGame = initGame;
 window.sendTurn = sendTurn;
@@ -48,12 +55,8 @@ function applyDebugQuery() {
 }
 
 function paintDebugUi() {
-  const badge = document.getElementById("debug-badge");
-  if (badge) {
-    if (state.debug) badge.classList.remove("hidden");
-    else badge.classList.add("hidden");
-  }
-  paintSwitch(document.getElementById("btn-debug"), state.debug);
+  syncDebugUi();
+  if (state.debug) refreshDebugSnapshot();
 }
 
 async function bootstrapExistingGame() {

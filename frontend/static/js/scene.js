@@ -5,6 +5,7 @@ import { updateCharHUD } from "./charcard.js";
 import { connectWS } from "./ws.js";
 import { enterCombatMode } from "./combat.js";
 import { paintSwitch } from "./layout.js";
+import { applyTurnDebug, refreshDebugSnapshot } from "./debug.js";
 
 export function toggleSceneCard() {
   state.sceneCardExpanded = !state.sceneCardExpanded;
@@ -21,6 +22,7 @@ export function toggleSceneCard() {
 
 export function updateSceneCard(snap) {
   if (!snap) return;
+  state.lastSceneSnap = snap;
   let timeStr = "";
   if (snap.time && snap.time.game_time !== undefined) {
     const gt = snap.time.game_time;
@@ -497,6 +499,8 @@ export function handleTurnResponse(userText, data) {
     return;
   }
 
+  applyTurnDebug(data);
+
   const snap = data.player_snapshot;
   if (snap) updateSceneCard(snap);
 
@@ -617,6 +621,7 @@ export function handleTurnResponse(userText, data) {
 }
 
 async function runTurnRequest(fd, displayText, opts) {
+  if (state.debug) fd.append("debug", "1");
   const input = document.getElementById("user-input");
   if (opts && opts.clearInput && input) input.value = "";
   if (input) input.disabled = true;
@@ -635,6 +640,7 @@ async function runTurnRequest(fd, displayText, opts) {
       addToHistory(displayText, data.html);
     } else {
       handleTurnResponse(displayText, data);
+      if (state.debug) refreshDebugSnapshot();
     }
     try {
       const ps = await get("/api/game/player-status?format=json");
@@ -678,12 +684,6 @@ export async function sendTurnAction(actionType, actionTarget) {
     displayText = "移动到 " + actionTarget;
   }
   await runTurnRequest(fd, displayText, { clearInput: false });
-}
-
-export function toggleDebug() {
-  setSwitch("debug", !state.debug);
-  paintSwitch(document.getElementById("btn-debug"), state.debug);
-  location.reload();
 }
 
 export function toggleAutoWin() {

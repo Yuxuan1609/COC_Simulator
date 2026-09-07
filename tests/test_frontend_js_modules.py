@@ -32,6 +32,7 @@ MODULE_FILES = (
     "charcard.js",
     "ws.js",
     "layout.js",
+    "debug.js",
     "game.js",
 )
 
@@ -251,3 +252,47 @@ def test_node_js_unit_suite():
             f"stdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}"
         )
+
+
+def _fn_source(src: str, name: str) -> str:
+    m = re.search(rf"(?:export\s+)?function {re.escape(name)}\s*\([^)]*\)\s*\{{", src)
+    assert m, f"missing function {name}"
+    i = src.find("{", m.end() - 1)
+    depth = 0
+    for j, ch in enumerate(src[i:], i):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return src[m.start(): j + 1]
+    raise AssertionError(f"unclosed function {name}")
+
+
+def test_debug_panel_markup():
+    html = _read(GAME_HTML)
+    assert 'id="debug-panel"' in html
+    for sid in (
+        "debug-sec-trace",
+        "debug-sec-entities",
+        "debug-sec-skills",
+        "debug-sec-llm",
+    ):
+        assert f'id="{sid}"' in html, sid
+    game_js = _read(JS_DIR / "game.js")
+    assert "debug.js" in game_js
+
+
+def test_toggle_debug_does_not_reload():
+    debug_js = _read(JS_DIR / "debug.js")
+    scene_js = _read(JS_DIR / "scene.js")
+    game_js = _read(JS_DIR / "game.js")
+    assert "location.reload" not in debug_js
+    assert "location.reload" not in scene_js
+    assert "location.reload" not in _fn_source(debug_js, "toggleDebug")
+    assert "location.reload" not in _fn_source(game_js, "toggleDebug")
+
+
+def test_scene_js_appends_debug_formdata():
+    scene = _read(JS_DIR / "scene.js")
+    assert re.search(r"""fd\.append\(\s*["']debug["']""", scene)

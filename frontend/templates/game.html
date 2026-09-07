@@ -205,7 +205,7 @@
       <button id="btn-search" onclick="sendTurnAction('search')" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-aged-gold rounded border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">
         搜索当前场景
       </button>
-      <button type="button" id="btn-debug" class="switch" role="switch" aria-checked="false" onclick="toggleDebug()" title="调试模式：点击敌人查看详细数据（HP/护甲/攻击/阶段/Boss机制）">
+      <button type="button" id="btn-debug" class="switch" role="switch" aria-checked="false" onclick="toggleDebug()" title="调试模式：触发流水/实体/检定/LLM 面板；点击敌人查看详细数据">
         <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
         <span class="switch-label">DEBUG</span>
       </button>
@@ -298,6 +298,31 @@
 </div>
 
 <div id="debug-badge" class="hidden fixed top-2 right-2 z-40 text-[10px] font-mono text-yellow-400/80 border border-yellow-600/40 rounded px-1.5 py-0.5 bg-black/60">DEBUG</div>
+
+<div id="debug-panel" class="hidden" aria-hidden="true">
+  <div class="debug-panel-head">
+    <span>DEBUG</span>
+    <button type="button" id="debug-panel-close" onclick="toggleDebug()" title="关闭调试面板">关闭</button>
+  </div>
+  <div class="debug-panel-body">
+    <details open id="debug-sec-trace">
+      <summary>触发流水</summary>
+      <div id="debug-trace-body" class="debug-sec-body">本回合无流水（未开 debug 或尚未行动）</div>
+    </details>
+    <details id="debug-sec-entities">
+      <summary>实体可用性</summary>
+      <div id="debug-entities-body" class="debug-sec-body">暂无实体可用性数据</div>
+    </details>
+    <details id="debug-sec-skills">
+      <summary>检定明细</summary>
+      <div id="debug-skills-body" class="debug-sec-body">本回合无检定</div>
+    </details>
+    <details id="debug-sec-llm">
+      <summary>LLM 记录</summary>
+      <div id="debug-llm-body" class="debug-sec-body">暂无 LLM 记录</div>
+    </details>
+  </div>
+</div>
 
 <script type="module" src="/static/js/game.js"></script>
 {% endblock %}

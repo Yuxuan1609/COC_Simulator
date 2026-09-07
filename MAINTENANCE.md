@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 §5 Task 9：`debug.js` 四节折叠面板（触发流水/实体可用性/检定明细/LLM 记录）。DEBUG 开关与 `trpg_debug` 合并，`toggleDebug` 不再 `location.reload`；开时 `GET /api/game/debug?turns=5` 填 §2/§4，turn FormData 带 `debug=1`，响应 `debug`/`skill_results` 填 §1/§3。原 DBG 敌人详情/潜在威胁仍挂场景卡（toggle 时重绘 `lastSceneSnap`）。TDD：`tests/js/debug.test.mjs` + `test_frontend_js_modules.py` + render 接线。本环境无浏览器手测。默认套件 616 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。 |
 | 2026-09-07 | 前端专项 §5 Task 8：`GET /api/game/debug?turns=N` 聚合 turn_logs + 状态快照 + 场景实体可用性 + LLM 摘要。新建 `frontend/routers/game/debug.py`；`__init__.py` include debug.router。日志目录取 `game_loop._turn_logger.log_dir`（fallback `game["_log_dir"]` / `prompts._log_dir`），禁止写死 `data/debug/turn_logs/`。session init/lazy 写 `g["_log_dir"]`。`_entity_availability` 只读：once / time_condition / `_evaluate_requirement`，扫描时 `judge._turn_trace=None`（finally 恢复），不调 `check_auto_triggers`/`_execute_entity`。无局 400 `{error:no_game}`；turns clamp 1..50。TDD：`test_frontend_contract.py` +2。默认套件 613 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。session 246→248。 |
 | 2026-09-07 | Task 7 复审 Important：闸门失败覆盖 parse `matched.success=True`。`_execute_entity` once/attitude/requirement 失败补 `_trace_match(False)`；`phase_b_adjudicate` 时间门失败 `_trace_eval(gate=time)` + `_trace_match(False)`。TDD：test_turn_trace +2。judge 646→652 / adjudicate 296→300。 |
 | 2026-09-07 | 前端专项 §5 Task 7：turn_trace 埋点（judge/keeper 只读，不改判定）。全链路 `Form(debug)` → `run_turn(..., debug=bool)` → `TurnContext.trace = [] if debug else None` → judge/keeper `_turn_trace.append` → `PlayerTurnResult.debug={evaluated,matched}` → JSON `debug` 键。debug OFF：trace/debug 均为 None，不分配列表。TDD：`tests/test_turn_trace.py` 4 测。默认套件 609 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。messages 303→304 / judge 600→646 / keeper 967→986 / context 49→50 / runner 41→46 / game_loop 943→981 / turn.py 293→304。 |
@@ -1191,23 +1192,24 @@ U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/
 
 `list_assets`@27 / `random_asset`@52。
 
-### templates + static/js — 游戏页前端（Task 4/6）
+### templates + static/js — 游戏页前端（Task 4/6/9）
 
-`templates/game.html` 瘦身为 markup + `<script type="module" src="/static/js/game.js">`。`templates/base.html` htmx 改为 `/static/js/vendor/htmx.min.js`（2.0.4）。Task 6：`#scene-panel` / `#char-panel` 外壳 `overflow-hidden`，内缘直系 `.splitter`，滚动在内层 `overflow-y-auto`；`#input-bar:focus-within`；DEBUG/AUTO_WIN `.switch`。
+`templates/game.html` 瘦身为 markup + `<script type="module" src="/static/js/game.js">`。`templates/base.html` htmx 改为 `/static/js/vendor/htmx.min.js`（2.0.4）。Task 6：`#scene-panel` / `#char-panel` 外壳 `overflow-hidden`，内缘直系 `.splitter`，滚动在内层 `overflow-y-auto`；`#input-bar:focus-within`；DEBUG/AUTO_WIN `.switch`。Task 9：`#debug-panel` 右侧抽屉四节 `details`（`debug-sec-trace/entities/skills/llm`），不拆三栏骨架。
 
 | 文件 | 职责 |
 |------|------|
 | `util.js` | `escapeHtml` / `isHtmlFallback` / `jsStringLiteral` |
 | `api.js` | `postForm`（FormData，不设 Content-Type）/ `postJSON` / `get`；按 content-type 分支 JSON vs `{html}`；HTTP 错误带 `status`/`body` |
-| `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `setSwitch`（`debug`→`setDebug` @51，`autoWin`→`setAutoWin` @56，其它写 `switches`） |
-| `scene.js` | 场景卡、initGame、sendTurn/sendTurnAction（`runTurnRequest` 合并）、handleTurnResponse（优先 `slash.text`，残余 `narrative_html` `escapeHtml`）、renderTurnDynamic/renderSkillChips、inline chat；`toggleDebug` @683（`setSwitch` 后仍 reload，Task 9 再停）/ `toggleAutoWin` @689 / `syncAutoWin` @694（`paintSwitch`） |
+| `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `lastSceneSnap` @30 / `setSwitch`（`debug`→`setDebug` @52，`autoWin`→`setAutoWin` @57，其它写 `switches`） |
+| `scene.js` | 场景卡（`updateSceneCard` 写 `lastSceneSnap` @25）、initGame、sendTurn/sendTurnAction（`runTurnRequest` @623：`state.debug` 时 `fd.append("debug","1")`，成功后 `refreshDebugSnapshot` 不 await）、handleTurnResponse（`applyTurnDebug` @502；优先 `slash.text`，残余 `narrative_html` `escapeHtml`）、renderTurnDynamic/renderSkillChips、inline chat；`toggleAutoWin` @689 / `syncAutoWin` @694（`paintSwitch`） |
+| `debug.js` | 四节面板：`renderTrace` @25 / `renderEntities` @62 / `renderSkills` @81 / `renderLlm` @106（一律 `escapeHtml`）；`applyTurnDebug` @123（turn JSON → 流水+检定）；`applyDebugSnapshot` @136（GET → 实体+LLM）；`refreshDebugSnapshot` @146（`GET /api/game/debug?turns=5`，失败静默）；`syncDebugUi` @157；`toggleDebug` @169（`setSwitch('debug')` 只写 `trpg_debug`，不 reload） |
 | `combat.js` | 战斗面板；`bumpTargetCount` 纯函数；start/round 走 `postJSON` |
 | `charcard.js` | `renderCharacterCard`（JSON→HTML，`escapeHtml`）/ `hpBarPercent`/`sanBarPercent`（F2 分母 san_max）/ `toggleCharCard`（`get('/api/game/character-card')`，无 htmx.ajax）/ `updateCharHUD` |
 | `ws.js` | `/api/game/progress` + step-indicator |
 | `layout.js` | `computePanelWidth` @3；`paintSwitch` @31；`initSplitter` @38（pointerId 过滤 + `lostpointercapture`/`releasePointerCapture` + `trpg_panel_scene_w`/`trpg_panel_char_w`）；`initLayout` @106（scene `side:left` / char `side:right`） |
-| `game.js` | 入口：`window.*` 桥（15 个 onclick 处理函数）、`setDebug` 吃 `?debug=`、`initLayout` + `paintDebugUi`、bootstrap `/api/game/state` |
+| `game.js` | 入口：`window.*` 桥；`toggleDebug` @28（调 `toggleDebugPanel` 后按 `lastSceneSnap` 重绘场景卡）；`setDebug` 吃 `?debug=`；`paintDebugUi` @57（`syncDebugUi` + 已开则拉 snapshot）；bootstrap `/api/game/state` |
 
-scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory`），仅函数内调用，ESM live binding。scene.js 从 layout.js 取 `paintSwitch`（无环）。测试：`tests/test_frontend_js_modules.py` + `tests/js/*.test.mjs`。
+scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory`），仅函数内调用，ESM live binding。scene.js → debug.js 单向（无环）。测试：`tests/test_frontend_js_modules.py` + `tests/js/*.test.mjs`。
 
 ---
 
