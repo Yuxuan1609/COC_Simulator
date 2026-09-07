@@ -289,3 +289,86 @@ def test_render_facts_boss_block_and_key_items():
     w2 = _make_boss_world()
     text2 = WorldChronicle().render_for_author(w2)
     assert "BOSS_T1" in text2 and "未遭遇" in text2, "未开战 Boss 也须可见"
+
+
+# ── F39 narrative_log：玩家侧历史回看 ──
+
+
+def test_record_narrative_truncates_2000():
+    from scenario_core import WorldChronicle
+    c = WorldChronicle()
+    c.record_narrative(3, "b" * 3000, "n" * 3000)
+    assert len(c.narrative_log) == 1
+    e = c.narrative_log[0]
+    assert e["turn"] == 3
+    assert e["brief"] == "b" * 2000
+    assert e["narrative"] == "n" * 2000
+
+
+def test_record_narrative_none_becomes_empty_string():
+    from scenario_core import WorldChronicle
+    c = WorldChronicle()
+    c.record_narrative(1, None, None)
+    e = c.narrative_log[0]
+    assert e["brief"] == ""
+    assert e["narrative"] == ""
+
+
+def test_narrative_log_window_200():
+    from scenario_core import WorldChronicle
+    c = WorldChronicle()
+    for i in range(250):
+        c.record_narrative(i + 1, "b", "n")
+    assert len(c.narrative_log) == 200
+    assert c.narrative_log[0]["turn"] == 51
+
+
+def test_narrative_log_roundtrip():
+    from scenario_core import WorldChronicle
+    c = WorldChronicle()
+    marker = "UNIQUE_NARRATIVE_F39_xyzzy"
+    c.record_narrative(2, "简报", marker)
+    d = c.to_dict()
+    assert "narrative_log" in d
+    assert d["narrative_log"][0]["narrative"] == marker
+    back = WorldChronicle.from_dict(d)
+    assert list(back.narrative_log) == list(c.narrative_log)
+
+
+def test_from_dict_old_save_without_narrative_log():
+    from scenario_core import WorldChronicle
+    c = WorldChronicle.from_dict({
+        "events": [],
+        "entity_results": {},
+        "patches": [],
+        "events_summary": "",
+        "boss_seen_spawned": [],
+        "boss_seen_dead": [],
+    })
+    assert list(c.narrative_log) == []
+
+
+def test_render_for_author_excludes_narrative_log():
+    from scenario_core import WorldChronicle
+    from investigator import Investigator
+    w = _make_world()
+    w.set_player(Investigator(name="t"))
+    c = WorldChronicle()
+    marker = "UNIQUE_NARRATIVE_F39_xyzzy_must_not_leak"
+    brief_marker = "UNIQUE_BRIEF_F39_must_not_leak"
+    c.record_turn(1, "搜索房间", _make_result(), w)
+    c.record_narrative(1, brief_marker, marker)
+    text = c.render_for_author(w)
+    assert marker not in text
+    assert brief_marker not in text
+    assert "【编年史】" in text
+
+
+def test_world_save_includes_narrative_log():
+    from scenario_core import ScenarioWorld
+    w = _make_world()
+    w.chronicle.record_narrative(1, "b", "n")
+    d = w.to_dict()
+    assert d["chronicle"]["narrative_log"][0]["narrative"] == "n"
+    back = ScenarioWorld.from_dict(d, w.graph)
+    assert list(back.chronicle.narrative_log)[0]["narrative"] == "n"

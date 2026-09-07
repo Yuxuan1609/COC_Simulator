@@ -2,12 +2,51 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 router = APIRouter()
 
 from . import session
 from .charcard import _known_spell_names
+
+
+def _clamp_history_limit(n: int) -> int:
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        n = 20
+    return max(1, min(50, n))
+
+
+def _paginate_narrative_log(entries, before_turn=None, limit=20):
+    """newest-first page of narrative_log. next_before = 本页最小 turn（若还有更早）。"""
+    limit = _clamp_history_limit(limit)
+    items = [e for e in (entries or []) if isinstance(e, dict)]
+    if before_turn is not None:
+        try:
+            bt = int(before_turn)
+        except (TypeError, ValueError):
+            bt = None
+        if bt is not None:
+            items = [e for e in items if e.get("turn", 0) < bt]
+    newest_first = sorted(items, key=lambda e: e.get("turn", 0), reverse=True)
+    page = newest_first[:limit]
+    next_before = None
+    if page:
+        smallest = min(e.get("turn", 0) for e in page)
+        if any(e.get("turn", 0) < smallest for e in newest_first):
+            next_before = smallest
+    return {
+        "items": [
+            {
+                "turn": e.get("turn"),
+                "brief": e.get("brief") or "",
+                "narrative": e.get("narrative") or "",
+            }
+            for e in page
+        ],
+        "next_before": next_before,
+    }
 
 
 @router.get("/game", response_class=HTMLResponse)
@@ -84,6 +123,18 @@ async def game_state():
         "known_spells": _known_spell_names(world, p) if p else [],
         "warning": game.get("_char_load_warning") if game else None,
     }
+
+
+@router.get("/api/game/history")
+async def game_history(before_turn: int | None = None, limit: int = 20):
+    """F39：玩家侧叙事历史。只读 chronicle.narrative_log，不含 Author events。"""
+    game = session.get_game()
+    if game is None:
+        return JSONResponse({"error": "no_game"}, status_code=400)
+    world = game["keeper"].world
+    chronicle = getattr(world, "chronicle", None)
+    entries = getattr(chronicle, "narrative_log", []) if chronicle is not None else []
+    return _paginate_narrative_log(entries, before_turn=before_turn, limit=limit)
 
 
 @router.post("/api/game/autowin")

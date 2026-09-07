@@ -7,7 +7,6 @@ import {
   sendTurn,
   sendTurnAction,
   toggleSceneCard,
-  toggleInlineChat,
   toggleAutoWin,
   syncAutoWin,
   talkToNpc,
@@ -15,6 +14,7 @@ import {
   closeEnemyDetail,
   updateSceneCard,
 } from "./scene.js";
+import { toggleHistory, bindHistoryScroll } from "./history.js";
 import { toggleDebug as toggleDebugPanel, syncDebugUi, refreshDebugSnapshot } from "./debug.js";
 import {
   toggleCombatPanel,
@@ -37,7 +37,7 @@ window.sendTurnAction = sendTurnAction;
 window.toggleSceneCard = toggleSceneCard;
 window.toggleCombatPanel = toggleCombatPanel;
 window.executeCombatRound = executeCombatRound;
-window.toggleInlineChat = toggleInlineChat;
+window.toggleHistory = toggleHistory;
 window.toggleDebug = toggleDebug;
 window.toggleAutoWin = toggleAutoWin;
 window.toggleCharCard = toggleCharCard;
@@ -91,6 +91,7 @@ document.addEventListener("DOMContentLoaded", function () {
   initLayout();
   paintDebugUi();
   syncAutoWin();
+  bindHistoryScroll();
 });
 document.addEventListener("keydown", function (e) {
   if (e.key === "Enter" && e.target.id === "user-input") sendTurn();

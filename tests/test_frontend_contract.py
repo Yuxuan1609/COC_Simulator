@@ -603,3 +603,83 @@ def test_debug_endpoint_no_game(client):
     assert resp.json() == {"error": "no_game"}
 
 
+# ── Task 10 / F39: GET /api/game/history ──
+
+
+def _history_game(n=25):
+    from collections import deque
+    log = deque(
+        [{"turn": i, "brief": f"b{i}", "narrative": f"n{i}"} for i in range(1, n + 1)],
+        maxlen=200,
+    )
+    world = SimpleNamespace(
+        chronicle=SimpleNamespace(
+            narrative_log=log,
+            events=[{"turn": 99, "input": "SECRET_AUTHOR_EVENT"}],
+        ),
+    )
+    return {"keeper": SimpleNamespace(world=world, turn_number=n)}
+
+
+def test_history_endpoint_no_game(client):
+    """get_game() 为 None → 400 JSON {error: no_game}。"""
+    with patch("frontend.routers.game.session.get_game", return_value=None):
+        resp = client.get("/api/game/history")
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "no_game"}
+
+
+def test_history_endpoint_pagination(client):
+    """newest-first；before_turn 过滤更早页；next_before 为本页最小 turn。"""
+    fake = _history_game(25)
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r1 = client.get("/api/game/history", params={"limit": 5})
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert set(d1.keys()) == {"items", "next_before"}
+    turns = [it["turn"] for it in d1["items"]]
+    assert turns == [25, 24, 23, 22, 21]
+    for it in d1["items"]:
+        assert set(it.keys()) == {"turn", "brief", "narrative"}
+        assert it["brief"] == f"b{it['turn']}"
+        assert it["narrative"] == f"n{it['turn']}"
+    assert d1["next_before"] == 21
+    assert "SECRET_AUTHOR_EVENT" not in r1.text
+
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r2 = client.get("/api/game/history", params={"before_turn": 21, "limit": 5})
+    d2 = r2.json()
+    assert [it["turn"] for it in d2["items"]] == [20, 19, 18, 17, 16]
+    assert d2["next_before"] == 16
+
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r3 = client.get("/api/game/history", params={"before_turn": 6, "limit": 5})
+    d3 = r3.json()
+    assert [it["turn"] for it in d3["items"]] == [5, 4, 3, 2, 1]
+    assert d3["next_before"] is None
+
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r4 = client.get("/api/game/history", params={"before_turn": 1, "limit": 5})
+    d4 = r4.json()
+    assert d4["items"] == []
+    assert d4["next_before"] is None
+
+
+def test_history_endpoint_limit_clamp_and_default(client):
+    fake = _history_game(60)
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r_hi = client.get("/api/game/history", params={"limit": 999})
+    assert len(r_hi.json()["items"]) == 50
+    assert r_hi.json()["next_before"] == 11
+
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r_lo = client.get("/api/game/history", params={"limit": 0})
+    assert len(r_lo.json()["items"]) == 1
+    assert r_lo.json()["items"][0]["turn"] == 60
+
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        r_def = client.get("/api/game/history")
+    assert len(r_def.json()["items"]) == 20
+    assert [it["turn"] for it in r_def.json()["items"]] == list(range(60, 40, -1))
+
+

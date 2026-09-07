@@ -33,6 +33,7 @@ MODULE_FILES = (
     "ws.js",
     "layout.js",
     "debug.js",
+    "history.js",
     "game.js",
 )
 
@@ -42,7 +43,7 @@ REQUIRED_WINDOW_HANDLERS = (
     "toggleSceneCard",
     "toggleCombatPanel",
     "executeCombatRound",
-    "toggleInlineChat",
+    "toggleHistory",
     "sendTurnAction",
     "toggleDebug",
     "toggleAutoWin",
@@ -170,8 +171,9 @@ def test_escape_html_covers_narrative_innerhtml():
     util = _read(JS_DIR / "util.js")
     scene = _read(JS_DIR / "scene.js")
     combat = _read(JS_DIR / "combat.js")
+    history = _read(JS_DIR / "history.js")
     assert "export function escapeHtml" in util
-    blob = scene + combat
+    blob = scene + combat + history
     for field in (
         "data.initial_brief",
         "data.initial_narrative",
@@ -186,6 +188,8 @@ def test_escape_html_covers_narrative_innerhtml():
     ):
         assert re.search(rf"escapeHtml\(\s*{re.escape(field)}", blob), field
     assert not re.search(r"turnParts\.push\(\s*data\.narrative_html\s*\)", scene)
+    assert re.search(r"escapeHtml\(\s*item\.brief", history)
+    assert re.search(r"escapeHtml\(\s*item\.narrative", history)
 
 
 def test_charcard_loads_json_not_htmx_ajax():
@@ -296,3 +300,18 @@ def test_toggle_debug_does_not_reload():
 def test_scene_js_appends_debug_formdata():
     scene = _read(JS_DIR / "scene.js")
     assert re.search(r"""fd\.append\(\s*["']debug["']""", scene)
+
+
+def test_history_panel_replaces_inline_chat():
+    html = _read(GAME_HTML)
+    assert 'id="history-panel"' in html
+    assert "chat-history-inline" not in html
+    assert "toggleInlineChat" not in html
+    assert "toggleHistory" in html
+    src = _read(JS_DIR / "history.js")
+    assert "/api/game/history" in src
+    assert "before_turn" in src
+    assert "escapeHtml" in src
+    game_js = _read(JS_DIR / "game.js")
+    assert "history.js" in game_js
+    assert "toggleHistory" in game_js

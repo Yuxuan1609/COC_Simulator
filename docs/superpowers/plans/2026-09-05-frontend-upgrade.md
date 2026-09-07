@@ -355,9 +355,9 @@ def game_debug(turns: int = 5):
 - Modify: `frontend/templates/game.html`（**R16 拍板：删除内联 chatMessages「对话记录」区**，由 history 面板替换；刷新后从 chronicle 重建最近 N 条）
 - Test: `tests/test_chronicle.py` 扩 + 契约测试
 
-- [ ] **Step 1: 失败测试**——narrate 后 record_narrative 使 narrative_log 含叙事全文（截断 2000 字）；save→load 后仍在；`render_for_author` 输出**不含** narrative_log 内容；端点分页形状；旧档（无此键）load 默认空列表。
-- [ ] **Step 2: 实现**（deque 入档：to_dict/from_dict 加键，v 旧档 additive-default 空列表）。
-- [ ] **Step 3: history.js 面板**（倒序、滚动到底加载更早；入口按钮放工具栏）。绿 + 提交。
+- [x] **Step 1: 失败测试**——narrate 后 record_narrative 使 narrative_log 含叙事全文（截断 2000 字）；save→load 后仍在；`render_for_author` 输出**不含** narrative_log 内容；端点分页形状；旧档（无此键）load 默认空列表。
+- [x] **Step 2: 实现**（deque 入档：to_dict/from_dict 加键，v 旧档 additive-default 空列表）。
+- [x] **Step 3: history.js 面板**（倒序、滚动到底加载更早；入口按钮放工具栏）。绿 + 提交。
 
 ### Task 11: F42 真实进度
 

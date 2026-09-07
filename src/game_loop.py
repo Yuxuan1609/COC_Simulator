@@ -504,6 +504,10 @@ def run_turn(game: dict, user_input: str,
             snap = world.build_snapshot()
             narrative_brief, narrative, scene_update = narrator.narrate(
                 brief, snap=snap, user_input=user_input)
+            # F39：叙事全文在 narrate 成功之后入档；不后移 record_turn，不进 Author render
+            if chronicle is not None:
+                chronicle.record_narrative(
+                    keeper.turn_number, narrative_brief, narrative)
             # Record brief to memory after narrator generates the final brief text
             world.memory.add_record(
                 user_input, "narrated", "",

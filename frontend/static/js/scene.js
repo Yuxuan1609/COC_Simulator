@@ -328,40 +328,8 @@ export async function initGame(e) {
   }
 }
 
-export function toggleInlineChat() {
-  state.inlineChatVisible = !state.inlineChatVisible;
-  const panel = document.getElementById("chat-history-inline");
-  const label = document.getElementById("inline-chat-label");
-  if (state.inlineChatVisible) {
-    panel.classList.remove("hidden");
-    label.textContent = "隐藏记录";
-    refreshInlineChat();
-  } else {
-    panel.classList.add("hidden");
-    label.textContent = "对话记录";
-  }
-}
-
-export function refreshInlineChat() {
-  const panel = document.getElementById("chat-history-inline");
-  if (!panel || panel.classList.contains("hidden")) return;
-  panel.innerHTML =
-    state.chatMessages.slice(-20).join("") ||
-    '<div class="text-xs text-gray-600 italic">暂无记录</div>';
-  panel.scrollTop = panel.scrollHeight;
-}
-
-export function addToHistory(userMsg, responseHtml) {
-  if (userMsg) {
-    state.chatMessages.push(
-      '<div class="history-user px-3 py-1 text-xs text-gray-600 border-l-2 border-gray-700 mb-1">&gt; ' +
-      escapeHtml(userMsg) +
-      "</div>",
-    );
-  }
-  if (responseHtml) state.chatMessages.push(responseHtml);
-  if (state.chatMessages.length > 200) state.chatMessages = state.chatMessages.slice(-200);
-  refreshInlineChat();
+export function addToHistory(_userMsg, _responseHtml) {
+  /* F39：历史改走 chronicle.narrative_log + history 面板，不再堆内存 HTML */
 }
 
 export function renderTurnDynamic(text) {

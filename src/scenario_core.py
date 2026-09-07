@@ -1899,19 +1899,23 @@ from collections import deque as _deque
 
 
 class WorldChronicle:
-    """滚动编年史：events(窗口15) + entity_results(截断100) + patches(append-only)。
+    """滚动编年史：events(窗口15) + entity_results(截断100) + patches(append-only)
+    + narrative_log(窗口200，玩家侧历史全文，不进 Author render)。
     facts 不存储——render 时从 world 实时采集。
     events_summary 为 LLM 蒸馏预留字段（本期不接线，见 spec §5）。"""
 
     EVENTS_WINDOW = 15
     INPUT_MAX = 60
     TEXT_MAX = 100
+    NARRATIVE_MAX = 2000
+    NARRATIVE_WINDOW = 200
 
     def __init__(self):
         self.events: _deque = _deque(maxlen=self.EVENTS_WINDOW)
         self.entity_results: dict[str, str] = {}
         self.patches: list[dict] = []
         self.events_summary: str = ""
+        self.narrative_log: _deque = _deque(maxlen=self.NARRATIVE_WINDOW)
         self._boss_seen_spawned: set[str] = set()   # boss diff 基准（入档防读档重报）
         self._boss_seen_dead: set[str] = set()
 
@@ -1957,6 +1961,14 @@ class WorldChronicle:
         if boss_ev:
             entry["boss"] = boss_ev
         self.events.append(entry)
+
+    def record_narrative(self, turn_number: int, brief, narrative) -> None:
+        """narrate 成功后由 game_loop 写入玩家侧历史（截断 2000 字）。不进 render_for_author。"""
+        self.narrative_log.append({
+            "turn": turn_number,
+            "brief": (brief or "")[:self.NARRATIVE_MAX],
+            "narrative": (narrative or "")[:self.NARRATIVE_MAX],
+        })
 
     def _diff_boss(self, world) -> list[str]:
         """对 world.bosses 做增量 diff：新 engage / 新 defeated。逻辑同 llm_player._collect_mech_line。"""
@@ -2114,6 +2126,7 @@ class WorldChronicle:
             "entity_results": dict(self.entity_results),
             "patches": list(self.patches),
             "events_summary": self.events_summary,
+            "narrative_log": list(self.narrative_log),
             "boss_seen_spawned": sorted(self._boss_seen_spawned),
             "boss_seen_dead": sorted(self._boss_seen_dead),
         }
@@ -2125,6 +2138,7 @@ class WorldChronicle:
         c.entity_results = dict(data.get("entity_results", {}))
         c.patches = list(data.get("patches", []))
         c.events_summary = data.get("events_summary", "")
+        c.narrative_log = _deque(data.get("narrative_log", []), maxlen=cls.NARRATIVE_WINDOW)
         c._boss_seen_spawned = set(data.get("boss_seen_spawned", []))
         c._boss_seen_dead = set(data.get("boss_seen_dead", []))
         return c
