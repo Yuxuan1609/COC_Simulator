@@ -30,7 +30,7 @@ def test_turn_endpoint_forwards_pending_interaction(client):
         skill_results=[], timestamp="12:00:00",
     )
     fake_game = SimpleNamespace()
-    with patch("frontend.routers.game.get_game", return_value=fake_game), \
+    with patch("frontend.routers.game.session.get_game", return_value=fake_game), \
          patch("game_loop.run_turn", return_value=fake_result):
         resp = client.post("/api/game/turn", data={"user_input": "搜索桌子"})
     assert resp.status_code == 200
@@ -70,7 +70,7 @@ def _fake_game_with_spells():
 
 
 def test_player_status_json_includes_mp_and_known_spells(client):
-    with patch("frontend.routers.game.get_game", return_value=_fake_game_with_spells()):
+    with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/player-status?format=json")
     assert resp.status_code == 200
     data = resp.json()
@@ -81,7 +81,7 @@ def test_player_status_json_includes_mp_and_known_spells(client):
 
 
 def test_character_card_shows_mp_max_and_spells(client):
-    with patch("frontend.routers.game.get_game", return_value=_fake_game_with_spells()):
+    with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/character-card")
     assert resp.status_code == 200
     html = resp.text
@@ -96,7 +96,7 @@ def test_character_card_shows_mp_max_and_spells(client):
 
 def test_player_status_json_includes_san_max(client):
     """F2:player-status JSON 暴露 san_max(SAN bar 分母数据来源)。"""
-    with patch("frontend.routers.game.get_game", return_value=_fake_game_with_spells()):
+    with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/player-status?format=json")
     assert resp.status_code == 200
     data = resp.json()
@@ -106,7 +106,7 @@ def test_player_status_json_includes_san_max(client):
 
 def test_game_state_includes_san_max(client):
     """F2:/api/game/state 暴露 san_max。"""
-    with patch("frontend.routers.game.get_game", return_value=_fake_game_with_spells()):
+    with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/state")
     assert resp.status_code == 200
     assert resp.json()["san_max"] == 88
@@ -114,7 +114,7 @@ def test_game_state_includes_san_max(client):
 
 def test_character_card_san_bar_uses_san_max(client):
     """F2:角色卡 SAN bar 分母用 SAN_MAX 而非硬编码 99(55/88→62.5%)。"""
-    with patch("frontend.routers.game.get_game", return_value=_fake_game_with_spells()):
+    with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/character-card")
     assert resp.status_code == 200
     assert "62.5%" in resp.text
@@ -123,7 +123,7 @@ def test_character_card_san_bar_uses_san_max(client):
 def test_combat_state_frontend_serialization_includes_san_max():
     """F2:战斗 state 前端序列化含 player_san_max;CombatState 默认 99。"""
     from game.combat import CombatState
-    from frontend.routers.game import _serialize_combat_state_for_frontend
+    from frontend.routers.game.combat import _serialize_combat_state_for_frontend
     st = CombatState(player_san=50, player_san_max=80)
     assert _serialize_combat_state_for_frontend(st)["player_san_max"] == 80
     assert _serialize_combat_state_for_frontend(CombatState())["player_san_max"] == 99
@@ -316,7 +316,7 @@ class TestGameContract:
             brief="简报", narrative="叙事",
             skill_results=[], timestamp="12:00:00",
         )
-        with patch("frontend.routers.game.get_game",
+        with patch("frontend.routers.game.session.get_game",
                    return_value=_fake_game_with_spells()), \
              patch("game_loop.run_turn", return_value=fake_result):
             resp = client.post("/api/game/turn", data={"user_input": "看"})
@@ -327,7 +327,7 @@ class TestGameContract:
 
     def test_scene_and_command(self, client):
         fake = _fake_game_with_spells()
-        with patch("frontend.routers.game.get_game", return_value=fake):
+        with patch("frontend.routers.game.session.get_game", return_value=fake):
             scene = client.get("/api/game/scene")
             assert scene.status_code == 200
             assert "书房" in scene.text
@@ -343,7 +343,7 @@ class TestGameContract:
         assert r2.json()["auto_win"] is False
 
     def test_combat_start_requires_session(self, client):
-        with patch("frontend.routers.game.get_game", return_value=None):
+        with patch("frontend.routers.game.session.get_game", return_value=None):
             r = client.post("/api/combat/start", json={"combat_init": {}})
         assert r.status_code == 400
 
@@ -376,8 +376,8 @@ def test_init_char_load_failure_surfaces_warning(client, tmp_path, monkeypatch):
     monkeypatch.setattr("game_loop.setup_logging", lambda: str(tmp_path))
     monkeypatch.setattr("game_loop.start_autosave", lambda g: None)
     monkeypatch.setattr("game_loop.run_turn", lambda *a, **k: fake_result)
-    monkeypatch.setattr("frontend.routers.game._init_libraries", lambda *a, **k: None)
-    monkeypatch.setattr("frontend.routers.game._resolve_start_scene", lambda *a, **k: "书房")
+    monkeypatch.setattr("frontend.routers.game.session._init_libraries", lambda *a, **k: None)
+    monkeypatch.setattr("frontend.routers.game.session._resolve_start_scene", lambda *a, **k: "书房")
 
     import os
     real_exists = os.path.exists

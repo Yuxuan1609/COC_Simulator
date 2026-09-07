@@ -90,7 +90,7 @@ def test_init_char_load_failure_surfaces_warning(client, monkeypatch):
 
 - [x] **Step 3: 前端 toast**：game.html 收到 init 响应 `warning` 时显示 3s 提示条（内联 JS 现状下先加最小实现，§3 迁移时进 api.js）。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add tests/test_frontend_contract.py frontend/routers/game.py frontend/templates/game.html MAINTENANCE.md
@@ -108,7 +108,7 @@ git commit -m "test: 前端 34 端点契约防护网 + fix B19 角色卡加载�
 - Create: `frontend/routers/game/session.py` / `turn.py` / `combat.py` / `charcard.py` / `slash.py` / `views.py`
 - Delete: `frontend/routers/game.py`
 
-- [ ] **Step 1: 按下表搬迁（逐行移动，不改逻辑；R21：本 Task 纯搬迁，process_turn 拆函数并入 Task 11）**
+- [x] **Step 1: 按下表搬迁（逐行移动，不改逻辑；R21：本 Task 纯搬迁，process_turn 拆函数并入 Task 11）**
 
 | 目标文件 | 内容（现行号） |
 |---|---|
@@ -125,12 +125,12 @@ git commit -m "test: 前端 34 端点契约防护网 + fix B19 角色卡加载�
 - init 兜底两份合一在 Task 2 已做；此处确认无残留重复。
 - server.py 的 router 挂载改 import 包（`from frontend.routers.game import router`）。
 
-- [ ] **Step 2: 等价验证**
+- [x] **Step 2: 等价验证**
 
 Run: `python -m pytest tests/test_frontend_contract.py tests/test_frontend_character.py -q`
 Expected: 全绿（契约测试证明行为等价）
 
-- [ ] **Step 3: 全量 + 提交**
+- [x] **Step 3: 全量 + 提交**
 
 Run: `python -m pytest tests/ -q`
 
