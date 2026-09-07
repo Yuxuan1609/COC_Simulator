@@ -10,7 +10,7 @@ class TurnRunner:
     def __init__(self, keeper):
         self.keeper = keeper
 
-    def execute(self, turn_input, author=None):
+    def execute(self, turn_input, author=None, debug=False):
         from .understand import phase_a_understand
         from .adjudicate import phase_b_adjudicate
         from .encounter import phase_c_encounter
@@ -18,9 +18,14 @@ class TurnRunner:
         from .finalize import phase_e_finalize
         tools = self.keeper
         depth = 0
+        trace = [] if debug else None
         while True:
             ctx = TurnContext(turn_input=turn_input, author=author, depth=depth,
-                              raw=turn_input.raw_text)
+                              raw=turn_input.raw_text, trace=trace)
+            self.keeper._turn_trace = trace
+            judge = getattr(self.keeper, "judge", None)
+            if judge is not None:
+                judge._turn_trace = trace
             acc = TurnAccumulator()
             try:
                 for phase in (phase_a_understand, phase_b_adjudicate,

@@ -270,7 +270,7 @@ export function initSplitter(handleEl, panelEl, storageKey,
 - Modify: `src/game/messages.py`（**PlayerTurnResult** 可选 `debug` 键；不要只改 TurnResult）
 - Test: `tests/test_turn_trace.py`（新建）
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```python
 """turn_trace：实体判定流水埋点（不改判定行为）。"""
@@ -285,11 +285,11 @@ class TestTurnTrace:
         """不开 debug 时 trace 为空列表（零负载约定）。"""
 ```
 
-- [ ] **Step 2: 实现（R18 全链路，只改一环不够）**——链路为：`Form(debug)`（turn.py 端点签名加 `debug: int = Form(0)`）→ `run_turn(..., debug=bool)`（game_loop 透传）→ `TurnContext.trace = [] if debug else None`（runner ctx）→ judge/keeper 埋点 → `PlayerTurnResult.debug`（messages.py 加可选键）→ JSON 响应 `debug` 键。
+- [x] **Step 2: 实现（R18 全链路，只改一环不够）**——链路为：`Form(debug)`（turn.py 端点签名加 `debug: int = Form(0)`）→ `run_turn(..., debug=bool)`（game_loop 透传）→ `TurnContext.trace = [] if debug else None`（runner ctx）→ judge/keeper 埋点 → `PlayerTurnResult.debug`（messages.py 加可选键）→ JSON 响应 `debug` 键。
   - **零负载约定**：默认每回合仅 `if ctx.trace is not None` 一次判断；debug 端点的场景实体重算只在被调用时发生。
   - **只读红线**：场景实体可用性重算只用 `_evaluate_requirement` 类纯检查函数；**禁止调 `check_auto_triggers` / `_execute_entity`**（有副作用）。
   - judge `check_auto_triggers` / requirement 检查处 `if ctx.trace is not None: ctx.trace.append({...})`；keeper 匹配结论同。
-- [ ] **Step 3: 绿 + real_llm_smoke**（动了 keeper/judge 主路径）
+- [x] **Step 3: 绿 + real_llm_smoke**（动了 keeper/judge 主路径）
 
 ### Task 8: debug 聚合端点
 

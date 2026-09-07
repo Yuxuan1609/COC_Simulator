@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 §5 Task 7：turn_trace 埋点（judge/keeper 只读，不改判定）。全链路 `Form(debug)` → `run_turn(..., debug=bool)` → `TurnContext.trace = [] if debug else None` → judge/keeper `_turn_trace.append` → `PlayerTurnResult.debug={evaluated,matched}` → JSON `debug` 键。debug OFF：trace/debug 均为 None，不分配列表。TDD：`tests/test_turn_trace.py` 4 测。默认套件 609 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。messages 303→304 / judge 600→646 / keeper 967→986 / context 49→50 / runner 41→46 / game_loop 943→981 / turn.py 293→304。 |
 | 2026-09-07 | Task 6 复审 Important：`#scene-panel` / `#char-panel` 外壳改为 `relative overflow-hidden flex flex-col`，滚动内移到 `flex-1 min-h-0 overflow-y-auto` 包裹 collapsed+expanded；`.splitter` 仍为外壳直系子节点，展开滚动时把手不跟着走。`initSplitter` 按 `pointerId` 过滤 move/up，`lostpointercapture` 收尾并 `releasePointerCapture`。补 `.min-h-0`。TDD：markup 直系子节点锁 + pointerId 单测。 |
 | 2026-09-07 | 前端专项 §4 Task 6：场景/角色面板可拖宽 + 输入栏聚焦态 + DEBUG/AUTO 开关组件。新建 `layout.js`：`computePanelWidth` 纯函数（左栏 `+Δx` / 右栏 `-Δx`，clamp 200–800）；`initSplitter` 存 `trpg_panel_scene_w` / `trpg_panel_char_w`，默认宽度仍 `w-64`=256 / `w-96`=384。`setSwitch('debug'|'autoWin')` 走 `setDebug`/`setAutoWin`（只写 `trpg_debug`/`trpg_autowin`，不造 `DEBUG` 键）。DBG/AUTO 改为 `.switch`（DEBUG / AUTO_WIN 文字标签）。`#input-bar:focus-within` 描边发光；`#btn-action` hover/active/disabled。补 `.w-64`/`.w-96`（原先 HTML 有类无规则）。TDD：`tests/js/layout.test.mjs` + state setSwitch 存储。视觉聚焦/拖拽未在本环境浏览器手测。 |
 | 2026-09-07 | Task 5 复审 Important：退出/frozen 路径 `narrative` 纯文本、去掉展示 HTML `narrative_html`；slash `brief=""` 不再回显命令；`get_game()` 为 None 时 slash 返回退出文案而非 500。handleTurnResponse 优先渲染 `slash.text`。 |
@@ -231,7 +232,7 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 
 ---
 
-## src/game/messages.py (303 行) — 消息类型 / 契约
+## src/game/messages.py (304 行) — 消息类型 / 契约
 
 | 类 | 字段/说明 | 作用 | 行号 |
 |----|-----------|------|------|
@@ -260,11 +261,11 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `EndingInfo` | `name, narrative, game_over` | 结局信息 | 249 |
 | `TurnDiagnostics` | `combat_entry, time_agent, enrich_raw, pre_parse` | 低频/调试数据入口 | 257 |
 | `TurnResult` | `status, brief, text, pending_interaction, combat_init, ending, npc_events, warnings, frozen_message, diagnostics` | **Keeper.process_turn 内部契约返回**；`__post_init__` 校验 SUSPENDED 必须带 pending_interaction | 266 |
-| `PlayerTurnResult` | `status, brief, narrative, pending_interaction, player_snapshot, skill_results, combat, combat_init, ending, game_over, timestamp, diagnostics` | **run_turn 玩家面契约返回** | 290 |
+| `PlayerTurnResult` | `status, brief, narrative, pending_interaction, player_snapshot, skill_results, combat, combat_init, ending, game_over, timestamp, diagnostics, debug` | **run_turn 玩家面契约返回**；`debug` 可选（默认 None；debug ON 为 `{evaluated, matched}`） | 290 |
 
 ---
 
-## src/game/agents/keeper.py (967 行) — Keeper 回合编配
+## src/game/agents/keeper.py (986 行) — Keeper 回合编配
 
 无 `_run_turn_pipeline`。`process_turn` 为薄 facade，委托 `TurnRunner.execute`（A–E 循环）。toolbox 方法仍驻本文件，供 turn/ 阶段经 `tools` 调用。
 
@@ -284,33 +285,34 @@ run_game.py / run_pipeline.py / run_step0.py (入口)
 | `dump_session_state` | `() -> dict` | B1 入档：`npc_injected_at_ids`/`recent_intents`/`last_comms_time` | 140 |
 | `load_session_state` | `(data)` | 从 `_meta.session_state` 恢复 dump 的三字段 | 147 |
 | `_material_catalogs` | `()` | 统一资源层：世界库∩玩家状态构建 use 可解析目录（ItemCatalog=持有物∩物品库；SpellCatalog=known_spells∩法术库） | 152 |
-| `process_turn` | `(turn_input, author=None, _depth=0) -> TurnResult` | **Facade**：懒创建 `TurnRunner(self)` 并 `execute`（A–E 循环）；`_depth` 仅签名兼容，不再使用（无 `_run_turn_pipeline`、无递归 `process_turn`） | 164 |
-| `_detect_direct_pickup` | `(raw) -> tuple[str, str, bool] \| None` | F17：拾取动词+场景物品名；`ref in raw` 的全部候选取最长 ref，同长优先 exposed；hidden→没发现，exposed→授予（防短 hidden 挡住长 exposed，及同名 hidden+exposed 撞车）；无点名时仅一件暴露未持有可不点名；含否定词不触发。返回 (kind, ref, hidden) | 469 |
-| `_grant_scene_item` | `(kind, ref) -> str` | F17：只扣 **exposed** 同行（不碰 hidden）；武器走 weapon_library+_build_investigator_weapon 入槽；物品走 item_manager.add；quantity>1 减一否则移除；空列表 del scene key；再 `_sync_scene_weapons_from_items` | 494 |
-| `_detect_direct_drop` | `(raw) -> tuple[str, str] \| None` | F17：丢/扔/放下/丢掉 + 最长持有名（item_manager / weapons）；否定词不触发；点名未持有返回 `("missing", name)`；无名不触发 | 525 |
-| `_drop_to_scene` | `(kind, ref) -> str` | F17：从背包/武器槽移除一件（武器 `remove_weapon` 只卸一把）；仅合并 **exposed** 同 kind+ref（物品/武器 quantity+=1），仅有 hidden 则 append 新暴露行，永不改 hidden；再 `_sync_scene_weapons_from_items` | 549 |
-| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 571 |
-| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 171 |
-| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 179 |
-| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 196 |
-| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100（F19：`env_check_modifier`）→ 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 239 |
-| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 319 |
-| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 344 |
-| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node（F23：completed 且非 repeatable 才跳过；N1：bound_interactions attitude_min 不满足则跳过，注入 extra 带 npc_name/attitude_min） | 371 |
-| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入；GrantWeapon(scene="") 直接入包（无 offer）；Restart 时由 runner 在重入 A 前调用（A 入口会 clear pending） | 424 |
-| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表（live system= 含 `KEEPER_PARSE_MADNESS_RULE` @609） | 596 |
-| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 630 |
-| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 660 |
-| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找（F23：NPC bound completed 且非 repeatable 才跳过；N1：extra 写入 npc_name/attitude_min） | 673 |
-| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行（A 的 `depth>=MAX` 与 runner Restart 后 `depth>=MAX` 两处入口） | 717 |
-| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 738 |
-| `_build_world_snapshot` | `()` | 构建世界快照 dict | 754 |
-| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 766 |
-| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 773 |
-| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 780 |
-| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 797 |
-| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 886 |
-| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 940 |
+| `process_turn` | `(turn_input, author=None, _depth=0, debug=False) -> TurnResult` | **Facade**：懒创建 `TurnRunner(self)` 并 `execute(..., debug=)`（A–E 循环）；`debug` 也可由 `keeper._debug_requested` 注入（run_turn 不把 debug 当 kwargs 传，兼容 stub）；`_depth` 仅签名兼容 | 164 |
+| `_record_match` | `(entity_id, success, reason="")` | turn_trace：debug ON 时 append `{kind:matched,id,success,reason}`；`_turn_trace is None` 则 no-op | 174 |
+| `_detect_direct_pickup` | `(raw) -> tuple[str, str, bool] \| None` | F17：拾取动词+场景物品名；`ref in raw` 的全部候选取最长 ref，同长优先 exposed；hidden→没发现，exposed→授予（防短 hidden 挡住长 exposed，及同名 hidden+exposed 撞车）；无点名时仅一件暴露未持有可不点名；含否定词不触发。返回 (kind, ref, hidden) | 483 |
+| `_grant_scene_item` | `(kind, ref) -> str` | F17：只扣 **exposed** 同行（不碰 hidden）；武器走 weapon_library+_build_investigator_weapon 入槽；物品走 item_manager.add；quantity>1 减一否则移除；空列表 del scene key；再 `_sync_scene_weapons_from_items` | 508 |
+| `_detect_direct_drop` | `(raw) -> tuple[str, str] \| None` | F17：丢/扔/放下/丢掉 + 最长持有名（item_manager / weapons）；否定词不触发；点名未持有返回 `("missing", name)`；无名不触发 | 539 |
+| `_drop_to_scene` | `(kind, ref) -> str` | F17：从背包/武器槽移除一件（武器 `remove_weapon` 只卸一把）；仅合并 **exposed** 同 kind+ref（物品/武器 quantity+=1），仅有 hidden 则 append 新暴露行，永不改 hidden；再 `_sync_scene_weapons_from_items` | 563 |
+| `_devour_standoff_for_boss` | `(standoff_prompt, combat_init_result, all_outcomes, enrich_input) -> None` | F3：Boss 强制战吞掉对峙——撤回 standoff 播种/话术，avoidable 敌人并入 Boss 战（at 与 event 两条 engage 通路共用）；C 吞对峙① / E event 吞对峙② 共用 | 585 |
+| `_build_frozen_response` | `(exc)` | TurnFrozenError → FROZEN TurnResult | 185 |
+| `_scan_ending` | `(outcomes, author)` | 检查 ##END_*## 结局标记并触发 | 193 |
+| `complete_combat_turn` | `(original_input, combat_result)` | 战斗后回放 enrich→curate；入口先把 outcome 记入编年史（record_combat_end，CLI/前端/auto 全通路覆盖） | 210 |
+| `resolve_standoff` | `(standoff_state, player_input)` | 对峙：LLM 匹配技能 → D100（F19：`env_check_modifier`）→ 特质修正；说服族判定经 normalize_skill_name 归一（魅惑/说服两族，旧名话术/恐吓落入说服） | 253 |
+| `_check_boss_requirements` | `(boss_entity, player_action)` | Boss 遭遇触发条件检查 | 333 |
+| `_evaluate_boss_soft_condition` | `(soft_condition, player_action, boss_name)` | Boss 软条件 LLM 评估 | 358 |
+| `_inject_npc_at` | `()` | 当前场景 NPC bound entity → 注入 node（F23：completed 且非 repeatable 才跳过；N1：bound_interactions attitude_min 不满足则跳过，注入 extra 带 npc_name/attitude_min） | 385 |
+| `_apply_pending` | `()` | 应用延迟副作用 + 移动 + NPC 跟随实体注入；GrantWeapon(scene="") 直接入包（无 offer）；Restart 时由 runner 在重入 A 前调用（A 入口会 clear pending） | 438 |
+| `_parse` | `(raw) -> list[dict]` | LLM parse：玩家输入 → action 列表（live system= 含 `KEEPER_PARSE_MADNESS_RULE`）；debug ON 时对 interaction/event/auto_trigger 的 id 调 `_record_match` | 610 |
+| `_enrich` | `(judged_entities, user_input) -> dict` | LLM enrich：合并判定结果 | 649 |
+| `_log_agent_response` | `(filename, data)` | 记录 agent 响应日志 | 679 |
+| `_find_entity_by_id` | `(entity_id)` | graph+NPC+boss 按 ID 查找（F23：NPC bound completed 且非 repeatable 才跳过；N1：extra 写入 npc_name/attitude_min） | 692 |
+| `_process_deterministic_only` | `(turn_input)` | 深度超限/降级时纯确定性执行（A 的 `depth>=MAX` 与 runner Restart 后 `depth>=MAX` 两处入口） | 736 |
+| `_build_world_brief` | `()` | 构建 pre-parse 用世界简报 | 757 |
+| `_build_world_snapshot` | `()` | 构建世界快照 dict | 773 |
+| `_infer_time_category` | `(entity)` | 实体时间类别推断 | 785 |
+| `_run_time_agent` | `(action_summaries, raw)` | 调用 TimeAgent 评估时间 | 792 |
+| `_build_scene_context_for_author` | `()` | 构建 Author 场景上下文（含 chronicle 渲染） | 799 |
+| `_integrate_supplement` | `(structural_edit, author, intent, reasoning)` | 补充管线 → 集成到 graph；成功后 record_patch(level="structural") | 816 |
+| `_load_scene_into_graph` | `(scene_name, scene_data)` | 新场景注入 graph（补充管线产物） | 905 |
+| `_integrate_patch` | `(patch)` | ModulePatch 实体集成 + record_patch(level="patch")；entity_ids 记集成后真实 id | 959 |
 
 ## src/game/turn/ — 回合管线（R1 已收口）
 
@@ -322,21 +324,21 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 
 
 模块 docstring：`Turn pipeline stages (R1).`
 
-### `context.py`（49 行）— 管线契约
+### `context.py`（50 行）— 管线契约
 
 | 类 | 字段/说明 | 作用 | 行号 |
 |----|-----------|------|------|
-| `TurnContext` | `turn_input, author, depth, raw` | 输入侧（只读）；raw 可被 pre_parse 改写 | 10 |
-| `TurnAccumulator` | parse/npc/outcomes/enrich_input/combat/boss_accounting/enrichment/ta_result/brief/result 等 | 产出侧累积（= 原 process_turn 局部变量显式分组） | 19 |
-| `Early` | `result: TurnResult` | 阶段早退信号：编排器直接返回完整 TurnResult | 43 |
-| `Restart` | （空类，仅 docstring） | 作者门接受 → 编排器 `_apply_pending` 后从 A 重跑（循环，非递归 `process_turn`） | 48 |
+| `TurnContext` | `turn_input, author, depth, raw, trace` | 输入侧（只读）；raw 可被 pre_parse 改写；`trace` debug ON 为共享 list，OFF 为 None | 10 |
+| `TurnAccumulator` | parse/npc/outcomes/enrich_input/combat/boss_accounting/enrichment/ta_result/brief/result 等 | 产出侧累积（= 原 process_turn 局部变量显式分组） | 20 |
+| `Early` | `result: TurnResult` | 阶段早退信号：编排器直接返回完整 TurnResult | 44 |
+| `Restart` | （空类，仅 docstring） | 作者门接受 → 编排器 `_apply_pending` 后从 A 重跑（循环，非递归 `process_turn`） | 49 |
 
-### `runner.py`（41 行）— TurnRunner 循环编排器（R1-W6）
+### `runner.py`（46 行）— TurnRunner 循环编排器（R1-W6）
 
 | 方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `__init__` | `(keeper)` | 持有 Keeper 引用 | 10 |
-| `execute` | `(turn_input, author=None)` | `while` 循环：建 ctx/acc → 顺序跑 A–E；`Early` 直接返回；`Restart` 则 `_apply_pending` 后 `depth+=1` 重入（`depth>=MAX_ESCALATION_DEPTH` 走 `_process_deterministic_only`）；`TurnFrozenError` → `_build_frozen_response`；正常走完返回 `acc.result`。不把 `_depth` 从 facade 传入（runner 自管 depth） | 13 |
+| `execute` | `(turn_input, author=None, debug=False)` | `while` 循环：`trace = [] if debug else None` 一次分配，写入 `ctx.trace` / `keeper._turn_trace` / `judge._turn_trace` → 顺序跑 A–E；`Early` 直接返回；`Restart` 则 `_apply_pending` 后 `depth+=1` 重入（`depth>=MAX_ESCALATION_DEPTH` 走 `_process_deterministic_only`）；`TurnFrozenError` → `_build_frozen_response`；正常走完返回 `acc.result`。不把 `_depth` 从 facade 传入（runner 自管 depth） | 13 |
 
 ### `understand.py`（198 行）— A 理解阶段（R1-W1）
 
@@ -438,19 +440,20 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1402 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1509 |
 
-## src/game/judge.py (600 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
+## src/game/judge.py (646 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `_escalate_difficulty` | `(difficulty)` | 难度递增 regular→hard→extreme | 25 |
-| `Judge.check_auto_triggers` | `()` | 触发当前场景满足简单条件且 time_condition 匹配的全部 AT；list 先 json.dumps 再 check_time_condition(tc, day, tod)，空 []/"[]" 放行 | 47 |
-| `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 68 |
-| `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check；F19：check_skill 传 `env_check_modifier`）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后，@180-188；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect,@110）；F5：need_san 且 `success or not refund_on_fail`（未退款）时调 world.on_san_loss @165-167（施法损失计疯狂，退款不计） | 83 |
-| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes；有 interval/payload 则拷入条目供 F10 周期结算）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 198 |
-| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记 | 279 |
-| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 513 |
-| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定；N4：`npc_dead:`/`flag:` 视为可解析 | 524 / 538 |
-| `_evaluate_requirement` | `(req) -> (bool, msg)` | item: → flag: → npc_dead:（委托 `parse_hard_requirement`，未完成短路 False，避免后续 grace True）→ AND/OR 解析 → 边依赖检查 | 549 |
+| `Judge._trace_eval` / `_trace_match` | `(entity_id, ...)` | turn_trace 只读 append；`_turn_trace is None` 则立即返回（零负载） | 45 / 60 |
+| `Judge.check_auto_triggers` | `()` | 触发当前场景满足简单条件且 time_condition 匹配的全部 AT；list 先 json.dumps 再 check_time_condition(tc, day, tod)，空 []/"[]" 放行；time 不满足时 `_trace_eval(gate=time)` | 75 |
+| `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 97 |
+| `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check；F19：check_skill 传 `env_check_modifier`）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect）；F5：need_san 且 `success or not refund_on_fail`（未退款）时调 world.on_san_loss（施法损失计疯狂，退款不计） | 112 |
+| `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes；有 interval/payload 则拷入条目供 F10 周期结算）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 227 |
+| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记。闸门失败 `_trace_eval(gate=once/attitude/requirement)`；终局 `_trace_match` | 308 |
+| `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 552 |
+| `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定；N4：`npc_dead:`/`flag:` 视为可解析；失败时 `_trace_eval(gate=requirement)`（不写 `_current_entity_id`，避免边依赖误挡） | 563 / 577 |
+| `_evaluate_requirement` | `(req) -> (bool, msg)` | item: → flag: → npc_dead:（委托 `parse_hard_requirement`，未完成短路 False，避免后续 grace True）→ AND/OR 解析 → 边依赖检查；失败路径 `_trace_eval`（无 `_current_entity_id` 则跳过，保持纯检查可给 Task 8 复用） | 590 |
 
 ## src/game/curator.py (68 行) — 策展器
 
@@ -573,7 +576,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 
 ---
 
-## src/game_loop.py (943 行) — 游戏主循环
+## src/game_loop.py (981 行) — 游戏主循环
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -581,13 +584,14 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `setup_logging` | `() -> str` | 统一初始化日志目录 + TurnLogger + prompt/llm 日志 | 28 |
 | `_handle_spawn_command` | `(user_input, world, weapon_lib=None, enemy_lib=None, injector=None, keeper=None)` | 调试命令：/spawn enemy\|weapon、/inject [toggle\|status]、/health（TurnMonitor/PipelineHealth 快照） | 47 |
 | `init_game` | `(l2_path, l1_path, l3_path, start_node="6号车厢", wr0_enabled=False) -> dict` | 从 JSON 初始化：_scene_names 重映射 → 库加载 → ScenarioWorld → `load_dependency_graph` → **F18 `l2["scheduled_events"]` 拷入 `world.scheduled_events`（@253-255）** → F5 `set_insanity_llm` → world 节点 AT → at 型 Boss 预生成 → time_costs → Narrator/Keeper/Author。返回 dict，世界在 `game["keeper"].world` | 155 |
-| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="") -> PlayerTurnResult` | **一回合**：自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史 → SUSPENDED/FROZEN 短路 → Narrator 叙事（无 brief 早退且有 npc_events 时 add_record，F24）→ 场景更新 → PlayerFacingSnapshot | 336 |
-| `on_scenario_end` | `(game, character_path=None, module_name="unknown", out_dir=None) -> list[dict]` | P0-2/U4 scenario-end 钩子：幕末成长结算 + 有 character_path 才版本化导出；无玩家空报告；战斗败北勿调 | 638 |
-| `save_game` | `(game, path)` | B1② 唯一保存入口：`save_state(..., extra_meta={turn_number, session_state})` 一次写入 version 2 | 656 |
-| `load_game` | `(game, path)` | B1② 唯一读档入口：`load_state` 库透传 → 拷贝 session 库/字段（weapon/item/spell_library + time_costs/comms_interval @681-685）→ 重注 `_insanity_llm`（@686，F5 读档局不回退固定文案）→ `set_world` 重绑 → `_meta` 恢复 turn_number/session_state；打印 load_warnings | 665 |
-| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换）；`_check_autosave` 走 `save_game` | 706 / 715 / 726 |
-| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world @804，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 743 |
-| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 869 |
+| `_player_debug_payload` | `(keeper, debug) -> dict \| None` | debug OFF → None；ON → `{evaluated, matched}`（matched 按 id 后写覆盖 parse 初匹配） | 340 |
+| `run_turn` | `(game, user_input, weapon_lib=None, enemy_lib=None, injector=None, action_type="", action_target="", debug=False) -> PlayerTurnResult` | **一回合**：debug 接线 `_debug_requested`/`_turn_trace` → 自动存档检查 → 调试命令 → 对峙挂起分发 → keeper.process_turn → 回合末写编年史 → SUSPENDED/FROZEN 短路 → Narrator 叙事（无 brief 早退且有 npc_events 时 add_record，F24）→ 场景更新 → PlayerFacingSnapshot；`PlayerTurnResult.debug` 仅 debug ON 非空 | 357 |
+| `on_scenario_end` | `(game, character_path=None, module_name="unknown", out_dir=None) -> list[dict]` | P0-2/U4 scenario-end 钩子：幕末成长结算 + 有 character_path 才版本化导出；无玩家空报告；战斗败北勿调 | 676 |
+| `save_game` | `(game, path)` | B1② 唯一保存入口：`save_state(..., extra_meta={turn_number, session_state})` 一次写入 version 2 | 694 |
+| `load_game` | `(game, path)` | B1② 唯一读档入口：`load_state` 库透传 → 拷贝 session 库/字段（weapon/item/spell_library + time_costs/comms_interval）→ 重注 `_insanity_llm`（F5 读档局不回退固定文案）→ `set_world` 重绑 → `_meta` 恢复 turn_number/session_state；打印 load_warnings | 703 |
+| `_autosave_callback` / `start_autosave` / `_check_autosave` | — | 定时自动存档（AUTOSAVE_INTERVAL_SEC，最多 AUTOSAVE_MAX_COPIES 份轮换）；`_check_autosave` 走 `save_game` | 744 / 753 / 764 |
+| `continue_standoff` | `(keeper, player_input) -> TurnResult` | 对峙回避尝试：成功→下一组/进入战斗；失败→战斗；战斗内联跑（自动胜利短接；CombatSystem 构造传 spell_lib+world，T9 战斗 markup/timed 原子可用）→ complete_combat_turn | 781 |
+| `format_turn_dynamic` | `(player_snapshot, brief, narrative) -> str` | 快照动态信息（时间/战斗/技能检定）+ 叙事 → 纯文本（CLI/LLM 玩家复用） | 899 |
 
 ---
 
@@ -1148,7 +1152,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | 模块 | 行数 | 内容 |
 |------|------|------|
 | `session.py` | 246 | 全局态、`_init_libraries`、`get_game`、`init_game_api`、`_resolve_start_scene`、`_make_default_inv`、`_load_character_or_default`（B19） |
-| `turn.py` | 293 | `process_turn`（slash `{text}` → `narrative`+`slash` 且 `brief=""`；退出/frozen 纯文本 narrative）、WS `/api/game/progress`、`_push_progress` |
+| `turn.py` | 304 | `process_turn`（`debug: int = Form(0)`；`partial(run_turn, ..., debug=bool)`；JSON 仅 `turn.debug is not None` 时带 `debug` 键；slash `{text}` → `narrative`+`slash` 且 `brief=""`；退出/frozen 纯文本 narrative）、WS `/api/game/progress`、`_push_progress` |
 | `combat.py` | 328 | 序列化 + `/api/combat/start\|round` |
 | `charcard.py` | 111 | `_known_spell_names` + `GET /api/game/character-card` JSON（无调查员 `{name:null}`） |
 | `slash.py` | 102 | `_handle_slash_command` → `{text}`（无局时退出文案）+ `POST /api/game/command` JSON |

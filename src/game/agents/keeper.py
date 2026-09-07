@@ -161,12 +161,26 @@ class Keeper:
                 cats.append(SpellCatalog(self.world.spell_library, p.known_spells))
         return cats
 
-    def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0) -> TurnResult:
+    def process_turn(self, turn_input: TurnInput, author: Any = None, _depth: int = 0,
+                     debug: bool = False) -> TurnResult:
         """Facade：委托 TurnRunner（_depth 参数保留兼容，不再使用）。"""
         if not hasattr(self, "_runner"):
             from ..turn.runner import TurnRunner
             self._runner = TurnRunner(self)
-        return self._runner.execute(turn_input, author)
+        if not debug:
+            debug = bool(getattr(self, "_debug_requested", False))
+        return self._runner.execute(turn_input, author, debug=debug)
+
+    def _record_match(self, entity_id: str, success: bool, reason: str = "") -> None:
+        tr = getattr(self, "_turn_trace", None)
+        if tr is None or not entity_id:
+            return
+        tr.append({
+            "kind": "matched",
+            "id": entity_id,
+            "success": success,
+            "reason": reason,
+        })
 
     def _build_frozen_response(self, exc: TurnFrozenError) -> TurnResult:
         return TurnResult(
@@ -625,6 +639,11 @@ class Keeper:
         actions = data.get("actions", [])
         if not actions:
             return [{"type": "other", "text": raw}]
+        if getattr(self, "_turn_trace", None) is not None:
+            for a in actions:
+                eid = a.get("id") or ""
+                if eid and a.get("type") in ("interaction", "event", "auto_trigger"):
+                    self._record_match(eid, True, "parse匹配")
         return actions
 
     def _enrich(self, judged_entities, user_input) -> dict:

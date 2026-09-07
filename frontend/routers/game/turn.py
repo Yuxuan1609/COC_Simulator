@@ -17,6 +17,7 @@ async def process_turn(
     user_input: str = Form(""),
     action_type: str = Form(""),
     action_target: str = Form(""),
+    debug: int = Form(0),
 ):
     import asyncio
     import traceback
@@ -47,6 +48,7 @@ async def process_turn(
             "player_snapshot": None,
         }
 
+    from functools import partial
     from game_loop import run_turn
 
     try:
@@ -76,8 +78,11 @@ async def process_turn(
     loop = asyncio.get_running_loop()
     try:
         turn = await loop.run_in_executor(
-            None, run_turn, game, user_input, session._weapon_lib, session._enemy_lib, session._injector,
-            action_type, action_target,
+            None,
+            partial(
+                run_turn, game, user_input, session._weapon_lib, session._enemy_lib,
+                session._injector, action_type, action_target, debug=bool(debug),
+            ),
         )
     except Exception as e:
         traceback.print_exc()
@@ -100,7 +105,7 @@ async def process_turn(
 
     if turn and turn.status == TurnStatus.FROZEN:
         frozen_message = turn.narrative or "系统异常"
-        return {
+        frozen = {
             "status": "frozen",
             "brief": "",
             "narrative": frozen_message,
@@ -114,6 +119,9 @@ async def process_turn(
             "timestamp": "",
             "player_snapshot": None,
         }
+        if turn.debug is not None:
+            frozen["debug"] = turn.debug
+        return frozen
 
     narrative = turn.narrative if turn else ""
     brief = turn.brief if turn else ""
@@ -243,7 +251,7 @@ async def process_turn(
             f'（没有返回叙事内容）</div>'
         )
 
-    return {
+    payload = {
         "status": status,
         "brief": brief,
         "narrative": narrative,
@@ -258,6 +266,9 @@ async def process_turn(
         "player_snapshot": player_snapshot,
         "turn_dynamic_text": turn_dynamic_text,
     }
+    if turn and turn.debug is not None:
+        payload["debug"] = turn.debug
+    return payload
 
 
 @router.websocket("/api/game/progress")

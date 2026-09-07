@@ -301,3 +301,4 @@ class PlayerTurnResult:
     game_over: bool = False
     timestamp: str = ""
     diagnostics: dict = field(default_factory=dict)  # time_agent / npc_events / npcs_visible
+    debug: dict | None = None  # turn_trace：debug ON 为 {evaluated, matched}；OFF 为 None

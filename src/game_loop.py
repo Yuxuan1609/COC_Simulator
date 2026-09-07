@@ -337,9 +337,27 @@ def init_game(l2_path: str, l1_path: str, l3_path: str,
     }
 
 
+def _player_debug_payload(keeper, debug: bool) -> dict | None:
+    """Assemble PlayerTurnResult.debug from keeper._turn_trace. debug OFF → None."""
+    if not debug:
+        return None
+    trace = getattr(keeper, "_turn_trace", None)
+    evaluated = []
+    matched_by_id: dict = {}
+    for ev in (trace or []):
+        kind = ev.get("kind", "evaluated")
+        item = {k: v for k, v in ev.items() if k != "kind"}
+        if kind == "matched":
+            matched_by_id[item.get("id")] = item
+        else:
+            evaluated.append(item)
+    return {"evaluated": evaluated, "matched": list(matched_by_id.values())}
+
+
 def run_turn(game: dict, user_input: str,
              weapon_lib=None, enemy_lib=None, injector=None,
-             action_type: str = "", action_target: str = "") -> PlayerTurnResult:
+             action_type: str = "", action_target: str = "",
+             debug: bool = False) -> PlayerTurnResult:
     """Execute one turn. Returns a PlayerTurnResult."""
     keeper = game["keeper"]
     from prompts import set_current_round
@@ -347,6 +365,18 @@ def run_turn(game: dict, user_input: str,
     narrator = game["narrator"]
     author = game["author"]
     world = keeper.world
+    keeper._debug_requested = bool(debug)
+    if debug:
+        _tr = []
+        keeper._turn_trace = _tr
+        _judge = getattr(keeper, "judge", None)
+        if _judge is not None:
+            _judge._turn_trace = _tr
+    else:
+        keeper._turn_trace = None
+        _judge = getattr(keeper, "judge", None)
+        if _judge is not None:
+            _judge._turn_trace = None
 
     _check_autosave(game)
 
@@ -368,6 +398,8 @@ def run_turn(game: dict, user_input: str,
             action_target=action_target,
         )
         result = keeper.process_turn(turn_input, author=author)
+
+    debug_payload = _player_debug_payload(keeper, debug)
 
     # U2 编年史：每回合入史（FROZEN 输入锁定不计）；须在 SUSPENDED 早退之前
     chronicle = getattr(world, "chronicle", None)
@@ -395,6 +427,7 @@ def run_turn(game: dict, user_input: str,
                 "npc_events": result.npc_events,
                 "npcs_visible": {"in_scene": [], "following": []},
             },
+            debug=debug_payload,
         )
 
     brief = result.brief
@@ -634,6 +667,7 @@ def run_turn(game: dict, user_input: str,
             "npc_events": result.npc_events,
             "npcs_visible": npcs_visible,
         },
+        debug=debug_payload,
     )
 
 

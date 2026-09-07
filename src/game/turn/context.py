@@ -13,6 +13,7 @@ class TurnContext:
     author: Any = None
     depth: int = 0
     raw: str = ""
+    trace: list | None = None  # debug ON 为 []；OFF 为 None（零负载）
 
 
 @dataclass

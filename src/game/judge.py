@@ -42,6 +42,34 @@ class Judge:
     def __init__(self, world: ScenarioWorld):
         self.world = world
 
+    def _trace_eval(self, entity_id, available, gate, reason):
+        tr = getattr(self, "_turn_trace", None)
+        if tr is None:
+            return
+        eid = entity_id or getattr(self, "_current_entity_id", "") or ""
+        if not eid:
+            return
+        tr.append({
+            "kind": "evaluated",
+            "id": eid,
+            "available": available,
+            "gate": gate,
+            "reason": reason,
+        })
+
+    def _trace_match(self, entity_id, success, reason=""):
+        tr = getattr(self, "_turn_trace", None)
+        if tr is None:
+            return
+        if not entity_id:
+            return
+        tr.append({
+            "kind": "matched",
+            "id": entity_id,
+            "success": success,
+            "reason": reason,
+        })
+
     # ── Auto-triggers ──
 
     def check_auto_triggers(self) -> list[ActionOutcome]:
@@ -59,6 +87,7 @@ class Judge:
             if isinstance(tc, list):
                 tc = json.dumps(tc, ensure_ascii=False)
             if not check_time_condition(tc, day, tod):
+                self._trace_eval(at.id, False, "time", "当前时间不满足触发条件")
                 continue
             results.append(self._execute_entity(at))
         return results
@@ -282,6 +311,7 @@ class Judge:
             repeatable = bool((entity.extra or {}).get("repeatable")
                               or getattr(entity, "repeatable", False))
             if not repeatable:
+                self._trace_eval(entity.id, False, "once", "（该实体已触发过，无法重复执行）")
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
                     success=False, message="（该实体已触发过，无法重复执行）",
@@ -299,6 +329,7 @@ class Judge:
         if amin is not None and npc_name_gate and self.world.npcs:
             npc_gate = self.world.npcs.get(npc_name_gate)
             if npc_gate is not None and npc_gate.attitude_value < int(amin):
+                self._trace_eval(entity.id, False, "attitude", "对方现在不愿配合。")
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
                     success=False, message="对方现在不愿配合。",
@@ -325,27 +356,33 @@ class Judge:
                 if not self.world.npcs.set_following(npc_name, True):
                     from game.npc_manager import attitude_tier
                     _, label = attitude_tier(npc.attitude_value)
+                    msg = f"{npc_name} 拒绝跟随（态度：{label}）"
+                    self._trace_eval(entity.id, False, "attitude", msg)
                     return ActionOutcome(
                         intent=intent or ActionIntent(action="other"),
                         success=False,
-                        message=f"{npc_name} 拒绝跟随（态度：{label}）",
+                        message=msg,
                         entity_id=entity.id, entity_type=entity.entity_type,
                     )
                 self._set_completion_flag(entity, "")
+                msg = entity.result or f"{npc_name}开始跟随你"
+                self._trace_match(entity.id, True, msg)
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
                     success=True,
-                    message=entity.result or f"{npc_name}开始跟随你",
+                    message=msg,
                     entity_id=entity.id, entity_type=entity.entity_type,
                 )
 
             if npc_special == "interact_unlock":
                 npc.can_interact = True
                 self._set_completion_flag(entity, "")
+                msg = entity.result or f"{npc_name}愿意与你交谈了"
+                self._trace_match(entity.id, True, msg)
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
                     success=True,
-                    message=entity.result or f"{npc_name}愿意与你交谈了",
+                    message=msg,
                     entity_id=entity.id, entity_type=entity.entity_type,
                 )
         # ── End NPC special ──
@@ -469,6 +506,7 @@ class Judge:
                     skill_detail += f"\n  [失败惩罚] {skill_message}"
                     log_skill_result(skill_detail)
 
+            self._trace_match(entity.id, False, skill_message)
             return ActionOutcome(
                 intent=intent or ActionIntent(action="other"),
                 success=False, message=skill_message,
@@ -497,6 +535,7 @@ class Judge:
             parsed = parse_markup_all(se_text)
             side_effects.extend(parsed)
 
+        self._trace_match(entity.id, True, result_text)
         return ActionOutcome(
             intent=intent or ActionIntent(action="other"),
             success=True,
@@ -542,7 +581,9 @@ class Judge:
         if not hard:
             return True
         if self._is_simple_requirement(hard):
-            met, _ = self._evaluate_requirement(hard)
+            met, msg = self._evaluate_requirement(hard)
+            if not met:
+                self._trace_eval(entity.id, False, "requirement", msg)
             return met
         return False
 
@@ -559,6 +600,11 @@ class Judge:
         if not req:
             return True, ""
 
+        def _fail(msg: str) -> tuple[bool, str]:
+            self._trace_eval(getattr(self, "_current_entity_id", "") or "",
+                             False, "requirement", msg)
+            return False, msg
+
         # 统一资源层：item:物品名 硬条件（持有检查）先行短路
         _item_toks = _re.findall(r"item[:：]([^&|（）()\s]+)", req)
         if _item_toks:
@@ -566,7 +612,7 @@ class Judge:
             for tok in _item_toks:
                 tok = tok.strip()
                 if not (p and getattr(p, 'item_manager', None) and p.item_manager.has(tok)):
-                    return False, f"需要物品：{tok}"
+                    return _fail(f"需要物品：{tok}")
             req = _re.sub(r"item[:：][^&|（）()\s]+", "", req).strip(" &|ANDORandor")
             if not req:
                 return True, ""
@@ -576,12 +622,12 @@ class Judge:
             flag_name = req[5:].strip()
             state = self.world.runtime_state.get(flag_name)
             if not state or not state.completed:
-                return False, f"需要满足条件「{flag_name}」"
+                return _fail(f"需要满足条件「{flag_name}」")
             return True, ""
         if req.startswith("npc_dead:"):
             from scenario_core import parse_hard_requirement
             if not parse_hard_requirement(req, self.world.runtime_state):
-                return False, f"需要满足条件「{req}」"
+                return _fail(f"需要满足条件「{req}」")
             return True, ""
 
         # Step 1: string-based AND/OR parsing FIRST (handles OR semantics)
@@ -595,6 +641,6 @@ class Judge:
         if entity_id:
             met, msg = self.world.check_edge_requirements(entity_id)
             if not met:
-                return False, msg
+                return _fail(msg)
 
         return True, ""
