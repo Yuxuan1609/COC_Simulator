@@ -79,6 +79,7 @@ def _handle_slash_command(cmd: str) -> dict:
             try:
                 from game_loop import load_game
                 load_game(game, spath)
+                session._combat_sessions.clear()
                 lines.append(f"已从 save_{slot}.json 读档")
             except Exception as e:
                 lines.append(f"读档失败: {e}")

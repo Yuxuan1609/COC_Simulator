@@ -777,3 +777,85 @@ def test_discard_combat_rolls_back_player_hp(client, monkeypatch):
     assert game_session._combat_sessions == {}
 
 
+def test_discard_combat_clears_encounter_latch(monkeypatch):
+    """丢弃会话后必须 exit_combat(abort)，否则 _combat_active 卡住无法再遭遇。"""
+    from frontend.routers.game import session as game_session
+    from frontend.routers.game.combat import (
+        _discard_combat_sessions,
+        _take_pre_combat_snapshot,
+    )
+
+    fake = _fake_game_for_combat_snapshot()
+    world = fake["keeper"].world
+    e1 = world.enemies._instances["e1"]
+    e1.status = "engaged"
+    world.enemies._combat_active = True
+    world.enemies._combat_enemies = ["e1"]
+    exit_calls = []
+
+    def _exit_combat(result):
+        exit_calls.append(dict(result))
+        outcome = result.get("outcome", "")
+        if outcome == "win":
+            e1.status = "defeated"
+        elif e1.status == "engaged":
+            e1.status = "hostile"
+        world.enemies._combat_enemies = []
+        world.enemies._combat_active = False
+
+    world.enemies.exit_combat = _exit_combat
+    monkeypatch.setattr(game_session, "_game_instance", fake)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    snap = _take_pre_combat_snapshot(world)
+    game_session._combat_sessions.clear()
+    game_session._combat_sessions["alive"] = {"pre_world": snap}
+    e1.status = "engaged"
+    world.enemies._combat_active = True
+
+    _discard_combat_sessions()
+
+    assert world.enemies._combat_active is False
+    assert exit_calls == [{"outcome": "abort"}]
+    assert e1.status != "defeated"
+    assert game_session._combat_sessions == {}
+
+
+def test_slash_load_clears_combat_sessions_without_apply(monkeypatch):
+    """同进程 /load 成功后只清 _combat_sessions，不把旧战前快照写到新档 world。"""
+    from frontend.routers.game import session as game_session
+    from frontend.routers.game.slash import _handle_slash_command
+    from pathlib import Path
+
+    fake = _fake_game_with_spells()
+    world = fake["keeper"].world
+    hp_before = world.player.derived.HP
+    monkeypatch.setattr(game_session, "_game_instance", fake)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    game_session._combat_sessions.clear()
+    game_session._combat_sessions["stale"] = {
+        "pre_world": {
+            "hp": 99,
+            "san": 1,
+            "mp": 0,
+            "enemies": {},
+            "san_seen_sources": set(),
+        },
+    }
+    monkeypatch.setattr(
+        "frontend.routers.game.slash.Path.exists",
+        lambda self: Path(self).name == "save_1.json",
+    )
+    load_called = []
+
+    def _load(game, path):
+        load_called.append(path)
+
+    monkeypatch.setattr("game_loop.load_game", _load)
+    result = _handle_slash_command("/load 1")
+
+    assert load_called
+    assert "读档" in result["text"]
+    assert game_session._combat_sessions == {}
+    assert world.player.derived.HP == hp_before
+
+

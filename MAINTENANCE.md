@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | F40 review：① `_discard_combat_sessions` 回滚快照后 `exit_combat({"outcome":"abort"})` 清 `_combat_active`（不当 win）。② `/load` 成功后 `_combat_sessions.clear()`，不把旧 pre_world 写到新档。TDD：契约 +2。combat.py 432→440 / slash 104→105。 |
 | 2026-09-07 | 前端专项 §6 Task 12 / F40：战斗原子化 + 方案 A 战前快照回滚。`GET /api/game/state` peek `_game_instance`（空则 `{in_game:false}`，禁止 `get_game()` lazy 建局）；有局返回 HUD + `in_game:true`，永不 `active_combat`。残留 `_combat_sessions` 先 `_discard_combat_sessions()` 回滚再清。`combat/start` 在 `_init_combat` 前拍 `pre_world`（player HP/SAN/MP、当前场景敌人 hp/status、`san_seen_sources` 拷贝；注释标明不求完备）。无会话 `combat/round` → 409 `{error:combat_session_lost}` 并回滚。终局 `pop` 会话不回滚。quit/reset/init 清会话 dict。前端：`DOMContentLoaded` bootstrap 仅 `in_game===true` 切 `#game-screen`；409 → `finishCombat({silent:true})` 回探索态。TDD：契约 4 测 + Task1 400→409 + js bootstrap/combat 409。默认套件 636 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。本环境无浏览器手测。combat.py 328→432 / views 148→156 / session 248→250 / slash 102→104。 |
 | 2026-09-07 | 前端专项 §6 Task 11 / F42：`TurnRunner.execute(..., on_phase)` 每相位 start/done（内部名 understand/adjudicate/encounter/enrich/finalize）。`Keeper.process_turn` 转发 `on_phase`。`run_turn(..., on_progress)`：`PHASE_TO_WS` 映射 understand→parse / adjudicate→judge / encounter→combat_entry / enrich→enrich / **finalize→curate**；`narrate` 包住真正 `narrator.narrate`（含异常路径）；try/finally 所有返回路径推 `complete`。`turn.py` 删假进度连推，`call_soon_threadsafe(_push_progress)` 从 executor 工作线程推 WS；`process_turn` 拆 payload/进度桥。TDD：`tests/test_turn_runner_progress.py` 4 测。默认套件 631 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。runner 46→56 / game_loop 985→1025 / turn.py 304→328 / keeper 签名加 on_phase。 |
 | 2026-09-07 | 前端专项 §6 Task 10 / F39：WorldChronicle `narrative_log` deque maxlen=200，`record_narrative` 截断 2000 字；`to_dict`/`from_dict` 加键，旧档缺省空列表。`game_loop.run_turn` 在 `narrator.narrate` **成功后** 写入（不后移 `record_turn`，不进 `render_for_author`）。`GET /api/game/history?before_turn=&limit=` newest-first 分页，无局 400 `{error:no_game}`。`history.js` 左侧抽屉替换 `#chat-history-inline`；刷新后从 chronicle 重建。TDD：`test_chronicle.py` +7 / 契约 3 / `history.test.mjs` + `test_frontend_js_modules.py`。默认套件 627 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。scenario_core 2130→2144 / game_loop 981→985 / views 97→148。 |
@@ -1163,13 +1164,13 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 |------|------|------|
 | `session.py` | 250 | 全局态、`_init_libraries`、`get_game`、`init_game_api`（开局清 `_combat_sessions`）、`_resolve_start_scene`、`_make_default_inv`、`_load_character_or_default`（B19）；init/lazy 写 `g["_log_dir"]`；`_combat_sessions` 条目含 `pre_world` |
 | `turn.py` | 328 | F42：`process_turn` 拆 payload 辅助；`partial(run_turn, ..., debug=bool, on_progress=)`；工作线程经 `call_soon_threadsafe(_push_progress)` 推真实进度（删假连推）；JSON 仅 `turn.debug is not None` 时带 `debug` 键；slash `{text}` → `narrative`+`slash` 且 `brief=""`；退出/frozen 纯文本 narrative。WS `/api/game/progress`、`_push_progress` |
-| `combat.py` | 432 | 序列化 + 战前快照回滚 + `/api/combat/start\|round`（无会话 409） |
+| `combat.py` | 440 | 序列化 + 战前快照回滚 + `/api/combat/start\|round`（无会话 409；discard 后 abort 清闩） |
 | `charcard.py` | 111 | `_known_spell_names` + `GET /api/game/character-card` JSON（无调查员 `{name:null}`） |
-| `slash.py` | 104 | `_handle_slash_command` → `{text}`（无局时退出文案）+ `POST /api/game/command` JSON；`/quit` `/reset` 清 `_combat_sessions` |
+| `slash.py` | 105 | `_handle_slash_command` → `{text}`（无局时退出文案）+ `POST /api/game/command` JSON；`/quit` `/reset` 清 `_combat_sessions`；`/load` 成功后只 clear 不 apply |
 | `views.py` | 156 | `/game`、`player-status`、`scene`、`state`（F40 peek 空实例不 lazy）、`GET /api/game/history`（F39）、`autowin` |
 | `debug.py` | 358 | `GET /api/game/debug?turns=N` 聚合 turn_logs + 快照 + 实体可用性 + LLM 摘要 |
 
-### routers/game/combat.py (432 行) — 战斗 API + F40 战前快照
+### routers/game/combat.py (440 行) — 战斗 API + F40 战前快照
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -1177,10 +1178,10 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `_iter_scene_enemies` | `(world)` | 当前场景敌人（`_instances` 或 `get_active_in_scene`） | 49 |
 | `_take_pre_combat_snapshot` | `(world) -> dict` | 战斗重置前的临时回滚，不求完备：HP/SAN/MP + 敌人 hp/status + `san_seen_sources` 拷贝 | 70 |
 | `_apply_pre_combat_snapshot` | `(world, snap)` | 写回上述字段，不深拷贝 world | 93 |
-| `_peek_world` / `_discard_combat_sessions` | — | peek `_game_instance`（不 lazy）；回滚所有残留会话快照后 `clear`；无快照只清 dict | 125 / 135 |
-| `_deserialize_enemies_for_combat` | `(list) -> list` | 敌人 dict → CombatSystem 可用对象 | 146 |
-| `combat_start` | `POST /api/combat/start` | 先丢弃残留再拍 `pre_world` 再 `_init_combat`；auto_win 不拍快照 | 181 |
-| `combat_round` | `POST /api/combat/round` | 无会话 409 `{error:combat_session_lost}` 并 discard；终局 `pop` 不回滚 | 296 |
+| `_peek_world` / `_discard_combat_sessions` | — | peek `_game_instance`（不 lazy）；回滚快照后 `clear`；再 `exit_combat(abort)` 清 `_combat_active`（不当 win）；无快照只清 dict | 125 / 135 |
+| `_deserialize_enemies_for_combat` | `(list) -> list` | 敌人 dict → CombatSystem 可用对象 | 154 |
+| `combat_start` | `POST /api/combat/start` | 先丢弃残留再拍 `pre_world` 再 `_init_combat`；auto_win 不拍快照 | 189 |
+| `combat_round` | `POST /api/combat/round` | 无会话 409 `{error:combat_session_lost}` 并 discard；终局 `pop` 不回滚 | 304 |
 
 ### routers/game/views.py (156 行) — 页面与状态
 

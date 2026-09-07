@@ -133,7 +133,12 @@ def _peek_world():
 
 
 def _discard_combat_sessions() -> None:
-    """回滚残留战斗会话的战前快照并清空。无快照则只清 dict。"""
+    """回滚残留战斗会话的战前快照并清空。无快照则只清 dict。
+
+    enter_combat 发生在 combat/start 之前，快照不含 _combat_active；
+    回滚后必须 abort 清闩，否则 phase_c_encounter 跳过、无法再进战斗。
+    abort 不当 win（不把敌人标 defeated）。
+    """
     sessions = session._combat_sessions
     world = _peek_world()
     for sess in list(sessions.values()):
@@ -141,6 +146,9 @@ def _discard_combat_sessions() -> None:
         if snap and world is not None:
             _apply_pre_combat_snapshot(world, snap)
     sessions.clear()
+    mgr = getattr(world, "enemies", None) if world is not None else None
+    if mgr is not None and hasattr(mgr, "exit_combat"):
+        mgr.exit_combat({"outcome": "abort"})
 
 
 def _deserialize_enemies_for_combat(enemy_data_list: list) -> list:
