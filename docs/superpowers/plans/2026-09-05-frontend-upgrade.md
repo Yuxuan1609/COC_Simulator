@@ -150,7 +150,7 @@ git commit -m "refactor: game.py 1191 行拆为 routers/game/ 包（session/turn
 - Modify: `frontend/templates/game.html`（瘦身为 markup + module 入口）
 - Modify: `frontend/templates/base.html`（htmx 本地化）
 
-- [ ] **Step 1: api.js / state.js（新写）**
+- [x] **Step 1: api.js / state.js（新写）**
 
 **R1 警告（阻塞级）**：game.html 有 **21 处内联 `onclick`**（sendTurn/initGame/executeCombatRound 等）+ JS 动态拼的 onclick。`type="module"` 的作用域**不挂 window**——直接模块化会让所有按钮 `ReferenceError`。处置（二选一，写进实现说明）：① 入口模块显式 `window.sendTurn = sendTurn; …` 桥（搬迁期最快）；② 全部改 `addEventListener`（含动态拼接处，工作量大）。**推荐先 ① 后渐进 ②**；交付时 21 处逐一核对无遗漏。
 
@@ -183,7 +183,7 @@ export function setSwitch(k, v) {
 }
 ```
 
-- [ ] **Step 2: 搬迁映射（逐段移动，行为不变）**
+- [x] **Step 2: 搬迁映射（逐段移动，行为不变）**
 
 | 目标 | game.html 内联段 |
 |---|---|
@@ -193,11 +193,11 @@ export function setSwitch(k, v) {
 | ws.js | connectWS + step-indicator 更新（:980-990） |
 | game.html | 仅保留 markup + `<script type="module">import ...</script>` 入口 |
 
-- [ ] **Step 3: htmx 本地化**：下载 htmx 2.0.4 min 到 `frontend/static/js/vendor/htmx.min.js`，base.html:9 改本地引用。（离线脆弱点修复）
+- [x] **Step 3: htmx 本地化**：下载 htmx 2.0.4 min 到 `frontend/static/js/vendor/htmx.min.js`，base.html:9 改本地引用。（离线脆弱点修复）
 
-- [ ] **Step 4: escapeHtml 统一（R20 全量范围）**：api.js 或 util 导出 `escapeHtml`。**范围 = 所有进 `innerHTML` 的玩家/LLM 文本**，不止 :826 一处——已清点：`:826 data.brief`、`:830 narrative`、`:814 combat.narrative`、`:604-608` init brief/narrative、`:867` ending；服务端拼的 `narrative_html` 同样未转义（Task 5 结构化时一并处理）。
+- [x] **Step 4: escapeHtml 统一（R20 全量范围）**：api.js 或 util 导出 `escapeHtml`。**范围 = 所有进 `innerHTML` 的玩家/LLM 文本**，不止 :826 一处——已清点：`:826 data.brief`、`:830 narrative`、`:814 combat.narrative`、`:604-608` init brief/narrative、`:867` ending；服务端拼的 `narrative_html` 同样未转义（Task 5 结构化时一并处理）。
 
-- [ ] **Step 5: 验证 + 提交**——前端无单测框架，验证 = 契约测试全绿 + 手动冒烟清单（写进 commit message）：开一局→发一句话→HUD 更新→战斗一轮→角色卡展开。
+- [x] **Step 5: 验证 + 提交**——补自动测试：`tests/test_frontend_js_modules.py`（htmx 本地 / module 入口 / window 桥 / FormData / escapeHtml 覆盖）+ `tests/js/*.test.mjs`（node --test：escapeHtml / api content-type / state / renderTurnDynamic XSS / bumpTargetCount）。手动冒烟仍建议：开一局→发一句话→HUD 更新→战斗一轮→角色卡展开。
 
 ```bash
 git add frontend/ MAINTENANCE.md

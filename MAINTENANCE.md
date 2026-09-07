@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 §3 Task 4：`game.html` 内联 JS 拆为 `static/js` ES modules（util/api/state/scene/combat/charcard/ws/game）；入口 `window.*` 桥接全部 onclick；htmx 2.0.4 本地化 `static/js/vendor/htmx.min.js`；`escapeHtml` 覆盖 brief/narrative/init/ending/combat 叙事。sendTurn/sendTurnAction 合并为 `runTurnRequest`（FormData + content-type 双通道）。TDD：`tests/test_frontend_js_modules.py` 10 测 + `tests/js/*.test.mjs`（node --test，pytest 子进程）。默认套件 598 passed / 28 deselected。 |
 | 2026-09-06 | 前端专项 §2：`frontend/routers/game.py` 拆为包 `session/turn/combat/charcard/slash/views`；`session.get_game()` 属性查找；契约 patch 改 `frontend.routers.game.session.get_game`。combat/start 补 `world=` 绑定（原先仅 auto_win 分支赋值）。默认套件 588 passed / 28 deselected。 |
 | 2026-09-06 | 前端专项 §1：`tests/test_frontend_contract.py` 扩 34 端点契约（副作用只测失败路径；游戏端点 patch get_game）。B19：`_load_character_or_default` 合一 init/get_game 角色卡兜底，load 抛错 → 默认卡 + init JSON `warning`；game.html toast 3s。state 透出 `_char_load_warning`。game.py 1191→1193。契约 41 passed。 |
 | 2026-09-06 | 前端专项 spec/plan 对齐（纯文档，零代码）：`2026-09-05-frontend-upgrade-design.md` 与 plan 同步。F40 定为方案 A（combat/start 战前快照，刷新/丢会话回滚后回探索态；state 空实例禁止 lazy 建局）。标明战斗系统后续重置，回滚边角不准可接受。F42：`finalize→curate`，`narrate` 由 `run_turn` 包住真正 `narrator.narrate`。TurnLogger 路径、B19 不对称、契约副作用分级写入 spec。 |
@@ -1166,6 +1167,23 @@ U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/
 ### routers/assets.py (79 行) — 素材
 
 `list_assets`@27 / `random_asset`@52。
+
+### templates + static/js — 游戏页前端（Task 4）
+
+`templates/game.html` 瘦身为 markup + `<script type="module" src="/static/js/game.js">`。`templates/base.html` htmx 改为 `/static/js/vendor/htmx.min.js`（2.0.4）。
+
+| 文件 | 职责 |
+|------|------|
+| `util.js` | `escapeHtml` / `isHtmlFallback` / `jsStringLiteral` |
+| `api.js` | `postForm`（FormData，不设 Content-Type）/ `postJSON` / `get`；按 content-type 分支 JSON vs `{html}`；HTTP 错误带 `status`/`body` |
+| `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `setSwitch` |
+| `scene.js` | 场景卡、initGame、sendTurn/sendTurnAction（`runTurnRequest` 合并）、handleTurnResponse、renderTurnDynamic/renderSkillChips、inline chat、DEBUG/AUTO 开关 |
+| `combat.js` | 战斗面板；`bumpTargetCount` 纯函数；start/round 走 `postJSON` |
+| `charcard.js` | `toggleCharCard`（仍 htmx.ajax 拉 HTML，Task 5 改 JSON）/ `updateCharHUD` |
+| `ws.js` | `/api/game/progress` + step-indicator |
+| `game.js` | 入口：`window.*` 桥（15 个 onclick 处理函数）、debug query、bootstrap `/api/game/state` |
+
+scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory`），仅函数内调用，ESM live binding。测试：`tests/test_frontend_js_modules.py` + `tests/js/*.test.mjs`。
 
 ---
 
