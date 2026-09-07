@@ -30,6 +30,10 @@ def phase_b_adjudicate(ctx, acc, tools) -> Restart | None:
                 if not _check_tc(tc, tools.world.clock.day, tools.world.clock.time_of_day):
                     hint = _describe_time_condition(tc) or "当前时间不满足触发条件"
                     now = f"第{tools.world.clock.day}天 {tools.world.clock.time_of_day}"
+                    judge = getattr(tools, "judge", None)
+                    if judge is not None:
+                        judge._trace_eval(eid, False, "time", hint)
+                        judge._trace_match(eid, False, hint)
                     acc.all_outcomes.append(ActionOutcome(
                         intent=ActionIntent(action=entry_type, target=entity.name),
                         success=False,

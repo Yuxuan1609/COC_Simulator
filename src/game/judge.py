@@ -311,10 +311,12 @@ class Judge:
             repeatable = bool((entity.extra or {}).get("repeatable")
                               or getattr(entity, "repeatable", False))
             if not repeatable:
-                self._trace_eval(entity.id, False, "once", "（该实体已触发过，无法重复执行）")
+                msg = "（该实体已触发过，无法重复执行）"
+                self._trace_eval(entity.id, False, "once", msg)
+                self._trace_match(entity.id, False, msg)
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
-                    success=False, message="（该实体已触发过，无法重复执行）",
+                    success=False, message=msg,
                     entity_id=entity.id, entity_type=entity.entity_type,
                 )
 
@@ -329,10 +331,12 @@ class Judge:
         if amin is not None and npc_name_gate and self.world.npcs:
             npc_gate = self.world.npcs.get(npc_name_gate)
             if npc_gate is not None and npc_gate.attitude_value < int(amin):
-                self._trace_eval(entity.id, False, "attitude", "对方现在不愿配合。")
+                msg = "对方现在不愿配合。"
+                self._trace_eval(entity.id, False, "attitude", msg)
+                self._trace_match(entity.id, False, msg)
                 return ActionOutcome(
                     intent=intent or ActionIntent(action="other"),
-                    success=False, message="对方现在不愿配合。",
+                    success=False, message=msg,
                     entity_id=entity.id, entity_type=entity.entity_type,
                 )
         npc_special = extra.get("npc_special", "")
@@ -358,6 +362,7 @@ class Judge:
                     _, label = attitude_tier(npc.attitude_value)
                     msg = f"{npc_name} 拒绝跟随（态度：{label}）"
                     self._trace_eval(entity.id, False, "attitude", msg)
+                    self._trace_match(entity.id, False, msg)
                     return ActionOutcome(
                         intent=intent or ActionIntent(action="other"),
                         success=False,
@@ -394,6 +399,7 @@ class Judge:
             if hard:
                 met, msg = self._evaluate_requirement(hard)
                 if not met:
+                    self._trace_match(entity.id, False, msg)
                     return ActionOutcome(
                         intent=intent or ActionIntent(action="other"),
                         success=False, message=msg,

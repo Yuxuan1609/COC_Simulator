@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | Task 7 复审 Important：闸门失败覆盖 parse `matched.success=True`。`_execute_entity` once/attitude/requirement 失败补 `_trace_match(False)`；`phase_b_adjudicate` 时间门失败 `_trace_eval(gate=time)` + `_trace_match(False)`。TDD：test_turn_trace +2。judge 646→652 / adjudicate 296→300。 |
 | 2026-09-07 | 前端专项 §5 Task 7：turn_trace 埋点（judge/keeper 只读，不改判定）。全链路 `Form(debug)` → `run_turn(..., debug=bool)` → `TurnContext.trace = [] if debug else None` → judge/keeper `_turn_trace.append` → `PlayerTurnResult.debug={evaluated,matched}` → JSON `debug` 键。debug OFF：trace/debug 均为 None，不分配列表。TDD：`tests/test_turn_trace.py` 4 测。默认套件 609 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。messages 303→304 / judge 600→646 / keeper 967→986 / context 49→50 / runner 41→46 / game_loop 943→981 / turn.py 293→304。 |
 | 2026-09-07 | Task 6 复审 Important：`#scene-panel` / `#char-panel` 外壳改为 `relative overflow-hidden flex flex-col`，滚动内移到 `flex-1 min-h-0 overflow-y-auto` 包裹 collapsed+expanded；`.splitter` 仍为外壳直系子节点，展开滚动时把手不跟着走。`initSplitter` 按 `pointerId` 过滤 move/up，`lostpointercapture` 收尾并 `releasePointerCapture`。补 `.min-h-0`。TDD：markup 直系子节点锁 + pointerId 单测。 |
 | 2026-09-07 | 前端专项 §4 Task 6：场景/角色面板可拖宽 + 输入栏聚焦态 + DEBUG/AUTO 开关组件。新建 `layout.js`：`computePanelWidth` 纯函数（左栏 `+Δx` / 右栏 `-Δx`，clamp 200–800）；`initSplitter` 存 `trpg_panel_scene_w` / `trpg_panel_char_w`，默认宽度仍 `w-64`=256 / `w-96`=384。`setSwitch('debug'|'autoWin')` 走 `setDebug`/`setAutoWin`（只写 `trpg_debug`/`trpg_autowin`，不造 `DEBUG` 键）。DBG/AUTO 改为 `.switch`（DEBUG / AUTO_WIN 文字标签）。`#input-bar:focus-within` 描边发光；`#btn-action` hover/active/disabled。补 `.w-64`/`.w-96`（原先 HTML 有类无规则）。TDD：`tests/js/layout.test.mjs` + state setSwitch 存储。视觉聚焦/拖拽未在本环境浏览器手测。 |
@@ -346,11 +347,11 @@ W0 契约 + 委托壳；W1–W5 抽出 A–E；W6 作者门迁入 B 尾部；W7 
 |------|------|------|------|
 | `phase_a_understand` | `(ctx, acc, tools) -> Early \| None` | 入口守卫（F17 直接拾取：hidden 点名 Early「没发现」/exposed 授予；直接丢弃：持有则入场景暴露 SceneItem，未持有 Early「你没有X。」；均在 turn_number+=1 前；深度保护）→ 回合初始化 → NPC AT 注入 → LUCK 声明式消耗 → use/move/search 短路 / pre-parse 消歧 / LLM parse（TurnFrozenError 冒泡，不在此捕获）→ NPC 对话分流（纯对话 Early；talk_to 走 `keeper.call_deepseek` 以保留既有 monkeypatch）→ use 归一 → intent 预发射；产出写入 `acc`/`ctx.raw`/`tools` 会话态 | 14 |
 
-### `adjudicate.py`（296 行）— B 裁决阶段（R1-W2 + W6 作者门）
+### `adjudicate.py`（300 行）— B 裁决阶段（R1-W2 + W6 作者门）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
-| `phase_b_adjudicate` | `(ctx, acc, tools) -> Restart \| None` | judge 各 entry 类型(interaction/event/use/move/search/other) + 依赖图自动触发；产出写入 `acc.all_outcomes` / `acc.enrich_input` / `tools._pending_side_effects` / `tools._pending_move`。search 成功翻转当前场景 hidden→False 并叙事列名（失败不暴露）；侦查检定 F19 传 `env_check_modifier`。尾部作者门（`acc.detect_future` 收割 intent_detect）：冷却 / `AuthorRequest` / `handle_request`；StructuralEdit+supplement_path 或 ModulePatch 有实体 → `return Restart()`（**不**在此 `_apply_pending`，由 runner 落账）；拒绝则 outcome+enrich_input 追加后 `return None` | 13 |
+| `phase_b_adjudicate` | `(ctx, acc, tools) -> Restart \| None` | judge 各 entry 类型(interaction/event/use/move/search/other) + 依赖图自动触发；产出写入 `acc.all_outcomes` / `acc.enrich_input` / `tools._pending_side_effects` / `tools._pending_move`。search 成功翻转当前场景 hidden→False 并叙事列名（失败不暴露）；侦查检定 F19 传 `env_check_modifier`。时间门失败：`judge._trace_eval(gate=time)` + `_trace_match(False)`。尾部作者门（`acc.detect_future` 收割 intent_detect）：冷却 / `AuthorRequest` / `handle_request`；StructuralEdit+supplement_path 或 ModulePatch 有实体 → `return Restart()`（**不**在此 `_apply_pending`，由 runner 落账）；拒绝则 outcome+enrich_input 追加后 `return None` | 13 |
 
 ### `encounter.py`（230 行）— C 遭遇阶段（R1-W3）
 
@@ -440,7 +441,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `_llm_correct_round` | `(round_result, combat_init, enemies, player_extra, battle_snapshot, boss_phase, player_actions)` | LLM 修正玩家回合伤害 | 1402 |
 | `_llm_correct_enemy_round` | `(enemy, action_data, player, player_extra, investigator_context)` | LLM 修正敌人攻击 | 1509 |
 
-## src/game/judge.py (646 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
+## src/game/judge.py (652 行) — 确定性闸门（无 LLM 依赖；`_MARKUP_STRIP_RE` @13 含 env_change/attitude_change）
 
 | 函数/方法 | 签名 | 作用 | 行号 |
 |------|------|------|------|
@@ -450,7 +451,7 @@ CombatState dataclass（@187）：回合可变状态；F2 增 `player_san_max: i
 | `Judge.execute_interaction` | `(intent, player_input="")` | 执行解析出的互动意图 | 97 |
 | `Judge.execute_material` | `(material, player_input="")` | **统一资源层 L1 执行通道**：硬门（已知法术/持有/MP/材料）-> 扣减（refund_on_fail 回滚）-> 可选检定（下沉复用 check_skill/opposed_check；F19：check_skill 传 `env_check_modifier`）-> 结果槽（tier 选档）-> on_use @markup 经 apply_side_effects 执行 -> effect 原子数组经 _execute_effect_atoms 结算（on_use 先/effect 后；检定失败不结算 effect，防 refund 后免费获益）；L0 零消耗无检定且无 on_use/effect 时纯叙事（guard 对称含 effect）；F5：need_san 且 `success or not refund_on_fail`（未退款）时调 world.on_san_loss（施法损失计疯狂，退款不计） | 112 |
 | `Judge._execute_effect_atoms` | `(effects, player) -> list[str]` | **探索侧 effect 原子结算**（spec §1.2 探索列）：heal（formula 掷骰（utils.roll_formula 共享解析器，垃圾 formula 回退 delta）/delta≥0 归零保护，clamp HP_MAX）/ mp_change（clamp 0..MP_MAX）/ markup（@标记走 parse_markup_all+apply_side_effects 同通路）/ timed（挂 player.timed_effects，同 id refresh 替换旧条刷新时效不叠条，expire_at=clock.game_time+minutes，缺省读 game_config 的 timed_default_minutes；有 interval/payload 则拷入条目供 F10 周期结算）/ damage（探索侧无目标：跳过+logger warning，不阻断）/ buff+control（降级文本进结果+logger warning；文本取 description 优先、回退 on_text（战斗向 buff 原子字段，与 combat.py 同源）、最后兜底「仅在战斗中生效」）/ narrative（text 进结果）/ 未知 type（`[unknown:{type}]` 前缀降级+logger warning）；永不报错阻断 | 227 |
-| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记。闸门失败 `_trace_eval(gate=once/attitude/requirement)`；终局 `_trace_match` | 308 |
+| `Judge._execute_entity` | `(entity, intent=None, player_input="")` | **核心**：重复执行拦截（F23：completed 且非 repeatable 挡「已触发过」；repeatable 放行重跑，mark_completed 仍幂等）→ N1 attitude_min（extra/字段 + npc_name，`attitude_value < min` → 失败「对方现在不愿配合。」；无 npc_name 不挡）→ NPC 特殊实体(follow/interact unlock；follow_unlock 经 set_following，hostile/wary 失败不 mark) → 硬 requirement → 技能检定（F19：`env_check_modifier`）+特质增强 → ##GRADED## 解析 → @markup 剥离 → 失败惩罚/难度递增 → 完成标记。闸门失败 `_trace_eval(gate=once/attitude/requirement)` **并** `_trace_match(success=False)`（覆盖 parse 初匹配）；终局 `_trace_match` | 308 |
 | `_split_requirement` | `(req) -> (hard, soft)` | `\|\|` 拆分硬/软条件 | 552 |
 | `_is_simple_requirement` / `_check_simple_requirement` | — | AT 简单条件判定；N4：`npc_dead:`/`flag:` 视为可解析；失败时 `_trace_eval(gate=requirement)`（不写 `_current_entity_id`，避免边依赖误挡） | 563 / 577 |
 | `_evaluate_requirement` | `(req) -> (bool, msg)` | item: → flag: → npc_dead:（委托 `parse_hard_requirement`，未完成短路 False，避免后续 grace True）→ AND/OR 解析 → 边依赖检查；失败路径 `_trace_eval`（无 `_current_entity_id` 则跳过，保持纯检查可给 Task 8 复用） | 590 |

@@ -154,3 +154,67 @@ class TestTurnTrace:
         assert on.debug["matched"][0]["id"] == "IT_X"
         off = run_turn(game, "看", debug=False)
         assert off.debug is None
+
+    def test_time_gate_fail_overwrites_parse_match(self):
+        """adjudicate 时间门失败 → evaluated.gate=time 且 matched.success=False。"""
+        import json
+        from game.clock import GameClock
+        from game.judge import Judge
+        from game.messages import TurnInput
+        from game.turn.adjudicate import phase_b_adjudicate
+        from game.turn.context import TurnAccumulator, TurnContext
+
+        inter = {
+            "id": "IT_NIGHT", "entity_type": "interaction",
+            "name": "夜探", "scene": "room_a",
+            "type": "无", "requirement": "",
+            "trigger": "夜探", "result": "你摸进了暗巷。",
+            "side_effects": [], "difficulty": "",
+            "time_condition": json.dumps(
+                [{"day": "ALL", "times": ["凌晨"]}], ensure_ascii=False),
+        }
+        world = make_world({"room_a": make_scene(interactions=[inter])}, "room_a")
+        world.clock = GameClock(start_time=12 * 60)  # 白天
+        entity = world.graph.nodes["room_a"].interactions[0]
+        judge = Judge(world)
+        judge._turn_trace = [
+            {"kind": "matched", "id": "IT_NIGHT", "success": True,
+             "reason": "parse匹配"},
+        ]
+        tools = SimpleNamespace(
+            world=world, judge=judge,
+            _find_entity_by_id=lambda eid: entity if eid == "IT_NIGHT" else None,
+            _pending_side_effects=[],
+        )
+        ctx = TurnContext(turn_input=TurnInput(raw_text="夜探"), raw="夜探",
+                          trace=judge._turn_trace)
+        acc = TurnAccumulator()
+        acc.parse_result = [{"type": "interaction", "id": "IT_NIGHT"}]
+        phase_b_adjudicate(ctx, acc, tools)
+
+        ev = [e for e in _evaluated(judge._turn_trace) if e.get("id") == "IT_NIGHT"]
+        assert ev, f"expected time-gate evaluated, got {judge._turn_trace}"
+        assert ev[-1]["gate"] == "time"
+        assert ev[-1]["available"] is False
+        matched = [e for e in _matched(judge._turn_trace) if e.get("id") == "IT_NIGHT"]
+        assert matched and matched[-1]["success"] is False
+
+    def test_requirement_fail_overwrites_parse_match(self):
+        """requirement 闸门失败覆盖 parse 的 matched.success=True。"""
+        from game.judge import Judge
+
+        world = make_world(
+            {"room_a": make_scene(interactions=[_gated_inter()])}, "room_a")
+        entity = world.graph.nodes["room_a"].interactions[0]
+        judge = Judge(world)
+        judge._turn_trace = [
+            {"kind": "matched", "id": "IT_X", "success": True,
+             "reason": "parse匹配"},
+        ]
+        outcome = judge._execute_entity(entity)
+        assert not outcome.success
+        matched = [e for e in _matched(judge._turn_trace) if e.get("id") == "IT_X"]
+        assert matched and matched[-1]["success"] is False
+        ev = [e for e in _evaluated(judge._turn_trace) if e.get("id") == "IT_X"]
+        assert ev and ev[-1]["available"] is False
+        assert ev[-1].get("gate") == "requirement"
