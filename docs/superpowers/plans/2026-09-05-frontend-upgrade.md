@@ -435,10 +435,10 @@ def test_discard_combat_rolls_back_player_hp(client):
 
 ### Task 13: 文档 + 最终验证
 
-- [ ] ISSUES §5 收口：F39/F40/F42/B19；§2 移除对应行；**F22 notebook 呈现保留挂「前端后续批次」并注明「F39 批次有意缩小未含 notebook，非漏做」（R13）**
-- [ ] MAINTENANCE.md 同步（新包结构/新端点/新 js 模块/新测试文件）
-- [ ] `python -m pytest tests/ -q` 全绿 + real_llm_smoke（§5/§6 动过主路径）
-- [ ] push（含此前未推的 spec commit）
+- [x] ISSUES §5 收口：F39/F40/F42/B19；§2 移除对应行；**F22 notebook 呈现保留挂「前端后续批次」并注明「F39 批次有意缩小未含 notebook，非漏做」（R13）**
+- [x] MAINTENANCE.md 同步（新包结构/新端点/新 js 模块/新测试文件）
+- [x] `python -m pytest tests/ -q`：638 passed / 28 deselected；既有失败 `test_unresolved_use_becomes_creative`（HEAD 已挂，本 Task 不修）。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）
+- [ ] push（含此前未推的 spec commit）— **延至分支结束，本 Task 不 push**
 
 ---
 

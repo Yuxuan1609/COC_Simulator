@@ -35,7 +35,6 @@
 |---|------|------|
 | B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2"（阶段 0 跳过） |
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);两处实现需保持同步——**仍无 parity 测试锁**（2026-09-05 盘点 M4，建议参数化等价断言） |
-| B19 | 角色卡加载失败静默降级默认卡 | frontend/routers/game.py 异常被吞换默认卡;玩家无提示（前端域,按约定不排期） |
 | B24 | **测试缺口批次**（盘点 2026-09-05，详见 docs/test-gap-audit-2026-09-05.md） | 高：H1 Boss 存读档往返零覆盖、H3 run_game 交互主循环零专测；中：M1 narrator 兜底无 warning、M2 ConsumeItem 模糊匹配吞异常、M3 autosave 全链静默、M5 judge 失败惩罚分支；低：L1 `_mp_regen_acc` 不入档等 7 条。补测时按报告优先级清 |
 
 ---
@@ -51,7 +50,7 @@
 | F12 | **条件效果**(触发式 effect) | 敌人特殊能力(狂暴 HP<50% 攻击+1D4)无数值通道;special_abilities/boss_mechanics 半接(judgment prompt 可见,战斗数值不执行,靠 LLM 自由发挥);effect 原子无触发条件(on_hp_below/on_round 等)。等内容需求出现再结构化,先靠 boss_mechanics 文本兜底 |
 | F15 | **金钱/交易/贿赂** | 信用评级只产文字标签,运行时无金钱概念;"塞钱给线人"等经典手段无通路 |
 | F21 | **物品组合/合成 + 耐久/次数** | 无 combine/split;InventoryItem 只有 quantity,tool 类永不损耗 |
-| F22 | **线索系统** | **降级（2026-09-02 拍板）**：线索=interaction 系统产物，notebook=玩家侧只读视图（CLI /notebook + 前端面板，零新结构零新判定；key_items/Chronicle 已落库，缺口只在呈现），随 F39 批次。集齐判定维持 Author LLM。原定位：note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
+| F22 | **线索系统** | **降级（2026-09-02 拍板）**：线索=interaction 系统产物，notebook=玩家侧只读视图（CLI /notebook + 前端面板，零新结构零新判定；key_items/Chronicle 已落库，缺口只在呈现）。**notebook 呈现（CLI /notebook + 前端面板）未含本轮前端专项——F39 批次有意缩小，非漏做；挂前端后续批次。**集齐判定仍 Author LLM。原定位：note_item 只记扁平字符串;无线索实体/关联边/"集齐可推理"判定 |
 | F28 | **友方 NPC 战斗参与** | combat 自承"extendable to NPCs later";跟随 NPC 无 HP/行动/不被选为目标,战斗中凭空消失 |
 | F30 | **追逐/移动力** | MOV 已从 Stats 删除;flee 单骰 DEX 立即定音,无追逐轮/速度分级 |
 | F33 | **手写模组支持**（前端编辑器/手写工作流） | CLI `lint --strict` 已接 layered_schema（2026-09-04，见 §5）。剩余：无手写路径；前端编辑器校验只查 scenes/entities 非空 |
@@ -60,10 +59,7 @@
 | F36 | **管线进度/失败前端可见 + 质量量化指标** | launcher 后台线程 fire-and-forget;auto 失败仍打印"执行完毕"(前端域) |
 | F37 | **撤销/回滚上一回合** | 无 undo;误操作只能翻旧手动存档或重开(体验破例,前端/CLI 皆缺) |
 | F38 | **存档槽位 UI + 元信息 + autosave 入口** | 存读档靠手敲命令;save_game 只记 turn_number;autosave 无法经 /load 触及(前端域) |
-| F39 | **叙事历史玩家侧回看** | 历史只在浏览器内存刷新即丢;WorldChronicle 已入档但只喂 Author(体验破例) |
-| F40 | **战斗中刷新/断线恢复** | _combat_sessions 进程内存态;刷新丢战斗面板(体验破例,前端域) |
 | F41 | **新手引导/规则查询/行动建议** | 帮助仅斜杠命令清单;场景可交互实体不作为建议呈现(前端域) |
-| F42 | **回合进度真实反馈** | WS 进度流失真:LLM 前推一条即静态"思考中"(前端域) |
 | F43 | **角色卡导入回流** | 导出 zip 无导入端点;文件浏览器白名单不含 .zip(前端域) |
 
 ## 3. 重构队列(约定:倒数第二)
@@ -104,6 +100,10 @@
 
 | 日期 | 项 | 方式 |
 |------|----|------|
+| 2026-09-07 | **F42 回合进度真实反馈** | `TurnRunner.on_phase` 真实进度；对外步名 parse/judge/enrich/combat_entry/curate/narrate/complete；finalize→curate；narrate 包住真正 narrate；`call_soon_threadsafe`。 |
+| 2026-09-07 | **F40 战斗中刷新/断线恢复** | 战斗原子化方案 A：战前快照回滚；state 空实例 `{in_game:false}` 不 lazy 建局；无会话 round 409；不做 CombatState 入档/中途续打。 |
+| 2026-09-07 | **F39 叙事历史玩家侧回看** | chronicle.narrative_log + GET /api/game/history + history.js 替换内联 chatMessages。 |
+| 2026-09-07 | **B19 角色卡加载失败静默降级** | 角色卡加载失败透出 warning（init JSON `warning` + toast；`_load_character_or_default` 合一）。 |
 | 2026-09-04 | **生成端回填（schema / prompt / lint --strict / mermaid）** | schema：attitude_value + 五档枚举派生 + `mid` 单一事实源；scene_items/environment 嵌套校验；scheduled_events 进 validate_l2。prompt：STEP2A/4/25 最小回填（allied→devoted）+ `_assemble_l2` 透传。F33 CLI `--strict` 只升 schema warning；F35 CLI mermaid。e2e_testbed 全元素 + `init_game` scheduled_events 加载桥。前端手写编辑器（F33 余）与 mermaid 前端（F35 余）仍 §2。prompt 未做真实生成验证。 |
 | 2026-09-03 | **B21 战斗 HP 双轨不同步** | 单轨收敛：derived.HP 唯一轨道，state.player_hp 实时镜像。heal/markup HP 结算后镜像；敌方伤害与 LLM 修正扣 derived.HP 后镜像；F10 round payload 后镜像。写回变 no-op 保留。 |
 | 2026-09-03 | **F27 NPC 度量层 + F26 谎言/欺骗 + F29 死亡连锁** | NPC 专项运行时落地：F27/N1 attitude 双轨 + `@attitude_change` 双来源 + attitude_min/follow/敌意短路；F26/N3 talk_to 纯 LLM 策略（删「如实告知」/`process_npc_turn`）；F29/N4 `npc_dead:` AT 旗。F1 给予仍 F28。L2 schema 已加 optional `attitude_min`，生成 prompt 不改——**暂无生产端**。 |

@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 Task 13 收口（纯文档）：ISSUES §5 收口 F39/F40/F42/B19；§2 删对应行；F22 notebook 呈现挂前端后续批次（F39 批次有意缩小未含 notebook，非漏做，R13）。默认套件 638 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。push 延至分支结束。 |
 | 2026-09-07 | F40 review：① `_discard_combat_sessions` 回滚快照后 `exit_combat({"outcome":"abort"})` 清 `_combat_active`（不当 win）。② `/load` 成功后 `_combat_sessions.clear()`，不把旧 pre_world 写到新档。TDD：契约 +2。combat.py 432→440 / slash 104→105。 |
 | 2026-09-07 | 前端专项 §6 Task 12 / F40：战斗原子化 + 方案 A 战前快照回滚。`GET /api/game/state` peek `_game_instance`（空则 `{in_game:false}`，禁止 `get_game()` lazy 建局）；有局返回 HUD + `in_game:true`，永不 `active_combat`。残留 `_combat_sessions` 先 `_discard_combat_sessions()` 回滚再清。`combat/start` 在 `_init_combat` 前拍 `pre_world`（player HP/SAN/MP、当前场景敌人 hp/status、`san_seen_sources` 拷贝；注释标明不求完备）。无会话 `combat/round` → 409 `{error:combat_session_lost}` 并回滚。终局 `pop` 会话不回滚。quit/reset/init 清会话 dict。前端：`DOMContentLoaded` bootstrap 仅 `in_game===true` 切 `#game-screen`；409 → `finishCombat({silent:true})` 回探索态。TDD：契约 4 测 + Task1 400→409 + js bootstrap/combat 409。默认套件 636 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。本环境无浏览器手测。combat.py 328→432 / views 148→156 / session 248→250 / slash 102→104。 |
 | 2026-09-07 | 前端专项 §6 Task 11 / F42：`TurnRunner.execute(..., on_phase)` 每相位 start/done（内部名 understand/adjudicate/encounter/enrich/finalize）。`Keeper.process_turn` 转发 `on_phase`。`run_turn(..., on_progress)`：`PHASE_TO_WS` 映射 understand→parse / adjudicate→judge / encounter→combat_entry / enrich→enrich / **finalize→curate**；`narrate` 包住真正 `narrator.narrate`（含异常路径）；try/finally 所有返回路径推 `complete`。`turn.py` 删假进度连推，`call_soon_threadsafe(_push_progress)` 从 executor 工作线程推 WS；`process_turn` 拆 payload/进度桥。TDD：`tests/test_turn_runner_progress.py` 4 测。默认套件 631 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。runner 46→56 / game_loop 985→1025 / turn.py 304→328 / keeper 签名加 on_phase。 |
@@ -1249,7 +1250,9 @@ U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/
 | `history.js` | F39 历史面板：`renderHistoryItems` @28（`escapeHtml` brief/narrative）；`loadHistory` @44（`GET /api/game/history`，newest-first，滚动到底用 `before_turn=next_before` 加载更早）；`bindHistoryScroll` @70；`toggleHistory` @81 |
 | `game.js` | 入口：`window.*` 桥（含 `toggleHistory`）；`toggleDebug` @28（调 `toggleDebugPanel` 后按 `lastSceneSnap` 重绘场景卡）；`setDebug` 吃 `?debug=`；`paintDebugUi` @57（`syncDebugUi` + 已开则拉 snapshot）；`bootstrapExistingGame` @62（`in_game===true` 才 `applyBootstrapState`+`connectWS`）；DOMContentLoaded 调 `bindHistoryScroll` + bootstrap |
 
-scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory` 空操作），仅函数内调用，ESM live binding。scene.js → debug.js 单向（无环）。测试：`tests/test_frontend_js_modules.py` + `tests/js/*.test.mjs`（含 `history.test.mjs` / `bootstrap.test.mjs` / `combat.test.mjs`）。
+scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory` 空操作），仅函数内调用，ESM live binding。scene.js → debug.js 单向（无环）。
+
+测试（前端专项）：`tests/test_frontend_contract.py` / `test_frontend_js_modules.py` / `test_turn_trace.py` / `test_turn_runner_progress.py` / `test_chronicle.py` + `tests/js/*.test.mjs`（api / bootstrap / charcard / combat / debug / escapeHtml / history / layout / render / state）。
 
 ---
 
