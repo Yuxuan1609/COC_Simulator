@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 §5 Task 8：`GET /api/game/debug?turns=N` 聚合 turn_logs + 状态快照 + 场景实体可用性 + LLM 摘要。新建 `frontend/routers/game/debug.py`；`__init__.py` include debug.router。日志目录取 `game_loop._turn_logger.log_dir`（fallback `game["_log_dir"]` / `prompts._log_dir`），禁止写死 `data/debug/turn_logs/`。session init/lazy 写 `g["_log_dir"]`。`_entity_availability` 只读：once / time_condition / `_evaluate_requirement`，扫描时 `judge._turn_trace=None`（finally 恢复），不调 `check_auto_triggers`/`_execute_entity`。无局 400 `{error:no_game}`；turns clamp 1..50。TDD：`test_frontend_contract.py` +2。默认套件 613 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。session 246→248。 |
 | 2026-09-07 | Task 7 复审 Important：闸门失败覆盖 parse `matched.success=True`。`_execute_entity` once/attitude/requirement 失败补 `_trace_match(False)`；`phase_b_adjudicate` 时间门失败 `_trace_eval(gate=time)` + `_trace_match(False)`。TDD：test_turn_trace +2。judge 646→652 / adjudicate 296→300。 |
 | 2026-09-07 | 前端专项 §5 Task 7：turn_trace 埋点（judge/keeper 只读，不改判定）。全链路 `Form(debug)` → `run_turn(..., debug=bool)` → `TurnContext.trace = [] if debug else None` → judge/keeper `_turn_trace.append` → `PlayerTurnResult.debug={evaluated,matched}` → JSON `debug` 键。debug OFF：trace/debug 均为 None，不分配列表。TDD：`tests/test_turn_trace.py` 4 测。默认套件 609 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。messages 303→304 / judge 600→646 / keeper 967→986 / context 49→50 / runner 41→46 / game_loop 943→981 / turn.py 293→304。 |
 | 2026-09-07 | Task 6 复审 Important：`#scene-panel` / `#char-panel` 外壳改为 `relative overflow-hidden flex flex-col`，滚动内移到 `flex-1 min-h-0 overflow-y-auto` 包裹 collapsed+expanded；`.splitter` 仍为外壳直系子节点，展开滚动时把手不跟着走。`initSplitter` 按 `pointerId` 过滤 move/up，`lostpointercapture` 收尾并 `releasePointerCapture`。补 `.min-h-0`。TDD：markup 直系子节点锁 + pointerId 单测。 |
@@ -1152,12 +1153,25 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 
 | 模块 | 行数 | 内容 |
 |------|------|------|
-| `session.py` | 246 | 全局态、`_init_libraries`、`get_game`、`init_game_api`、`_resolve_start_scene`、`_make_default_inv`、`_load_character_or_default`（B19） |
+| `session.py` | 248 | 全局态、`_init_libraries`、`get_game`、`init_game_api`、`_resolve_start_scene`、`_make_default_inv`、`_load_character_or_default`（B19）；init/lazy 写 `g["_log_dir"]` |
 | `turn.py` | 304 | `process_turn`（`debug: int = Form(0)`；`partial(run_turn, ..., debug=bool)`；JSON 仅 `turn.debug is not None` 时带 `debug` 键；slash `{text}` → `narrative`+`slash` 且 `brief=""`；退出/frozen 纯文本 narrative）、WS `/api/game/progress`、`_push_progress` |
 | `combat.py` | 328 | 序列化 + `/api/combat/start\|round` |
 | `charcard.py` | 111 | `_known_spell_names` + `GET /api/game/character-card` JSON（无调查员 `{name:null}`） |
 | `slash.py` | 102 | `_handle_slash_command` → `{text}`（无局时退出文案）+ `POST /api/game/command` JSON |
 | `views.py` | 97 | `/game`、`player-status`、`scene`、`state`、`autowin` |
+| `debug.py` | 358 | `GET /api/game/debug?turns=N` 聚合 turn_logs + 快照 + 实体可用性 + LLM 摘要 |
+
+### routers/game/debug.py (358 行) — debug 聚合
+
+| 函数 | 签名 | 作用 | 行号 |
+|------|------|------|
+| `_clamp_turns` | `(n) -> int` | turns 查询钳 1..50 | 17 |
+| `_resolve_log_dir` | `(game=None) -> str\|None` | `_turn_logger.log_dir` → `game["_log_dir"]` → `prompts._log_dir`；禁止写死路径 | 25 |
+| `_read_recent_turn_logs` | `(n, game=None) -> list` | 读 `turn_log.jsonl` 最近 N 行；缺则 `turn_*.json` | 48 |
+| `_recent_llm_logs` | `(n, game=None) -> list` | 同目录最新 `.txt` 摘要 `{filename, preview}` | 89 |
+| `_snapshot` | `(world) -> dict` | 直读 location/hp/san/mp/flags/npcs；clock/timed_effects/scene_items 缺属性则省略 | 130 |
+| `_entity_availability` | `(world, judge=None) -> list` | 当前场景 interactions+auto_triggers 只读：once / time / `_evaluate_requirement`；扫描时 `_turn_trace=None` 并 finally 恢复 | 321 |
+| `game_debug` | `GET /api/game/debug` | 无局 400 `{error:no_game}`；四键 `recent_turns`/`state_snapshot`/`scene_entities`/`llm_records` | 345 |
 
 ### routers/character.py (335 行) — 车卡 API
 

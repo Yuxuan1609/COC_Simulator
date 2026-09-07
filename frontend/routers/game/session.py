@@ -77,6 +77,7 @@ def get_game() -> dict | None:
         for item_gain in g.get("pending_world_items", []):
             if hasattr(inv, 'item_manager'):
                 inv.item_manager.add(item_gain.item_name, quantity=item_gain.quantity)
+        g["_log_dir"] = log_dir
         _game_instance = g
     return _game_instance
 
@@ -133,6 +134,7 @@ async def init_game_api(
     for item_gain in g.get("pending_world_items", []):
         if hasattr(inv, 'item_manager'):
             inv.item_manager.add(item_gain.item_name, quantity=item_gain.quantity)
+    g["_log_dir"] = log_dir
     _game_instance = g
 
     from game_loop import start_autosave

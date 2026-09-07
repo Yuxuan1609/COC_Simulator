@@ -2,7 +2,9 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+os.environ.setdefault("DEEPSEEK_API_KEY", "dummy")
 
+import json
 import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -498,4 +500,106 @@ def test_init_char_load_failure_surfaces_warning(client, tmp_path, monkeypatch):
     data = r.json()
     assert data.get("warning")
     assert "默认" in data["warning"]
+
+
+# ── Task 8: GET /api/game/debug 聚合端点 ──
+
+_DEBUG_KEYS = {"recent_turns", "state_snapshot", "scene_entities", "llm_records"}
+
+
+def _debug_game_with_world():
+    """真实 ScenarioWorld + Judge，供 _evaluate_requirement 只读检查。"""
+    from tests.e2e.helpers import make_scene, make_world
+    from game.judge import Judge
+
+    gated = {
+        "id": "IT_X", "entity_type": "interaction",
+        "name": "开门", "scene": "room_a",
+        "type": "无", "requirement": "flag:FLAG_Y",
+        "trigger": "开门", "result": "门开了。",
+        "side_effects": [], "difficulty": "", "time_condition": [],
+    }
+    open_at = {
+        "id": "AT_BREEZE", "entity_type": "auto_trigger",
+        "name": "风吹过", "scene": "room_a",
+        "type": "无", "requirement": "",
+        "trigger": "", "result": "一阵风。",
+        "side_effects": [], "difficulty": "", "time_condition": [],
+    }
+    world = make_world(
+        {"room_a": make_scene(
+            interactions=[gated],
+            auto_triggers=[open_at],
+            scene_items=[{"kind": "item", "ref": "钥匙", "quantity": 2,
+                          "hidden": False}],
+        )},
+        "room_a",
+        npc_profiles={"老王": {
+            "name": "老王", "attitude_value": 12, "scene": "room_a",
+        }},
+    )
+    derived = SimpleNamespace(HP=10, HP_MAX=12, MP=8, MP_MAX=11,
+                              SAN=55, SAN_MAX=88)
+    world.set_player(SimpleNamespace(
+        name="张三", derived=derived, timed_effects=[]))
+    world.mark_completed("SOME_DONE")
+    judge = Judge(world)
+    keeper = SimpleNamespace(world=world, judge=judge, turn_number=1)
+    return {"keeper": keeper}
+
+
+def test_debug_endpoint_aggregates(client, monkeypatch, tmp_path):
+    """debug 端点 = turn_logs 回放 + 状态快照 + 场景实体可用性。"""
+    from game.turn_logger import TurnLogger
+    from game_loop import set_turn_logger
+
+    marker = "UNIQUE_PLAYER_INPUT_TASK8"
+    logger = TurnLogger(log_dir=str(tmp_path))
+    logger.log(marker, None, "简报", "叙事")
+    (tmp_path / "narrator.txt").write_text(
+        "NARRATOR_PREVIEW_TASK8 hello", encoding="utf-8")
+    set_turn_logger(logger)
+    monkeypatch.setattr("game_loop._turn_logger", logger)
+
+    fake = _debug_game_with_world()
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        resp = client.get("/api/game/debug", params={"turns": 5})
+
+    assert resp.status_code == 200
+    data = resp.json()
+    missing = _DEBUG_KEYS - data.keys()
+    assert not missing, missing
+    assert "data/debug/turn_logs" not in resp.text
+
+    turns = data["recent_turns"]
+    assert isinstance(turns, list) and turns
+    blob = json.dumps(turns, ensure_ascii=False)
+    assert marker in blob
+
+    snap = data["state_snapshot"]
+    assert snap["location"] == "room_a"
+    assert snap["hp"] == 10
+    assert snap["san"] == 55
+    assert snap["mp"] == 8
+    assert "SOME_DONE" in snap.get("flags", [])
+
+    entities = {e["id"]: e for e in data["scene_entities"]}
+    assert "IT_X" in entities
+    assert entities["IT_X"]["available"] is False
+    assert "FLAG_Y" in entities["IT_X"]["reason"]
+
+    records = data["llm_records"]
+    assert isinstance(records, list)
+    names = [r.get("filename") or r.get("name") for r in records]
+    assert any(n and "narrator" in str(n) for n in names)
+    assert "NARRATOR_PREVIEW_TASK8" in json.dumps(records, ensure_ascii=False)
+
+
+def test_debug_endpoint_no_game(client):
+    """get_game() 为 None（已退出）→ 400 JSON {error: no_game}。"""
+    with patch("frontend.routers.game.session.get_game", return_value=None):
+        resp = client.get("/api/game/debug")
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "no_game"}
+
 

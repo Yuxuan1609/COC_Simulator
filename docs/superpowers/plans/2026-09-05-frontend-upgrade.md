@@ -297,7 +297,7 @@ class TestTurnTrace:
 - Create: `frontend/routers/game/debug.py`（`GET /api/game/debug?turns=N`）
 - Test: `tests/test_frontend_contract.py` 追加
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```python
 def test_debug_endpoint_aggregates(client, monkeypatch, tmp_path):
@@ -306,7 +306,7 @@ def test_debug_endpoint_aggregates(client, monkeypatch, tmp_path):
     # 断言响应四键：recent_turns / state_snapshot / scene_entities / llm_records
 ```
 
-- [ ] **Step 2: 实现**
+- [x] **Step 2: 实现**
 
 ```python
 @router.get("/api/game/debug")
@@ -330,7 +330,7 @@ def game_debug(turns: int = 5):
 
 `_entity_availability` 遍历当前场景 interactions/auto_triggers，对每个调既有 requirement 检查函数（judge 侧 `_evaluate_requirement`）取通过/失败原因——**只读，不触发任何副作用**。
 
-- [ ] **Step 3: 绿 + 提交**
+- [x] **Step 3: 绿 + 提交**
 
 ### Task 9: debug.js 面板
 
