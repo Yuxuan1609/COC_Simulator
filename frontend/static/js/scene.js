@@ -255,6 +255,39 @@ export function closeEnemyDetail() {
   document.getElementById("enemy-detail-modal").classList.add("hidden");
 }
 
+export function showGameScreen() {
+  const setup = document.getElementById("game-setup");
+  const screen = document.getElementById("game-screen");
+  if (setup) setup.style.display = "none";
+  if (screen) screen.style.display = "";
+  const input = document.getElementById("user-input");
+  if (input) input.focus();
+}
+
+export function applyBootstrapState(st) {
+  if (!st || st.in_game !== true) return false;
+  updateCharHUD({
+    name: st.name,
+    hp: st.hp,
+    hp_max: st.hp_max || st.hp,
+    mp: st.mp,
+    mp_max: st.mp_max,
+    san: st.san,
+    san_max: st.san_max || 99,
+    known_spells: st.known_spells || [],
+  });
+  showGameScreen();
+  const out = document.getElementById("turn-output");
+  if (out) {
+    const loc = st.location ? escapeHtml(st.location) + " — " : "";
+    out.innerHTML =
+      '<div class="turn-empty text-sm text-gray-500 italic">' +
+      loc +
+      "游戏已就绪</div>";
+  }
+  return true;
+}
+
 export async function initGame(e) {
   console.log("[initGame] begin");
   e.preventDefault();
@@ -300,9 +333,7 @@ export async function initGame(e) {
       avatar_url: "",
       occupation: "",
     });
-    document.getElementById("game-setup").style.display = "none";
-    document.getElementById("game-screen").style.display = "";
-    document.getElementById("user-input").focus();
+    showGameScreen();
     let turnHtml = "";
     if (data.initial_brief) {
       turnHtml +=

@@ -142,10 +142,13 @@ def test_player_status_json_includes_san_max(client):
     assert data["san_max"] >= data["san"]
 
 
-def test_game_state_includes_san_max(client):
-    """F2:/api/game/state 暴露 san_max。"""
-    with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
-        resp = client.get("/api/game/state")
+def test_game_state_includes_san_max(client, monkeypatch):
+    """F2:/api/game/state 暴露 san_max。peek `_game_instance`，不走 get_game lazy 建局。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", _fake_game_with_spells())
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    game_session._combat_sessions.clear()
+    resp = client.get("/api/game/state")
     assert resp.status_code == 200
     assert resp.json()["san_max"] == 88
 
@@ -446,7 +449,8 @@ class TestGameContract:
 
     def test_combat_round_missing_session(self, client):
         r = client.post("/api/combat/round", json={"session_id": "nope"})
-        assert r.status_code == 400
+        assert r.status_code == 409
+        assert r.json()["error"] == "combat_session_lost"
 
     def test_init_missing_module_500(self, client):
         r = client.post("/api/game/init", data={
@@ -681,5 +685,95 @@ def test_history_endpoint_limit_clamp_and_default(client):
         r_def = client.get("/api/game/history")
     assert len(r_def.json()["items"]) == 20
     assert [it["turn"] for it in r_def.json()["items"]] == list(range(60, 40, -1))
+
+
+# ── Task 12 / F40: 战斗原子化 + 战前快照回滚 ──
+
+
+def _fake_game_for_combat_snapshot():
+    """bootstrap/回滚用：player + 当前场景敌人 + san_seen_sources。"""
+    fake = _fake_game_with_spells()
+    world = fake["keeper"].world
+    e1 = SimpleNamespace(instance_id="e1", hp=20, status="hostile", scene="书房")
+    instances = {"e1": e1}
+    world.enemies = SimpleNamespace(
+        _instances=instances,
+        get_by_id=lambda iid, _m=instances: _m.get(iid),
+    )
+    world.san_seen_sources = {"旧目睹"}
+    return fake
+
+
+def test_state_empty_instance_not_lazy_init(client, monkeypatch):
+    """_game_instance is None → in_game=false，且不调用 init_game。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", None)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    game_session._combat_sessions.clear()
+    with patch("game_loop.init_game") as init_mock:
+        resp = client.get("/api/game/state")
+    assert resp.status_code == 200
+    assert resp.json() == {"in_game": False}
+    init_mock.assert_not_called()
+
+
+def test_state_supports_bootstrap(client, monkeypatch):
+    """有对局时 state 含 in_game/scene/HUD；无 active_combat 键。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", _fake_game_with_spells())
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    game_session._combat_sessions.clear()
+    resp = client.get("/api/game/state")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["in_game"] is True
+    assert data["location"] == "书房"
+    assert data["turn"] == 1
+    assert data["hp"] == 10
+    assert data["hp_max"] == 12
+    assert data["mp"] == 8
+    assert data["mp_max"] == 11
+    assert data["san"] == 55
+    assert data["san_max"] == 88
+    assert data["name"] == "张三"
+    assert "known_spells" in data
+    assert "active_combat" not in data
+
+
+def test_combat_round_without_session_clean_error(client):
+    """无会话 /api/combat/round 返回 409 + combat_session_lost（现网是 400，本 Task 改码，同步改 Task 1 锁的断言）。"""
+    from frontend.routers.game import session as game_session
+    game_session._combat_sessions.clear()
+    r = client.post("/api/combat/round", json={"session_id": "nope"})
+    assert r.status_code == 409
+    assert r.json() == {"error": "combat_session_lost"}
+
+
+def test_discard_combat_rolls_back_player_hp(client, monkeypatch):
+    """start 后改 HP，丢弃会话 → player HP 回到 start 前。边角字段不锁。"""
+    from frontend.routers.game import session as game_session
+    from frontend.routers.game.combat import _take_pre_combat_snapshot
+
+    fake = _fake_game_for_combat_snapshot()
+    world = fake["keeper"].world
+    hp_before = world.player.derived.HP
+    monkeypatch.setattr(game_session, "_game_instance", fake)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    snap = _take_pre_combat_snapshot(world)
+    game_session._combat_sessions.clear()
+    game_session._combat_sessions["alive"] = {
+        "pre_world": snap,
+        "state": object(),
+        "combat_init": object(),
+    }
+    world.player.derived.HP = 3
+    world.player.derived.SAN = 1
+    world.player.derived.MP = 0
+
+    r = client.post("/api/combat/round", json={"session_id": "nope"})
+    assert r.status_code == 409
+    assert r.json()["error"] == "combat_session_lost"
+    assert world.player.derived.HP == hp_before
+    assert game_session._combat_sessions == {}
 
 

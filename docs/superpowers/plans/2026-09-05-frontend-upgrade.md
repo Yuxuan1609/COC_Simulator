@@ -408,7 +408,7 @@ def test_narrate_pushed_around_actual_narrate():
 - Modify: `frontend/static/js/combat.js`（409 → `finishCombat(silent)` 回探索态；刷新后不要尝试用内存 `combatSession` 续打）
 - Test: `tests/test_frontend_contract.py` 追加
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```python
 def test_state_empty_instance_not_lazy_init(client):
@@ -424,8 +424,8 @@ def test_discard_combat_rolls_back_player_hp(client):
     """start 后改 HP，丢弃会话 → player HP 回到 start 前。边角字段不锁。"""
 ```
 
-- [ ] **Step 2: 实现**——快照 + `_discard_combat_sessions`；state 空实例短路；bootstrap JS；round 409；combat.js 处理 409。
-- [ ] **Step 3: 绿 + 手动验收**：① 同进程刷新（非战斗）：跳过 setup 回游戏屏；② 战斗中刷新：回探索态、不卡战斗 UI，HP 大致战前；③ 新进程读档（slash /load）：无战斗会话，探索态。不验收「战斗面板恢复」。
+- [x] **Step 2: 实现**——快照 + `_discard_combat_sessions`；state 空实例短路；bootstrap JS；round 409；combat.js 处理 409。
+- [x] **Step 3: 绿 + 手动验收**：① 同进程刷新（非战斗）：跳过 setup 回游戏屏；② 战斗中刷新：回探索态、不卡战斗 UI，HP 大致战前；③ 新进程读档（slash /load）：无战斗会话，探索态。不验收「战斗面板恢复」。本环境无浏览器手测，契约/Node 单测覆盖 bootstrap `in_game` 与 409 静默退出。
 
 **R3 原方案（完整 CombatState 序列化入档）废弃。** 战斗重置后再决定是否做中途续打。
 

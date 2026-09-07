@@ -22,7 +22,8 @@ _injector = None
 _progress_queues: dict[str, object] = {}
 
 # ── Combat session storage (in-memory, per-process) ──
-# Each entry: {"state": CombatState, "combat_init": CombatInit}
+# Each entry: {"state": CombatState, "combat_init": CombatInit, "pre_world": dict}
+# pre_world = 战前快照；刷新/丢会话回滚，不入档、不续打。
 _combat_sessions: dict[str, dict] = {}
 _auto_win: bool = False
 
@@ -95,6 +96,7 @@ async def init_game_api(
 ):
     global _game_instance, _game_quit
     _game_quit = False
+    _combat_sessions.clear()
     from game_loop import init_game
     from prompts import set_prompt_log_dir
     from llm import set_llm_log_dir

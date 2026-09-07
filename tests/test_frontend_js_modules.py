@@ -302,6 +302,25 @@ def test_scene_js_appends_debug_formdata():
     assert re.search(r"""fd\.append\(\s*["']debug["']""", scene)
 
 
+def test_f40_bootstrap_and_combat_409_wiring():
+    """F40：in_game bootstrap；DOMContentLoaded 拉 state；409 静默退出战斗。"""
+    game_js = _read(JS_DIR / "game.js")
+    scene = _read(JS_DIR / "scene.js")
+    combat = _read(JS_DIR / "combat.js")
+    html = _read(GAME_HTML)
+    assert 'id="game-setup"' in html
+    assert 'id="game-screen"' in html
+    assert "in_game" in scene or "in_game" in game_js
+    assert "applyBootstrapState" in scene
+    assert "bootstrapExistingGame" in game_js
+    idx_dom = game_js.find("DOMContentLoaded")
+    idx_boot = game_js.rfind("bootstrapExistingGame()")
+    assert idx_dom != -1 and idx_boot > idx_dom
+    assert "409" in combat
+    assert "silent" in combat
+    assert "combatSession" in combat
+
+
 def test_history_panel_replaces_inline_chat():
     html = _read(GAME_HTML)
     assert 'id="history-panel"' in html

@@ -87,10 +87,12 @@ def _handle_slash_command(cmd: str) -> dict:
     elif cmd in ("/quit", "/exit"):
         session._game_instance = None
         session._game_quit = True
+        session._combat_sessions.clear()
         lines.append("游戏已退出。返回启动页以重新开始。")
     elif cmd == "/reset":
         session._game_instance = None
         session._game_quit = False
+        session._combat_sessions.clear()
         lines.append("游戏已重置，刷新页面以重新开始")
     else:
         lines.append(f"未知命令: {cmd}。输入 /help 查看可用命令。")

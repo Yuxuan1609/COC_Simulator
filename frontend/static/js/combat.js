@@ -294,6 +294,10 @@ export async function executeCombatRound() {
     handleCombatRoundResponse(data);
   } catch (e) {
     console.error("combat round error", e);
+    if (e && e.status === 409) {
+      finishCombat({ silent: true });
+      return;
+    }
     alert("战斗回合请求失败");
     btn.disabled = false;
     btn.innerHTML = "<span>执行回合</span>";
@@ -342,38 +346,42 @@ export function handleCombatRoundResponse(data) {
 }
 
 export function finishCombat(data) {
-  const outcomeLabel =
-    data.outcome === "win" ? "胜利" :
-    data.outcome === "loss" ? "败北" :
-    data.outcome === "flee" ? "逃跑成功" :
-    data.outcome === "draw" ? "平局" : data.outcome;
-  const outcomeColor =
-    data.outcome === "win" ? "text-coc-green" :
-    data.outcome === "loss" ? "text-coc-red" : "text-yellow-400";
-  let summaryHtml =
-    '<div class="px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r mt-2">' +
-    '<div class="flex items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
-    '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + escapeHtml(outcomeLabel) + "</span></div>";
-  if (data.round_narrative) {
-    summaryHtml +=
-      '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' +
-      escapeHtml(data.round_narrative).replace(/\n/g, "<br>") + "</div>";
-  }
-  if (data.combat_narrative) {
-    summaryHtml +=
-      '<div class="text-aged-gold text-xs mt-2 pt-2 border-t border-gray-700/50 leading-relaxed">' +
-      escapeHtml(data.combat_narrative).replace(/\n/g, "<br>") + "</div>";
-  }
-  if (data.combat_completed_narrative) {
-    summaryHtml +=
-      '<div class="text-parchment text-sm mt-3 pt-2 border-t border-aged-gold/30 leading-relaxed narrative-flash">' +
-      escapeHtml(data.combat_completed_narrative).replace(/\n/g, "<br>") + "</div>";
-  }
-  summaryHtml += "</div>";
-
+  const silent = data === true || (data && data.silent === true);
   const outputArea = document.getElementById("turn-output");
-  outputArea.innerHTML = summaryHtml;
-  outputArea.scrollTop = 0;
+  if (!silent && data) {
+    const outcomeLabel =
+      data.outcome === "win" ? "胜利" :
+      data.outcome === "loss" ? "败北" :
+      data.outcome === "flee" ? "逃跑成功" :
+      data.outcome === "draw" ? "平局" : data.outcome;
+    const outcomeColor =
+      data.outcome === "win" ? "text-coc-green" :
+      data.outcome === "loss" ? "text-coc-red" : "text-yellow-400";
+    let summaryHtml =
+      '<div class="px-3 py-2 border-l-2 border-yellow-600/60 bg-[#1a1400]/60 rounded-r mt-2">' +
+      '<div class="flex items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"/></svg>' +
+      '<span class="text-sm font-bold ' + outcomeColor + '">战斗 ' + escapeHtml(String(outcomeLabel || "")) + "</span></div>";
+    if (data.round_narrative) {
+      summaryHtml +=
+        '<div class="text-gray-400 text-xs mt-1 leading-relaxed">' +
+        escapeHtml(data.round_narrative).replace(/\n/g, "<br>") + "</div>";
+    }
+    if (data.combat_narrative) {
+      summaryHtml +=
+        '<div class="text-aged-gold text-xs mt-2 pt-2 border-t border-gray-700/50 leading-relaxed">' +
+        escapeHtml(data.combat_narrative).replace(/\n/g, "<br>") + "</div>";
+    }
+    if (data.combat_completed_narrative) {
+      summaryHtml +=
+        '<div class="text-parchment text-sm mt-3 pt-2 border-t border-aged-gold/30 leading-relaxed narrative-flash">' +
+        escapeHtml(data.combat_completed_narrative).replace(/\n/g, "<br>") + "</div>";
+    }
+    summaryHtml += "</div>";
+    if (outputArea) {
+      outputArea.innerHTML = summaryHtml;
+      outputArea.scrollTop = 0;
+    }
+  }
 
   get("/api/game/player-status?format=json")
     .then(updateCharHUD)
@@ -381,7 +389,7 @@ export function finishCombat(data) {
 
   exitCombatMode();
 
-  if (data.game_over) {
+  if (!silent && data && data.game_over && outputArea) {
     document.getElementById("user-input").disabled = true;
     setTimeout(function () {
       outputArea.insertAdjacentHTML(
@@ -394,12 +402,21 @@ export function finishCombat(data) {
 }
 
 export function exitCombatMode() {
-  document.getElementById("combat-panel").classList.add("hidden");
-  document.getElementById("scene-panel").classList.remove("hidden");
+  const panel = document.getElementById("combat-panel");
+  const scene = document.getElementById("scene-panel");
+  if (panel) panel.classList.add("hidden");
+  if (scene) scene.classList.remove("hidden");
   const input = document.getElementById("user-input");
-  input.disabled = false;
-  input.placeholder = "输入你的行动...";
-  input.focus();
+  if (input) {
+    input.disabled = false;
+    input.placeholder = "输入你的行动...";
+    input.focus();
+  }
+  const btn = document.getElementById("combat-execute-btn");
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = "<span>执行回合</span>";
+  }
   state.combatSession = null;
   resetSelections();
 }

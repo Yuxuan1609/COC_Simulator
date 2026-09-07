@@ -3,6 +3,7 @@
 {% block asset_context %}game{% endblock %}
 {% block body %}
 
+{# F40: 默认 setup 可见；bootstrap 仅在 in_game 时切 #game-screen，不恢复战斗面板。 #}
 {# ==================== SETUP SCREEN ==================== #}
 <div id="game-setup" class="h-screen flex">
   <nav class="w-56 border-r border-gray-800/60 bg-[#0f0f0f]/90 flex flex-col p-4 gap-3">

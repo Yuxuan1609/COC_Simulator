@@ -107,10 +107,18 @@ async def scene_info():
 
 @router.get("/api/game/state")
 async def game_state():
-    game = session.get_game()
+    """Peek `_game_instance`；空实例不 lazy 建局。残留战斗会话先回滚再清。"""
+    game = session._game_instance
+    if game is None:
+        session._combat_sessions.clear()
+        return {"in_game": False}
+    if session._combat_sessions:
+        from .combat import _discard_combat_sessions
+        _discard_combat_sessions()
     world = game["keeper"].world
     p = world.player
     return {
+        "in_game": True,
         "location": world.current_location,
         "turn": game["keeper"].turn_number,
         "hp": p.derived.HP if p else 0,

@@ -46,6 +46,103 @@ def _serialize_combat_state_for_frontend(state) -> dict:
     }
 
 
+def _iter_scene_enemies(world):
+    """当前场景敌人（含 _instances；无场景字段则全收）。"""
+    mgr = getattr(world, "enemies", None) if world is not None else None
+    if mgr is None:
+        return []
+    loc = getattr(world, "current_location", None)
+    instances = getattr(mgr, "_instances", None)
+    if isinstance(instances, dict):
+        out = []
+        for e in instances.values():
+            scene = getattr(e, "scene", None)
+            if loc is not None and scene not in (None, loc):
+                continue
+            out.append(e)
+        return out
+    getter = getattr(mgr, "get_active_in_scene", None)
+    if callable(getter) and loc:
+        return list(getter(loc) or [])
+    return []
+
+
+def _take_pre_combat_snapshot(world) -> dict:
+    """战斗重置前的临时回滚，不求完备（目睹 SAN / 镜像字段允许不准）。"""
+    p = getattr(world, "player", None) if world is not None else None
+    derived = getattr(p, "derived", None) if p is not None else None
+    enemies = {}
+    for e in _iter_scene_enemies(world):
+        key = getattr(e, "instance_id", "") or ""
+        if not key:
+            continue
+        enemies[key] = {
+            "hp": getattr(e, "hp", 0),
+            "status": getattr(e, "status", ""),
+        }
+    seen = getattr(world, "san_seen_sources", None) if world is not None else None
+    return {
+        "hp": getattr(derived, "HP", 0) if derived is not None else 0,
+        "san": getattr(derived, "SAN", 0) if derived is not None else 0,
+        "mp": getattr(derived, "MP", 0) if derived is not None else 0,
+        "enemies": enemies,
+        "san_seen_sources": set(seen) if seen is not None else set(),
+    }
+
+
+def _apply_pre_combat_snapshot(world, snap) -> None:
+    """把战前快照写回 player HP/SAN/MP、场景敌人 hp/status、san_seen_sources。"""
+    if not snap or world is None:
+        return
+    p = getattr(world, "player", None)
+    derived = getattr(p, "derived", None) if p is not None else None
+    if derived is not None:
+        if "hp" in snap:
+            derived.HP = snap["hp"]
+        if "san" in snap:
+            derived.SAN = snap["san"]
+        if "mp" in snap:
+            derived.MP = snap["mp"]
+    mgr = getattr(world, "enemies", None)
+    for iid, es in (snap.get("enemies") or {}).items():
+        live = None
+        if mgr is not None and hasattr(mgr, "get_by_id"):
+            live = mgr.get_by_id(iid)
+        if live is None:
+            instances = getattr(mgr, "_instances", None) if mgr is not None else None
+            if isinstance(instances, dict):
+                live = instances.get(iid)
+        if live is None:
+            continue
+        if "hp" in es:
+            live.hp = es["hp"]
+        if "status" in es:
+            live.status = es["status"]
+    if hasattr(world, "san_seen_sources"):
+        world.san_seen_sources = set(snap.get("san_seen_sources") or [])
+
+
+def _peek_world():
+    game = session._game_instance
+    if not game:
+        return None
+    try:
+        return game["keeper"].world
+    except Exception:
+        return None
+
+
+def _discard_combat_sessions() -> None:
+    """回滚残留战斗会话的战前快照并清空。无快照则只清 dict。"""
+    sessions = session._combat_sessions
+    world = _peek_world()
+    for sess in list(sessions.values()):
+        snap = sess.get("pre_world") if isinstance(sess, dict) else None
+        if snap and world is not None:
+            _apply_pre_combat_snapshot(world, snap)
+    sessions.clear()
+
+
 def _deserialize_enemies_for_combat(enemy_data_list: list) -> list:
     """Deserialize enemy dicts to objects usable by CombatSystem."""
     from dataclasses import dataclass, field
@@ -117,6 +214,9 @@ async def combat_start(request: Request):
         player_extra=combat_init_data.get("player_extra", ""),
     )
 
+    if session._combat_sessions:
+        _discard_combat_sessions()
+
     # Auto-win short-circuit: skip the combat system entirely (testing aid)
     if session._auto_win:
         world = game["keeper"].world
@@ -168,6 +268,7 @@ async def combat_start(request: Request):
             "combat_completed_narrative": completed_narrative,
         }
 
+    pre_world = _take_pre_combat_snapshot(world)
     cs = CombatSystem(spell_lib=getattr(world, "spell_library", None), world=world)
     state = cs._init_combat(combat_init)
 
@@ -175,6 +276,7 @@ async def combat_start(request: Request):
     session._combat_sessions[session_id] = {
         "state": state,
         "combat_init": combat_init,
+        "pre_world": pre_world,
     }
 
     available = cs._get_player_actions(player, getattr(combat_init, 'environment_actions', []))
@@ -206,7 +308,8 @@ async def combat_round(request: Request):
 
     combat_sess = session._combat_sessions.get(session_id)
     if not combat_sess:
-        return JSONResponse({"error": "战斗会话不存在或已过期"}, status_code=400)
+        _discard_combat_sessions()
+        return JSONResponse({"error": "combat_session_lost"}, status_code=409)
 
     state = combat_sess["state"]
     combat_init = combat_sess["combat_init"]
@@ -258,6 +361,8 @@ async def combat_round(request: Request):
             combat_init.player.derived.HP = max(0, state.player_hp)
             combat_init.player.derived.SAN = max(0, state.player_san)
 
+        completed_brief = ""
+        completed_narrative = ""
         g = session.get_game()
         if g:
             world = g["keeper"].world
@@ -277,8 +382,6 @@ async def combat_round(request: Request):
                 "is_boss": result.get("is_boss", False),
             }
             completed = keep.complete_combat_turn(keep._last_player_input, combat_result) if keep._last_player_input else None
-            completed_brief = ""
-            completed_narrative = ""
             if completed and completed.brief:
                 try:
                     snap = world.build_snapshot()
@@ -297,6 +400,7 @@ async def combat_round(request: Request):
                     pass
             keep._last_player_input = ""
 
+        session._combat_sessions.pop(session_id, None)
         return {
             "session_id": session_id,
             "state": _serialize_combat_state_for_frontend(state),
