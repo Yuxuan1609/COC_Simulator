@@ -1,9 +1,10 @@
 import { postForm, postJSON, get } from "./api.js";
-import { state, setAutoWin } from "./state.js";
+import { state, setSwitch } from "./state.js";
 import { escapeHtml, isHtmlFallback, jsStringLiteral } from "./util.js";
 import { updateCharHUD } from "./charcard.js";
 import { connectWS } from "./ws.js";
 import { enterCombatMode } from "./combat.js";
+import { paintSwitch } from "./layout.js";
 
 export function toggleSceneCard() {
   state.sceneCardExpanded = !state.sceneCardExpanded;
@@ -680,25 +681,17 @@ export async function sendTurnAction(actionType, actionTarget) {
 }
 
 export function toggleDebug() {
-  if (state.debug) localStorage.removeItem("trpg_debug");
-  else localStorage.setItem("trpg_debug", "1");
+  setSwitch("debug", !state.debug);
+  paintSwitch(document.getElementById("btn-debug"), state.debug);
   location.reload();
 }
 
 export function toggleAutoWin() {
-  setAutoWin(!state.autoWin);
+  setSwitch("autoWin", !state.autoWin);
   syncAutoWin();
 }
 
 export function syncAutoWin() {
   postJSON("/api/game/autowin", { enabled: state.autoWin }).catch(function () {});
-  const btn = document.getElementById("btn-autowin");
-  if (!btn) return;
-  if (state.autoWin) {
-    btn.classList.remove("text-gray-500", "border-gray-700");
-    btn.classList.add("text-coc-green", "border-coc-green/60", "bg-coc-green/10");
-  } else {
-    btn.classList.add("text-gray-500", "border-gray-700");
-    btn.classList.remove("text-coc-green", "border-coc-green/60", "bg-coc-green/10");
-  }
+  paintSwitch(document.getElementById("btn-autowin"), state.autoWin);
 }

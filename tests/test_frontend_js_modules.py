@@ -31,6 +31,7 @@ MODULE_FILES = (
     "combat.js",
     "charcard.js",
     "ws.js",
+    "layout.js",
     "game.js",
 )
 
@@ -192,6 +193,17 @@ def test_charcard_loads_json_not_htmx_ajax():
     assert re.search(r"""get\(\s*['"]/api/game/character-card['"]""", src)
     assert "export function renderCharacterCard" in src
     assert "escapeHtml" in src
+
+
+def test_layout_upgrade_markup_and_css():
+    html = _read(GAME_HTML)
+    assert html.count('class="splitter"') >= 2 or html.count("class='splitter'") >= 2
+    css = _read(FRONTEND / "static" / "css" / "tailwind-built.css")
+    assert ".w-64{" in css or ".w-64 {" in css
+    assert ".w-96{" in css or ".w-96 {" in css
+    assert ".switch" in css
+    game_js = _read(JS_DIR / "game.js")
+    assert "layout.js" in game_js
 
 
 def test_node_js_unit_suite():

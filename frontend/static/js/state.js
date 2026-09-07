@@ -42,6 +42,8 @@ export function loadState() {
 }
 
 export function setSwitch(k, v) {
+  if (k === "debug") return setDebug(v);
+  if (k === "autoWin") return setAutoWin(v);
   state.switches[k] = v;
   lsSet("switches", JSON.stringify(state.switches));
 }

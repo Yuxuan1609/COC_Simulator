@@ -1,6 +1,7 @@
-import { state, loadState } from "./state.js";
+import { state, loadState, setDebug } from "./state.js";
 import { escapeHtml } from "./util.js";
 import { get } from "./api.js";
+import { initLayout, paintSwitch } from "./layout.js";
 import {
   initGame,
   sendTurn,
@@ -41,20 +42,18 @@ window.selectCombatTarget = selectCombatTarget;
 
 function applyDebugQuery() {
   const q = new URLSearchParams(location.search).get("debug");
-  if (q === "1") localStorage.setItem("trpg_debug", "1");
-  if (q === "0") localStorage.removeItem("trpg_debug");
+  if (q === "1") setDebug(true);
+  if (q === "0") setDebug(false);
   loadState();
 }
 
 function paintDebugUi() {
-  if (!state.debug) return;
   const badge = document.getElementById("debug-badge");
-  if (badge) badge.classList.remove("hidden");
-  const btn = document.getElementById("btn-debug");
-  if (btn) {
-    btn.classList.remove("text-gray-500", "border-gray-700");
-    btn.classList.add("text-yellow-400", "border-yellow-500/60", "bg-yellow-500/10");
+  if (badge) {
+    if (state.debug) badge.classList.remove("hidden");
+    else badge.classList.add("hidden");
   }
+  paintSwitch(document.getElementById("btn-debug"), state.debug);
 }
 
 async function bootstrapExistingGame() {
@@ -86,6 +85,7 @@ async function bootstrapExistingGame() {
 
 applyDebugQuery();
 document.addEventListener("DOMContentLoaded", function () {
+  initLayout();
   paintDebugUi();
   syncAutoWin();
 });

@@ -227,7 +227,7 @@ git commit -m "refactor: game.html 内联 JS 1148 行拆为 static/js 域模块�
 - Modify: `frontend/static/css/tailwind-built.css`（新增工具类）
 - Create: `frontend/static/js/layout.js`
 
-- [ ] **Step 1: layout.js**
+- [x] **Step 1: layout.js**
 
 ```javascript
 // 拖拽 splitter：side 决定符号（左栏拖右加宽；右栏拖左加宽）
@@ -253,10 +253,10 @@ export function initSplitter(handleEl, panelEl, storageKey,
 }
 ```
 
-- [ ] **Step 2: 场景/角色面板加把手**（markup 加 `<div class="splitter">`）。**R19 修正**：现状场景 `w-64`（256px）/ 角色卡 `w-96`（384px）——**保持现默认不加宽**，只加可调能力（min 200 / max 800）；原 plan 的 320/380 是把场景加宽，废弃。**splitter 方向**：左侧栏（场景）拖右=加宽 `startW+(clientX-startX)`；**右侧栏（角色卡）符号相反** `startW-(clientX-startX)`——两套符号，实现时按栏位参数化（`initSplitter(..., {side: "left"|"right"})`）。
-- [ ] **Step 3: 输入栏**：聚焦态描边+微发光（CSS `:focus-within`），发送按钮主色填充。
-- [ ] **Step 4: 开关组件**：`.switch` CSS（轨道+滑块+文字标签+开/关两态色），DEBUG/AUTO_WIN 等统一接入 state.js `setSwitch`。
-- [ ] **Step 5: 手动验证 + 提交**（无自动化：CSS/布局手测，勾选项写 commit message）
+- [x] **Step 2: 场景/角色面板加把手**（markup 加 `<div class="splitter">`）。**R19 修正**：现状场景 `w-64`（256px）/ 角色卡 `w-96`（384px）——**保持现默认不加宽**，只加可调能力（min 200 / max 800）；原 plan 的 320/380 是把场景加宽，废弃。**splitter 方向**：左侧栏（场景）拖右=加宽 `startW+(clientX-startX)`；**右侧栏（角色卡）符号相反** `startW-(clientX-startX)`——两套符号，实现时按栏位参数化（`initSplitter(..., {side: "left"|"right"})`）。
+- [x] **Step 3: 输入栏**：聚焦态描边+微发光（CSS `:focus-within`），发送按钮主色填充。
+- [x] **Step 4: 开关组件**：`.switch` CSS（轨道+滑块+文字标签+开/关两态色），DEBUG/AUTO_WIN 等统一接入 state.js `setSwitch`。
+- [x] **Step 5: 手动验证 + 提交**（无自动化：CSS/布局手测，勾选项写 commit message）
 
 ---
 

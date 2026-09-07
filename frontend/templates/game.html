@@ -42,7 +42,8 @@
 <div id="game-screen" style="display:none" class="h-screen flex overflow-hidden relative">
 
   {# -- Left Panel: Scene Info (like character card) -- #}
-  <div id="scene-panel" class="w-64 border-r border-gray-800/60 scene-glass flex flex-col overflow-y-auto shrink-0">
+  <div id="scene-panel" class="w-64 border-r border-gray-800/60 scene-glass flex flex-col overflow-y-auto shrink-0 relative">
+    <div class="splitter" role="separator" aria-orientation="vertical" title="拖动调整宽度"></div>
     {# Collapsed state -- #}
     <div id="scene-panel-collapsed" class="p-3 cursor-pointer" onclick="toggleSceneCard()">
       <div class="flex items-center gap-3">
@@ -202,11 +203,13 @@
       <button id="btn-search" onclick="sendTurnAction('search')" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-aged-gold rounded border border-gray-700 hover:border-aged-gold/50 transition-colors cursor-pointer">
         搜索当前场景
       </button>
-      <button id="btn-debug" onclick="toggleDebug()" title="调试模式：点击敌人查看详细数据（HP/护甲/攻击/阶段/Boss机制）" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-500 rounded border border-gray-700 transition-colors cursor-pointer">
-        DBG
+      <button type="button" id="btn-debug" class="switch" role="switch" aria-checked="false" onclick="toggleDebug()" title="调试模式：点击敌人查看详细数据（HP/护甲/攻击/阶段/Boss机制）">
+        <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+        <span class="switch-label">DEBUG</span>
       </button>
-      <button id="btn-autowin" onclick="toggleAutoWin()" title="自动胜利：战斗直接判胜，跳过回合制战斗（测试用）" class="px-2.5 py-1 text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-500 rounded border border-gray-700 transition-colors cursor-pointer">
-        AUTO
+      <button type="button" id="btn-autowin" class="switch" role="switch" aria-checked="false" onclick="toggleAutoWin()" title="自动胜利：战斗直接判胜，跳过回合制战斗（测试用）">
+        <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+        <span class="switch-label">AUTO_WIN</span>
       </button>
     </div>
 
@@ -214,7 +217,7 @@
     <div id="input-bar" class="px-4 py-3 border-t border-gray-800/60 bg-[#0f0f0f]/80 flex gap-2 shrink-0">
       <input type="text" id="user-input" placeholder="输入你的行动..." autocomplete="off"
              class="flex-1 bg-transparent border-none text-sm text-gray-300 placeholder-gray-600 focus:outline-none">
-      <button id="btn-action" onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30 flex items-center gap-1">
+      <button id="btn-action" onclick="sendTurn()" class="px-6 py-1.5 bg-aged-brown text-parchment text-sm rounded hover:bg-[#7a4a2c] border border-aged-gold/30 flex items-center gap-1 cursor-pointer">
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
         行动
       </button>
@@ -225,7 +228,8 @@
   </div>
 
   {# -- Right Panel: Character Card (Optimized) -- #}
-  <div class="w-96 border-l border-gray-800/60 char-glass flex flex-col overflow-y-auto shrink-0" id="char-panel">
+  <div class="w-96 border-l border-gray-800/60 char-glass flex flex-col overflow-y-auto shrink-0 relative" id="char-panel">
+    <div class="splitter" role="separator" aria-orientation="vertical" title="拖动调整宽度"></div>
     {# Collapsed state -- #}
     <div id="char-panel-collapsed" class="p-3 cursor-pointer" onclick="toggleCharCard()">
       <div class="flex items-center gap-3">

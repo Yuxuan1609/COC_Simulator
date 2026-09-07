@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 §4 Task 6：场景/角色面板可拖宽 + 输入栏聚焦态 + DEBUG/AUTO 开关组件。新建 `layout.js`：`computePanelWidth` 纯函数（左栏 `+Δx` / 右栏 `-Δx`，clamp 200–800）；`initSplitter` 存 `trpg_panel_scene_w` / `trpg_panel_char_w`，默认宽度仍 `w-64`=256 / `w-96`=384。`setSwitch('debug'|'autoWin')` 走 `setDebug`/`setAutoWin`（只写 `trpg_debug`/`trpg_autowin`，不造 `DEBUG` 键）。DBG/AUTO 改为 `.switch`（DEBUG / AUTO_WIN 文字标签）。`#input-bar:focus-within` 描边发光；`#btn-action` hover/active/disabled。补 `.w-64`/`.w-96`（原先 HTML 有类无规则）。TDD：`tests/js/layout.test.mjs` + state setSwitch 存储。视觉聚焦/拖拽未在本环境浏览器手测。 |
 | 2026-09-07 | Task 5 复审 Important：退出/frozen 路径 `narrative` 纯文本、去掉展示 HTML `narrative_html`；slash `brief=""` 不再回显命令；`get_game()` 为 None 时 slash 返回退出文案而非 500。handleTurnResponse 优先渲染 `slash.text`。 |
 | 2026-09-07 | 前端专项 §3 Task 5：角色卡 + slash 输出 JSON 收敛（R10/R11）。`GET /api/game/character-card` 改结构化 JSON（无调查员 `{name:null}`）；`charcard.js` `renderCharacterCard` + `get()` 渲染，去掉 `htmx.ajax`。slash `_handle_slash_command` 返回 `{text}` 纯文本；`POST /api/game/command` JSON；turn 斜杠分支写 `narrative`+`slash`，不再塞 `narrative_html`。scene.js 对残余 `narrative_html` 走 `escapeHtml`。TDD：契约 JSON 键 + Node 角色卡 XSS/SAN 62.5% + slash 转义。默认套件 600 passed / 28 deselected（+1 既有 e2e `test_unresolved_use_becomes_creative` HEAD 已挂）。 |
 | 2026-09-07 | 前端专项 §3 Task 4：`game.html` 内联 JS 拆为 `static/js` ES modules（util/api/state/scene/combat/charcard/ws/game）；入口 `window.*` 桥接全部 onclick；htmx 2.0.4 本地化 `static/js/vendor/htmx.min.js`；`escapeHtml` 覆盖 brief/narrative/init/ending/combat 叙事。sendTurn/sendTurnAction 合并为 `runTurnRequest`（FormData + content-type 双通道）。TDD：`tests/test_frontend_js_modules.py` 10 测 + `tests/js/*.test.mjs`（node --test，pytest 子进程）。默认套件 598 passed / 28 deselected。 |
@@ -1170,22 +1171,23 @@ U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/
 
 `list_assets`@27 / `random_asset`@52。
 
-### templates + static/js — 游戏页前端（Task 4）
+### templates + static/js — 游戏页前端（Task 4/6）
 
-`templates/game.html` 瘦身为 markup + `<script type="module" src="/static/js/game.js">`。`templates/base.html` htmx 改为 `/static/js/vendor/htmx.min.js`（2.0.4）。
+`templates/game.html` 瘦身为 markup + `<script type="module" src="/static/js/game.js">`。`templates/base.html` htmx 改为 `/static/js/vendor/htmx.min.js`（2.0.4）。Task 6：`#scene-panel` / `#char-panel` 内缘 `.splitter`；`#input-bar:focus-within`；DEBUG/AUTO_WIN `.switch`。
 
 | 文件 | 职责 |
 |------|------|
 | `util.js` | `escapeHtml` / `isHtmlFallback` / `jsStringLiteral` |
 | `api.js` | `postForm`（FormData，不设 Content-Type）/ `postJSON` / `get`；按 content-type 分支 JSON vs `{html}`；HTTP 错误带 `status`/`body` |
-| `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `setSwitch` |
-| `scene.js` | 场景卡、initGame、sendTurn/sendTurnAction（`runTurnRequest` 合并）、handleTurnResponse（优先 `slash.text`，残余 `narrative_html` `escapeHtml`）、renderTurnDynamic/renderSkillChips、inline chat、DEBUG/AUTO 开关 |
+| `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `setSwitch`（`debug`→`setDebug` @51，`autoWin`→`setAutoWin` @56，其它写 `switches`） |
+| `scene.js` | 场景卡、initGame、sendTurn/sendTurnAction（`runTurnRequest` 合并）、handleTurnResponse（优先 `slash.text`，残余 `narrative_html` `escapeHtml`）、renderTurnDynamic/renderSkillChips、inline chat；`toggleDebug` @683（`setSwitch` 后仍 reload，Task 9 再停）/ `toggleAutoWin` @689 / `syncAutoWin` @694（`paintSwitch`） |
 | `combat.js` | 战斗面板；`bumpTargetCount` 纯函数；start/round 走 `postJSON` |
 | `charcard.js` | `renderCharacterCard`（JSON→HTML，`escapeHtml`）/ `hpBarPercent`/`sanBarPercent`（F2 分母 san_max）/ `toggleCharCard`（`get('/api/game/character-card')`，无 htmx.ajax）/ `updateCharHUD` |
 | `ws.js` | `/api/game/progress` + step-indicator |
-| `game.js` | 入口：`window.*` 桥（15 个 onclick 处理函数）、debug query、bootstrap `/api/game/state` |
+| `layout.js` | `computePanelWidth` @3；`paintSwitch` @31；`initSplitter` @38（pointer 拖拽 + `trpg_panel_scene_w`/`trpg_panel_char_w`）；`initLayout` @89（scene `side:left` / char `side:right`） |
+| `game.js` | 入口：`window.*` 桥（15 个 onclick 处理函数）、`setDebug` 吃 `?debug=`、`initLayout` + `paintDebugUi`、bootstrap `/api/game/state` |
 
-scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory`），仅函数内调用，ESM live binding。测试：`tests/test_frontend_js_modules.py` + `tests/js/*.test.mjs`。
+scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory`），仅函数内调用，ESM live binding。scene.js 从 layout.js 取 `paintSwitch`（无环）。测试：`tests/test_frontend_js_modules.py` + `tests/js/*.test.mjs`。
 
 ---
 
