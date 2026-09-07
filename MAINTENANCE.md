@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项执行记录：`feat/frontend-upgrade` 本地 ff-merge 进 `main`（`a288019`→`e8a9779`）。plan 文末补执行情况。合并后 `pytest tests/ -q`：642 passed / 28 deselected + 1 既有 e2e。未 push origin。 |
 | 2026-09-07 | 前端专项 review：① GET `/debug` `/history` peek `_game_instance`，空实例 400 `no_game` 不 lazy 建局；`refreshDebugSnapshot` 无可见 `#game-screen` 则 no-op，bootstrap/`initGame` 仅开局后拉。② 引擎错误 HTML `html.escape`；前端 html fallback `renderHtmlFallback`→`escapeHtml`。TDD：契约 3 + js。默认套件 642 passed / 28 deselected + 1 既有 e2e。turn.py 328→331 / debug.py 358→359。 |
 | 2026-09-07 | 前端专项 Task 13 收口（纯文档）：ISSUES §5 收口 F39/F40/F42/B19；§2 删对应行；F22 notebook 呈现挂前端后续批次（F39 批次有意缩小未含 notebook，非漏做，R13）。默认套件 638 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。push 延至分支结束。 |
 | 2026-09-07 | F40 review：① `_discard_combat_sessions` 回滚快照后 `exit_combat({"outcome":"abort"})` 清 `_combat_active`（不当 win）。② `/load` 成功后 `_combat_sessions.clear()`，不把旧 pre_world 写到新档。TDD：契约 +2。combat.py 432→440 / slash 104→105。 |

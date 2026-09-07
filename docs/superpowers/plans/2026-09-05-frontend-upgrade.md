@@ -437,8 +437,8 @@ def test_discard_combat_rolls_back_player_hp(client):
 
 - [x] ISSUES §5 收口：F39/F40/F42/B19；§2 移除对应行；**F22 notebook 呈现保留挂「前端后续批次」并注明「F39 批次有意缩小未含 notebook，非漏做」（R13）**
 - [x] MAINTENANCE.md 同步（新包结构/新端点/新 js 模块/新测试文件）
-- [x] `python -m pytest tests/ -q`：638 passed / 28 deselected；既有失败 `test_unresolved_use_becomes_creative`（HEAD 已挂，本 Task 不修）。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）
-- [ ] push（含此前未推的 spec commit）— **延至分支结束，本 Task 不 push**
+- [x] `python -m pytest tests/ -q`：合并后复跑 **642 passed / 28 deselected**；既有失败 `test_unresolved_use_becomes_creative`（HEAD 已挂，本专项不修）。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）
+- [ ] push（含此前未推的 spec commit）— **未 push origin**；2026-09-07 已本地 ff-merge 进 `main`（`a288019..e8a9779`），执行记录见文末
 
 ---
 
@@ -512,3 +512,43 @@ def test_discard_combat_rolls_back_player_hp(client):
 6. Task 3：补模块归属表（含 views.py）；属性查找 + 改 patch；不指望 re-export。✅ 正文
 7. Task 1：副作用只测失败路径；config/save monkeypatch；upload-avatar 列入副作用。✅ 正文
 8. spec 原则：「URL 不变；响应形状仅角色卡（及已声明 slash）在 §3 变更」。✅ spec 已对齐
+
+---
+
+## 执行情况（2026-09-07）
+
+**状态：13/13 完成，已本地 fast-forward 进 `main`（`a288019` → `e8a9779`）。未 push origin。**  
+执行方式：Subagent-Driven（每 Task 实现 → spec 合规 → 代码质量；Important 修完再复审）。隔离 worktree 分支 `feat/frontend-upgrade`，合回后 harness worktree 仍在（`~/.grok/worktrees/...`），未删。
+
+### 任务 / 提交
+
+| Task | 内容 | 主提交 | 审查跟进 |
+|---|---|---|---|
+| 1–2 | 34 端点契约 + B19 warning | `b93c185` | 已在 main（本轮之前） |
+| 3 | `game.py` 拆包 | `0f24b24` | 已在 main（本轮之前） |
+| 4 | JS 模块化 / htmx 本地 / escapeHtml | `a288019` | 已在 main（本轮之前） |
+| 5 | 角色卡 + slash JSON，同 commit 改前端 | `c5063b6` | `95295b2` 退出/frozen 纯文本；slash `brief=""` |
+| 6 | splitter + 输入栏 + DEBUG/AUTO 开关 | `ffbe0ff` | `3a9f01f` 滚动内移，把手固定外壳 |
+| 7 | turn_trace 全链路 | `4529f73` | `ddaef49` 时间门 + 闸门失败覆盖 parse 匹配 |
+| 8 | `GET /api/game/debug` 四键聚合 | `69fbb78` | — |
+| 9 | debug.js 四节面板，不再整页 reload | `19673a9` | `90c899d` 检定节展示生产 `raw_check` |
+| 10 | F39 `narrative_log` + history 面板 | `f47c399` | — |
+| 11 | F42 `on_phase` 真实进度，删假连推 | `2f6a6d4` | — |
+| 12 | F40 战前快照回滚；state 空实例不 lazy | `69eb459` | `dd0f8d8` discard `exit_combat(abort)`；`/load` 只清会话 |
+| 13 | ISSUES F39/F40/F42/B19 收口；F22 有意缩小 | `b454553` | — |
+| 终审 | debug/history 空实例不 lazy；引擎错误 HTML 转义 | `e8a9779` | — |
+
+### 合并后验证
+
+`python -m pytest tests/ -q`（`main` @ `e8a9779`）：**1 failed, 642 passed, 28 deselected**。  
+失败即既有 `tests/e2e/test_deterministic.py::TestUseTurnFlow::test_unresolved_use_becomes_creative`（未命中素材 use 未升 Author），本专项未改该路径。  
+`pytest -m real_llm_smoke`：**SKIPPED**（无真实 `DEEPSEEK_API_KEY`）。  
+浏览器手测（布局拖拽 / debug 四节 / 战斗中刷新回探索）本环境未做。
+
+### 有意不做 / follow-up
+
+- **F22 notebook 呈现**：F39 批次有意缩小，非漏做（ISSUES §2 已注明，挂前端后续批次）。
+- **战斗收束 `narrate` 未写 `narrative_log`**：`combat.py` 终局另调 `narrator.narrate`，刷新后 history 没有战后全文。plan Files 只点 `game_loop.py`，未本轮补。
+- **LLM 记录只给 400 字 preview**：debug 面板 `<details>` 展不开全文。
+- **快照不完备**：目睹 SAN / 镜像 / 非当前场景敌人边角不准，注释已标明；战斗系统重置前可接受。
+- **未 push**：spec commit（`5efc7e4` / `21e3316`）与本轮代码仍只在本地 `main`（相对 `origin/main` ahead）。
