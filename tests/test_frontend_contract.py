@@ -52,7 +52,9 @@ def _fake_game_with_spells():
         derived=derived, known_spells=["HEART_ARREST", "GHOST"],
         stats=SimpleNamespace(STR=60, CON=65, SIZ=55, DEX=70, APP=50,
                               INT=75, POW=70, EDU=80, LUCK=50),
-        skills={}, weapons=[], appearance="", personal_description="",
+        skills={"侦查": SimpleNamespace(name="侦查", value=60, category="感知")},
+        weapons=[SimpleNamespace(name="小刀", damage="1D4")],
+        appearance="", personal_description="",
         item_manager=SimpleNamespace(describe=lambda: "无"),
     )
     _spells = {"HEART_ARREST": SimpleNamespace(name="心脏骤停", category="combat")}
@@ -80,15 +82,49 @@ def test_player_status_json_includes_mp_and_known_spells(client):
     assert data["known_spells"] == ["心脏骤停", "GHOST"]
 
 
+_CHAR_CARD_KEYS = {
+    "name", "age", "gender", "occupation", "avatar_url",
+    "appearance", "personal_description",
+    "stats", "hp", "hp_max", "san", "san_max", "mp", "mp_max",
+    "mov", "db", "build", "dodge",
+    "skills", "weapons", "spells", "items",
+}
+
+
 def test_character_card_shows_mp_max_and_spells(client):
     with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/character-card")
     assert resp.status_code == 200
-    html = resp.text
-    assert "8/11" in html                      # MP 当前/上限
-    assert "已知法术" in html                  # 法术列表区
-    assert "心脏骤停" in html                  # 库内法术名
-    assert "GHOST" in html                     # 库外引用降级展示
+    assert "application/json" in (resp.headers.get("content-type") or "")
+    data = resp.json()
+    missing = _CHAR_CARD_KEYS - data.keys()
+    assert not missing, missing
+    assert data["name"] == "张三"
+    assert data["hp"] == 10
+    assert data["hp_max"] == 12
+    assert data["mp"] == 8
+    assert data["mp_max"] == 11
+    assert data["san"] == 55
+    assert data["san_max"] == 88
+    assert data["stats"]["STR"] == 60
+    spells = data["spells"]
+    by_id = {s["id"]: s for s in spells}
+    assert by_id["HEART_ARREST"]["name"] == "心脏骤停"
+    assert by_id["GHOST"]["name"] == "GHOST"
+    assert by_id["GHOST"]["category"] in (None, "")
+    assert data["skills"][0]["name"] == "侦查"
+    assert data["weapons"][0]["name"] == "小刀"
+    assert data["items"] == "无"
+
+
+def test_character_card_no_investigator(client):
+    fake = _fake_game_with_spells()
+    fake["keeper"].world.player = None
+    with patch("frontend.routers.game.session.get_game", return_value=fake):
+        resp = client.get("/api/game/character-card")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] is None
 
 
 # ── F2:SAN bar 分母接线 san_max(SAN_MAX=99-克苏鲁神话,非硬编码 99)──
@@ -113,11 +149,13 @@ def test_game_state_includes_san_max(client):
 
 
 def test_character_card_san_bar_uses_san_max(client):
-    """F2:角色卡 SAN bar 分母用 SAN_MAX 而非硬编码 99(55/88→62.5%)。"""
+    """F2:角色卡 JSON 暴露 san / san_max（55/88）；bar 宽度由前端用这两数计算。"""
     with patch("frontend.routers.game.session.get_game", return_value=_fake_game_with_spells()):
         resp = client.get("/api/game/character-card")
     assert resp.status_code == 200
-    assert "62.5%" in resp.text
+    data = resp.json()
+    assert data["san"] == 55
+    assert data["san_max"] == 88
 
 
 def test_combat_state_frontend_serialization_includes_san_max():
@@ -333,7 +371,28 @@ class TestGameContract:
             assert "书房" in scene.text
             cmd = client.post("/api/game/command", data={"cmd": "/help"})
             assert cmd.status_code == 200
-            assert "/scene" in cmd.text or "help" in cmd.text.lower() or "<" in cmd.text
+            assert "application/json" in (cmd.headers.get("content-type") or "")
+            help_body = cmd.json()
+            assert "/scene" in help_body["text"]
+            assert "<div" not in help_body["text"]
+            scene_cmd = client.post("/api/game/command", data={"cmd": "/scene"})
+            assert scene_cmd.status_code == 200
+            scene_body = scene_cmd.json()
+            assert "书房" in scene_body["text"]
+            assert "<div" not in scene_body["text"]
+
+    def test_turn_slash_returns_plain_text(self, client):
+        with patch("frontend.routers.game.session.get_game",
+                   return_value=_fake_game_with_spells()):
+            resp = client.post("/api/game/turn", data={"user_input": "/help"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["slash"]["text"]
+        assert "/scene" in data["narrative"]
+        assert data["narrative"] == data["slash"]["text"]
+        html = data.get("narrative_html")
+        if html:
+            assert "<div" not in html
 
     def test_autowin_toggle(self, client):
         r = client.post("/api/game/autowin", json={"enabled": True})

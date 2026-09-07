@@ -555,7 +555,7 @@ export function handleTurnResponse(userText, data) {
     if (data.narrative) {
       turnParts.push(
         '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +
-        escapeHtml(data.narrative) +
+        escapeHtml(data.narrative).replace(/\n/g, "<br>") +
         "</div>",
       );
     }
@@ -571,8 +571,19 @@ export function handleTurnResponse(userText, data) {
     }
   }
 
+  if (turnParts.length === 0 && data.slash && data.slash.text) {
+    turnParts.push(
+      '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +
+      escapeHtml(data.slash.text).replace(/\n/g, "<br>") +
+      "</div>",
+    );
+  }
   if (turnParts.length === 0 && data.narrative_html) {
-    turnParts.push(data.narrative_html);
+    turnParts.push(
+      '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +
+      escapeHtml(data.narrative_html).replace(/\n/g, "<br>") +
+      "</div>",
+    );
   }
   if (turnParts.length === 0) {
     turnParts.push('<div class="turn-empty text-sm text-gray-500 italic">（没有返回叙事内容）</div>');

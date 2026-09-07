@@ -212,9 +212,9 @@ git commit -m "refactor: game.html 内联 JS 1148 行拆为 static/js 域模块�
 - Modify: `frontend/static/js/charcard.js` / `scene.js`（前端渲染 JSON；原 `htmx.ajax('GET','/api/game/character-card',…)` 会把 JSON 原文 dump 进面板，**必须同一 commit 改掉**）
 - Modify: `tests/test_frontend_contract.py`（同步断言改 JSON 键）
 
-- [ ] **Step 1: 改测试断言（红）**：character-card 断言从 HTML 子串改 JSON 键（name/hp/san/san_max/mp/mp_max/spells/skills/…）。
-- [ ] **Step 2: 实现**：`/api/game/character-card` 返回结构化 JSON；charcard.js 模板渲染。绿。
-- [ ] **Step 3: 提交**
+- [x] **Step 1: 改测试断言（红）**：character-card 断言从 HTML 子串改 JSON 键（name/hp/san/san_max/mp/mp_max/spells/skills/…）。
+- [x] **Step 2: 实现**：`/api/game/character-card` 返回结构化 JSON；charcard.js 模板渲染。绿。
+- [x] **Step 3: 提交**
 
 ---
 

@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 §3 Task 5：角色卡 + slash 输出 JSON 收敛（R10/R11）。`GET /api/game/character-card` 改结构化 JSON（无调查员 `{name:null}`）；`charcard.js` `renderCharacterCard` + `get()` 渲染，去掉 `htmx.ajax`。slash `_handle_slash_command` 返回 `{text}` 纯文本；`POST /api/game/command` JSON；turn 斜杠分支写 `narrative`+`slash`，不再塞 `narrative_html`。scene.js 对残余 `narrative_html` 走 `escapeHtml`。TDD：契约 JSON 键 + Node 角色卡 XSS/SAN 62.5% + slash 转义。默认套件 600 passed / 28 deselected（+1 既有 e2e `test_unresolved_use_becomes_creative` HEAD 已挂）。 |
 | 2026-09-07 | 前端专项 §3 Task 4：`game.html` 内联 JS 拆为 `static/js` ES modules（util/api/state/scene/combat/charcard/ws/game）；入口 `window.*` 桥接全部 onclick；htmx 2.0.4 本地化 `static/js/vendor/htmx.min.js`；`escapeHtml` 覆盖 brief/narrative/init/ending/combat 叙事。sendTurn/sendTurnAction 合并为 `runTurnRequest`（FormData + content-type 双通道）。TDD：`tests/test_frontend_js_modules.py` 10 测 + `tests/js/*.test.mjs`（node --test，pytest 子进程）。默认套件 598 passed / 28 deselected。 |
 | 2026-09-06 | 前端专项 §2：`frontend/routers/game.py` 拆为包 `session/turn/combat/charcard/slash/views`；`session.get_game()` 属性查找；契约 patch 改 `frontend.routers.game.session.get_game`。combat/start 补 `world=` 绑定（原先仅 auto_win 分支赋值）。默认套件 588 passed / 28 deselected。 |
 | 2026-09-06 | 前端专项 §1：`tests/test_frontend_contract.py` 扩 34 端点契约（副作用只测失败路径；游戏端点 patch get_game）。B19：`_load_character_or_default` 合一 init/get_game 角色卡兜底，load 抛错 → 默认卡 + init JSON `warning`；game.html toast 3s。state 透出 `_char_load_warning`。game.py 1191→1193。契约 41 passed。 |
@@ -1144,10 +1145,10 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | 模块 | 行数 | 内容 |
 |------|------|------|
 | `session.py` | 246 | 全局态、`_init_libraries`、`get_game`、`init_game_api`、`_resolve_start_scene`、`_make_default_inv`、`_load_character_or_default`（B19） |
-| `turn.py` | 296 | `process_turn`、WS `/api/game/progress`、`_push_progress` |
+| `turn.py` | 298 | `process_turn`（slash 走 `{text}` → `narrative`+`slash`，不写展示 HTML）、WS `/api/game/progress`、`_push_progress` |
 | `combat.py` | 328 | 序列化 + `/api/combat/start\|round` |
-| `charcard.py` | 187 | `_known_spell_names` + `/api/game/character-card` |
-| `slash.py` | 96 | `_handle_slash_command` + `/api/game/command` |
+| `charcard.py` | 111 | `_known_spell_names` + `GET /api/game/character-card` JSON（无调查员 `{name:null}`） |
+| `slash.py` | 100 | `_handle_slash_command` → `{text}` 纯文本 + `POST /api/game/command` JSON |
 | `views.py` | 97 | `/game`、`player-status`、`scene`、`state`、`autowin` |
 
 ### routers/character.py (335 行) — 车卡 API
@@ -1177,9 +1178,9 @@ U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/
 | `util.js` | `escapeHtml` / `isHtmlFallback` / `jsStringLiteral` |
 | `api.js` | `postForm`（FormData，不设 Content-Type）/ `postJSON` / `get`；按 content-type 分支 JSON vs `{html}`；HTTP 错误带 `status`/`body` |
 | `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `setSwitch` |
-| `scene.js` | 场景卡、initGame、sendTurn/sendTurnAction（`runTurnRequest` 合并）、handleTurnResponse、renderTurnDynamic/renderSkillChips、inline chat、DEBUG/AUTO 开关 |
+| `scene.js` | 场景卡、initGame、sendTurn/sendTurnAction（`runTurnRequest` 合并）、handleTurnResponse（slash/`narrative_html` 均 `escapeHtml`）、renderTurnDynamic/renderSkillChips、inline chat、DEBUG/AUTO 开关 |
 | `combat.js` | 战斗面板；`bumpTargetCount` 纯函数；start/round 走 `postJSON` |
-| `charcard.js` | `toggleCharCard`（仍 htmx.ajax 拉 HTML，Task 5 改 JSON）/ `updateCharHUD` |
+| `charcard.js` | `renderCharacterCard`（JSON→HTML，`escapeHtml`）/ `hpBarPercent`/`sanBarPercent`（F2 分母 san_max）/ `toggleCharCard`（`get('/api/game/character-card')`，无 htmx.ajax）/ `updateCharHUD` |
 | `ws.js` | `/api/game/progress` + step-indicator |
 | `game.js` | 入口：`window.*` 桥（15 个 onclick 处理函数）、debug query、bootstrap `/api/game/state` |
 

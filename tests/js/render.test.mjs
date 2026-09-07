@@ -1,7 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderTurnDynamic, renderSkillChips } from "../../frontend/static/js/scene.js";
+import { renderTurnDynamic, renderSkillChips, handleTurnResponse } from "../../frontend/static/js/scene.js";
 import { bumpTargetCount } from "../../frontend/static/js/combat.js";
+
+function installDom() {
+  const store = {};
+  function el() {
+    const classes = new Set();
+    return {
+      classList: {
+        contains(c) { return classes.has(c); },
+        add(c) { classes.add(c); },
+        remove(c) { classes.delete(c); },
+      },
+      innerHTML: "",
+      textContent: "",
+      style: {},
+      disabled: false,
+      scrollTop: 0,
+      insertAdjacentHTML() {},
+    };
+  }
+  globalThis.document = {
+    getElementById(id) {
+      if (!store[id]) store[id] = el();
+      return store[id];
+    },
+  };
+  return store;
+}
 
 test("renderTurnDynamic escapes XSS in narrative", () => {
   const html = renderTurnDynamic("[叙事] <img src=x onerror=alert(1)>");
@@ -38,4 +65,23 @@ test("bumpTargetCount increments then resets at limit", () => {
   assert.deepEqual(counts, { e1: 2 });
   counts = bumpTargetCount(counts, "e1", 2);
   assert.equal(counts.e1, undefined);
+});
+
+test("handleTurnResponse escapes slash narrative text", () => {
+  const els = installDom();
+  handleTurnResponse("/help", {
+    narrative: '<img src=x onerror=alert(1)>',
+    slash: { text: '<img src=x onerror=alert(1)>' },
+  });
+  const html = els["turn-output"].innerHTML;
+  assert.equal(html.includes("<img"), false);
+  assert.equal(html.includes("&lt;img"), true);
+});
+
+test("handleTurnResponse escapes leftover narrative_html", () => {
+  const els = installDom();
+  handleTurnResponse("/x", { narrative_html: '<img src=x onerror=alert(1)>' });
+  const html = els["turn-output"].innerHTML;
+  assert.equal(html.includes("<img"), false);
+  assert.equal(html.includes("&lt;img"), true);
 });

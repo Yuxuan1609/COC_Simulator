@@ -20,7 +20,6 @@ async def process_turn(
 ):
     import asyncio
     import traceback
-    from game_loop import run_turn
 
     # Check autosave flag before processing
     try:
@@ -34,11 +33,12 @@ async def process_turn(
     # Route slash commands directly — skip LLM pipeline
     stripped = user_input.strip()
     if stripped.startswith("/"):
-        cmd_html = slash._handle_slash_command(stripped)
+        cmd = slash._handle_slash_command(stripped)
+        text = cmd.get("text", "") if isinstance(cmd, dict) else str(cmd)
         return {
             "brief": stripped,
-            "narrative": "",
-            "narrative_html": cmd_html,
+            "narrative": text,
+            "slash": {"text": text},
             "combat": None,
             "skill_results": [],
             "game_over": False,
@@ -46,6 +46,8 @@ async def process_turn(
             "timestamp": "",
             "player_snapshot": None,
         }
+
+    from game_loop import run_turn
 
     try:
         game = session.get_game()

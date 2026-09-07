@@ -180,8 +180,18 @@ def test_escape_html_covers_narrative_innerhtml():
         "data.round_narrative",
         "data.combat_narrative",
         "data.combat_completed_narrative",
+        "data.narrative_html",
     ):
         assert re.search(rf"escapeHtml\(\s*{re.escape(field)}", blob), field
+    assert not re.search(r"turnParts\.push\(\s*data\.narrative_html\s*\)", scene)
+
+
+def test_charcard_loads_json_not_htmx_ajax():
+    src = _read(JS_DIR / "charcard.js")
+    assert "htmx.ajax" not in src
+    assert re.search(r"""get\(\s*['"]/api/game/character-card['"]""", src)
+    assert "export function renderCharacterCard" in src
+    assert "escapeHtml" in src
 
 
 def test_node_js_unit_suite():
