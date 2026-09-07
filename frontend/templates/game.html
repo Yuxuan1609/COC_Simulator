@@ -34,6 +34,7 @@
       <button type="submit" class="px-8 py-2.5 bg-aged-brown text-parchment rounded hover:bg-[#7a4a2c] text-sm border border-aged-gold/30 font-bold">开始游戏</button>
       <span id="init-error" class="text-red-400 text-sm"></span>
     </form>
+    <div id="game-toast" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 text-sm text-aged-gold bg-[#1a1410] border border-aged-gold/40 rounded shadow"></div>
   </div>
 </div>
 
@@ -595,6 +596,14 @@
       if (!resp.ok) { errEl.textContent = '初始化失败: ' + text; console.log('[initGame] init failed:', text); return; }
       const data = JSON.parse(text);
       console.log('[initGame] init success, location:', data.location);
+      if (data.warning) {
+        var toast = document.getElementById('game-toast');
+        if (toast) {
+          toast.textContent = data.warning;
+          toast.classList.remove('hidden');
+          setTimeout(function() { toast.classList.add('hidden'); }, 3000);
+        }
+      }
       updateCharHUD({ name: data.name, hp: data.hp, hp_max: data.hp_max || data.hp, mp: data.mp, mp_max: data.mp_max, san: data.san, san_max: data.san_max || 99, known_spells: data.known_spells || [], avatar_url: '', occupation: '' });
       document.getElementById('game-setup').style.display = 'none';
       document.getElementById('game-screen').style.display = '';

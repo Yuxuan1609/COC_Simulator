@@ -4,7 +4,7 @@
 
 **Goal:** 前端结构重构（方案 B 模块化）+ 契约测试防护网 + 布局修正 + debug panel + F39/F42/F40。
 
-**Architecture:** 六阶段递进，§1 契约测试先行锁行为，§2/§3 结构迁移（URL/响应形状不变），§4-§6 功能落在新结构上。
+**Architecture:** 六阶段递进，§1 契约测试先行锁行为，§2/§3 结构迁移（URL 不变；响应形状仅角色卡与 slash 在 §3 显式变更），§4-§6 功能落在新结构上。
 
 **Spec:** `docs/superpowers/specs/2026-09-05-frontend-upgrade-design.md`（范围/不做项以此为准）
 
@@ -20,7 +20,7 @@
 - 战斗序列化已有：game.py:34-102 `_serialize_combat_state_for_frontend` 等（契约测试 test_frontend_contract.py:118-124 已锁）。
 - `_combat_sessions`（game.py:30）进程内存 dict；前端 combatSession 亦内存（game.html:1024）。
 - 现有前端测试范式：TestClient + `patch("frontend.routers.game.get_game", ...)` + SimpleNamespace 假 game（test_frontend_contract.py 全文为范）。**patch 有效是因为同模块查找；拆包后 `turn.py` 若 `from .session import get_game` 会绑死原函数，patch 包 re-export 无效** → 拆分后一律 `session.get_game()` 属性查找，patch 目标改为 `frontend.routers.game.session.get_game`（Task 3 同步改全部既有测试的 patch 目标）。
-- **F40 拍板（2026-09-06）：战斗场次原子化**——不做战斗过程持久化；刷新/读档丢弃进行中战斗，恢复到战斗前状态。Task 12 按此重写。
+- **F40 拍板（2026-09-06）：战斗场次原子化 + 方案 A**——不做 CombatState 入档/中途续打。`combat/start` 拍战前 world 快照；刷新/丢会话/bootstrap 发现残留会话 → 回滚快照 + 清 `_combat_sessions`，回探索态。`GET /api/game/state` 在 `_game_instance is None` 时返回 `{in_game: false}`，禁止 lazy 建局。**战斗系统后续重置**，回滚边角不准可接受，combat 模块注释标明即可。
 - **DEBUG 拍板（2026-09-06）**：现有 `trpg_debug`（整页 reload/敌人详情）与新 debug panel **合并为一个开关**，panel 涵盖原 DBG 信息。
 - **历史拍板（2026-09-06）**：F39 history 面板**替换**现有内存 chatMessages 内联记录区；刷新后从 chronicle 重建。
 - **响应形状原则修订（R10）**：「URL 不变」为准；**角色卡（及已声明的 slash 输出）形状在 §3 显式破坏**，同一 Task 内同步改前端加载与契约断言。
@@ -35,12 +35,13 @@
 **Files:**
 - Modify: `tests/test_frontend_contract.py`（现有 9 例保留，新增按 router 分 class）
 
-- [ ] **Step 1: 写契约测试（先红不红皆可——大部分是补锁，预期直接绿；个别发现坏行为则 xfail 记录不修）**
+- [x] **Step 1: 写契约测试（先红不红皆可——大部分是补锁，预期直接绿；个别发现坏行为则 xfail 记录不修）**
 
 **端点安全分级（R9，必须先遵守再写）**：
-- **只测失败路径的副作用端点**（禁止 happy-path，会真跑 LLM/起进程/写盘）：`/api/game/init`（内部 `run_turn("[游戏开始]")` 调 LLM）、`/api/step0/start`、`/api/pipeline/start`（后台进程）、`/editor/save`（写盘）、`/character/generate-description`（LLM）——只断言 422/400/校验失败分支。
-- **必须 patch `get_game` 的游戏端点**：`/api/game/turn`、`/api/game/state`、`/api/game/player-status`、`/api/game/character-card`、`/api/game/scene`、`/api/game/command`、`/api/game/autowin`、`/api/combat/start`、`/api/combat/round`——get_game 空实例会真 init_game。
-- **安全直接打**：`/health`、`/`、`/game`、`/character`、`/editor`、`/launcher/tabs/{tab}`（4 个）、`/character/step/{n}`（3 个）、`/api/config/save|load`（tmp_path 隔离）、`/api/files`、`/api/assets/list|random`、`/editor/load`、`/character/roll`、`/character/skills-list`、`/character/export`（GET）、`/editor/validate`。
+- **只测失败路径的副作用端点**（禁止 happy-path，会真跑 LLM/起进程/写盘）：`/api/game/init`（内部 `run_turn("[游戏开始]")` 调 LLM）、`/api/step0/start`、`/api/pipeline/start`（后台进程）、`/editor/save`（写盘）、`/character/generate-description`（LLM）、`POST /character/upload-avatar`（写盘）——只断言 422/400/校验失败分支。B19 的 init 成功+warning 路径必须同时 stub `init_game` / `run_turn`。
+- **必须 patch `get_game` 的游戏端点**：`/api/game/turn`、`/api/game/state`、`/api/game/player-status`、`/api/game/character-card`、`/api/game/scene`、`/api/game/command`、`/api/game/autowin`、`/api/combat/start`、`/api/combat/round`——get_game 空实例会真 init_game。**例外（Task 12）**：测 bootstrap 空实例时直接打 state，断言 `in_game=false` 且 **不** 走会建局的 `get_game()`。
+- **安全直接打**：`/health`、`/`、`/game`、`/character`、`/editor`、`/launcher/tabs/{tab}`（4 个）、`/character/step/{n}`（3 个）、`/api/config/load`、`/api/files`、`/api/assets/list|random`、`/editor/load`、`/character/roll`、`/character/skills-list`、`/character/export`（GET/POST，内存 zip 不落盘）、`/editor/validate`、WS `/api/game/progress`（能连即可）。
+- **`/api/config/save`**：必须 monkeypatch `_config_path`（或等价）到 tmp_path，默认写仓库根 `config.json`。
 
 范式沿用现有 fixture（TestClient + patch get_game）。34 端点全表以调研 §2 为准（不含 /health 则 33+1），逐一端点 ≥1 例（状态码 + 关键键/标记）。示例如下（**先读对应 router 函数现状再写断言，端点行为以代码为准**）：
 
@@ -62,7 +63,7 @@ class TestEditorContract:
 - 发现现状坏行为（如某端点 500）**不修**，在测试里 `pytest.xfail` 标注并记入交付说明。
 - WS 端点用 TestClient 的 `websocket_connect` 锁「能连、首条消息形状」即可。
 
-- [ ] **Step 2: 跑测试**
+- [x] **Step 2: 跑测试**
 
 Run: `python -m pytest tests/test_frontend_contract.py -q`
 Expected: 全绿或仅 xfail
@@ -74,7 +75,7 @@ Expected: 全绿或仅 xfail
 - Modify: `frontend/templates/game.html`（toast 提示）
 - Test: `tests/test_frontend_contract.py` 追加
 
-- [ ] **Step 1: 失败测试**
+- [x] **Step 1: 失败测试**
 
 ```python
 def test_init_char_load_failure_surfaces_warning(client, monkeypatch):
@@ -82,12 +83,12 @@ def test_init_char_load_failure_surfaces_warning(client, monkeypatch):
     # patch 使角色卡加载抛异常，断言 init 响应含 warning 字段且含「默认」
 ```
 
-- [ ] **Step 2: 跑确认红 → 实现**：合并为 `_load_character_or_default()` 返回 `(inv, warning|None)`。**两处现状不对称（R12），合并语义如下**：
+- [x] **Step 2: 跑确认红 → 实现**：合并为 `_load_character_or_default()` 返回 `(inv, warning|None)`。**两处现状不对称（R12），合并语义如下**：
   - `init_game_api:817-823`：`load_investigator` 抛异常 → 静默 `_make_default_inv()` —— 改为透出 warning（init JSON 加 `warning` 键）。
   - `get_game:152-158`：文件**不存在**时才内联建卡（名「调查员A」，与 `_make_default_inv` 的「调查员」不一致——统一收编）；加载**抛错会外抛**——合并后统一为「抛错 → 默认卡 + warning」。lazy `get_game` 路径同样带 warning（经 `_game_instance` 上挂属性，init/state 响应透出）。
   - **勿写成「两处都静默」**——只有 init_game_api 原本静默。
 
-- [ ] **Step 3: 前端 toast**：game.html 收到 init 响应 `warning` 时显示 3s 提示条（内联 JS 现状下先加最小实现，§3 迁移时进 api.js）。
+- [x] **Step 3: 前端 toast**：game.html 收到 init 响应 `warning` 时显示 3s 提示条（内联 JS 现状下先加最小实现，§3 迁移时进 api.js）。
 
 - [ ] **Step 4: 提交**
 
@@ -120,7 +121,7 @@ git commit -m "test: 前端 34 端点契约防护网 + fix B19 角色卡加载�
 | `__init__.py` | `APIRouter` 聚合（URL 不变）；**不做 re-export 兼容层** |
 
 - **R7 patch 机制**：各模块内一律 `from . import session` 后 `session.get_game()` 属性查找（不写 `from .session import get_game` 绑死）；**同步修改全部既有测试 patch 目标** `frontend.routers.game.get_game` → `frontend.routers.game.session.get_game`。
-- **R7 循环导入**：session ↔ combat（combat 需要 get_game）用函数内懒导入打破。
+- **R7 循环导入**：session ↔ combat、session ↔ charcard（`_known_spell_names` 给 init/state 用）均用函数内懒导入打破。
 - init 兜底两份合一在 Task 2 已做；此处确认无残留重复。
 - server.py 的 router 挂载改 import 包（`from frontend.routers.game import router`）。
 
@@ -266,7 +267,7 @@ export function initSplitter(handleEl, panelEl, storageKey,
 **Files:**
 - Modify: `src/game/judge.py`（实体评估处追加 trace 记录）
 - Modify: `src/game/agents/keeper.py`（输入匹配结论记录）
-- Modify: `src/game/messages.py`（TurnResult 可选 debug 键）
+- Modify: `src/game/messages.py`（**PlayerTurnResult** 可选 `debug` 键；不要只改 TurnResult）
 - Test: `tests/test_turn_trace.py`（新建）
 
 - [ ] **Step 1: 失败测试**
@@ -337,7 +338,7 @@ def game_debug(turns: int = 5):
 - Create: `frontend/static/js/debug.js`
 - Modify: `frontend/templates/game.html`（工具栏 bug 开关 + 面板容器）
 
-- [ ] **Step 1: 实现**——四节折叠（触发流水/实体可用性/检定明细/LLM 记录）；开关走 §4 switch 组件（**R15 拍板：与现有 `trpg_debug` 合并为一个开关**——原 DBG 的敌人详情/整页 reload 信息收编为 panel 一节或保留其行为但共用开关状态，实现时二选一并写明）；开启时 turn 请求 FormData 带 `debug=1` 并把响应 `debug` 键渲染进「当回合触发流水」。
+- [ ] **Step 1: 实现**——四节折叠（触发流水/实体可用性/检定明细/LLM 记录）；开关走 §4 switch 组件（**R15 拍板：与现有 `trpg_debug` 合并为一个开关，不再整页 reload**；原 DBG 敌人详情/潜在威胁在 debug 开时仍挂场景卡，同时打开 panel）。开启时 turn 请求 FormData 带 `debug=1` 并把响应 `debug` 键渲染进「当回合触发流水」。`setSwitch('debug')` 与 `localStorage.trpg_debug` 单一写入。
 - [ ] **Step 2: 手动验证**（spec §8.3 场景：开一局→开 debug→输行动→四节有数据）+ 提交
 
 ---
@@ -367,7 +368,8 @@ def game_debug(turns: int = 5):
 - Test: `tests/test_turn_runner_progress.py`（新建）
 
 **R4 约束（阻塞项，先读再写）：**
-- **对外 WS 步名保持现网**：`parse/judge/enrich/combat_entry/curate/narrate/complete`。runner 相位 → 对外步名映射表（写入实现注释）：understand→parse、adjudicate→judge、encounter→combat_entry、enrich→enrich、finalize→narrate（finalize 内含 narrate 后处理；curate 如对应独立环节单独推）。
+- **对外 WS 步名保持现网**：`parse/judge/enrich/combat_entry/curate/narrate/complete`。
+- **映射（写入实现注释）**：understand→parse、adjudicate→judge、encounter→combat_entry、enrich→enrich、**finalize→curate**（curate 在 finalize 内）。**不可**把 finalize 映射成 narrate——`narrator.narrate` 在 `TurnRunner.execute` **返回之后**（`game_loop.run_turn`），由 run_turn 在 narrate 前后**单独**推 `narrate`，最后推 `complete`。
 - **线程安全**：进度推送发生在 `run_in_executor` 工作线程 → 回调内用 `loop.call_soon_threadsafe(queue.put_nowait, msg)` 或改 `queue.Queue`；禁止直接 `asyncio.Queue.put_nowait`。
 - **边界**：Restart 重跑时相位会重复推（允许，前端按最新状态覆盖）；Early/SUSPENDED 早退时只推已执行相位 + 必须最终推 `complete`（前端在 `complete` 关闭进度条，现网 game.py:748 依此）。
 
@@ -383,35 +385,49 @@ def test_phase_callbacks_fire_in_order():
 
 def test_early_exit_still_completes():
     """Early/SUSPENDED 早退：只推已执行相位，且 run_turn 层最终推 complete。"""
+
+def test_narrate_pushed_around_actual_narrate():
+    """对外步名 narrate 在 narrator.narrate 调用期间，不在 finalize/curate 时提前 [OK]。"""
 ```
 
-- [ ] **Step 2: 实现**——`execute` 每相位前后调 `on_phase(name, "start"|"done")`；run_turn 注入回调（内部名→对外步名映射 + `call_soon_threadsafe` 推队列 + 保证 `complete`）；turn.py 删假推送。
+- [ ] **Step 2: 实现**——`execute` 每相位前后调 `on_phase(name, "start"|"done")`；run_turn 做内部名→对外步名映射 + **narrate 包住真正的 `narrator.narrate`** + `call_soon_threadsafe` 推队列 + 保证 `complete`；turn.py 删假推送。
 - [ ] **Step 3: 绿 + real_llm_smoke + 提交**
 
-### Task 12: F40 会话恢复（**2026-09-06 拍板：战斗场次原子化**）
+### Task 12: F40 会话恢复（**战斗原子化 + 方案 A 战前快照回滚**）
 
-**语义**：不做战斗过程持久化（难度大意义小）。战斗中刷新/读档 = 丢弃进行中战斗，世界恢复到**战斗前**状态（战斗未 resolve_outcome 则 world 未结算）；战斗中 autosave 若发生，写盘的是战斗前 world + 不写 active_combat。
+**语义**：不做 CombatState 入档、不续打中途战斗。刷新/丢会话 = 丢掉战斗 UI，world **回滚到 combat/start 前快照**，回探索态。
+
+**事实（实现时不要假设「未 finished 则 world 未改」）**：`run_single_round` 每轮已写 `player.derived.HP/SAN/MP`；`_init_combat` 在 start 就会做目睹 SAN 并写入 `san_seen_sources`。所以必须在 **start 时、这些写入之前** 拍快照，丢弃时应用快照，不能只删 `_combat_sessions`。
+
+**战斗系统后续会重置**：本回滚求够用（刷新不卡战斗 UI、HP 主路径能回到 start 前）。目睹 SAN / 部分镜像 / 敌人字段边角不准 **可接受**。在 `combat.py` 快照函数上注明「战斗重置前的临时回滚，不求完备」。
 
 **Files:**
-- Modify: `frontend/templates/game.html` / `static/js/scene.js`（**R2 页面 bootstrap**：`DOMContentLoaded` 时 GET `/api/game/state`；已有对局（world 有 player）→ 跳过 `#game-setup` 直接显示 `#game-screen` 并渲染当前状态；无对局 → 维持 setup 页）
-- Modify: `frontend/routers/game/views.py`（`/api/game/state` 响应足以支撑 bootstrap：scene 描述/HUD/是否游戏中；**不返回 active_combat**）
-- Modify: `frontend/routers/game/combat.py`（combat/start 时把「战斗前快照」标记写入 `_combat_sessions` 元信息；**会话丢失（进程重启/刷新后服务端 dict 清空）时 `/api/combat/round` 返回明确错误码而非 500**，前端收到后退出战斗模式回到探索态）
+- Modify: `frontend/templates/game.html` / `static/js/scene.js`（**bootstrap**：`DOMContentLoaded` GET `/api/game/state`；`in_game` → 跳过 `#game-setup` 显示 `#game-screen`；否则维持 setup）
+- Modify: `frontend/routers/game/views.py`（`game_state`：**若 `_game_instance is None` 直接 `{in_game: false}`，禁止调用会 lazy 建局的 `get_game()`**；有对局则 scene/HUD/`in_game: true`；**不返回 `active_combat`**。bootstrap 若发现残留 `_combat_sessions` → 先回滚快照再清会话，然后返回探索态 HUD）
+- Modify: `frontend/routers/game/combat.py`（start：**先**拍战前快照再 `_init_combat`；快照至少含 player HP/SAN/MP 与当前场景敌人 HP/status、`san_seen_sources` 浅拷贝。无会话 round：现网 400，本 Task 改为 **409** + `{"error": "combat_session_lost"}`，并尝试回滚（无快照则只清 dict）。提供 `_discard_combat_sessions()` 供 state bootstrap / 409 路径共用）
+- Modify: `frontend/static/js/combat.js`（409 → `finishCombat(silent)` 回探索态；刷新后不要尝试用内存 `combatSession` 续打）
 - Test: `tests/test_frontend_contract.py` 追加
 
 - [ ] **Step 1: 失败测试**
 
 ```python
+def test_state_empty_instance_not_lazy_init(client):
+    """_game_instance is None → in_game=false，且不调用 init_game。"""
+
 def test_state_supports_bootstrap(client):
-    """state 响应含 bootstrap 所需：in_game/scene/HUD（无 active_combat 键）。"""
+    """有对局时 state 含 in_game/scene/HUD；无 active_combat 键。"""
 
 def test_combat_round_without_session_clean_error(client):
-    """会话丢失后 /api/combat/round 返回 409/410 + 明确错误（不 500）。"""
+    """无会话 /api/combat/round 返回 409 + combat_session_lost（现网是 400，本 Task 改码，同步改 Task 1 锁的断言）。"""
+
+def test_discard_combat_rolls_back_player_hp(client):
+    """start 后改 HP，丢弃会话 → player HP 回到 start 前。边角字段不锁。"""
 ```
 
-- [ ] **Step 2: 实现**——bootstrap JS；state 响应补 `in_game`；combat/round 会话缺失改返回 `JSONResponse({"error": "combat_session_lost"}, status_code=409)`；combat.js 收到 409 → `finishCombat(silent)` 回探索态。
-- [ ] **Step 3: 绿 + 手动验收（区分两种场景）**：① 同进程刷新：bootstrap 直接回游戏屏；② 战斗中刷新：回到探索态无报错；③ 新进程读档（slash /load）：正常恢复非战斗状态。
+- [ ] **Step 2: 实现**——快照 + `_discard_combat_sessions`；state 空实例短路；bootstrap JS；round 409；combat.js 处理 409。
+- [ ] **Step 3: 绿 + 手动验收**：① 同进程刷新（非战斗）：跳过 setup 回游戏屏；② 战斗中刷新：回探索态、不卡战斗 UI，HP 大致战前；③ 新进程读档（slash /load）：无战斗会话，探索态。不验收「战斗面板恢复」。
 
-**R3 原方案（完整 CombatState 序列化入档）废弃**，原因：拍板战斗原子化。若日后反悔，依据为 R3 事实清单（缺 temporary_effects/san_log/flags/log/_boss_current_phase）。
+**R3 原方案（完整 CombatState 序列化入档）废弃。** 战斗重置后再决定是否做中途续打。
 
 ---
 
@@ -430,7 +446,7 @@ def test_combat_round_without_session_clean_error(client):
 
 - Spec 覆盖：§1→Task1-2；§2→Task3；§3→Task4-5；§4→Task6；§5→Task7-9；§6→Task10-12；§7 测试策略→各 Task 内嵌 + Task13；§8 验收→Task 6/9/13 手测清单。
 - 占位符扫描：Task 1 清单中 `...` 处为「按现行实现读写临时路径」类指示——实现者需先读对应 router 函数现状再写断言（端点行为以代码为准，非占位）。
-- 类型一致性：`state.js` 的 `state`/`setSwitch`、debug 响应四键、TurnResult.debug、Chronicle.narrative_log 全文一致。
+- 类型一致性：`state.js` 的 `state`/`setSwitch`、debug 响应四键、**PlayerTurnResult.debug**、Chronicle.narrative_log 全文一致。
 - 风险：Task 4（JS 大搬迁）无自动化测试兜底，依赖手动冒烟——已在 Task 4 Step 5 明示；若冒烟发现问题按 systematic-debugging 处理。
 
 ---
@@ -438,7 +454,7 @@ def test_combat_round_without_session_clean_error(client):
 ## 审查记录（2026-09-06）
 
 > 对照 spec `2026-09-05-frontend-upgrade-design.md`、本 plan、以及当时 HEAD 代码（`frontend/routers/game.py`、`game.html`、`TurnRunner`、`WorldChronicle`、`save_game`、`tests/test_frontend_contract.py`）。
-> **状态（2026-09-06 更新）：R1-R21 已全部吸收进正文；三项拍板落定（F40 战斗原子化 / DEBUG 合并 / history 替换内联）。可按正文开工。**
+> **状态（2026-09-06 再修订）：R1–R21 已进正文；spec 已与 plan 对齐。F40 定为方案 A（战前快照回滚）+ 战斗系统后续重置（回滚边角不准可接受）。F42：`finalize→curate`，`narrate` 由 run_turn 包住真正的 `narrator.narrate`。下列表格为修订前清单，**以正文为准**。
 
 ### 阻塞（按现在写会做错或验收对不上）
 
@@ -486,13 +502,13 @@ def test_combat_round_without_session_clean_error(client):
 - B19 init 加 `warning` 为 additive。
 - Task 4 手测清单（开局→一句话→HUD→战斗一轮→角色卡）覆盖无前端单测的缺口。
 
-### 执行前决策清单（写入正文后再开工）
+### 执行前决策清单（已写入正文，下表仅作对照）
 
-1. Task 4：`window.*` 桥或去掉全部 `onclick`；turn/init/command 走 FormData；保留双 content-type。
-2. F40：页面 onload 恢复会话；完整 `CombatState` 入档；验收区分同进程刷新 / 新进程读档。
-3. F42：WS 步名对照表；`call_soon_threadsafe`；SUSPENDED/Restart/`complete` 规则。
-4. F39：`narrate` 之后写 `narrative_log`；不进 Author render；与内联「对话记录」的关系。
-5. Debug：读 `setup_logging()` 当前 `log_dir`；DBG vs panel；HTTP `debug` → `PlayerTurnResult.debug`。
-6. Task 3：补模块归属表；属性查找 + 改 patch；不指望 re-export。
-7. Task 1：34 端点全表 + 副作用只测失败路径。
-8. spec 原则：「URL 不变；响应形状仅角色卡（及已声明 slash）在 §3 变更」。
+1. Task 4：`window.*` 桥或去掉全部 `onclick`；turn/init/command 走 FormData；保留双 content-type。✅ 正文
+2. F40：**方案 A 战前快照回滚**（完整 CombatState 入档已废弃）；bootstrap 空实例不 lazy 建局；战斗重置前边角不准可接受。✅ 正文 / spec §6
+3. F42：对外现网步名；`finalize→curate`；`narrate` 在 run_turn 包住真正 narrate；`call_soon_threadsafe`；早退必 `complete`。✅ 正文
+4. F39：`narrate` 之后 `record_narrative`；不进 Author render；history 面板替换内联记录。✅ 正文
+5. Debug：读 `setup_logging()` 当前 `log_dir`；与 `trpg_debug` 合并且不整页 reload；HTTP `debug` → `PlayerTurnResult.debug`。✅ 正文
+6. Task 3：补模块归属表（含 views.py）；属性查找 + 改 patch；不指望 re-export。✅ 正文
+7. Task 1：副作用只测失败路径；config/save monkeypatch；upload-avatar 列入副作用。✅ 正文
+8. spec 原则：「URL 不变；响应形状仅角色卡（及已声明 slash）在 §3 变更」。✅ spec 已对齐

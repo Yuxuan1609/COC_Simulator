@@ -10,6 +10,8 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-06 | 前端专项 §1：`tests/test_frontend_contract.py` 扩 34 端点契约（副作用只测失败路径；游戏端点 patch get_game）。B19：`_load_character_or_default` 合一 init/get_game 角色卡兜底，load 抛错 → 默认卡 + init JSON `warning`；game.html toast 3s。state 透出 `_char_load_warning`。game.py 1191→1193。契约 41 passed。 |
+| 2026-09-06 | 前端专项 spec/plan 对齐（纯文档，零代码）：`2026-09-05-frontend-upgrade-design.md` 与 plan 同步。F40 定为方案 A（combat/start 战前快照，刷新/丢会话回滚后回探索态；state 空实例禁止 lazy 建局）。标明战斗系统后续重置，回滚边角不准可接受。F42：`finalize→curate`，`narrate` 由 `run_turn` 包住真正 `narrator.narrate`。TurnLogger 路径、B19 不对称、契约副作用分级写入 spec。 |
 | 2026-09-05 | 后端测试缺口盘点（纯文档，零代码）：新建 `docs/test-gap-audit-2026-09-05.md`。高 3 项：Boss 存读档往返零覆盖（boss_manager to_dict/from_dict + load_state 1502-1511）、Boss 软条件 `||` LLM 判定零覆盖且 368 行 except 乐观放行、run_game 交互循环零专测 + `/trigger` 幽灵命令；中 5 项：narrator 兜底无 warning、ConsumeItem 模糊匹配吞异常、autosave 全链静默、judge/combat 双 timed refresh 无同步锁（B10 备忘）、judge retries>=2 惩罚分支默认套件零覆盖；低 7 项一行一条；§4 已覆盖清单防重复劳动。 |
 | 2026-09-04 | 生成端回填专项：① schema：`_attitude_keys` 派生五档；`attitude_value` min/max；NPC 落盘字段；scene_items/environment 嵌套；`scheduled_events` 进 `validate_l2`；`_validate_value` min/max。② `npc_attitude_tiers[].mid` 单一事实源，删 `_ATTITUDE_MIDPOINTS`。③ e2e_testbed 全元素 + `init_game` scheduled_events 加载桥。④ STEP2A/4/25 最小回填（allied→devoted，中值从 mid 拼进 prompt）+ `_assemble_l2` 透传 scene_items/environment。⑤ `run_lint(..., strict=)` 只升 schema warning；`to_mermaid` 复用 `detect_cycles`；`cli_main` 接 `--strict`/`--graph`。TDD：test_generation_schema / test_fixture_completeness / test_generation_prompts / test_dependency_graph + lint strict / scheduled 加载 / save_load 综合往返。layered_schema 367→420 / lint 122→150 / dependency_graph 156→176 / layered_parser 1511→1542 / npc_manager 410→405 / game_loop 943→947。 |
 | 2026-09-03 | LLM fallback provider：主端 402 切 Ark（`LLM_FALLBACK_PROVIDER`）。`_chat_create` 统一四路 completions；切后进程内 sticky。密钥只写 gitignore 的 `config_llm.py`；模板 `api_key=""`。TDD：tests/test_llm_provider.py 3 测。llm.py 514→579。 |
@@ -1133,25 +1135,25 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `start_pipeline` | `POST /api/pipeline/start` → run_pipeline 子进程 | 140 |
 | `validate_pipeline` | `POST /api/pipeline/validate`（查 data/debug 最新 timestamp 的 step_* 产物，不再查 modules 最终 JSON） | 188 |
 
-### routers/game.py (1191 行) — 游戏 API（核心）
+### routers/game.py (1193 行) — 游戏 API（核心）
 
 | 端点 | 路由 | 作用 | 行号 |
 |------|------|------|------|
-| `game_page` | `GET /game` | 游戏页 | 169 |
-| `_handle_slash_command` | — | 斜杠命令短路 | 173 |
-| `process_turn` | `POST /api/game/turn` | 回合入口（线程池，防止阻塞事件循环） | 254 |
-| `character_card` | `GET /api/game/character-card` | 角色卡 HTML（状态区 MP 当前/上限 + 已知法术区，库外 id 降级展示；F2 SAN bar 分母=derived.SAN_MAX @576） | 515 |
-| `player_status` | `GET /api/game/player-status?format=` | HP/MP/SAN 状态；JSON 含 hp_max/mp_max/mp/known_spells/san_max（id 解析为名；F2 @700） | 682 |
-| `game_command` | `POST /api/game/command` | 命令 | 716 |
-| `scene_info` | `GET /api/game/scene` | 场景 HTML | 721 |
-| `game_progress` | `WS /api/game/progress` | 管线进度推送 | 738 |
-| `init_game_api` | `POST /api/game/init` | 初始化 + 首回合（响应含 hp_max/mp_max/mp/known_spells/san_max，F2 @854） | 770 |
-| `game_state` | `GET /api/game/state` | 游戏状态 JSON（含 hp_max/mp_max/mp/known_spells/san_max，F2 @875） | 863 |
-| `set_auto_win` | `POST /api/game/auto-win` | 战斗自动胜利开关 | 882 |
-| `combat_start` | `POST /api/combat/start` | 初始化战斗会话（CombatSystem 传 world.spell_library+world @979，T9 战斗 markup/timed 原子可用） | 893 |
-| `combat_round` | `POST /api/combat/round` | 执行一轮（CombatSystem 传 spell_library+world @1027，战斗施法可用） | 1002 |
+| `game_page` | `GET /game` | 游戏页 | 160 |
+| `_handle_slash_command` | — | 斜杠命令短路 | 164 |
+| `process_turn` | `POST /api/game/turn` | 回合入口（线程池，防止阻塞事件循环） | 245 |
+| `character_card` | `GET /api/game/character-card` | 角色卡 HTML（状态区 MP 当前/上限 + 已知法术区，库外 id 降级展示；F2 SAN bar 分母=derived.SAN_MAX） | 506 |
+| `player_status` | `GET /api/game/player-status?format=` | HP/MP/SAN 状态；JSON 含 hp_max/mp_max/mp/known_spells/san_max | 673 |
+| `game_command` | `POST /api/game/command` | 命令 | 707 |
+| `scene_info` | `GET /api/game/scene` | 场景 HTML | 712 |
+| `game_progress` | `WS /api/game/progress` | 管线进度推送 | 729 |
+| `init_game_api` | `POST /api/game/init` | 初始化 + 首回合（含 warning，B19） | 761 |
+| `game_state` | `GET /api/game/state` | 游戏状态 JSON（含 san_max + `_char_load_warning`） | 846 |
+| `set_auto_win` | `POST /api/game/autowin` | 战斗自动胜利开关 | 866 |
+| `combat_start` | `POST /api/combat/start` | 初始化战斗会话 | 877 |
+| `combat_round` | `POST /api/combat/round` | 执行一轮 | 986 |
 
-序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57（F2 增 player_san_max 键 @64，getattr 兜底 99） / `_deserialize_enemies_for_combat`@71 / `_init_libraries`@105 / `_known_spell_names`@504（known_spells id->中文名，统一资源层前端接线共用） / `_resolve_start_scene`@1138 / `_make_default_inv`@1184。
+序列化辅助：`_serialize_enemies_for_frontend`@34 / `_serialize_combat_state_for_frontend`@57 / `_deserialize_enemies_for_combat`@71 / `_init_libraries`@105 / `get_game`@130（B19 走 `_load_character_or_default`） / `_known_spell_names`@495 / `_resolve_start_scene`@1122 / `_make_default_inv`@1168 / `_load_character_or_default`@1178（B19：load 抛错 → 默认卡 + warning）。
 
 ### routers/character.py (335 行) — 车卡 API
 

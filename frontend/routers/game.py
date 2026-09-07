@@ -133,10 +133,6 @@ def get_game() -> dict | None:
         return None
     if _game_instance is None:
         from game_loop import init_game
-        from investigator import load_investigator, Investigator
-        from investigator.rules import roll_stats, calc_derived, create_skill_list
-        import os
-        from datetime import datetime
         from game_loop import setup_logging
         log_dir = setup_logging()
 
@@ -149,13 +145,8 @@ def get_game() -> dict | None:
             start_node="测试房间",
         )
         char_path = str(PROJECT_ROOT / "investigator/test_character.json")
-        if os.path.exists(char_path):
-            inv = load_investigator(char_path)
-        else:
-            inv = Investigator(name="调查员A", age=25, gender="男")
-            inv.stats = roll_stats()
-            inv.skills = create_skill_list()
-            inv.derived = calc_derived(inv.stats, inv.age)
+        inv, warning = _load_character_or_default(char_path)
+        g["_char_load_warning"] = warning
         g["keeper"].world.set_player(inv)
         # 应用 AT_WORLD 中延后的 item_gain
         for item_gain in g.get("pending_world_items", []):
@@ -779,11 +770,7 @@ async def init_game_api(
 ):
     global _game_instance, _game_quit
     _game_quit = False
-    import os
-    from datetime import datetime
     from game_loop import init_game
-    from investigator import load_investigator, Investigator
-    from investigator.rules import roll_stats, calc_derived, create_skill_list
     from prompts import set_prompt_log_dir
     from llm import set_llm_log_dir
 
@@ -814,13 +801,8 @@ async def init_game_api(
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-    if char_path and os.path.exists(str(PROJECT_ROOT / char_path)):
-        try:
-            inv = load_investigator(str(PROJECT_ROOT / char_path))
-        except Exception:
-            inv = _make_default_inv()
-    else:
-        inv = _make_default_inv()
+    inv, warning = _load_character_or_default(char_path)
+    g["_char_load_warning"] = warning
 
     g["keeper"].world.set_player(inv)
     # 应用 AT_WORLD 中延后的 item_gain
@@ -856,6 +838,7 @@ async def init_game_api(
         "known_spells": _known_spell_names(g["keeper"].world, inv),
         "initial_brief": initial_brief,
         "initial_narrative": initial_narrative,
+        "warning": warning,
     }
 
 
@@ -875,6 +858,7 @@ async def game_state():
         "san_max": p.derived.SAN_MAX if p else 99,
         "name": p.name if p else "",
         "known_spells": _known_spell_names(world, p) if p else [],
+        "warning": game.get("_char_load_warning") if game else None,
     }
 
 
@@ -1189,3 +1173,21 @@ def _make_default_inv():
     inv.skills = create_skill_list()
     inv.derived = calc_derived(inv.stats, inv.age)
     return inv
+
+
+def _load_character_or_default(char_path: str = ""):
+    """加载角色卡；失败或缺失则默认卡。返回 (inv, warning|None)。
+
+    仅 load 抛错时带 warning（B19）。路径不存在/未填 = 有意用默认卡，无 warning。
+    """
+    import os
+    from investigator import load_investigator
+    if not char_path:
+        return _make_default_inv(), None
+    full = char_path if os.path.isabs(char_path) else str(PROJECT_ROOT / char_path)
+    if not os.path.exists(full):
+        return _make_default_inv(), None
+    try:
+        return load_investigator(full), None
+    except Exception:
+        return _make_default_inv(), "角色卡加载失败，已使用默认卡"
