@@ -14,6 +14,8 @@ from . import session
 def _handle_slash_command(cmd: str) -> dict:
     """Handle slash commands synchronously, return {text} plain text."""
     game = session.get_game()
+    if not game:
+        return {"text": "游戏已退出。请返回启动页重新开始。"}
     world = game["keeper"].world
     p = world.player
     cmd = cmd.strip().lower()

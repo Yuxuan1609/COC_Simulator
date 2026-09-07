@@ -513,7 +513,13 @@ export function handleTurnResponse(userText, data) {
   }
 
   const turnParts = [];
-  if (data.turn_dynamic_text) {
+  if (data.slash && data.slash.text) {
+    turnParts.push(
+      '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +
+      escapeHtml(data.slash.text).replace(/\n/g, "<br>") +
+      "</div>",
+    );
+  } else if (data.turn_dynamic_text) {
     let dynText = data.turn_dynamic_text;
     const structuredChecks = (snap && snap.skill_checks) || [];
     if (structuredChecks.length > 0) {
@@ -571,13 +577,6 @@ export function handleTurnResponse(userText, data) {
     }
   }
 
-  if (turnParts.length === 0 && data.slash && data.slash.text) {
-    turnParts.push(
-      '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +
-      escapeHtml(data.slash.text).replace(/\n/g, "<br>") +
-      "</div>",
-    );
-  }
   if (turnParts.length === 0 && data.narrative_html) {
     turnParts.push(
       '<div class="turn-narrative px-4 py-3 text-sm text-parchment border-l-2 border-aged-gold bg-[#1a1410]/60 rounded-r narrative-flash leading-relaxed">' +

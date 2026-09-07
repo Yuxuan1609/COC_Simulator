@@ -387,12 +387,48 @@ class TestGameContract:
             resp = client.post("/api/game/turn", data={"user_input": "/help"})
         assert resp.status_code == 200
         data = resp.json()
+        assert "narrative_html" not in data
+        assert set(data["slash"]) == {"text"}
+        assert data["brief"] == ""
         assert data["slash"]["text"]
         assert "/scene" in data["narrative"]
         assert data["narrative"] == data["slash"]["text"]
+
+    def test_turn_when_game_none_returns_plain_narrative(self, client):
+        with patch("frontend.routers.game.session.get_game", return_value=None):
+            resp = client.post("/api/game/turn", data={"user_input": "看"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "游戏已退出" in data["narrative"]
+        assert "<div" not in data["narrative"]
         html = data.get("narrative_html")
-        if html:
-            assert "<div" not in html
+        assert not html or "<div" not in html
+
+    def test_command_when_game_none_returns_plain_text(self, client):
+        with patch("frontend.routers.game.session.get_game", return_value=None):
+            resp = client.post("/api/game/command", data={"cmd": "/help"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "游戏已退出" in data["text"]
+        assert "<div" not in data["text"]
+
+    def test_turn_frozen_returns_plain_narrative(self, client):
+        fake_result = PlayerTurnResult(
+            status=TurnStatus.FROZEN,
+            brief="", narrative="系统异常\n详情",
+            skill_results=[], timestamp="12:00:00",
+        )
+        with patch("frontend.routers.game.session.get_game",
+                   return_value=_fake_game_with_spells()), \
+             patch("game_loop.run_turn", return_value=fake_result):
+            resp = client.post("/api/game/turn", data={"user_input": "看"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["game_frozen"] is True
+        assert data["frozen_message"] == "系统异常\n详情"
+        assert "系统异常" in data["narrative"]
+        html = data.get("narrative_html")
+        assert not html or "<div" not in html
 
     def test_autowin_toggle(self, client):
         r = client.post("/api/game/autowin", json={"enabled": True})

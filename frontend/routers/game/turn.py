@@ -36,7 +36,7 @@ async def process_turn(
         cmd = slash._handle_slash_command(stripped)
         text = cmd.get("text", "") if isinstance(cmd, dict) else str(cmd)
         return {
-            "brief": stripped,
+            "brief": "",
             "narrative": text,
             "slash": {"text": text},
             "combat": None,
@@ -54,8 +54,7 @@ async def process_turn(
         if game is None:
             return {
                 "brief": "",
-                "narrative": "",
-                "narrative_html": '<div class="text-gray-500 text-sm">游戏已退出。请返回启动页重新开始。</div>',
+                "narrative": "游戏已退出。请返回启动页重新开始。",
                 "combat": None,
                 "skill_results": [],
                 "game_over": True,
@@ -104,11 +103,7 @@ async def process_turn(
         return {
             "status": "frozen",
             "brief": "",
-            "narrative": "",
-            "narrative_html": (
-                '<div class="msg-frozen px-4 py-3 text-red-400 border-2 border-red-600 '
-                'bg-[#1a0a0a] rounded">' + (frozen_message.replace("\n", "<br>")) + '</div>'
-            ),
+            "narrative": frozen_message,
             "pending_interaction": None,
             "combat": None,
             "skill_results": [],

@@ -67,9 +67,23 @@ test("bumpTargetCount increments then resets at limit", () => {
   assert.equal(counts.e1, undefined);
 });
 
+test("handleTurnResponse slash payload does not echo brief", () => {
+  const els = installDom();
+  handleTurnResponse("/help", {
+    brief: "",
+    narrative: "/scene  /char  /flags",
+    slash: { text: "/scene  /char  /flags" },
+  });
+  const html = els["turn-output"].innerHTML;
+  assert.equal(html.includes("turn-brief"), false);
+  assert.equal(html.includes("/scene"), true);
+  assert.equal((html.match(/\/scene/g) || []).length, 1);
+});
+
 test("handleTurnResponse escapes slash narrative text", () => {
   const els = installDom();
   handleTurnResponse("/help", {
+    brief: "",
     narrative: '<img src=x onerror=alert(1)>',
     slash: { text: '<img src=x onerror=alert(1)>' },
   });
