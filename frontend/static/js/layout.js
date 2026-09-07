@@ -52,11 +52,12 @@ export function initSplitter(
   handleEl.addEventListener("pointerdown", (e) => {
     if (e.button != null && e.button !== 0) return;
     e.preventDefault();
+    const pointerId = e.pointerId;
     const startX = e.clientX;
     const startW = panelEl.offsetWidth;
-    if (typeof handleEl.setPointerCapture === "function" && e.pointerId != null) {
+    if (typeof handleEl.setPointerCapture === "function" && pointerId != null) {
       try {
-        handleEl.setPointerCapture(e.pointerId);
+        handleEl.setPointerCapture(pointerId);
       } catch {
         /* capture unsupported */
       }
@@ -65,24 +66,40 @@ export function initSplitter(
     const prevUserSelect = root && root.style ? root.style.userSelect : "";
     if (root && root.style) root.style.userSelect = "none";
     if (root && root.classList) root.classList.add("select-none", "is-resizing");
+    const samePointer = (ev) =>
+      pointerId == null || ev.pointerId == null || ev.pointerId === pointerId;
     const move = (ev) => {
+      if (!samePointer(ev)) return;
       const w = computePanelWidth(startW, ev.clientX, startX, { min, max, side });
       panelEl.style.width = w + "px";
     };
     let done = false;
-    const up = () => {
+    const up = (ev) => {
+      if (ev && !samePointer(ev)) return;
       if (done) return;
       done = true;
       lsSet(storageKey, String(panelEl.offsetWidth));
       if (root && root.style) root.style.userSelect = prevUserSelect;
       if (root && root.classList) root.classList.remove("select-none", "is-resizing");
+      if (typeof handleEl.releasePointerCapture === "function" && pointerId != null) {
+        try {
+          const still =
+            typeof handleEl.hasPointerCapture !== "function" ||
+            handleEl.hasPointerCapture(pointerId);
+          if (still) handleEl.releasePointerCapture(pointerId);
+        } catch {
+          /* already released */
+        }
+      }
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("pointercancel", up);
+      handleEl.removeEventListener("lostpointercapture", up);
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
     document.addEventListener("pointercancel", up);
+    handleEl.addEventListener("lostpointercapture", up);
   });
 }
 

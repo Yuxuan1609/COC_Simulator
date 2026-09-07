@@ -206,6 +206,33 @@ def test_layout_upgrade_markup_and_css():
     assert "layout.js" in game_js
 
 
+def test_splitter_is_direct_child_outside_scroller():
+    """#scene-panel / #char-panel 外壳不滚动；.splitter 为直系子节点；滚动在内层。"""
+    html = re.sub(r"\{#.*?#\}", "", _read(GAME_HTML), flags=re.S)
+    for pid, collapsed in (
+        ("scene-panel", "scene-panel-collapsed"),
+        ("char-panel", "char-panel-collapsed"),
+    ):
+        open_m = re.search(rf'<div([^>]*\bid=["\']{pid}["\'][^>]*)>', html)
+        assert open_m, pid
+        class_m = re.search(r"""class=["']([^"']+)["']""", open_m.group(1))
+        assert class_m, pid
+        classes = class_m.group(1).split()
+        assert "overflow-y-auto" not in classes, f"{pid} must not be the scroller"
+        assert "overflow-hidden" in classes, pid
+        rest = html[open_m.end():]
+        first = re.search(r"<div\s+([^>]+)>", rest)
+        assert first, pid
+        first_classes = " ".join(re.findall(r"""class=["']([^"']+)["']""", first.group(1))).split()
+        assert "splitter" in first_classes, f"{pid} .splitter must be a direct child"
+        inner = rest[first.end():]
+        scroll_at = inner.find("overflow-y-auto")
+        collapsed_at = inner.find(collapsed)
+        assert scroll_at != -1, f"{pid} missing inner overflow-y-auto"
+        assert collapsed_at != -1, collapsed
+        assert scroll_at < collapsed_at, f"{pid} inner scroller must wrap collapsed+expanded"
+
+
 def test_node_js_unit_suite():
     js_tests = ROOT / "tests" / "js"
     files = sorted(js_tests.glob("*.test.mjs"))

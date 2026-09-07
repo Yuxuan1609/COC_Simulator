@@ -42,8 +42,9 @@
 <div id="game-screen" style="display:none" class="h-screen flex overflow-hidden relative">
 
   {# -- Left Panel: Scene Info (like character card) -- #}
-  <div id="scene-panel" class="w-64 border-r border-gray-800/60 scene-glass flex flex-col overflow-y-auto shrink-0 relative">
+  <div id="scene-panel" class="w-64 border-r border-gray-800/60 scene-glass flex flex-col overflow-hidden shrink-0 relative">
     <div class="splitter" role="separator" aria-orientation="vertical" title="拖动调整宽度"></div>
+    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
     {# Collapsed state -- #}
     <div id="scene-panel-collapsed" class="p-3 cursor-pointer" onclick="toggleSceneCard()">
       <div class="flex items-center gap-3">
@@ -90,6 +91,7 @@
           <div id="scene-card-threats" class="space-y-1"></div>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -228,8 +230,9 @@
   </div>
 
   {# -- Right Panel: Character Card (Optimized) -- #}
-  <div class="w-96 border-l border-gray-800/60 char-glass flex flex-col overflow-y-auto shrink-0 relative" id="char-panel">
+  <div class="w-96 border-l border-gray-800/60 char-glass flex flex-col overflow-hidden shrink-0 relative" id="char-panel">
     <div class="splitter" role="separator" aria-orientation="vertical" title="拖动调整宽度"></div>
+    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
     {# Collapsed state -- #}
     <div id="char-panel-collapsed" class="p-3 cursor-pointer" onclick="toggleCharCard()">
       <div class="flex items-center gap-3">
@@ -265,6 +268,7 @@
     </div>
     {# Expanded state -- #}
     <div id="char-panel-expanded" class="hidden p-3 border-t border-gray-800/60 space-y-3"></div>
+    </div>
   </div>
 
 </div>

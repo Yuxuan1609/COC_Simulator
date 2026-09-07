@@ -54,3 +54,49 @@ test("initSplitter restores saved width without touching offsetWidth", () => {
   initSplitter(handle, panel, "trpg_panel_scene_w");
   assert.equal(panel.style.width, "320px");
 });
+
+test("initSplitter ignores pointermove from a different pointerId", () => {
+  const docListeners = {};
+  globalThis.document = {
+    addEventListener(type, fn) {
+      (docListeners[type] ||= []).push(fn);
+    },
+    removeEventListener(type, fn) {
+      docListeners[type] = (docListeners[type] || []).filter((f) => f !== fn);
+    },
+    body: { style: {}, classList: { add() {}, remove() {} } },
+  };
+  const handleListeners = {};
+  let captured = null;
+  const panel = { style: {}, offsetWidth: 256 };
+  const handle = {
+    addEventListener(type, fn) {
+      handleListeners[type] = fn;
+    },
+    removeEventListener() {},
+    setPointerCapture(id) {
+      captured = id;
+    },
+    hasPointerCapture(id) {
+      return captured === id;
+    },
+    releasePointerCapture(id) {
+      if (captured === id) captured = null;
+    },
+  };
+  initSplitter(handle, panel, "k", { side: "left" });
+  handleListeners.pointerdown({
+    button: 0,
+    clientX: 100,
+    pointerId: 1,
+    preventDefault() {},
+  });
+  for (const fn of docListeners.pointermove || []) {
+    fn({ clientX: 140, pointerId: 2 });
+  }
+  assert.equal(panel.style.width, undefined);
+  for (const fn of docListeners.pointermove || []) {
+    fn({ clientX: 140, pointerId: 1 });
+  }
+  assert.equal(panel.style.width, "296px");
+});
