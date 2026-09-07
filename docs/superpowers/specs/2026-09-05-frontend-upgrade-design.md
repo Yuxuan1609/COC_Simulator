@@ -1,7 +1,8 @@
 # 前端专项设计：结构重构 + 布局修正 + Debug Panel + 体验批（2026-09-05）
 
 > 来源：2026-09-05 session 拍板。前置：前端调研报告（34 端点 / game.py 1191 行 / game.html 内联 JS ~1148 行 / 测试仅 14 例）。
-> 原则：**结构重构走方案 B（模块化）**；契约测试先行做安全网；重构不改 URL/响应形状；debug panel 最大化复用现有日志 infra。
+> 原则：**结构重构走方案 B（模块化）**；契约测试先行做安全网；**重构保持 URL 不变，响应形状仅角色卡与 slash 输出在 §3 显式变更**（2026-09-06 审查修订 R10）；debug panel 最大化复用现有日志 infra。
+> **2026-09-06 审查吸收**：R1-R21 修订见 plan 审查记录；三项拍板——F40 战斗场次原子化（不做战斗过程持久化，刷新/读档恢复战斗前状态）、DEBUG 开关合并为一个（沿用 trpg_debug）、F39 history 面板替换内联对话记录区。
 
 ## 0. 范围
 
@@ -73,7 +74,7 @@
 
 - **F39 历史回看**：`GET /api/game/history?before_turn=N`（读 `world.chronicle` 已入档数据，game_loop.py:373-377 已在 record_turn）+ history.js 面板（倒序分页/滚动加载）；刷新不丢（Chronicle 随存档）。F22 notebook 呈现不在本轮（仍随前端后续批次）。
 - **F42 真实进度**：run_turn 管线相位（parse/judge/enrich/narrate）埋回调 → 每相位完成即推 WS 进度（game.py:327-333 假进度删除）；前端 step-indicator 实时更新。相位列表从 keeper/TurnRunner 现有阶段结构取，不新造概念。
-- **F40 战斗恢复**：`_combat_sessions`（game.py:30 纯内存）→ 可序列化快照，随 save_game/autosave 落盘；`/api/game/state` 响应增 `active_combat` 键；前端刷新时若有活跃战斗 → combat.js 重建面板到当前轮次。combat 序列化代码已有（game.py:34-102，拆到 combat.py 后复用）。
+- **F40 会话恢复（战斗原子化，2026-09-06 拍板修订）**：页面 bootstrap——刷新时 GET `/api/game/state`，已有对局则跳过 setup 直接进游戏屏；**战斗中刷新/读档 = 丢弃进行中战斗，恢复战斗前状态**（不做 CombatState 持久化）；combat 会话丢失时 `/api/combat/round` 返回 409 明确错误，前端退回探索态。
 
 ## 7. 测试策略
 
