@@ -351,6 +351,7 @@ export async function initGame(e) {
       turnHtml || '<div class="turn-empty text-sm text-gray-500 italic">游戏已就绪</div>';
     if (data.player_snapshot) updateSceneCard(data.player_snapshot);
     connectWS();
+    if (state.debug) refreshDebugSnapshot();
     console.log("[initGame] game screen shown");
   } catch (err) {
     console.error("[initGame] error:", err);
@@ -361,6 +362,14 @@ export async function initGame(e) {
 
 export function addToHistory(_userMsg, _responseHtml) {
   /* F39：历史改走 chronicle.narrative_log + history 面板，不再堆内存 HTML */
+}
+
+export function renderHtmlFallback(html) {
+  return (
+    '<div class="turn-card pb-3 border-b border-gray-800/40">' +
+    escapeHtml(html) +
+    "</div>"
+  );
 }
 
 export function renderTurnDynamic(text) {
@@ -634,8 +643,7 @@ async function runTurnRequest(fd, displayText, opts) {
   try {
     const data = await postForm("/api/game/turn", fd);
     if (isHtmlFallback(data)) {
-      document.getElementById("turn-output").innerHTML =
-        '<div class="turn-card pb-3 border-b border-gray-800/40">' + data.html + "</div>";
+      document.getElementById("turn-output").innerHTML = renderHtmlFallback(data.html);
       addToHistory(displayText, data.html);
     } else {
       handleTurnResponse(displayText, data);

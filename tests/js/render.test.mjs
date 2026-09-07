@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderTurnDynamic, renderSkillChips, handleTurnResponse } from "../../frontend/static/js/scene.js";
+import { renderTurnDynamic, renderSkillChips, handleTurnResponse, renderHtmlFallback } from "../../frontend/static/js/scene.js";
 import { bumpTargetCount } from "../../frontend/static/js/combat.js";
 
 function installDom() {
@@ -65,6 +65,15 @@ test("bumpTargetCount increments then resets at limit", () => {
   assert.deepEqual(counts, { e1: 2 });
   counts = bumpTargetCount(counts, "e1", 2);
   assert.equal(counts.e1, undefined);
+});
+
+test("html fallback is escaped before innerHTML", () => {
+  const html = renderHtmlFallback(
+    '<div class="msg-narrative">游戏引擎错误: <script>alert(1)</script></div>',
+  );
+  assert.equal(html.includes("<script>"), false);
+  assert.equal(html.includes("&lt;script&gt;"), true);
+  assert.match(html, /turn-card/);
 });
 
 test("handleTurnResponse slash payload does not echo brief", () => {

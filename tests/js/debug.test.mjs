@@ -8,6 +8,7 @@ import {
   applyTurnDebug,
   toggleDebug,
   syncDebugUi,
+  refreshDebugSnapshot,
 } from "../../frontend/static/js/debug.js";
 import { state, loadState } from "../../frontend/static/js/state.js";
 
@@ -43,6 +44,7 @@ function el(initHidden) {
       },
     },
     innerHTML: "",
+    style: { display: "" },
     setAttribute(k, v) { attrs[k] = String(v); },
     getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
     _attrs: attrs,
@@ -222,6 +224,8 @@ test("toggleDebug does not reload and shows/hides panel", async () => {
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
+  document.getElementById("game-screen").style.display = "";
+  document.getElementById("game-setup").style.display = "none";
 
   assert.equal(state.debug, false);
   const pending = toggleDebug();
@@ -241,4 +245,27 @@ test("toggleDebug does not reload and shows/hides panel", async () => {
   assert.equal(els["debug-panel"].classList.contains("hidden"), true);
   syncDebugUi();
   assert.equal(els["debug-panel"].classList.contains("hidden"), true);
+});
+
+test("refreshDebugSnapshot no-ops when game-screen is hidden", async () => {
+  let fetches = 0;
+  globalThis.fetch = async () => {
+    fetches += 1;
+    return new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const els = {};
+  globalThis.document = {
+    getElementById(id) {
+      if (!els[id]) {
+        els[id] = el(false);
+        if (id === "game-screen") els[id].style.display = "none";
+      }
+      return els[id];
+    },
+  };
+  await refreshDebugSnapshot();
+  assert.equal(fetches, 0);
 });

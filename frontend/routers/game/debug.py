@@ -343,8 +343,9 @@ def _entity_availability(world, judge=None) -> list:
 
 @router.get("/api/game/debug")
 def game_debug(turns: int = 5):
+    """Peek `_game_instance`；空实例 400，禁止 get_game() lazy 建局。"""
     from . import session
-    game = session.get_game()
+    game = session._game_instance
     if game is None:
         return JSONResponse({"error": "no_game"}, status_code=400)
     world = game["keeper"].world

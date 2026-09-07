@@ -66,6 +66,7 @@ async function bootstrapExistingGame() {
     if (st.in_game === true) {
       applyBootstrapState(st);
       connectWS();
+      if (state.debug) refreshDebugSnapshot();
     }
   } catch (e) { /* 未开局 */ }
 }

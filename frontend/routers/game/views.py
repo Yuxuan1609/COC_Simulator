@@ -135,8 +135,8 @@ async def game_state():
 
 @router.get("/api/game/history")
 async def game_history(before_turn: int | None = None, limit: int = 20):
-    """F39：玩家侧叙事历史。只读 chronicle.narrative_log，不含 Author events。"""
-    game = session.get_game()
+    """F39：玩家侧叙事历史。peek `_game_instance`，空实例 400，禁止 lazy 建局。"""
+    game = session._game_instance
     if game is None:
         return JSONResponse({"error": "no_game"}, status_code=400)
     world = game["keeper"].world

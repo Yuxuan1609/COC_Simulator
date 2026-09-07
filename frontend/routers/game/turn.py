@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import traceback
 from dataclasses import asdict
 from functools import partial
@@ -46,16 +47,18 @@ def _exited_payload() -> dict:
 
 
 def _engine_error_html(exc) -> HTMLResponse:
+    safe = html.escape(str(exc), quote=True)
     return HTMLResponse(
         f'<div class="msg-narrative px-3 py-2 text-red-400 border-l-2 '
-        f'border-red-500 bg-[#1a0a0a]">游戏引擎错误: {exc}</div>'
+        f'border-red-500 bg-[#1a0a0a]">游戏引擎错误: {safe}</div>'
     )
 
 
 def _turn_error_html(exc) -> HTMLResponse:
+    safe = html.escape(str(exc), quote=True)
     return HTMLResponse(
         f'<div class="msg-narrative px-3 py-2 text-red-400 border-l-2 border-red-500 bg-[#1a0a0a]">'
-        f'错误: {exc}</div>'
+        f'错误: {safe}</div>'
     )
 
 

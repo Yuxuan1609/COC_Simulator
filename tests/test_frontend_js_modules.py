@@ -190,6 +190,8 @@ def test_escape_html_covers_narrative_innerhtml():
     assert not re.search(r"turnParts\.push\(\s*data\.narrative_html\s*\)", scene)
     assert re.search(r"escapeHtml\(\s*item\.brief", history)
     assert re.search(r"escapeHtml\(\s*item\.narrative", history)
+    assert re.search(r"renderHtmlFallback\(\s*data\.html", scene)
+    assert "escapeHtml(html)" in _fn_source(scene, "renderHtmlFallback")
 
 
 def test_charcard_loads_json_not_htmx_ajax():
@@ -259,7 +261,10 @@ def test_node_js_unit_suite():
 
 
 def _fn_source(src: str, name: str) -> str:
-    m = re.search(rf"(?:export\s+)?function {re.escape(name)}\s*\([^)]*\)\s*\{{", src)
+    m = re.search(
+        rf"(?:export\s+)?(?:async\s+)?function {re.escape(name)}\s*\([^)]*\)\s*\{{",
+        src,
+    )
     assert m, f"missing function {name}"
     i = src.find("{", m.end() - 1)
     depth = 0
@@ -300,6 +305,18 @@ def test_toggle_debug_does_not_reload():
 def test_scene_js_appends_debug_formdata():
     scene = _read(JS_DIR / "scene.js")
     assert re.search(r"""fd\.append\(\s*["']debug["']""", scene)
+
+
+def test_debug_snapshot_waits_for_in_game():
+    """refreshDebugSnapshot 未开局不打 GET /debug；bootstrap 在 in_game 后才拉。"""
+    debug = _read(JS_DIR / "debug.js")
+    src = _fn_source(debug, "refreshDebugSnapshot")
+    assert "hasInGameSession" in src
+    assert "game-screen" in debug
+    game_js = _read(JS_DIR / "game.js")
+    boot = _fn_source(game_js, "bootstrapExistingGame")
+    assert "refreshDebugSnapshot" in boot
+    assert "in_game" in boot
 
 
 def test_f40_bootstrap_and_combat_409_wiring():

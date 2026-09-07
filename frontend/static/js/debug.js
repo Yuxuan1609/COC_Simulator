@@ -159,7 +159,16 @@ export function applyDebugSnapshot(data) {
   }
 }
 
+function hasInGameSession() {
+  const screen = document.getElementById("game-screen");
+  if (!screen) return false;
+  if (screen.classList && screen.classList.contains("hidden")) return false;
+  if (screen.style && screen.style.display === "none") return false;
+  return true;
+}
+
 export async function refreshDebugSnapshot() {
+  if (!hasInGameSession()) return;
   try {
     const data = await get("/api/game/debug?turns=5");
     if (!data || data.html || data.error) return data;

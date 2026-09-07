@@ -44,6 +44,19 @@ def test_turn_endpoint_forwards_pending_interaction(client):
     assert "time_agent" not in data
 
 
+def test_turn_engine_error_html_is_escaped(client):
+    """run_turn 抛带 <script> 的异常 → HTML 响应转义，不原样插入。"""
+    fake_game = {"keeper": SimpleNamespace()}
+    with patch("frontend.routers.game.session.get_game", return_value=fake_game), \
+         patch("game_loop.run_turn", side_effect=RuntimeError("<script>alert(1)</script>")):
+        resp = client.post("/api/game/turn", data={"user_input": "搜索桌子"})
+    assert resp.status_code == 200
+    assert "text/html" in (resp.headers.get("content-type") or "")
+    text = resp.text
+    assert "<script>" not in text
+    assert "&lt;script&gt;" in text
+
+
 # ── 统一资源层:player-status / character-card 的 MP 与已知法术接线 ──
 
 def _fake_game_with_spells():
@@ -566,8 +579,10 @@ def test_debug_endpoint_aggregates(client, monkeypatch, tmp_path):
     monkeypatch.setattr("game_loop._turn_logger", logger)
 
     fake = _debug_game_with_world()
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        resp = client.get("/api/game/debug", params={"turns": 5})
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", fake)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    resp = client.get("/api/game/debug", params={"turns": 5})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -599,12 +614,26 @@ def test_debug_endpoint_aggregates(client, monkeypatch, tmp_path):
     assert "NARRATOR_PREVIEW_TASK8" in json.dumps(records, ensure_ascii=False)
 
 
-def test_debug_endpoint_no_game(client):
-    """get_game() 为 None（已退出）→ 400 JSON {error: no_game}。"""
-    with patch("frontend.routers.game.session.get_game", return_value=None):
+def test_debug_endpoint_no_game(client, monkeypatch):
+    """_game_instance is None → 400 JSON {error: no_game}。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", None)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    resp = client.get("/api/game/debug")
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "no_game"}
+
+
+def test_debug_empty_instance_not_lazy_init(client, monkeypatch):
+    """_game_instance is None → 400 no_game，且不调用 init_game。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", None)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    with patch("game_loop.init_game") as init_mock:
         resp = client.get("/api/game/debug")
     assert resp.status_code == 400
     assert resp.json() == {"error": "no_game"}
+    init_mock.assert_not_called()
 
 
 # ── Task 10 / F39: GET /api/game/history ──
@@ -625,19 +654,35 @@ def _history_game(n=25):
     return {"keeper": SimpleNamespace(world=world, turn_number=n)}
 
 
-def test_history_endpoint_no_game(client):
-    """get_game() 为 None → 400 JSON {error: no_game}。"""
-    with patch("frontend.routers.game.session.get_game", return_value=None):
-        resp = client.get("/api/game/history")
+def test_history_endpoint_no_game(client, monkeypatch):
+    """_game_instance is None → 400 JSON {error: no_game}。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", None)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    resp = client.get("/api/game/history")
     assert resp.status_code == 400
     assert resp.json() == {"error": "no_game"}
 
 
-def test_history_endpoint_pagination(client):
+def test_history_empty_instance_not_lazy_init(client, monkeypatch):
+    """_game_instance is None → 400 no_game，且不调用 init_game。"""
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", None)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    with patch("game_loop.init_game") as init_mock:
+        resp = client.get("/api/game/history")
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "no_game"}
+    init_mock.assert_not_called()
+
+
+def test_history_endpoint_pagination(client, monkeypatch):
     """newest-first；before_turn 过滤更早页；next_before 为本页最小 turn。"""
     fake = _history_game(25)
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r1 = client.get("/api/game/history", params={"limit": 5})
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", fake)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    r1 = client.get("/api/game/history", params={"limit": 5})
     assert r1.status_code == 200
     d1 = r1.json()
     assert set(d1.keys()) == {"items", "next_before"}
@@ -650,39 +695,36 @@ def test_history_endpoint_pagination(client):
     assert d1["next_before"] == 21
     assert "SECRET_AUTHOR_EVENT" not in r1.text
 
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r2 = client.get("/api/game/history", params={"before_turn": 21, "limit": 5})
+    r2 = client.get("/api/game/history", params={"before_turn": 21, "limit": 5})
     d2 = r2.json()
     assert [it["turn"] for it in d2["items"]] == [20, 19, 18, 17, 16]
     assert d2["next_before"] == 16
 
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r3 = client.get("/api/game/history", params={"before_turn": 6, "limit": 5})
+    r3 = client.get("/api/game/history", params={"before_turn": 6, "limit": 5})
     d3 = r3.json()
     assert [it["turn"] for it in d3["items"]] == [5, 4, 3, 2, 1]
     assert d3["next_before"] is None
 
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r4 = client.get("/api/game/history", params={"before_turn": 1, "limit": 5})
+    r4 = client.get("/api/game/history", params={"before_turn": 1, "limit": 5})
     d4 = r4.json()
     assert d4["items"] == []
     assert d4["next_before"] is None
 
 
-def test_history_endpoint_limit_clamp_and_default(client):
+def test_history_endpoint_limit_clamp_and_default(client, monkeypatch):
     fake = _history_game(60)
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r_hi = client.get("/api/game/history", params={"limit": 999})
+    from frontend.routers.game import session as game_session
+    monkeypatch.setattr(game_session, "_game_instance", fake)
+    monkeypatch.setattr(game_session, "_game_quit", False)
+    r_hi = client.get("/api/game/history", params={"limit": 999})
     assert len(r_hi.json()["items"]) == 50
     assert r_hi.json()["next_before"] == 11
 
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r_lo = client.get("/api/game/history", params={"limit": 0})
+    r_lo = client.get("/api/game/history", params={"limit": 0})
     assert len(r_lo.json()["items"]) == 1
     assert r_lo.json()["items"][0]["turn"] == 60
 
-    with patch("frontend.routers.game.session.get_game", return_value=fake):
-        r_def = client.get("/api/game/history")
+    r_def = client.get("/api/game/history")
     assert len(r_def.json()["items"]) == 20
     assert [it["turn"] for it in r_def.json()["items"]] == list(range(60, 40, -1))
 

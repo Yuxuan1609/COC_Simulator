@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | 前端专项 review：① GET `/debug` `/history` peek `_game_instance`，空实例 400 `no_game` 不 lazy 建局；`refreshDebugSnapshot` 无可见 `#game-screen` 则 no-op，bootstrap/`initGame` 仅开局后拉。② 引擎错误 HTML `html.escape`；前端 html fallback `renderHtmlFallback`→`escapeHtml`。TDD：契约 3 + js。默认套件 642 passed / 28 deselected + 1 既有 e2e。turn.py 328→331 / debug.py 358→359。 |
 | 2026-09-07 | 前端专项 Task 13 收口（纯文档）：ISSUES §5 收口 F39/F40/F42/B19；§2 删对应行；F22 notebook 呈现挂前端后续批次（F39 批次有意缩小未含 notebook，非漏做，R13）。默认套件 638 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。push 延至分支结束。 |
 | 2026-09-07 | F40 review：① `_discard_combat_sessions` 回滚快照后 `exit_combat({"outcome":"abort"})` 清 `_combat_active`（不当 win）。② `/load` 成功后 `_combat_sessions.clear()`，不把旧 pre_world 写到新档。TDD：契约 +2。combat.py 432→440 / slash 104→105。 |
 | 2026-09-07 | 前端专项 §6 Task 12 / F40：战斗原子化 + 方案 A 战前快照回滚。`GET /api/game/state` peek `_game_instance`（空则 `{in_game:false}`，禁止 `get_game()` lazy 建局）；有局返回 HUD + `in_game:true`，永不 `active_combat`。残留 `_combat_sessions` 先 `_discard_combat_sessions()` 回滚再清。`combat/start` 在 `_init_combat` 前拍 `pre_world`（player HP/SAN/MP、当前场景敌人 hp/status、`san_seen_sources` 拷贝；注释标明不求完备）。无会话 `combat/round` → 409 `{error:combat_session_lost}` 并回滚。终局 `pop` 会话不回滚。quit/reset/init 清会话 dict。前端：`DOMContentLoaded` bootstrap 仅 `in_game===true` 切 `#game-screen`；409 → `finishCombat({silent:true})` 回探索态。TDD：契约 4 测 + Task1 400→409 + js bootstrap/combat 409。默认套件 636 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。本环境无浏览器手测。combat.py 328→432 / views 148→156 / session 248→250 / slash 102→104。 |
@@ -1164,12 +1165,12 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | 模块 | 行数 | 内容 |
 |------|------|------|
 | `session.py` | 250 | 全局态、`_init_libraries`、`get_game`、`init_game_api`（开局清 `_combat_sessions`）、`_resolve_start_scene`、`_make_default_inv`、`_load_character_or_default`（B19）；init/lazy 写 `g["_log_dir"]`；`_combat_sessions` 条目含 `pre_world` |
-| `turn.py` | 328 | F42：`process_turn` 拆 payload 辅助；`partial(run_turn, ..., debug=bool, on_progress=)`；工作线程经 `call_soon_threadsafe(_push_progress)` 推真实进度（删假连推）；JSON 仅 `turn.debug is not None` 时带 `debug` 键；slash `{text}` → `narrative`+`slash` 且 `brief=""`；退出/frozen 纯文本 narrative。WS `/api/game/progress`、`_push_progress` |
+| `turn.py` | 331 | F42：`process_turn` 拆 payload 辅助；`partial(run_turn, ..., debug=bool, on_progress=)`；工作线程经 `call_soon_threadsafe(_push_progress)` 推真实进度（删假连推）；JSON 仅 `turn.debug is not None` 时带 `debug` 键；slash `{text}` → `narrative`+`slash` 且 `brief=""`；退出/frozen 纯文本 narrative。引擎错误 HTML `html.escape`。WS `/api/game/progress`、`_push_progress` |
 | `combat.py` | 440 | 序列化 + 战前快照回滚 + `/api/combat/start\|round`（无会话 409；discard 后 abort 清闩） |
 | `charcard.py` | 111 | `_known_spell_names` + `GET /api/game/character-card` JSON（无调查员 `{name:null}`） |
 | `slash.py` | 105 | `_handle_slash_command` → `{text}`（无局时退出文案）+ `POST /api/game/command` JSON；`/quit` `/reset` 清 `_combat_sessions`；`/load` 成功后只 clear 不 apply |
-| `views.py` | 156 | `/game`、`player-status`、`scene`、`state`（F40 peek 空实例不 lazy）、`GET /api/game/history`（F39）、`autowin` |
-| `debug.py` | 358 | `GET /api/game/debug?turns=N` 聚合 turn_logs + 快照 + 实体可用性 + LLM 摘要 |
+| `views.py` | 156 | `/game`、`player-status`、`scene`、`state`（F40 peek 空实例不 lazy）、`GET /api/game/history`（F39 peek 空实例 400 不 lazy）、`autowin` |
+| `debug.py` | 359 | `GET /api/game/debug?turns=N` 聚合 turn_logs + 快照 + 实体可用性 + LLM 摘要；peek `_game_instance`，空实例 400 不 lazy |
 
 ### routers/game/combat.py (440 行) — 战斗 API + F40 战前快照
 
@@ -1186,23 +1187,23 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 
 ### routers/game/views.py (156 行) — 页面与状态
 
-`game_page`@53 / `player_status`@58 / `scene_info`@92 / `game_state`@109（peek `_game_instance`，None → `{in_game:false}` 且清会话 dict，禁止 `get_game()`；有局且残留战斗则 discard 后探索态 HUD，无 `active_combat`）/ `game_history`@137 / `set_auto_win`@149。
+`game_page`@53 / `player_status`@58 / `scene_info`@92 / `game_state`@109（peek `_game_instance`，None → `{in_game:false}` 且清会话 dict，禁止 `get_game()`；有局且残留战斗则 discard 后探索态 HUD，无 `active_combat`）/ `game_history`@137（peek 空实例 400，禁止 `get_game()`）/ `set_auto_win`@149。
 
-### routers/game/turn.py (328 行) — 回合 API + WS 进度（F42）
+### routers/game/turn.py (331 行) — 回合 API + WS 进度（F42）
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|------|
 | `_slash_payload` / `_exited_payload` / `_frozen_payload` | — | slash / 无局 / FROZEN JSON 形状（纯文本 narrative） | 19 / 34 / 62 |
-| `_engine_error_html` / `_turn_error_html` | `(exc)` | 引擎/回合异常 HTMLResponse | 48 / 55 |
+| `_engine_error_html` / `_turn_error_html` | `(exc)` | 引擎/回合异常 HTMLResponse（`html.escape`） | 49 / 57 |
 | `_serialize_combat_init` | `(turn)` | combat_init 前端序列化（用 combat 模块，不遮蔽） | 83 |
 | `_join_enemy_library` / `_attach_potential_threats` | `(player_snapshot)` | 敌人库 detail + 潜在威胁 | 99 / 129 |
 | `_narrative_html` / `_completed_payload` | — | brief/narrative HTML + 完成回合 JSON | 175 / 195 |
-| `_on_progress_bridge` | `(loop)` | 工作线程 → `loop.call_soon_threadsafe(_push_progress)` | 240 |
-| `process_turn` | `POST /api/game/turn` | autosave → slash 短路 → `run_in_executor(run_turn, on_progress=)`；删假连推；异常仍 `complete` | 248 |
-| `game_progress` | `WS /api/game/progress` | 队列推送；`complete` 关连接 | 301 |
-| `_push_progress` | `(step, status)` | 向所有 WS 队列 `put_nowait`（须在 loop 线程调用） | 321 |
+| `_on_progress_bridge` | `(loop)` | 工作线程 → `loop.call_soon_threadsafe(_push_progress)` | 243 |
+| `process_turn` | `POST /api/game/turn` | autosave → slash 短路 → `run_in_executor(run_turn, on_progress=)`；删假连推；异常仍 `complete` | 251 |
+| `game_progress` | `WS /api/game/progress` | 队列推送；`complete` 关连接 | 304 |
+| `_push_progress` | `(step, status)` | 向所有 WS 队列 `put_nowait`（须在 loop 线程调用） | 324 |
 
-### routers/game/debug.py (358 行) — debug 聚合
+### routers/game/debug.py (359 行) — debug 聚合
 
 | 函数 | 签名 | 作用 | 行号 |
 |------|------|------|
@@ -1212,7 +1213,7 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 | `_recent_llm_logs` | `(n, game=None) -> list` | 同目录最新 `.txt` 摘要 `{filename, preview}` | 89 |
 | `_snapshot` | `(world) -> dict` | 直读 location/hp/san/mp/flags/npcs；clock/timed_effects/scene_items 缺属性则省略 | 130 |
 | `_entity_availability` | `(world, judge=None) -> list` | 当前场景 interactions+auto_triggers 只读：once / time / `_evaluate_requirement`；扫描时 `_turn_trace=None` 并 finally 恢复 | 321 |
-| `game_debug` | `GET /api/game/debug` | 无局 400 `{error:no_game}`；四键 `recent_turns`/`state_snapshot`/`scene_entities`/`llm_records` | 345 |
+| `game_debug` | `GET /api/game/debug` | peek `_game_instance`，无局 400 `{error:no_game}` 不 lazy；四键 `recent_turns`/`state_snapshot`/`scene_entities`/`llm_records` | 345 |
 
 ### routers/character.py (335 行) — 车卡 API
 
@@ -1241,14 +1242,14 @@ U9：SKILLS/STATS/STAT_ROLLS 均从 `data/skill_config.json` 读取（20 技能/
 | `util.js` | `escapeHtml` / `isHtmlFallback` / `jsStringLiteral` |
 | `api.js` | `postForm`（FormData，不设 Content-Type）/ `postJSON` / `get`；按 content-type 分支 JSON vs `{html}`；HTTP 错误带 `status`/`body` |
 | `state.js` | 客户端单点：`combatSession` / debug(`trpg_debug`) / autoWin(`trpg_autowin`) / chatMessages / `lastSceneSnap` @30 / `setSwitch`（`debug`→`setDebug` @52，`autoWin`→`setAutoWin` @57，其它写 `switches`） |
-| `scene.js` | 场景卡（`updateSceneCard` 写 `lastSceneSnap` @23）、`showGameScreen` @258 / `applyBootstrapState` @267（仅 `in_game===true`）、initGame @291、sendTurn/sendTurnAction（`runTurnRequest` @622：`state.debug` 时 `fd.append("debug","1")`，成功后 `refreshDebugSnapshot` 不 await）、handleTurnResponse（`applyTurnDebug`；优先 `slash.text`，残余 `narrative_html` `escapeHtml`）、renderTurnDynamic/renderSkillChips；`addToHistory` @362 空操作（F39 改走 chronicle）；`toggleAutoWin` @688 / `syncAutoWin` @693（`paintSwitch`） |
-| `debug.js` | 四节面板：`renderTrace` @25 / `renderEntities` @62 / `renderSkills` @81（`raw_check` 优先，兼 `raw_roll`/`target`/`enhancement.detail_override`，一律 `escapeHtml`）/ `renderLlm` @114；`pickSkills` @131（非空 `skill_results` 否则 `skill_checks`）；`applyTurnDebug` @139；`applyDebugSnapshot` @152（GET → 实体+LLM）；`refreshDebugSnapshot` @162（`GET /api/game/debug?turns=5`，失败静默）；`syncDebugUi` @173；`toggleDebug` @185（`setSwitch('debug')` 只写 `trpg_debug`，不 reload） |
+| `scene.js` | 场景卡（`updateSceneCard` 写 `lastSceneSnap` @23）、`showGameScreen` @258 / `applyBootstrapState` @267（仅 `in_game===true`）、initGame @291（开局后若 debug 拉 snapshot）、sendTurn/sendTurnAction（`runTurnRequest` @631：`state.debug` 时 `fd.append("debug","1")`，成功后 `refreshDebugSnapshot` 不 await；html fallback 走 `renderHtmlFallback` @367 `escapeHtml`）、handleTurnResponse（`applyTurnDebug`；优先 `slash.text`，残余 `narrative_html` `escapeHtml`）、renderTurnDynamic/renderSkillChips；`addToHistory` @363 空操作（F39 改走 chronicle）；`toggleAutoWin` @696 / `syncAutoWin` @701（`paintSwitch`） |
+| `debug.js` | 四节面板：`renderTrace` @24 / `renderEntities` @62 / `renderSkills` @81（`raw_check` 优先，兼 `raw_roll`/`target`/`enhancement.detail_override`，一律 `escapeHtml`）/ `renderLlm` @114；`pickSkills` @131（非空 `skill_results` 否则 `skill_checks`）；`applyTurnDebug` @139；`applyDebugSnapshot` @152（GET → 实体+LLM）；`hasInGameSession` @162；`refreshDebugSnapshot` @170（无可见 `#game-screen` 则 no-op；`GET /api/game/debug?turns=5`，失败静默）；`syncDebugUi` @182；`toggleDebug` @194（`setSwitch('debug')` 只写 `trpg_debug`，不 reload） |
 | `combat.js` | 战斗面板；`bumpTargetCount` 纯函数；start/round 走 `postJSON`；`executeCombatRound` 409 → `finishCombat({silent:true})` @348（跳过结局 HTML，只 `exitCombatMode` + HUD）；`state.combatSession` 不持久化 |
 | `charcard.js` | `renderCharacterCard`（JSON→HTML，`escapeHtml`）/ `hpBarPercent`/`sanBarPercent`（F2 分母 san_max）/ `toggleCharCard`（`get('/api/game/character-card')`，无 htmx.ajax）/ `updateCharHUD` |
 | `ws.js` | `/api/game/progress` + step-indicator |
 | `layout.js` | `computePanelWidth` @3；`paintSwitch` @31；`initSplitter` @38（pointerId 过滤 + `lostpointercapture`/`releasePointerCapture` + `trpg_panel_scene_w`/`trpg_panel_char_w`）；`initLayout` @106（scene `side:left` / char `side:right`） |
 | `history.js` | F39 历史面板：`renderHistoryItems` @28（`escapeHtml` brief/narrative）；`loadHistory` @44（`GET /api/game/history`，newest-first，滚动到底用 `before_turn=next_before` 加载更早）；`bindHistoryScroll` @70；`toggleHistory` @81 |
-| `game.js` | 入口：`window.*` 桥（含 `toggleHistory`）；`toggleDebug` @28（调 `toggleDebugPanel` 后按 `lastSceneSnap` 重绘场景卡）；`setDebug` 吃 `?debug=`；`paintDebugUi` @57（`syncDebugUi` + 已开则拉 snapshot）；`bootstrapExistingGame` @62（`in_game===true` 才 `applyBootstrapState`+`connectWS`）；DOMContentLoaded 调 `bindHistoryScroll` + bootstrap |
+| `game.js` | 入口：`window.*` 桥（含 `toggleHistory`）；`toggleDebug` @28（调 `toggleDebugPanel` 后按 `lastSceneSnap` 重绘场景卡）；`setDebug` 吃 `?debug=`；`paintDebugUi` @57（`syncDebugUi` + 已开则拉 snapshot，未开局 no-op）；`bootstrapExistingGame` @62（`in_game===true` 才 `applyBootstrapState`+`connectWS`，debug 开则拉 snapshot）；DOMContentLoaded 调 `bindHistoryScroll` + bootstrap |
 
 scene.js ↔ combat.js 循环导入（`enterCombatMode` / `addToHistory` 空操作），仅函数内调用，ESM live binding。scene.js → debug.js 单向（无环）。
 
