@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from frontend._paths import PROJECT_ROOT, FRONTEND_DIR
+from config_llm import LLM_DEFAULT_MODEL, LLM_FLASH_MODEL
 
 router = APIRouter(tags=["launcher"])
 
@@ -16,10 +17,10 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 DEFAULT_CONFIG = {
-    "model": "deepseek-v4-flash-vision-exp",
+    "model": LLM_DEFAULT_MODEL,
     "thinking": True,
     "reasoning_effort": "high",
-    "flash_model": "deepseek-v4-flash-vision-exp",
+    "flash_model": LLM_FLASH_MODEL,
     "llm_timeout_ms": 120000,
     "llm_slow_threshold_ms": 30000,
     "combat_llm_enhancement": False,
@@ -71,7 +72,7 @@ async def save_config(
     model: str = Form(...),
     thinking: str = Form("off"),
     reasoning_effort: str = Form("high"),
-    flash_model: str = Form("deepseek-v4-flash-vision-exp"),
+    flash_model: str = Form(""),
     llm_timeout_ms: int = Form(120000),
     llm_slow_threshold_ms: int = Form(30000),
     combat_llm_enhancement: str = Form("off"),
@@ -81,7 +82,7 @@ async def save_config(
         "model": model,
         "thinking": thinking == "on",
         "reasoning_effort": reasoning_effort,
-        "flash_model": flash_model,
+        "flash_model": flash_model or LLM_FLASH_MODEL,
         "llm_timeout_ms": llm_timeout_ms,
         "llm_slow_threshold_ms": llm_slow_threshold_ms,
         "combat_llm_enhancement": combat_llm_enhancement == "on",

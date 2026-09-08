@@ -10,6 +10,7 @@
 
 | 日期 | 变更 |
 |------|------|
+| 2026-09-07 | LLM 主端改为火山方舟 Ark（`LLM_BASE_URL` / `ARK_API_KEY` / `deepseek-v4-flash`）；DeepSeek 降为 402 fallback。主端 `LLM_STRIP_THINKING_PARAMS` 剥离 thinking 扩展。launcher/character/DEGRADE_POLICY 默认模型跟 config_llm。 |
 | 2026-09-07 | 前端专项执行记录：`feat/frontend-upgrade` 本地 ff-merge 进 `main`（`a288019`→`e8a9779`）。plan 文末补执行情况。合并后 `pytest tests/ -q`：642 passed / 28 deselected + 1 既有 e2e。未 push origin。 |
 | 2026-09-07 | 前端专项 review：① GET `/debug` `/history` peek `_game_instance`，空实例 400 `no_game` 不 lazy 建局；`refreshDebugSnapshot` 无可见 `#game-screen` 则 no-op，bootstrap/`initGame` 仅开局后拉。② 引擎错误 HTML `html.escape`；前端 html fallback `renderHtmlFallback`→`escapeHtml`。TDD：契约 3 + js。默认套件 642 passed / 28 deselected + 1 既有 e2e。turn.py 328→331 / debug.py 358→359。 |
 | 2026-09-07 | 前端专项 Task 13 收口（纯文档）：ISSUES §5 收口 F39/F40/F42/B19；§2 删对应行；F22 notebook 呈现挂前端后续批次（F39 批次有意缩小未含 notebook，非漏做，R13）。默认套件 638 passed / 28 deselected + 1 既有 e2e `test_unresolved_use_becomes_creative`。real_llm_smoke SKIPPED（无真实 DEEPSEEK_API_KEY）。push 延至分支结束。 |
@@ -1099,11 +1100,12 @@ prompt 常量：`PLAYER_SYSTEM`@3 / `TEST_MODE_STRESS`@13 / `TEST_MODE_EXPLORATI
 
 | 常量 | 说明 |
 |------|------|
-| `LLM_BASE_URL` / `LLM_API_KEY_ENV` | 主 API 端点 / Key 环境变量名 |
-| `LLM_DEFAULT_MODEL` / `LLM_FLASH_MODEL` | 主模型 / 轻量模型 |
+| `LLM_BASE_URL` / `LLM_API_KEY_ENV` / `LLM_API_KEY` | 主 API 端点 / Key 环境变量名 / 可选本文件 Key。默认 Ark |
+| `LLM_DEFAULT_MODEL` / `LLM_FLASH_MODEL` | 主模型 / 轻量模型（Ark：`deepseek-v4-flash`） |
+| `LLM_STRIP_THINKING_PARAMS` | 主端剥离 `extra_body.thinking` / `reasoning_effort`（Ark True） |
 | `LLM_THINKING_ENABLED` / `LLM_REASONING_EFFORT` / `LLM_TEMPERATURE_JSON` / `LLM_TEMPERATURE_TEXT` / `LLM_MAX_TOKENS_JSON` / `LLM_MAX_TOKENS_TEXT` | 默认生成参数 |
 | `RE_*` | 各调用点 reasoning_effort 覆盖（RE_KEEPER_PARSE="max" 等） |
-| `LLM_FALLBACK_PROVIDER` | 402 账单不足时切换：base_url / api_key / api_key_env / default_model / flash_model。模板 api_key 为空禁用；本地 config_llm.py 填 Ark |
+| `LLM_FALLBACK_PROVIDER` | 402 账单不足时切换。默认 DeepSeek；`strip_thinking` 控制兜底是否剥 thinking |
 
 ## src/utils.py (232 行) — 通用工具
 

@@ -8,22 +8,28 @@ config_llm.py 不会被 Git 跟踪。
 # API 连接
 # ═══════════════════════════════════════════════════════════════
 
-LLM_BASE_URL = "https://api.deepseek.com"
-"""API 端点 URL。支持任何 DeepSeek 兼容 API（OpenRouter、vLLM 等）。"""
+LLM_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3"
+"""主 API 端点。默认火山方舟（Ark）OpenAI 兼容网关。"""
 
-LLM_API_KEY_ENV = "DEEPSEEK_API_KEY"
-"""API Key 环境变量名。从 .env 文件或系统环境读取。"""
+LLM_API_KEY_ENV = "ARK_API_KEY"
+"""主 API Key 环境变量名。从 .env 或系统环境读取。"""
+
+LLM_API_KEY = ""
+"""可选：直接写在本文件的主 Key（空则只用环境变量）。config_llm.py 不入库。"""
 
 
 # ═══════════════════════════════════════════════════════════════
 # 模型选择
 # ═══════════════════════════════════════════════════════════════
 
-LLM_DEFAULT_MODEL = "deepseek-v4-flash-vision-exp"
+LLM_DEFAULT_MODEL = "deepseek-v4-flash"
 """主模型：用于 Keeper Parse、Narrator、Author 等核心调用。"""
 
-LLM_FLASH_MODEL = "deepseek-v4-flash-vision-exp"
+LLM_FLASH_MODEL = "deepseek-v4-flash"
 """轻量模型：用于 CombatEntry、TimeAgent、Enrich、Standoff 等高频调用。"""
+
+LLM_STRIP_THINKING_PARAMS = True
+"""主端是否剥离 extra_body.thinking / reasoning_effort（Ark 不支持 DeepSeek thinking 扩展）。"""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -74,9 +80,10 @@ RE_SUPPLEMENT_L3 = "max"
 # ═══════════════════════════════════════════════════════════════
 
 LLM_FALLBACK_PROVIDER = {
-    "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+    "base_url": "https://api.deepseek.com",
     "api_key": "",
-    "api_key_env": "ARK_API_KEY",
-    "default_model": "deepseek-v4-flash",
-    "flash_model": "deepseek-v4-flash",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "default_model": "deepseek-v4-flash-vision-exp",
+    "flash_model": "deepseek-v4-flash-vision-exp",
+    "strip_thinking": False,
 }

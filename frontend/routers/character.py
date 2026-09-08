@@ -222,8 +222,9 @@ async def generate_description(type: str = Form(...), prompt: str = Form(...)):
     else:
         system = "你是一个COC 7th TRPG角色个人描述生成器。根据用户提供的关键词生成一段简洁的角色个人描述（150字以内）。仅输出描述文本。"
     try:
+        from config_llm import LLM_FLASH_MODEL
         result = call_deepseek(prompt, json_mode=False, system=system,
-                              model="deepseek-v4-flash-vision-exp", thinking=False,
+                              model=LLM_FLASH_MODEL, thinking=False,
                               max_tokens=300, temperature=0.7, max_retries=1)
         from fastapi.responses import PlainTextResponse
         return PlainTextResponse(str(result).strip())

@@ -136,7 +136,8 @@ flowchart TB
 
 ```bash
 pip install openai httpx python-docx PyPDF2 ipython fastapi uvicorn jinja2 websockets pyinstaller
-# 在项目根目录创建 .env: DEEPSEEK_API_KEY=your-key
+# 在项目根目录创建 .env: ARK_API_KEY=your-key
+# 可选兜底: DEEPSEEK_API_KEY=your-key（主端 402 时切 DeepSeek）
 ```
 
 ```bash

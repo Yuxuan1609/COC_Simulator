@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+os.environ.setdefault("ARK_API_KEY", "dummy")
 os.environ.setdefault("DEEPSEEK_API_KEY", "dummy")
 
 from game.messages import (

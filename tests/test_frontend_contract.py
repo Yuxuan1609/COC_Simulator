@@ -2,6 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+os.environ.setdefault("ARK_API_KEY", "dummy")
 os.environ.setdefault("DEEPSEEK_API_KEY", "dummy")
 
 import json

@@ -19,6 +19,14 @@ try:
     from config_llm import LLM_FALLBACK_PROVIDER as _FB_CFG
 except ImportError:
     _FB_CFG = {}
+try:
+    from config_llm import LLM_API_KEY as _CFG_API_KEY
+except ImportError:
+    _CFG_API_KEY = ""
+try:
+    from config_llm import LLM_STRIP_THINKING_PARAMS as _STRIP_THINKING
+except ImportError:
+    _STRIP_THINKING = False
 
 # 从项目根目录 .env 文件加载环境变量
 _env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -35,7 +43,7 @@ if os.path.exists(_env_path):
                     os.environ[_key] = _val
 
 client = OpenAI(
-    api_key=os.getenv(LLM_API_KEY_ENV, ""),
+    api_key=(os.getenv(LLM_API_KEY_ENV, "") or _CFG_API_KEY or "").strip(),
     base_url=LLM_BASE_URL
 )
 
@@ -75,11 +83,18 @@ def _map_model(model, fb) -> str:
     return default
 
 
+def _strip_thinking(kwargs) -> dict:
+    kw = dict(kwargs)
+    kw.pop("extra_body", None)
+    kw.pop("reasoning_effort", None)
+    return kw
+
+
 def _fallback_kwargs(kwargs, fb) -> dict:
     kw = dict(kwargs)
     kw["model"] = _map_model(kw.get("model"), fb)
-    kw.pop("extra_body", None)
-    kw.pop("reasoning_effort", None)
+    if fb and fb.get("strip_thinking"):
+        kw = _strip_thinking(kw)
     return kw
 
 
@@ -89,7 +104,8 @@ def _chat_create(**kwargs):
         return _fallback_client.chat.completions.create(
             **_fallback_kwargs(kwargs, _fallback_provider))
     try:
-        return client.chat.completions.create(**kwargs)
+        kw = _strip_thinking(kwargs) if _STRIP_THINKING else kwargs
+        return client.chat.completions.create(**kw)
     except Exception as e:
         if (not _should_fallback(e) or _fallback_client is None
                 or _use_fallback):

@@ -27,6 +27,35 @@ def test_map_model_uses_fallback_flash():
     assert _map_model("deepseek-v4-flash", fb) == "deepseek-v4-flash"
 
 
+def test_chat_create_strips_thinking_on_primary(monkeypatch):
+    """Ark 作主端：不发 extra_body.thinking / reasoning_effort。"""
+    import llm
+
+    class _Primary:
+        def __init__(self):
+            self.calls = []
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kw):
+            self.calls.append(kw)
+            return SimpleNamespace(choices=[SimpleNamespace(
+                message=SimpleNamespace(content="ok"))])
+
+    p = _Primary()
+    monkeypatch.setattr(llm, "client", p)
+    monkeypatch.setattr(llm, "_use_fallback", False)
+    monkeypatch.setattr(llm, "_STRIP_THINKING", True)
+    llm._chat_create(
+        model="deepseek-v4-flash",
+        messages=[],
+        extra_body={"thinking": {"type": "enabled"}},
+        reasoning_effort="high",
+    )
+    assert p.calls
+    assert "extra_body" not in p.calls[0]
+    assert "reasoning_effort" not in p.calls[0]
+
+
 def test_chat_create_402_switches_to_fallback(monkeypatch):
     import llm
 

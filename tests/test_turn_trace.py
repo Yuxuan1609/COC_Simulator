@@ -93,6 +93,7 @@ class TestTurnTrace:
         assert getattr(judge, "_turn_trace", None) is None
 
         # OpenAI 客户端在 import game_loop 时要求非空 key；本测 patch run_turn，不发请求。
+        os.environ.setdefault("ARK_API_KEY", "dummy")
         os.environ.setdefault("DEEPSEEK_API_KEY", "dummy")
         client = TestClient(app)
         fake_none = PlayerTurnResult(
@@ -125,6 +126,7 @@ class TestTurnTrace:
 
     def test_run_turn_copies_trace_onto_player_result(self):
         """debug ON 把 keeper._turn_trace 拷到 PlayerTurnResult.debug；OFF 为 None。"""
+        os.environ.setdefault("ARK_API_KEY", "dummy")
         os.environ.setdefault("DEEPSEEK_API_KEY", "dummy")
         from game.messages import PendingInteraction, TurnResult, TurnStatus
         from game_loop import run_turn
