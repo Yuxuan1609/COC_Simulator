@@ -28,6 +28,8 @@
 | B3 | **LLM 测试 flaky**(统一观察) | 见处置约定;候选措施:real_llm 套件 retry 策略或分层标记。偶发长跑(>5min)也在此类 |
 | B22 | **`/trigger` 幽灵命令** | run_game.py help(160 行)宣称 `/trigger <E1>`，但 107-163 无分发分支，`_handle_spawn_command` 只认 /spawn、/inject；输入被当普通回合送 LLM。删 help 文案或接分发（2026-09-05 测试盘点 H3 附带发现） |
 | B23 | **Boss 软条件 LLM 异常→乐观放行** | keeper.py:368 `except: return True`：LLM 挂了 Boss 无条件触发。方向（乐观 vs 保守）待拍板后补测锁（2026-09-05 测试盘点 H2） |
+| B25 | **特质增强（LLM 二次调整骰子）静默失效** | 根因：`apply_trait_enhancement`（prompts.py:98-101）`personal_description`/`description` 为空 → 静默 return，零日志；现有角色卡（test_character/Sothoth）两字段均 null——**疑似建卡向导不产 personal_description（车卡链路待查）**。系统本体（llm.py:352 evaluate_trait_enhancement，±20 特质 ±10 输入、大成功/大失败保护）完好。修法：空描述打 warning + debug panel 可见；建卡向导补描述字段；调用处补 trace。**随角色卡重做批次一起改（用户 2026-09-08 拍板）** |
+| B26 | **库引用悬空静默** | e2e_testbed BOSS_T1 引「测试魔像」、AT_SPAWN_WANDERER 刷「巡游者」，两库均无此条目；boss pre-spawn 失败仅 print（game_loop.py:306）。修法：① lint 加 enemy_ref/boss_ref/weapon_ref 库解析校验；② fixture 引用改真实条目或库补测试条目（随前端修正批） |
 
 ### 🟢 Minor(攒一批顺手清)
 
@@ -36,6 +38,7 @@
 | B9 | control 对快于玩家的敌人 rounds off-by-one | spec 未规定先手;文档已注明"对快于玩家的敌人 rounds 应 ≥2"（阶段 0 跳过） |
 | B10 | timed refresh 战斗侧曾无测试 | 已补(4d9a0ff);两处实现需保持同步——**仍无 parity 测试锁**（2026-09-05 盘点 M4，建议参数化等价断言） |
 | B24 | **测试缺口批次**（盘点 2026-09-05，详见 docs/test-gap-audit-2026-09-05.md） | 高：H1 Boss 存读档往返零覆盖、H3 run_game 交互主循环零专测；中：M1 narrator 兜底无 warning、M2 ConsumeItem 模糊匹配吞异常、M3 autosave 全链静默、M5 judge 失败惩罚分支；低：L1 `_mp_regen_acc` 不入档等 7 条。补测时按报告优先级清 |
+| B27 | **前端手测反馈批次**（2026-09-08 前端专项验收） | ① debug panel 与角色面板同轴互压 → 改独立抽屉；② 角色卡按新版字段重排 + 二级技能平铺（旧字段不兼容）；③ debug LLM 记录只给 400 字 preview → 全文可展开；④ turn_trace 缺 NPC 自由对话（talk_to 路径无埋点）→ 补 npc_talk 类记录；⑤ scene 端点不带 atmosphere/scene_items/在场 NPC → 端出 + 场景卡渲染；⑥ 配色相近 → 拉大色相；⑦ e2e_testbed NPC bound_interactions/bound_auto_triggers 为空 → 补实例 + fixture completeness 加断言 |
 
 ---
 
